@@ -1,0 +1,1247 @@
+Contents lists available at ScienceDirect
+Pattern Recognition
+journal homepage: www.elsevier.com/locate/pr
+mmWave-CSARNet: Continuous human activity recognition with
+cross-attentive boundary-frame fusion in mmWave radarI
+Minhao Ding a
+, Zhixiang Zhang a
+, Yipeng Ding a,b,∗
+, Bowen Tang b
+, Runjin Liu b
+a
+School of Electronics and Information, Central South University, Changsha, 410083, Hunan, China
+b
+School of Physics, Central South University, Changsha, 410083, Hunan, China
+A R T I C L E I N F O
+Keywords:
+Continuous human activity recognition (HAR)
+Millimeter-wave radar
+Frame-level Activity Recognition Branch
+(FARB)
+Cross-attention mechanism
+Boundary Prediction Branch (BPB)
+A B S T R A C T
+Continuous human activity recognition (HAR) using millimeter-wave radar is a challenging task, primarily
+due to issues such as activity transition ambiguity and over-segmentation. To address these challenges, we
+propose CSARNet, a novel Cross-scale Adaptive Refinement Network that integrates frame-level classification
+with explicit boundary prediction. The core of our approach lies in a dual-branch architecture: a Frame-level
+Activity Recognition Branch (FARB) for per-frame classification and a dedicated Boundary Prediction Branch
+(BPB) to accurately localize activity transitions. Furthermore, we introduce a Fusion Stage enhanced by a
+cross-attention mechanism to effectively integrate features from both branches, thereby improving temporal
+consistency and segmentation accuracy. To rigorously evaluate the generalization capability of CSARNet, we
+conduct extensive experiments on a publicly available dataset comprising 40,000 continuous gesture sequences
+from 25 participants across diverse environments and spatial locations. The results demonstrate that CSARNet
+significantly outperforms state-of-the-art methods, achieving an F1@50 score of 83.3%, an edit score of 75.2,
+and a frame-wise accuracy of 95.9% on our private dataset. Critically, on the open-source benchmark, CSARNet
+attains even higher performance with an F1@50 of 85.6%, an edit score of 76.9, and an accuracy of 96.2%,
+establishing a new state of the art. These consistent gains across datasets underscore the effectiveness of our
+boundary-aware design and its robustness in handling complex, real-world continuous HAR scenarios.
+1. Introduction
+In recent years, millimeter-wave (mmWave) radar-based human
+activity recognition (HAR) has gained widespread adoption in ap-
+plications such as smart homes, healthcare monitoring, and security
+surveillance, owing to its unique sensing modality that leverages elec-
+tromagnetic waves in the 60–100 GHz band. Compared to vision or
+wearable sensors, mmWave radar operates reliably under low-light, oc-
+clusion, and privacy-sensitive conditions, while providing fine-grained
+micro-Doppler and range information through frequency-modulated
+continuous wave (FMCW) signal processing. These inherent advantages
+— non-contact operation, high precision, and strong robustness to
+environmental interference — make it particularly suitable for real-
+world HAR scenarios [1–3]. However, current research efforts have
+predominantly focused on discrete activity classification [4], which
+presents significant limitations when applied to real-world scenarios
+where human activities naturally occur as continuous, temporally-
+evolving sequences. The current fragmented recognition algorithm not
+I This document is the results of the research project funded by the Special Foundation for Hunan Innovation Province Construction 2020RC3004.
+∗ Corresponding author.
+E-mail addresses: dingminhao@csu.edu.cn (M. Ding), 1930046052@qq.com (Z. Zhang), dingyipeng@sina.com (Y. Ding), bw_radar@csu.edu.cn (B. Tang),
+543229753@qq.com (R. Liu).
+only fails to capture the true continuity of real-world activities, but
+may also result in errors by overlooking the temporal relationships be-
+tween different activities. There are two major challenges posed by the
+mmWave radar-based continuous HAR. Firstly, collecting real-world
+continuous activity is daunting due to environmental noise, variations
+in individual movements, and the high cost of precise timing annota-
+tions. Some work based on simulated data to assist training has been
+proposed [5–8]. Simulated data, while useful, often lacks the fluidity
+and unpredictability of real-life activities. Secondly, detecting abrupt
+changes between activities is technically complicated. Researchers have
+developed various algorithms to tackle this issue, broadly categorized
+into sliding window algorithms, multi-target detection algorithms, and
+frame-level algorithms [9–27] as shown in Fig. 1(a–c).
+For sliding window algorithms [9–16], they divide continuous time
+data into multiple fixed-length windows, each representing a short-
+duration data segment as shown in Fig. 1(a). These windows slide
+along the time axis, usually with a certain overlap ratio to maintain
+data continuity. Within each window, feature extraction and a classifier
+https://doi.org/10.1016/j.patcog.2026.113830
+Received 15 May 2025; Received in revised form 17 April 2026; Accepted 21 April 2026
+Pattern Recognition 179 (2026) 113830
+Available online 23 April 2026
+0031-3203/© 2026 Elsevier Ltd. All rights are reserved, including those for text and data mining, AI training, and similar technologies.
+M. Ding et al.
+Fig. 1. (a) Sliding window algorithms: Segment the input into fixed-length windows with overlap; simple but prone to boundary blurring and transition
+misclassification. (b) Multi-target detection algorithms: Treat each activity as an independent spatio-temporal target; effective at suppressing over-segmentation but
+may miss short-duration actions or generate redundant detections. (c) Frame-level recognition algorithms: Perform per-frame classification with temporal modeling;
+offer high temporal resolution but suffer from prediction jitter in ambiguous transition regions. (d) Proposed CSARNet: A dual-branch cascaded architecture that
+jointly performs frame-level activity recognition and boundary prediction via cross-attention, enabling robust segmentation, reduced jitter, and accurate handling
+of variable-length sequences.
+are applied to identify the primary activity. The main advantage of
+this approach is its simplicity and flexibility in handling sequences of
+irregular lengths, with classification performance tunable via window
+size and overlap. For example, Li et al. tested window durations of
+2–5 s with overlaps from 0% to 90%, showing that longer windows and
+higher overlaps improve accuracy—but at the cost of degraded reso-
+lution in activity transition regions. To mitigate computational over-
+head, Kurtoğlu et al. introduced an STA/LTA-based motion detector
+to suppress non-motion intervals, though misfires by this detector can
+significantly hurt recognition performance [15]. Further improvements
+include distributed multi-radar fusion [13], IMU-adar fusion [14], and
+multi-perspective spectral graph fusion [9,15]. Nevertheless, all these
+variants remain fundamentally limited by the fixed-window assump-
+tion: when multiple activities fall within a single window, the method
+inevitably suffers from boundary blurring and misclassification.
+For multi-target detection algorithms, they present significant ad-
+vantages over traditional sliding window algorithms, and they treat
+each activity in a continuous sequence as an independent target for
+detection and classification, avoiding the issue of blurred action bound-
+aries caused by sliding window [17–21] as shown in Fig. 1(b). For
+example, Xu et al. proposed a mmWave radar-based continuous motion
+detection approach algorithm called mmCMD, which enhanced the
+quality of micro-Doppler spectrums through dynamic feature visualiza-
+tion (DFV) and designed an algorithm called You Only Look Once with
+Micro-Doppler Matrix (YOLO-MDM) incorporating fusion squeeze-and-
+excitation (FSE) modules and coordinate attention (CA), achieving 93%
+mAP and 99% F1 score in the detection of 12 action classes [21]. Yin
+et al. proposed a MOR-LNOD algorithm that uses a lightweight network
+(LNet) and a one-dimensional (1D) boundary loss (ODBL) function, sim-
+plifying action detection to regional division in the time dimension, and
+achieving 96.5% accuracy in the recognition of 8 action classes with
+only 1/10 of the parameters of ResNet50 [22]. Despite these advances,
+multi-target detection methods often generate redundant detections for
+a single action, miss short-duration activities due to coarse temporal
+anchors or weak features, and require fixed-length input segments,
+which conflicts with the inherently variable-length nature of real-world
+radar streams.
+Compared to both, frame-level HAR algorithms [23–27] assign pre-
+dictions at every time step, enabling precise modeling of activity tran-
+sitions and natural support for variable-length inputs through masking
+as shown in Fig. 1(c). Examples include Bi-LSTM models that leverage
+bidirectional context [23,26], Bayesian RNNs that quantify prediction
+uncertainty [24,25], and attention-enhanced TCNs like R-ATCN that
+capture long-range dependencies and optimize evaluation via Short-
+Term Tolerance Scoring [27]. However, these methods suffer from
+severe prediction jitter in transition zones — manifesting as unstable,
+rapidly switching labels between adjacent frames — which undermines
+segmentation reliability despite strong per-frame accuracy.
+To address the aforementioned challenges particularly the severe
+prediction jitter in transition regions that plagues existing frame-level
+HAR methods—we propose a dual-branch cascaded network called
+CSARNet for continuous HAR, as shown in Fig. 1(d). The core idea is to
+leverage the strengths of frame-level modeling in capturing fine-grained
+temporal dynamics and handling variable-length inputs, while simulta-
+neously introducing a dedicated Boundary Prediction Branch (BPB) to
+explicitly localize activity transitions. By integrating the outputs of the
+Frame-level Activity Recognition Branch (FARB) and the BPB through
+a confidence-weighted voting strategy. The key contributions of this
+paper are summarized as follows:
+Pattern Recognition 179 (2026) 113830
+2
+M. Ding et al.
+• To the best of my knowledge, we have proposed for the first time
+a dual-branch cascaded network called CSARNet, which combines
+a BPB and a FARB to achieve continuous HAR. Additionally, the
+proposed voting strategy can integrate the results of BPB and
+FARB to suppress the jitter phenomenon, thereby enhancing the
+stability of continuous HAR.
+• The proposed CSARNet model employs a cross-attention mech-
+anism to enhance the interaction between FARB and BPB, en-
+abling the model to align frame-level predictions with boundary
+confidence scores and facilitating boundary identification.
+• A cascaded staged loss function 𝑐𝑠 and an adaptive multi-stage
+fusion decision mechanism (AMFDM) are proposed to optimize
+the output of the cascaded network, ensuring consistent and ac-
+curate prediction results at each stage. The proposed AMFDM can
+adjust the weight of each stage adaptively, enhancing the model’s
+focus on ambiguous frames, thereby improving the accuracy of
+continuous HAR.
+• A series of experiments, including comparative experiments, cross-
+environment experiments, and ablation experiments, have veri-
+fied the effectiveness and robustness of CSARNet in continuous
+HAR. The experimental results show that CSARNet performs
+excellently in real-world environment, with high accuracy and
+robustness.
+The remainder of this paper is organized as follows: Section 2 intro-
+duces the signal principle and problem of continuous HAR. Section 3
+presents the proposed CSARNet framework, including the architecture,
+loss function, and voting strategy. Section 4 describes the experimental
+setup and results. Finally, Section 5 concludes the paper.
+2. Signal principle and limitations of traditional algorithms
+The data collection is conducted using the Ti IWR1443, with its
+parameter settings detailed in Table 1. Only the first transmitter and
+the first receiver are utilized. Additionally, the DCA1000EVM is used
+for post-processing the radar data. The transmitted signal, denoted as
+𝑆𝑇 𝑥(𝑡), can be expressed as:
+𝑆𝑇𝑥
+(𝑡) = 𝐴𝑇 ⋅ cos 2𝜋𝑓𝑐𝑡 +
+1
+2
+𝛼𝑡2
+(1)
+where 𝐴𝑇 is the amplitude of the transmitted signal, 𝑓𝑐 is the initial
+carrier frequency, and 𝛼 is the chirp rate. The chirp rate 𝛼 can be
+expressed as 𝛼 = 𝐵∕𝑇 , and 𝑇 is the period of each chirp and 𝐵 is
+the signal bandwidth. The received signal, after a certain time delay 𝜏
+reflection, arrives at the receiver and is represented as 𝑆𝑅𝑥(𝑡) as follows:
+𝑆𝑅𝑥
+(𝑡) = 𝐴𝑅 cos
+(
+2𝜋𝑓𝑐(𝑡 − 𝜏) +
+1
+2
+𝛼(𝑡 − 𝜏)2
+)
+(2)
+where 𝐴𝑅 is the amplitude of the received signal, 𝜏 = 2𝑑∕𝐶 is the
+signal propagation delay, 𝑑 is the distance from the receiver to the
+reflector, and 𝐶 is the speed of light. Subsequently, the received signal
+is demodulated and low-pass filtered, and the mixing result is as
+follows:
+𝑆𝑇𝑥
+(𝑡) ⋅ 𝑆𝑅𝑥
+(𝑡) = 𝐴𝑇 𝐴𝑅 cos
+(
+2𝜋𝑓𝑐𝑡 +
+1
+2
+𝛼𝑡2
+)
+⋅ cos
+(
+2𝜋𝑓𝑐(𝑡 − 𝜏) +
+1
+2
+𝛼(𝑡 − 𝜏)2
+)
+=
+𝐴𝑇 𝐴𝑅
+2
+(
+cos
+(
+2𝜋𝑓𝑐𝜏 +
+1
+2
+𝛼(2𝑡𝜏 − 𝜏2
+)
+)
++ cos
+(
+2𝜋𝑓𝑐(2𝑡 − 𝜏) +
+1
+2
+𝛼(2𝑡2
+− 2𝑡𝜏 + 𝜏2
+)
+))
+(3)
+The high-frequency component 2𝑓𝑐 is filtered out, and the constant
+term 𝛼
+2
+𝜏2 is very small and is typically ignored. The final demodulated
+form is expressed as follows:
+𝑆IF(𝑡) ≈ 𝐾 ⋅ cos(2𝜋𝛼𝑓𝑑𝑡 + 𝜙0) (4)
+where 𝐾 is defined as half of the received signal amplitude 𝐾 =
+𝐴𝑅𝐴𝑇
+2
+, 𝜙0 = 2𝜋𝑓𝑐𝜏 is the phase shift and 𝑓𝑑 is doppler frequency.
+For continuous HAR, the typical approach is to convert the signal
+Table 1
+Parameter configuration of FMCW radar.
+Parameter Value
+Start frequency 77.1799 GHz
+Bandwidth 767.5 MHz
+Frequency slope 29.982 MHz μs−1
+Number of chirps per frame 128
+Number of samples per chirp 256
+Frame periodicity 40 ms
+into a Doppler-Time spectrum. This involves applying a Fast Fourier
+Transform (FFT) to the signal 𝑠(𝑛, 𝑚) across its fast time axis to create a
+Range-Time spectrum 𝑅(), which is then used to determine the Doppler
+shifts within each range segment. It can be expressed as:
+𝑅(𝑝, 𝑚) =
+1
+𝑁
+𝑁−1
+∑
+𝑛=0
+𝑠(𝑛, 𝑚)𝑒−j2𝜋
+𝑝𝑛
+𝑁 (5)
+where 𝑛 is the fast-time sample index, 𝑚 = 0, … , 𝑀 − 1 is the slow-time
+sample index, 𝑀 is the number of slow-time samples, 𝑝 = 0, … , 𝑁 −
+1 is range index, and 𝑁 is the FFT length. The Range-Time spec-
+trum is subsequently compressed in terms of Range bins, calculated as
+𝑉 (𝑚) =
+∑𝑟2
+𝑟=𝑟1
+𝑅(𝑟, 𝑚), with the final Doppler-Time spectrum obtained
+via Short-Time Fourier Transform (STFT), which can be expressed as:
+𝑀𝐷(𝑛, 𝑘) =
+𝐿−1
+∑
+𝑚=0
+𝑤(𝑚)𝑉 (𝑛 − 𝑚)𝑒−j2𝜋 𝑚𝑘
+𝐿 (6)
+where 𝐿 is the window length, 𝑤(𝑚) is the window function, 𝑉 (𝑛 − 𝑚)
+is the signal within the window, and 𝑘 is the Doppler frequency index.
+A Hanning window 𝑤(𝑚), with a size of 𝐿 is employed to minimize
+sidelobes [28].
+2.1. Limitations of traditional algorithms
+To illustrate common challenges in continuous HAR, consider the
+Doppler-time spectrogram shown in Fig. 2, which depicts a continuous
+HAR sequence comprising six distinct activities along with a stationary
+state. Specifically, the dataset includes the following seven states:A0:
+Standing still A1: Sitting down A2: Walking slowly A3: Walking For-
+ward A4: Bending A5: Picking up A6: Fully squat walking. Next, the
+activity transition ambiguity and input constraints are discussed in
+detail.
+Activity Transition Ambiguity Fig. 2 clearly demonstrates the activity
+transition ambiguity phenomenon, where transitional periods between
+activities exhibit overlapping characteristic features from multiple mo-
+tion patterns. This inter-class feature mixing is particularly evident
+during the A2-to-A3 transition, where the simultaneous presence of
+running and sitting signatures creates significant challenges for precise
+activity state determination.
+Input Limitation Traditional sliding window algorithms divide radar
+signals into fixed lengths such as 2 s, but they face two major problems:
+first, the window length is difficult to adapt to the duration of different
+activities for example, A1 requires a 2.5 s window, while A2 needs a
+4 s window. Too short, and it truncates the action; too long, and it
+introduces irrelevant noise. Second, the window boundaries may cut off
+key features of the activity like the starting frame of a walking forward
+being split into two windows. For multi-target detection algorithm, it
+requires the input data to be of fixed length, while the spectrum in
+practical applications is often variable in length. Moreover, this way
+might allocate several distinct identification results to the same location
+on the Doppler-Time spectrum, which is impractical in real-world
+scenarios.
+The adverse impact of these issues is quantitatively validated in
+Section 4, where baseline methods exhibit elevated edit distances and
+prediction jitter, while our CSARNet achieves significantly higher F1
+Pattern Recognition 179 (2026) 113830
+3
+M. Ding et al.
+Fig. 2. The activity transition ambiguity problem.
+scores and temporal coherence by jointly modeling frame-level actions
+and boundary transitions.
+3. Proposed mmWave-CSARNet
+In this section, a two-branch cascaded staged mmWave continuous
+HAR network called CSARNet is proposed, whose architecture is shown
+in Fig. 3(c). The network takes the Doppler-Time spectrum 𝐼 ∈ R𝑇 ×𝐹
+as the input, where 𝑇 is the number of temporal frames and 𝐹 is
+the frequency dimension obtained by FFT. The two branches of the
+proposed CSARNet are the FARB and the BPB. FARB realizes the
+progressive enhancement of classification ability through multi-stage
+feature distillation, and its output is the activity category probability
+distribution 𝑆𝑖
+𝑡 ∈ R𝑇 ×𝐴𝑐 , where 𝐴𝑐 is the total number of predefined
+activity classes, and 𝑆𝑖
+𝑡 is the prediction confidence of the 𝑖th stage.
+BPB uses several 1D convolution kernels with residual structure to ex-
+tract boundary-sensitive features and generates a boundary confidence
+distribution 𝐵 ∈ R𝑇 ×1. The two branches achieve feature interaction
+through proposed cross-attention mechanisms. Specifically, BPB injects
+temporal constraint information into FARB’s feature learning process
+to effectively align frame-level predictions with boundary confidence
+scores and facilitate boundary identification. A cascaded loss 𝑐𝑠 and a
+cross-attention loss 𝑐𝑟𝑜𝑠𝑠 are used to supervise this process. Finally,
+a confidence-weighted dual-branch voting fusion strategy is adopted
+to achieve collaborative optimization of spatiotemporal features and
+boundary information, resulting in the final continuous HAR result.
+Next, a detailed explanation of the proposed FARB, BPB, and voting
+strategies, along with the associated loss functions, is provided.
+3.1. Frame-level activity recognition branch
+For FARB, it is a cascaded staged frame-level activity network with
+an adaptive fusion mechanism, its input is the Doppler-Time spectrum
+𝐼 ∈ R𝑇 ×𝐹 , and its main architecture consists of 𝑁𝑠 cascaded stages
+and one fusion stage. For long-time feature extraction, the advanced
+dual dilated layer (DDL) and dilated residual layer (DRL) in multi-
+stage temporal convolutional network (MS-TCN) are used as the basic
+units [29,30], as shown in Figs. 3(d) and 3(e). For DRL, the 1 × 1 con-
+volution before and after adjusts the dimension of the input features,
+then dilated convolution is used for time-domain feature extraction,
+and the dilation factor of each layer is doubled, 𝑑𝑖𝑙𝑎𝑡𝑒𝑑 = 2𝑙, where 𝑙 is
+the number of current layer. Unlike DRL, DDL enhances the receptive
+field of the lower layers by combining two different dilated factors,
+dilated = 2𝑙 and dilated = 2𝑁𝐷−𝑙. For each DDL and DRL block, they
+are composed of 𝑁𝑅 DRL and 𝑁𝐷 DDL respectively. This design is able
+to capture long-term dependencies and has stronger temporal modeling
+capabilities in early stage, which is beneficial for continuous HAR.
+For the cascaded staged network, it has been widely used in fields
+such as object detection [31], pose estimation [32], and semantic seg-
+mentation [33–36]. These studies show that the early cascaded stages
+networks can extract explicit motion patterns, while the later stages
+combine deep semantic representations to optimize the discriminability
+of boundary-blurred frames. To better fuse features from different
+stages, an AMFDM is used, giving higher attention to blurry frames,
+thus achieving more accurate predictions. Additionally, drawing in-
+spiration from densenet [37,38], the first 𝑁𝑠 stages in the cascade
+use the Dopper-Time spectrum along with the concatenation of all
+previous stages as input for the subsequent stage. This dense residual
+structure effectively captures feature information at different stages and
+prevents model overfitting. For the final fusion stage, proposed AMFDM
+adaptively modifies the importance of frame-level HAR across previous
+all stages. Specifically, each stage is allocated an initial weight denoted
+as 𝑤𝑡
+𝑖, where 𝑡 is the frame number and 𝑖 is the stage number. The first
+stage weight 𝑤𝑡
+1 ∈ R𝑇 ×1 is a vector of all ones, while subsequent stages’
+weights 𝑤𝑡
+𝑖(𝑖 = 2, 3, … , 𝑁𝑠 − 1) are updated as:
+𝑤𝑡
+𝑖
+= 𝑤𝑡
+𝑖−1
+⋅ 𝑒−𝑠𝑖−1
+𝑡 ⋅sign(𝑠𝑖−1
+𝑡 −𝜌)
+(7)
+where 𝜌 is the threshold for the prediction confidence, and 𝑠𝑖−1
+𝑡 is the
+prediction confidence of the 𝑖 − 1th stage, which can be calculated as:
+𝑠𝑖
+𝑡 = softmax(𝑆𝑖
+𝑡 ) =
+𝑒𝑠𝑖
+𝑡
+∑𝐴𝑐
+𝑗=1
+𝑒𝑠
+𝑗
+𝑡
+(8)
+where 𝑆𝑖
+𝑡 is the output feature of the 𝑖th stage, and 𝐴𝑐 is the number
+of activity classes, sign(𝑠𝑖−1
+𝑡 − 𝜌) is the signum function that outputs
+1 when the prediction confidence 𝑠𝑖−1
+𝑡 exceeds threshold 𝜌, 0 when
+equal, and −1 otherwise. The weight of the first stage is set to 1, while
+the weights of subsequent stages are adjusted based on the prediction
+confidence of the previous stage. This adaptive weight adjustment
+mechanism adjusts the next stage by 𝑒𝑠𝑖−1
+𝑡 , increasing the weight for
+frames with low confidence and decreasing the weight for frames
+with high confidence. Therefore, once any early stage shows sufficient
+confidence in continuous HAR and stops increasing. According to the
+weights 𝑤𝑡
+𝑖 obtained at each cascaded layer, aggregation is performed
+at the fusion stage. The fusion stage input 𝑆𝐹
+𝑡 can be expressed as:
+𝑆𝐹
+𝑡 =
+∑
+𝑖 𝑠𝑖
+𝑡𝑤𝑖
+𝑡
+∑
+𝑖 𝑤𝑖
+𝑡
+(9)
+The fusion stage aims to harmonize the outputs of each stage,
+thereby reducing the oscillatory effects caused by inconsistent pre-
+dictions among stages. This results in more rational and continuous
+HAR predictions. Additionally, to ensure stable training, a cascaded
+loss function, 𝑐𝑠, is integrated into the loss function, with a detailed
+explanation to be provided later.
+3.2. Boundary prediction branch
+To mitigate prediction fluctuations in regions with ambiguous ac-
+tivity transitions, ensuring time consistency within each activity in
+ongoing activities is essential. Although previous studies have proven
+Pattern Recognition 179 (2026) 113830
+4
+M. Ding et al.
+Fig. 3. Architecture of the proposed CSARNet. (a) Cross-attention block; (b) Residual block used in the boundary prediction branch; (c) Overall network structure,
+comprising a frame-level activity recognition branch and a boundary prediction branch that outputs boundary scores 𝐵𝑡 for temporal voting; (d) Dual dilated
+layer for capturing multi-scale temporal dependencies; (e) Dilated residual layer for enhanced feature extraction. The final prediction is obtained via majority
+voting across stages.
+that using continuous temporal smoothness (CTS) loss can improve
+the accuracy of continuous HAR, there is still an issue of transitional
+segmentation bias [39–41]. This paper introduces a BPB architecture,
+which can better maintain the continuity of activities and reduce the
+prediction jitter phenomenon. The input of BPB is the Doppler-Time
+spectrum 𝐼 ∈ R𝑇 ×𝐹 , which undergoes processing via a 1 × 1 convolu-
+tion, followed by 𝑁𝑅 Res Blocks and a concluding 1 × 1 convolution
+to yield the extracted boundary features 𝐵1. The detailed structure
+of the Res Block is depicted in Fig. 3(b). Different from FARB, the
+Res Block employs standard 1D convolutions for spectrum feature,
+featuring a kernel size of 1 × 3 and a stride of 1, as opposed to dilated
+convolutions. The reason lies in the transition of activities, the energy
+in the Doppler-Time spectrum often changes abruptly, and 1D convolu-
+tions are better suited to detect these localized variations. It is crucial
+to synchronize the BPB and FARB; this alignment can lead to more
+effective voting outcomes. To effectively align frame-level predictions
+with boundary confidence scores and assist boundary identification,
+a cross-attention mechanism is introduced as illustrated in Fig. 3(b).
+Specifically, the Query (Q) is derived from the output 𝑆
+𝑁𝑠
+𝑡 of the 𝑁𝑠-th
+stage in FARB, while the Key (K) and Value (V) are extracted from the
+boundary features 𝐵1 generated by BPB. Through this cross-attention
+mechanism, the model dynamically aligns frame-level predictions with
+boundary confidence scores, enabling frame information to effectively
+guide the learning of boundary information, thereby enhancing the
+model’s ability to identify and segment activity transitions. Addition-
+ally, a cross-attention loss function 𝑐𝑟𝑜𝑠𝑠 is introduced to optimize the
+output of the cross-attention module.
+3.3. Loss function
+The loss function of the proposed CSARNet consists of five compo-
+nents: the classification loss cls, the CTS loss cts, the cross-attention
+Pattern Recognition 179 (2026) 113830
+5
+M. Ding et al.
+loss cross, the cascaded staged loss cs and boundary prediction loss
+𝑏. The classification loss cls is defined as the cross-entropy loss
+between the predicted activity probability distribution and the ground
+truth labels. It can be expressed as:
+𝑐𝑙𝑠 = −
+1
+𝑇
+𝑇
+∑
+𝑡=1
+log(𝑠𝑡,𝑎) (10)
+where 𝑠𝑡,𝑎 is the predicted probability for frame 𝑡 belonging to activity
+class 𝑎, and 𝐴𝑐 is the total number of activity classes. Although using
+classification loss 𝑐𝑙𝑠 already achieves decent performance [41], no-
+ticeable over-segmentation issues occur in activity transition regions
+and similar activity areas. To improve the quality of predicted labels,
+a CTS loss 𝑐𝑡𝑠 is designed to encourage smooth transitions between
+adjacent frames, reducing abrupt changes in predictions. A truncated
+mean squared error is used to calculate the CTS loss 𝑐𝑡𝑠, which can be
+expressed as:
+𝑐𝑡𝑠 =
+1
+2𝑇 𝐴𝑐
+∑
+( ̃
+𝛥𝑡,𝑎)2
+(11)
+̃
+𝛥𝑡,𝑎 =
+{
+𝛥𝑡,𝑎 𝛥𝑡,𝑎 ≤ 𝜏
+𝜏 ∶ otherwise
+(12)
+𝛥𝑡,𝑎 = | log 𝑠𝑡,𝑎 − log 𝑠𝑡−1,𝑎| (13)
+where 𝛥𝑡,𝑎 is the difference between the predicted probabilities of
+adjacent frames, and 𝜏 is a threshold to limit the maximum value of
+the difference. The CTS loss 𝑐𝑡𝑠 is designed to penalize large changes
+in the predicted probabilities between consecutive time steps, thereby
+encouraging smoother transitions in the model’s predictions.
+The cross-attention loss 𝑐𝑟𝑜𝑠𝑠 is designed to optimize the output
+of the cross-attention module, ensuring that the attention mechanism
+effectively aligns frame-level predictions with boundary confidence
+scores. It can be expressed as:
+𝑐𝑟𝑜𝑠𝑠 =
+1
+𝑇
+𝑇
+∑
+𝑡𝑏=1
+−𝑙𝑜𝑔(Λ𝑡𝑏,𝑡𝑓 =𝑡𝑏
+) (14)
+where Λ𝑡𝑏,𝑡𝑓
+is the attention score between the boundary feature 𝐵1, the
+frame-level feature 𝑆𝑖, and 𝑡𝑏, 𝑡𝑓 are the time indices of the boundary
+and frame-level features, respectively. The cross-attention loss 𝑐𝑟𝑜𝑠𝑠
+encourages the two branches to learn the time correlation between
+BPB and FARB, thereby improving the model’s ability to identify and
+segment activity transitions.
+The cascaded loss 𝑐𝑠 is designed to optimize the output of the
+cascaded network, ensuring that the predictions from each stage are
+consistent and accurate. It can be expressed as:
+𝑐𝑠
+𝑖 = −
+∑
+𝑡 𝑤𝑖
+𝑡 ⋅ log(𝑠𝑖
+𝑡,𝑎)
+∑
+𝑡 𝑤𝑖
+𝑡
+(15)
+where 𝑠𝑖
+𝑡,𝑎 is the predicted probability for frame 𝑡 belonging to activity
+class 𝑎 at stage 𝑖, and 𝑤𝑖
+𝑡 is the weight for frame 𝑡 at stage 𝑖. The
+cascaded loss function encourages the model to maintain consistency
+across different stages, thereby improving the overall performance of
+the network.
+For BPB, a binary cross-entropy loss function is used to optimize
+the output of the boundary prediction branch, ensuring consistency be-
+tween the predicted boundary confidence distribution and the ground-
+truth labels. It can be expressed as:
+𝑏 = −
+1
+𝑇
+𝑇
+∑
+𝑡=1
+(
+𝑤𝑏𝑦𝑏,𝑡 ⋅ log 𝑏𝑡 + (1 − 𝑦𝑏,𝑡) ⋅ log(1 − 𝑏𝑡)
+)
+(16)
+where 𝑦𝑏,𝑡 is the ground-truth label for frame 𝑡, and 𝑏𝑡 is the predicted
+boundary confidence score for frame 𝑡. 𝑤𝑏 is a weight factor that
+adjusts the importance of the boundary prediction loss in the overall
+loss function, because number of frames that are activity boundaries is
+much smaller than that of the others.
+Algorithm 1 Boundary-Aware Activity Segmentation Refinement
+Require:
+𝐨𝐮𝐭𝐩𝐮𝐭𝐬 ∈ R𝐴𝑐×𝑇 : Frame-wise class prediction logits for 𝐴𝑐 classes
+𝐛𝐨𝐮𝐧𝐝𝐚𝐫𝐢𝐞𝐬 ∈ R1×𝑇 : Boundary prediction scores
+threshold ∈ R+: Peak detection threshold
+𝐴𝑐 ∈ N+: Total number of activity classes
+Ensure:
+𝐩𝐫𝐞𝐝𝐬 ∈ {1, … , 𝐴𝑐}𝑇 : Refined segment-level labels
+1: 𝐩𝐫𝐞𝐝𝐬 ← arg max
+𝑐∈{1,…,𝐴𝑐}
+𝐨𝐮𝐭𝐩𝐮𝐭𝐬 ⊳ Frame-level hard labels
+2: 𝐛𝐨𝐮𝐧𝐝𝐚𝐫𝐢𝐞𝐬 ← 𝜎(𝐛𝐨𝐮𝐧𝐝𝐚𝐫𝐢𝐞𝐬) ⊳ Sigmoid normalization
+3: 𝐛 ← 𝐛𝐨𝐮𝐧𝐝𝐚𝐫𝐢𝐞𝐬[0, ∶] ∈ R𝑇 ⊳ Extract boundary scores
+4:  ← {𝑡 ∣ 𝑡 ∈ argrelmax(𝐛), 𝐛[𝑡] > threshold} ∪ {𝑇 } ⊳ Detected
+boundary points
+5: for 𝑗 ← 1 to || − 1 do ⊳ Process each segment
+6: [𝑡start, 𝑡end) ← [[𝑗], [𝑗 + 1])
+7: 𝐡 ← hist(𝐩𝐫𝐞𝐝𝐬[𝑡start ∶ 𝑡end], bins = 𝐴𝑐) ∈ N𝐴𝑐
+8:  ← {𝑐 ∣ 𝑐 ∈ {1, … , 𝐴𝑐}, 𝐡[𝑐] = max(𝐡)} ⊳ Mode classes
+(majority vote)
+9: if || = 1 then
+10: 𝑐∗ ← [0]
+11: else
+12: 𝑐∗ ← arg max
+𝑐∈
+∑𝑡end−1
+𝑡=𝑡start
+𝐨𝐮𝐭𝐩𝐮𝐭𝐬[𝑐, 𝑡] ⊳ Tie-break using model
+confidence
+13: end if
+14: 𝐩𝐫𝐞𝐝𝐬[𝑡start ∶ 𝑡end] ← 𝑐∗
+15: end for
+16: return 𝐩𝐫𝐞𝐝𝐬
+The final loss function 𝑡𝑜𝑡𝑎𝑙 for the proposed CSARNet can be
+expressed as:
+𝑡𝑜𝑡𝑎𝑙 = 𝑐𝑙𝑠 + 𝑏 + 𝜆1𝑐𝑡𝑠 + 𝜆2𝑐𝑟𝑜𝑠𝑠 + 𝜆3𝑐𝑠 (17)
+where 𝜆1, 𝜆2, 𝜆3 are hyperparameters that control the contribution of
+each loss term to the overall loss function. The hyperparameters are
+set to 0.5, 0.8, and 1, respectively, in the experiments. The total loss
+function 𝑡𝑜𝑡𝑎𝑙 combines the classification loss 𝑐𝑙𝑠, boundary prediction
+loss 𝑏, continuous temporal smoothness loss 𝑐𝑡𝑠, cross-attention loss
+𝑐𝑟𝑜𝑠𝑠, and cascaded staged loss 𝑐𝑠 to optimize the overall performance
+of the proposed CSARNet. For the hyperparameter settings of the
+five loss terms, weights of the classification loss (cls) and boundary
+prediction loss (𝑏) are fixed to 1, as they correspond to the primary
+learning objectives. The hyperparameters 𝜆1, 𝜆2, and 𝜆3 are selected
+via stepwise grid search on the validation set using F1@25 and Edit
+Distance as criteria. Specifically, 𝜆1 is chosen from {0.1, 0.3, 0.5, 0.7, 1.0},
+with 𝜆1 = 0.5 providing the best trade-off between temporal smoothness
+and boundary fidelity. Subsequently, 𝜆2 and 𝜆3 are tuned sequentially,
+yielding 𝜆2 = 0.8 and 𝜆3 = 1.0.
+3.4. Voting strategy
+To achieve the final continuous HAR result, a confidence-weighted
+dual-branch voting fusion strategy is employed. The voting strategy is
+designed to combine the outputs of the FARB and the BPB to produce
+a more accurate and stable prediction as shown in Algorithm 1. The
+algorithm takes the frame-wise class prediction scores from FARB and
+the boundary prediction scores from BPB as inputs. It first applies a
+sigmoid function to normalize the boundary scores, then detects the
+peaks in the boundary scores to identify potential activity boundaries.
+For each detected segment, it performs a majority vote among the
+predicted classes within that segment. If there is a tie, it uses the model
+confidence to break the tie. Finally, it returns the refined segment-level
+labels.
+Pattern Recognition 179 (2026) 113830
+6
+M. Ding et al.
+Fig. 4. The three different environments for data collection, (a) laboratory, (b) corridor, and (c) apartment.
+4. Experimental results
+4.1. Experimental setup
+During the model training, the time dimension of the input Doppler-
+Time spectrum can be dynamically changed, and their FFT point num-
+ber is set to 1024. For the obtained Doppler-Time spectrum, use a
+time window length of 0.2 s, an overlap ratio of 80%, and a frequency
+resolution of 1024. For the configuration of network hyperparameters,
+𝑁𝑠 is also set to 3, in DDL and DRL, 𝑁𝐷 and 𝑁𝑅 are both set to 10,
+which matches the FFT feature number of 210 in FARB. In BPB, 𝑁𝐵 is set
+to 3. The value of 𝑁𝑠, 𝑁𝐷 and 𝑁𝑅 are selected based on experimental
+validation, which is discussed in detail later. All 1D convolution kernels
+have a size of 1 × 3, a stride of 1, and padding of 1. The optimizer
+of model is Adam, with a learning rate of 0.0005 and a batch size of
+1. The model underwent 40 epochs of training, and an early stopping
+strategy is implemented to avoid overfitting. The proposed CSARNet
+is trained on a GeForce RTX 4070Ti, using Python 3.8 and PyTorch
+1.10 with CUDA 11.3. To ensure a fair and realistic evaluation of
+generalization across different users, we adopt a subject-independent
+leave-one-subject-out cross-validation (LOSO) protocol. Specifically, in
+each fold, the model is trained on data from all subjects except one,
+and tested on the held-out subject. The final performance metrics are
+reported as the average over all folds.
+4.2. Dataset collection
+The radar data is collected in three different environments as shown
+in Fig. 4(a–c), including a laboratory environment, a corridor, and an
+apartment. For continuous HAR, data collection is extremely difficult,
+especially for some rapid movements, which pose even greater chal-
+lenges. To simplify the data collection process, spectrums of different
+individual activities are concatenated to form the training spectrums.
+4800 data samples are collected (8𝑝𝑎𝑟𝑡𝑖𝑐𝑖𝑝𝑎𝑛𝑡𝑠×6𝑎𝑐𝑡𝑖𝑣𝑖𝑡𝑖𝑒𝑠×100𝑠𝑎𝑚𝑝𝑙𝑒𝑠)
+as shown in Fig. 3(a). The volunteers consist of four males and four
+females, with heights ranging from 158 to 178 cm and ages ranging
+from 22 to 26 years. For the concatenation of activity spectrums, a total
+of 18,000 sets of continuous activity recognition data are generated,
+with 15,000 for the training dataset and 3000 for the validation set.
+During testing, five different activity sequences are collected, with 200
+sets of data for each, namely: S1: A4, A6, A5, A1, A2, A3; S2: A5,
+A4, A6, A1, A2, A3; S3: A1, A2, A3, A4, A6, A5; S4: A6, A4, A5, A1,
+A2, A3; and S5: A1, A2, A3, A5, A6, A4, collected in three different
+environments as shown in Fig. 4. In Fig. 2, we see that A0, being
+stationary, causes the smallest energy fluctuations in the Doppler-Time
+spectrum. A4 and A5 exhibit matching energy fluctuation traits, and
+A2 and A6 also share similar movement patterns, leading to like-for-
+like changes in Doppler energy. This similarity adds to the challenge of
+continuous HAR.
+4.3. Comparative experiments
+In order to better quantify the performance of the model, this paper
+adopts three metrics to evaluate the model’s performance, including
+frame-level accuracy (Acc.), F1@10, 25, 50, and segmental edit dis-
+tance (Edit) [42,43]. Accuracy refers to the proportion of correctly
+classified samples at the frame level to the total number of samples, and
+it reflects the average accuracy of predictions at the frame level. The
+F1@10, 25, 50 metric serves as a quantitative measure of the F1-score
+at temporal Intersection over Union (tIoU) thresholds of 10%, 25%, and
+50%. The tIoU, calculated as the ratio of the overlapping area to the
+combined area of predicted and ground-truth (GT) segments, evaluates
+the model’s capability to manage over-segmentation effectively. The
+segmental edit distance refers to the minimum number of operations
+required to convert one sequence into another, and it can reflect the
+global sequential consistency of the real activity sequence. To enable
+a fair comparison of computational efficiency, we report the average
+inference time per sample for all methods. This metric is obtained
+by running each model on 1000 randomly selected test samples un-
+der identical conditions (batch size = 1). The reported time includes
+the full pipeline: radar data preprocessing, model forward pass, and
+post-processing.
+The performance of the proposed CSARNet is compared with three
+different types of models, including: sliding window algorithms, multi-
+target detection algorithms, and frame-level algorithms. For a con-
+sistent comparison, the sliding window algorithm employs a uniform
+window length and overlap ratio for the Doppler-Time spectrum input,
+specifically a 3 s window length with a 90% overlap. WinBi-LSTM [4]
+achieved continuous HAR by Bi-LSTM network. WinSFS [16] proposed
+a Sequential Forward Selection (SFS) algorithm combined with SVM,
+achieving a continuous HAR accuracy of 84.7%. Ding et al. intro-
+duced a novel Dynamic Range-Doppler Trajectory (DRDT) algorithm,
+coupled with a sliding window and machine learning, called DRDT-
+HAR, which achieved a continuous HAR accuracy of 95.4% [12]. For
+multi-target detection algorithms, a YOLO-MDM-based algorithm called
+mmCMD [21] and an MOR-LNOD [22] algorithm with the proposed
+Pattern Recognition 179 (2026) 113830
+7
+M. Ding et al.
+Table 2
+Performance comparison of different algorithms on the validation set.
+type Method F1 @ 10, 25, 50 Edit Acc. Param (M) Flops (G) Speed (ms)
+Sliding window
+WinBi-LSTM [4] 84.5 76.2 70.8 66.4 87.3% 12.9 25. 58.2
+WinSFS [16] 83.9 75.6 70.2 65.7 89.1% – – 12.9
+DRDT-HAR [17] 85.3 77.1 71.5 67.2 90.2% – – 22.4
+Multi-target detection
+mmCMD [21] 87.5 84.3 80.5 67.9 89.7% 10.3 26.3 114.7
+MOR-LNOD [22] 88.1 85.0 81.4 68.2 90.9% 9.2 21.7 67.4
+Frame-level
+FBi-LSTM [23] 87.8 80.5 73.8 70.9 92.4% 16.4 42.7 69.3
+F-CNN [24] 86.0 79.7 72.9 68.8 91.2% 1.67 2.94 11.5
+MS-TCN [29] 87.8 82.5 76.8 71.4 93.1% 1.24 2.52 7.1
+R-ATCN [27] 88.6 83.3 78.6 71.2 92.7% 1.27 2.61 7.3
+Boundary and frame-level CSARNet (Ours) 90.5 86.7 83.3 75.2 95.9% 2.14 3.85 13.9
+ODBL loss are selected. For frame-level algorithms, a frame-level Bi-
+LSTM named FBi-LSTM [23], a Frame-level CNN called F-CNN [24],
+a MS-TCN [29], and an improved MS-TCN for FMCW radar continu-
+ous HAR named R-ATCN [27] are selected. In total, eight advanced
+algorithms are compared with the proposed CSARNet.
+Firstly, a comprehensive performance experiment is conducted
+where eight advanced algorithms and the proposed CSARNet are trained
+and tested in environment (a). The experimental results are shown in
+Fig. 5. Where GT represents the real HAR label, for the sliding window
+algorithms, a fixed window length introduces a trade-off between
+temporal resolution and computational complexity. Short windows
+may miss long-time activities, while long windows may blur activity
+transitions. This limitation is evident in the lower F1@10, 25, 50
+scores and higher edit distances compared to other algorithms as
+shown in Table 2. Additionally, the erroneous identification of activity
+transitions further illustrates the issues based on the sliding window
+algorithm. For multi-target detection algorithms, their F1 @50 score
+decreases by approximately 7.5% compared to F1 @10, with the Sliding
+window algorithm and Frame-level algorithms decreasing by 16.4%
+and 13.7% respectively. This indicates that mmCMD and MOR-LNOD
+have better suppression of model over-segmentation issues because
+they can learn the duration of different activities, thus suppressing
+the over-segmentation problem. However, their performance is still
+affected by blurry boundaries. Compared with the sliding window
+algorithms, frame-level continuous HAR has better boundary recog-
+nition accuracy. Because, they provide high temporal resolution by
+independently classifying each frame, which is confirmed by relatively
+higher F1 score, accuracy, and lower Edit distance. However, frame-
+level classification algorithms often lead to over-segmentation, causing
+frequent prediction jitter in transition areas. Compared with the above
+algorithms, the proposed CSARNet has a dual-branch structure, where
+the frame-level recognition branch gives it a higher time resolution,
+and the boundary-based branch can identify the transition boundaries
+of different activities, thus assisting the frame-level recognition branch
+to suppress the over-segmentation problem and improve the overall
+HAR accuracy. Specifically, CSARNet excels in F1 score, accuracy, and
+edit distance. It scored 90.5, 86.7, and 83.3 F1 at all tIoU thresholds,
+showing precise temporal segmentation and boundary recognition.
+Frame-level accuracy hit 95.9%, and its edit distance of 75.2 beats
+all comparisons, ensuring sequence consistency and reducing over-
+segmentation. Despite slightly higher parameters (2.14M) and FLOPs
+(3.85G) than simpler models like MS-TCN, its 13.9 ms inference speed
+suggests real-time potential.
+4.4. Cross-environment experiments
+To assess the robustness of the proposed CSARNet model under
+various environmental conditions, a set of algorithms are trained in
+environment (a) and then tested in environments (b) and (c). To ensure
+a fair comparison, an equal number of samples are collected from each
+environment, with all volunteers positioned at a constant distance of
+3 m from the radar receiver. Environmental changes, such as variations
+in background clutter, multipath effects, and changes in participant
+locations, can significantly affect the Doppler-Time spectrum, thus
+impacting continuous HAR performance. A quantitative comparison of
+the performance of eight different algorithms, including the proposed
+CSARNet, is presented in Table 3.
+The results indicate that the sliding window algorithm is highly
+sensitive to these changes because it depends on fixed window pa-
+rameters, which causes its performance to drop in new environments.
+Multi-object detection algorithms are somewhat adaptable but struggle
+with defining boundaries when the environment changes. Frame-level
+algorithms exhibit enhanced robustness for environmental variations.
+However, they continue to face challenges in ensuring temporal consis-
+tency. The cross-environmental experiment evaluates the performance
+of CSARNet in environments (b) and (c), following its training in
+environment (a). The findings show that CSARNet beats all the other
+algorithms in every measure, like F1@10,25,50, edit distance, and
+frame-level accuracy. In environment (b), CSARNet has an edit distance
+of 72.4 and an accuracy of 91.5%, which is way better than the best
+frame-level recognition algorithm, MS-TCN, that has an edit distance
+of 66.1 and an accuracy of 86.1%. In environment (c), CSARNet also
+does better with an edit distance of 70.4 and an accuracy of 91.1%,
+compared to MS-TCN’s 64.6 edit distance and 84.8% accuracy.
+4.5. Open-source dataset experiments
+To further validate the generalization capability of the proposed
+CSARNet, experiments are conducted on the publicly available dataset
+provided by Li et al. [44,45]. This dataset includes 6 kinds of gesture
+data from 25 volunteers, 6 environments, and 5 locations, totaling
+10650 samples. Six different gestures are included: push, leftswipe,
+rightswipe, pull, clockwise turning and anticlockwise turning. Six dif-
+ferent environments are considered: living room, bedroom, labora-
+tory, meeting room and two office rooms. The distances and angles
+of locations 1–5 are (0.6 m, 0◦), (0.8 m, 0◦), (1.0 m, 0◦), (0.8 m, 30◦), and
+(0.8 m, 30◦), respectively. For each user at a specific location, 6 gestures
+are randomly concatenated to form a continuous gesture sequence,
+resulting in a total of 40,000 continuous gesture sequences. Data from
+20 users are used for training, and data from the remaining 5 users are
+used for testing.
+Table 4 presents a comparative analysis of the performance of
+various algorithms on the open-source dataset. The results indicate
+that CSARNet outperforms all baseline methods across all evaluation
+metrics. Specifically, CSARNet achieves F1 scores of 92.4, 88.7, and
+85.6 at IoU thresholds of 10%, 25%, and 50%, respectively. Addition-
+ally, it attains an edit distance of 76.9 and a frame-level accuracy of
+96.2%. These results demonstrate the superior capability of CSARNet
+in handling continuous gesture recognition tasks, effectively addressing
+challenges such as over-segmentation and ensuring temporal consis-
+tency in predictions. Moreover, the strong results on a dataset spanning
+multiple users, environments, and spatial setups provide compelling
+Pattern Recognition 179 (2026) 113830
+8
+M. Ding et al.
+Fig. 5. Performance comparison of different algorithms on the validation set.
+Table 3
+Performance comparison of different algorithms on cross-environment validation.
+Type Method Train in Envir. (a) and validate in Envir. (b) Train in Envir. (a) and validate in Envir. (c)
+F1 @ 10, 25, 50 Edit Acc. F1 @ 10, 25, 50 Edit Acc.
+Sliding window
+WinBi-LSTM [4] 78.2 70.5 65.1 60.3 80.5% 76.8 69.2 63.8 58.7 78.9%
+WinSFS [16] 77.6 69.8 64.5 59.9 81.2% 76.2 68.5 63.1 58.3 79.6%
+DRDT-HAR [17] 79.0 71.4 66.0 60.8 82.1% 77.6 70.0 64.5 59.2 80.2%
+Multi-target detection
+mmCMD [21] 81.2 78.1 74.8 62.7 83.1% 79.8 76.7 73.4 61.2 81.6%
+MOR-LNOD [22] 81.8 78.7 75.5 63.2 83.6% 80.4 77.3 74.1 61.7 82.1%
+Frame-level
+FBi-LSTM [23] 81.5 74.8 68.2 65.4 85.7% 80.1 73.4 66.8 63.9 84.2%
+F-CNN [24] 79.7 73.9 67.2 66.0 85.8% 78.3 72.5 65.8 63.7 84.0%
+MS-TCN [29] 81.5 76.8 71.1 66.1 86.1% 80.1 75.4 69.7 64.6 84.8%
+R-ATCN [27] 82.3 77.6 72.9 65.7 85.9% 80.9 76.2 71.5 64.4 84.5%
+Boundary and frame-level CSARNet 84.2 80.9 77.6 72.4 91.5% 82.8 79.5 76.2 70.4 91.1%
+Table 4
+Performance comparison of different algorithms on the open-source dataset.
+Type Method F1 @ 10, 25, 50 Edit Acc.
+Sliding window
+WinBi-LSTM [4] 87.2 79.1 73.6 69.0 90.5
+WinSFS [16] 86.5 78.3 73.0 68.4 92.0
+DRDT-HAR [17] 88.0 80.0 74.2 69.9 93.0
+Multi-target detection
+mmCMD [21] 90.1 87.0 83.2 70.5 92.3
+MOR-LNOD [22] 90.8 87.7 84.0 70.8 93.5
+Frame-level
+FBi-LSTM [23] 90.4 83.1 76.4 73.5 94.9
+F-CNN [24] 88.7 82.2 75.5 71.3 93.8
+MS-TCN [29] 90.3 85.1 79.3 73.9 95.6
+R-ATCN [27] 91.0 85.8 81.0 73.7 95.2
+Boundary and frame-level CSARNet (Ours) 92.4 88.7 85.6 76.9 96.2
+evidence that CSARNet possesses excellent cross-domain generaliza-
+tion capabilities, making it well-suited for practical deployment in
+uncontrolled real-world settings.
+4.6. Ablation study
+To validate the effectiveness of the proposed CSARNet, a series of
+ablation experiments including the number of cascaded stages and DDL
+and DRL, boundary prediction branch, cross-attention mechanism are
+conducted. Next, the impact of each component on the performance of
+the proposed CSARNet is analyzed in detail.
+4.6.1. Loss function
+To validate the effectiveness of different loss functions (𝑐𝑡𝑠, 𝑐𝑠)
+in the proposed CSARNet, loss ablation experiments are designed by
+removing different loss functions for comparison as shown in Fig. 6.
+Table 5 presents the results of the ablation experiments on different
+loss functions. The results indicate that the inclusion of the 𝑐𝑡𝑠 loss
+significantly improves the F1 score across all thresholds. Specifically,
+the F1 scores at 10%, 25%, and 50% IoU thresholds are consistently
+higher when 𝑐𝑡𝑠 is included. This demonstrates that the 𝑐𝑡𝑠 loss
+effectively reduces abrupt transitions between adjacent frames, thereby
+enhancing the temporal smoothness of predictions and improving the
+model’s ability to suppress over-segmentation issues. Furthermore, the
+absence of 𝑐𝑠 results in a noticeable drop in the Edit distance and
+overall accuracy, highlighting the importance of the cascaded staged
+loss in maintaining consistency across different stages of the network.
+When both 𝑐𝑡𝑠 and 𝑐𝑠 are removed, the performance degrades fur-
+ther, confirming the complementary roles of these loss functions in
+optimizing the model’s performance.
+4.6.2. Number of the cascaded staged architecture
+To investigate the impact of the number of cascaded stages on the
+performance of the proposed CSARNet, an ablation experiments are
+Pattern Recognition 179 (2026) 113830
+9
+M. Ding et al.
+Fig. 6. The performance of the proposed CSARNet with different loss functions.
+Table 5
+Performance comparison of different loss functions.
+Loss Function F1 @ 10, 25, 50 Edit Acc.
+CSARNet 90.5 86.7 83.3 75.2 95.9%
+CSARNet without 𝑐𝑡𝑠 89.8 86.0 82.6 74.6 95.2%
+CSARNet without 𝑐𝑠 88.2 84.3 80.5 72.4 94.3%
+CSARNet without 𝑐𝑡𝑠, 𝑐𝑠 87.9 84.0 80.2 72.1 94.0%
+Table 6
+Study on the number of Cascade Stages.
+Method F1 @ 10, 25, 50 Edit Acc.
+MS-TCN (3 stages) 87.8 82.5 76.8 70.2 92.6%
+MS-TCN (4 stages) 87.8 82.5 76.8 71.4 93.1%
+CSARNet (2 stages) 89.7 85.9 82.1 74.3 95.0%
+CSARNet (3 stages) 90.5 86.7 83.3 75.2 95.9%
+CSARNet (4 stages) 90.3 86.5 83.1 75.1 95.7%
+conducted by varying the number of cascaded stages from 2 to 4,
+MS-TCN is also used as a baseline for comparison. The experimental
+results are shown in Table 6. The results demonstrate that increasing
+the number of cascaded stages leads to improved performance, with
+the best performance achieved at 3 stages. However, further increasing
+the number of stages does not yield significant improvements and may
+lead to overfitting. Therefore, a cascaded architecture with 3 stages is
+adopted for the proposed CSARNet.
+4.6.3. Number of dual DDL and DRL
+To investigate the impact of the number of dual DDL and DRL on
+the performance of the proposed CSARNet, ablation experiments are
+conducted by varying the number of DDL and DRL from 5 to 15. The
+experimental results are shown in Table 7. The results demonstrate that
+increasing the number of DDL and DRL leads to improved performance,
+with the best performance achieved at 10. However, further increasing
+the number of DDL and DRL does not yield significant improvements
+and may lead to overfitting. Therefore, a dual DDL and DRL with 10 is
+adopted for the proposed CSARNet.
+4.6.4. Effectiveness of the boundary prediction branch, fusion stage, and
+cross-attention mechanism
+To validate the effectiveness of BPB, Fusion Stage (FS), and Cross-
+Attention (CA) in the proposed CSARNet, a series of ablation experi-
+ments were conducted. Table 7 presents the impact of different BPB, FS,
+Table 7
+Study on the number of Dual DDL and DRL.
+Method F1 @ 10, 25, 50 Edit Acc.
+𝑁𝑅=5, 𝑁𝐷=5 86.2 81.5 76.8 70.3 90.5%
+𝑁𝑅=5, 𝑁𝐷=10 88.7 83.9 79.2 72.1 92.4%
+𝑁𝑅=10, 𝑁𝐷=10 90.5 86.7 83.3 75.2 95.9%
+𝑁𝑅=15, 𝑁𝐷=15 89.8 85.3 81.9 74.3 94.7%
+Table 8
+Study on the effectiveness of the Boundary Prediction Branch, Fusion Stage,
+and Cross-Attention Mechanism.
+Method F1 @ 10, 25, 50 Edit Acc.
+CSARNet (w BPB, CA, FS) 90.5 86.7 83.3 75.2 95.9%
+CSARNet (w/o BPB) 87.2 82.5 78.9 72.4 92.5%
+CSARNet (w/o FS) 88.8 84.6 80.9 73.7 94.7%
+CSARNet (w/o CA) 89.1 85.0 81.2 74.1 94.9%
+CSARNet (w/o CA, FS) 88.2 83.9 80.1 73.5 93.5%
+CSARNet (w/o BPB, FS) 86.5 81.8 77.6 72.0 92.3%
+CSARNet (w/o BPB, CA, FS) 85.3 80.2 75.8 70.9 91.2%
+and CA on the performance of CSARNet. The results indicate that the
+introduction of BPB, FS, and CA significantly improves F1@10, 25, 50
+and Acc., and also shows a marked improvement in edit distance. This
+demonstrates that BPB, FS, and CA play an important role in enhancing
+the performance of the model.
+The quantitative results from Table 8 show that each module of
+CSARNet significantly contributes to the model’s performance improve-
+ment. After introducing the BPB, the model’s performance on the
+F1@10, 25, 50 metrics increased by approximately 3.3%, 4.2%, and
+4.4%, respectively, indicating that BPB can effectively capture the
+transition areas of activities, suppress prediction jitter, and improve
+the accuracy of temporal segmentation. The FS enhances the model’s
+overall temporal consistency by mixes together multi-level outputs.
+Without FS, the Edit distance decreased from 75.2 to 74.3, and the
+accuracy rate dropped from 95.9% to 94.7%, demonstrating that FS
+plays a crucial role in improving the coherence and accuracy of global
+predictions. The CA mechanism strengthens the interaction between
+frame-level and boundary-level features, resulting in a 1.3% increase in
+F1@50 and a 1.0% increase in accuracy, further optimizing boundary
+recognition and category discrimination. When both FS and CA are
+removed, the model’s performance significantly declines, suggesting
+that they complement each other in enhancing the model’s robustness
+Pattern Recognition 179 (2026) 113830
+10
+M. Ding et al.
+and precision. In summary, the collaborative effect of BPB, FS, and
+CA significantly improves the accuracy and robustness of CSARNet in
+continuous HAR.
+5. Discussion
+The proposed CSARNet demonstrates strong generalization and
+scalability, which are critical for real-world deployment of radar-
+based HAR systems. First, its generalization capability is validated
+through cross-environment experiments, where CSARNet consistently
+outperforms existing methods despite significant variations in back-
+ground clutter, multipath effects, and participant positioning. This
+suggests that the dual-branch architecture-particularly the boundary-
+aware design-is robust to environmental perturbations that commonly
+degrade Doppler-based features.
+In terms of scalability, CSARNet supports variable-length input
+sequences via temporal masking, enabling seamless processing of con-
+tinuous radar streams without segmentation artifacts. With only 2.14M
+parameters and an inference latency of 13.9 ms per sequence, it is
+well-suited for edge deployment on resource-constrained platforms.
+Moreover, the modular design allows straightforward extension to ad-
+ditional activity classes by retraining the classification head, and the
+framework can potentially incorporate multi-modal inputs through
+feature-level fusion. Future work will explore long-term deployment in
+uncontrolled home environments and adaptation to unseen users via
+self-supervised pretraining.
+6. Conclusion
+In this work, we introduced mmWave-CSARNet, a dual-branch cas-
+caded architecture tailored for continuous HAR using millimeter-wave
+radar. By jointly modeling frame-level activity semantics and explicit
+boundary dynamics through a cross-attention mechanism, our approach
+effectively mitigates common challenges such as transition ambiguity,
+prediction jitter, and temporal inconsistency. CSARNet achieves state-
+of-the-art performance on multiple benchmarks demonstrating strong
+results in F1@50, edit distance, and frame-wise accuracy, as well as
+robust generalization across users and environments. A key strength
+lies in its boundary-aware design, which decouples ‘‘what’’ is hap-
+pening from ‘‘when’’ it changes, enabling more stable and temporally
+coherent predictions. However, the method has limitations: it focuses
+on short-duration micro-activities and lacks modeling of higher-level
+behavioral structures; it requires precise boundary annotations, lim-
+iting scalability in real-world settings; and its dual-branch structure
+introduces moderate computational overhead compared to lightweight
+alternatives. Despite these constraints, our work provides valuable
+contributions to the mmWave-HAR community. The architecture offers
+a modular framework that can be adapted to other sensing modalities
+or integrated into existing systems to enhance temporal stability. Our
+comprehensive evaluation protocol also sets a rigorous benchmark for
+future research. For future work, we plan to extend CSARNet to hierar-
+chical activity recognition, explore self-supervised or weakly supervised
+learning to reduce annotation dependence, develop online adaptation
+mechanisms for dynamic environments, and investigate multi-radar
+fusion for improved spatial resolution. Overall, mmWave-CSARNet ad-
+vances radar-based HAR by explicitly aligning semantic understanding
+with temporal boundaries, offering both practical improvements and a
+foundation for next-generation time-series activity models.
+CRediT authorship contribution statement
+Minhao Ding: Writing – review & editing, Writing – original draft,
+Visualization, Project administration, Investigation, Formal analysis,
+Data curation. Zhixiang Zhang: Project administration, Data curation.
+Yipeng Ding: Conceptualization. Bowen Tang: Methodology, Investi-
+gation. Runjin Liu: Writing – original draft, Visualization, Validation.
+Declaration of competing interest
+The authors declare that they have no known competing finan-
+cial interests or personal relationships that could have appeared to
+influence the work reported in this paper.
+Acknowledgment
+This work was supported Hunan Provincial Natural Science Foun-
+dation of China, 2026JJ50222.
+Data availability
+The authors do not have permission to share data.
+References
+[1] C. Will, P. Vaishnav, A. Chakraborty, A. Santra, Human target detection,
+tracking, and classification using 24-GHz FMCW radar, IEEE Sens. J. 19 (2019)
+7283–7299, http://dx.doi.org/10.1109/JSEN.2019.2914365.
+[2] Y. Yang, D. Zhao, X. Yang, B. Li, X. Wang, Y. Lang, Open-scenario-oriented
+human gait recognition using radar micro-Doppler signatures, IEEE Trans.
+Aerosp. Electron. Syst. 60 (2024) 6420–6432, http://dx.doi.org/10.1109/TAES.
+2024.3403077.
+[3] Q. Chen, Y. Liu, F. Fioranelli, M. Ritchie, B. Tan, K. Chetty, DopNet: A
+deep convolutional neural network to recognize armed and unarmed human
+targets, IEEE Sens. J. 19 (2019) 4160–4172, http://dx.doi.org/10.1109/JSEN.
+2019.2895538.
+[4] F. Fioranelli, M. Ritchie, H. Griffiths, Classification of unarmed/armed personnel
+using the netrad multistatic radar for micro-Doppler and singular value de-
+composition features, IEEE Geosci. Remote. Sens. Lett. 12 (2015) 1933–1937,
+http://dx.doi.org/10.1109/LGRS.2015.2439393.
+[5] M.S. Seyfioglu, B. Erol, S.Z. Gurbuz, M.G. Amin, DNN transfer learning from
+diversified micro-Doppler for motion classification, IEEE Trans. Aerosp. Electron.
+Syst. 55 (2018) 2164–2180, http://dx.doi.org/10.1109/TAES.2018.2883847.
+[6] X. Bai, Y. Hui, L. Wang, F. Zhou, Radar-based human gait recognition using
+dual-channel deep convolutional neural network, IEEE Trans. Geosci. Remote
+Sens. 57 (2019) 9767–9778, http://dx.doi.org/10.1109/TGRS.2019.2929096.
+[7] M.M. Rahman, S.Z. Gurbuz, M.G. Amin, Physics-aware generative adversarial net-
+works for radar-based human activity recognition, IEEE Trans. Aerosp. Electron.
+Syst. 59 (2022) 2994–3008, http://dx.doi.org/10.1109/TAES.2022.3221023.
+[8] X. Li, Y. He, F. Fioranelli, X. Jing, Semisupervised human activity recognition
+with radar micro-Doppler signatures, IEEE Trans. Geosci. Remote Sens. 60 (2021)
+http://dx.doi.org/10.1109/TGRS.2021.3090106.
+[9] E. Kurtoglu, A.C. Gurbuz, E. Malaia, D. Griffin, C. Crawford, S.Z. Gurbuz,
+Sequential classification of ASL signs in the context of daily living using RF
+sensing, in: 2021 IEEE Radar Conf. (RadarConf21), Atlanta, GA, USA, 2021, pp.
+1–6, http://dx.doi.org/10.1109/RadarConf2147009.2021.9455178.
+[10] R.G. Guendel A.G.M., Radar classifications of consecutive and contiguous human
+gross-motor activities, IET Radar Sonar Navig. 14 (2019) 1417–1429, http:
+//dx.doi.org/10.1049/iet-rsn.2019.0585.
+[11] G. Gu, X. He, G. Fang, et al., Millimeter wave radar-based human activity
+recognition for healthcare monitoring robot, 2024, http://dx.doi.org/10.48550/
+arXiv.2405.01882, arXiv preprint arXiv:2405.01882.
+[12] C. Ding, H. Hong, Y. Zou, et al., Continuous human motion recognition with a
+dynamic range-Doppler trajectory method based on FMCW radar, IEEE Trans.
+Geosci. Remote Sens. 57 (2019) 6821–6831, http://dx.doi.org/10.1109/TGRS.
+2019.2908758.
+[13] S. Zhu, R.G. Guendel, A. Yarovoy, et al., Continuous human activity recognition
+with distributed radar sensor networks and CNN-RNN architectures, IEEE Trans.
+Geosci. Remote Sens. 60 (2022) 5115215, http://dx.doi.org/10.1109/TGRS.2022.
+3189746.
+[14] H. Li, A. Shrestha, H. Heidari, et al., Bi-LSTM network for multimodal con-
+tinuous human activity recognition and fall detection, IEEE Sens. J. 20 (2019)
+1191–1201, http://dx.doi.org/10.1109/JSEN.2019.2946095.
+[15] E. Kurtoglu, A.C. Gurbuz, E. Malaia, et al., ASL trigger recognition in mixed
+activity/signing sequences for RF sensor-based user interfaces, IEEE Trans.
+Hum. Mach. Syst. 52 (2021) 699–712, http://dx.doi.org/10.1109/THMS.2021.
+3131675.
+[16] H. Li, A. Shrestha, H. Heidari, et al., Activities recognition and fall detection
+in continuous data streams using radar sensor, in: 2019 IEEE MTT-S Int.
+Microwave Biomed. Conf. (IMBioC), 2019, pp. 1–4, http://dx.doi.org/10.1109/
+IMBIOC.2019.8777855.
+[17] Z. Wu, C. Liu, J. Wen, Y. Xu, J. Yang, X. Li, Selecting high-quality proposals
+for weakly supervised object detection with bottom-up aggregated attention
+and phase-aware loss, IEEE Trans. Image Process. 32 (2023) 682–693, http:
+//dx.doi.org/10.1109/TIP.2022.3231744.
+Pattern Recognition 179 (2026) 113830
+11
+M. Ding et al.
+[18] P. Tang, C. Wang, X. Wang, W. Liu, W. Zeng, J. Wang, Object detection in videos
+by high quality object linking, IEEE Trans. Pattern Anal. Mach. Intell. 42 (2020)
+1272–1278, http://dx.doi.org/10.1109/TPAMI.2019.2910529.
+[19] G. Cheng, et al., Towards large-scale small object detection: Survey and bench-
+marks, IEEE Trans. Pattern Anal. Mach. Intell. 45 (2023) 13467–13488, http:
+//dx.doi.org/10.1109/TPAMI.2023.3290594.
+[20] T. Liang, B. Li, M. Wang, H. Tan, Z. Luo, A closer look at the joint training of
+object detection and re-identification in multi-object tracking, IEEE Trans. Image
+Process. 32 (2023) 267–280, http://dx.doi.org/10.1109/TIP.2022.3227814.
+[21] Z. Xu, et al., Mmcmd: Continuous motion detection from visualized radar micro-
+Doppler signatures using visual object detection techniques, IEEE Sens. J. 24
+(2024) 3394–3405, http://dx.doi.org/10.1109/JSEN.2023.3342103.
+[22] W. Yin, L. Shi, Y. Shi, Continuous human action recognition by multiple object
+detection based FMCW radar, IEEE Trans. Aerosp. Electron. Syst. 60 (2024)
+8289–8297, http://dx.doi.org/10.1109/TAES.2024.3427101.
+[23] A. Shrestha, H. Li, J. Le Kernec, et al., Continuous human activity classification
+from FMCW radar with bi-LSTM networks, IEEE Sens. J. 20 (2020) 13607–13619,
+http://dx.doi.org/10.1109/JSEN.2020.3006386.
+[24] L. Werthen-Brabants, G. Bhavanasi, I. Couckuyt, et al., Split BiRNN for real-time
+activity recognition using radar and deep learning, Sci. Rep. 12 (2022) 7436,
+http://dx.doi.org/10.1038/s41598-022-08240-x.
+[25] L. Werthen-Brabants, G. Bhavanasi, I. Couckuyt, et al., Quantifying uncertainty
+in real time with split BiRNN for radar human activity recognition, in: 2022
+19th Eur. Radar Conf. (EuRAD), 2022, pp. 173–176, http://dx.doi.org/10.23919/
+EuRAD54643.2022.9924932.
+[26] E. Kurtoglu, A.C. Gurbuz, E. Malaia, et al., Sequential classification of ASL signs
+in the context of daily living using RF sensing, in: 2021 IEEE Radar Conf.
+(RadarConf21), 2021, pp. 1–6, http://dx.doi.org/10.1109/RadarConf2147009.
+2021.9455178.
+[27] J. Chen, M. Gu, Z. Lin, R-ATCN: continuous human activity recognition using
+FMCW radar with temporal convolutional networks, Meas. Sci. Technol. 36
+(2024) 016180, http://dx.doi.org/10.1088/1361-6501/ad9622.
+[28] W. Chen, N.C. Griswold, An efficient recursive time-varying Fourier transform
+by using a half-sine wave window, in: Proc. IEEE-SP Int. Symp. Time-Frequency
+Time-Scale Anal, Philadelphia, PA, USA, 1994, pp. 284–286, http://dx.doi.org/
+10.1109/TFSA.1994.467238.
+[29] Y.A. Farha, J. Gall, MS-TCN: multi-stage temporal convolutional network for
+action segmentation, in: Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR),
+Long Beach, CA, USA, 2019, pp. 3575–3584, http://dx.doi.org/10.1109/CVPR.
+2019.00369.
+[30] S. Li, Y.A. Farha, Y. Liu, M.-M. Cheng, J. Gall, MS-tcn++: Multi-stage temporal
+convolutional network for action segmentation, IEEE Trans. Pattern Anal. Mach.
+Intell. 45 (2023) 6647–6658, http://dx.doi.org/10.1109/TPAMI.2020.3021756.
+[31] H. Li, Z. Lin, X. Shen, J. Brandt, G. Hua, A convolutional neural network cascade
+for face detection, in: Proc. IEEE Conf. Comput. Vis. Pattern Recognit, (CVPR),
+Boston, MA, USA, 2015, pp. 5325–5334, http://dx.doi.org/10.1109/CVPR.2015.
+7299170.
+[32] A. Toshev, C. Szegedy, Deeppose: Human pose estimation via deep neural
+networks, in: Proc. IEEE Conf. Comput. Vis. Pattern Recognit, CVPR, Columbus,
+OH, USA, 2014, pp. 1653–1660, http://dx.doi.org/10.1109/CVPR.2014.214.
+[33] X. Li, Z. Liu, P. Luo, C.C. Loy, X. Tang, Not all pixels are equal: Difficulty-
+aware semantic segmentation via deep layer cascade, in: Proc. IEEE Conf.
+Comput. Vis. Pattern Recognit, CVPR, Honolulu, HI, USA, 2017, pp. 6459–6468,
+http://dx.doi.org/10.1109/CVPR.2017.684.
+[34] K. Chen, J. Pang, J. Wang, et al., Hybrid task cascade for instance segmentation,
+in: Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit, 2019, pp. 4974–4983,
+http://dx.doi.org/10.1109/CVPR.2019.00511.
+[35] W. Ouyang, K. Wang, X. Zhu, X. Wang, Chained cascade network for object
+detection, in: 2017 IEEE Int. Conf. Comput. Vis., ICCV, Venice, Italy, 2017, pp.
+1956–1964, http://dx.doi.org/10.1109/ICCV.2017.214.
+[36] B. Jiang, R. Luo, J. Mao, et al., Acquisition of localization confidence for accurate
+object detection, in: Proc. Eur. Conf. Comput. Vis, (ECCV), 2018, pp. 784–799,
+http://dx.doi.org/10.1007/978-3-030-01264-9_48.
+[37] Y. Zhu, S. Newsam, Densenet for dense flow, in: 2017 IEEE Int. Conf. Im-
+age Process., ICIP, 2017, pp. 790–794, http://dx.doi.org/10.1109/ICIP.2017.
+8296389.
+[38] F. Iandola, M. Moskewicz, S. Karayev, et al., Densenet: Implementing ef-
+ficient convnet descriptor pyramids, 2014, http://dx.doi.org/10.48550/arXiv.
+1404.1869, arXiv preprint arXiv:1404.1869.
+[39] Z. Wang, Z. Gao, L. Wang, et al., Boundary-aware cascade networks for temporal
+action segmentation, in: Comput. Vis. -ECCV 2020, Glasgow, UK, 2020, pp.
+34–51, http://dx.doi.org/10.1007/978-3-030-58595-2_3.
+[40] G. Ding, F. Sener, A. Yao, Temporal action segmentation: An analysis of modern
+techniques, IEEE Trans. Pattern Anal. Mach. Intell. 46 (2023) 1011–1030, http:
+//dx.doi.org/10.1109/TPAMI.2023.3327284.
+[41] H. Gammulle, D. Ahmedt-Aristizabal, S. Denman, et al., Continuous human action
+recognition for human-machine interaction: a review, ACM Comput. Surv. 55
+(2023) 1–38, http://dx.doi.org/10.1145/3587931.
+[42] Z. Gan, L. Jin, L. Nie, et al., Asquery: A query-based model for action
+segmentation, in: 2024 IEEE Int. Conf. Multimedia Expo, ICME, 2024, http:
+//dx.doi.org/10.1109/ICME57554.2024.10687535.
+[43] P. Wang, Y. Lin, E. Blasch, et al., Efficient temporal action segmentation
+via boundary-aware query voting, Adv. Neural Inf. Process. Syst. 37 (2024)
+37765–37790, http://dx.doi.org/10.48550/arXiv.2405.15995.
+[44] Y. Li, D. Zhang, J. Chen, J. Wan, D. Zhang, Y. Hu, DI-gesture: Domain-
+independent and real-time gesture recognition with millimeter-wave signals, in:
+2022 IEEE Global Communications Conference (GLOBECOM), Rio de Janeiro,
+Brazil, 2022, pp. 5007–5012, http://dx.doi.org/10.1109/GLOBECOM48099.
+2022.10001175.
+[45] Y. Li, D. Zhang, J. Chen, J. Wan, D. Zhang, Y. Hu, Towards domain-
+independent and real-time gesture recognition using mmwave signal, IEEE Trans.
+Mob. Comput. 22 (12) (2023) 7355–7369, http://dx.doi.org/10.1109/TMC.2022.
+3207570.
+Pattern Recognition 179 (2026) 113830
+12
+

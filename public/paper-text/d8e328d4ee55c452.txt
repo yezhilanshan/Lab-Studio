@@ -1,0 +1,1383 @@
+IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026 12837
+Large Language Model-Enabled
+Sensing-Aided Communication
+Jifa Zhang , Graduate Student Member, IEEE, Ruichen Zhang , Member, IEEE,
+Na Deng , Senior Member, IEEE, Chengwen Xing , Member, IEEE, Nan Zhao , Senior Member, IEEE,
+Dusit Niyato , Fellow, IEEE, Naofal Al-Dhahir , Fellow, IEEE, and George K. Karagiannidis , Fellow, IEEE
+Abstract—Integrated sensing and communication (ISAC) is
+expected to enable the fifth-generation (5G) networks to provide
+ubiquitous communication and sensing. However, some high-
+dynamic scenarios hinder applications of conventional ISAC
+schemes owing to the high overhead and poor real-time per-
+formance. In this paper, we design a novel ISAC architecture
+and propose a large language model (LLM) based two-stage
+beamforming prediction scheme. Specifically, in the first stage, we
+develop an LLM-based approach to predict the future channel
+state information (CSI) according to the history echoes. Via the
+data preprocessing and supervised fine-tuning, the LLM can
+achieve effective channel prediction task with unstructured data.
+In the second stage, according to the predicted/estimated CSI,
+we formulate a beamforming optimization problem to maximize
+the achievable sum rate while satisfying the quality of service
+(QoS). Then, we propose a Primary-dual network with the
+unsupervised adversarial learning to handle it, facilitating the
+on-line beamforming. Simulation results verify that, compared
+with the benchmarks, our proposed beamforming prediction
+scheme not only enjoys a higher channel prediction accuracy
+but also achieves a better balance between the performance and
+computational complexity.
+Index Terms—Beamforming prediction, integrated sensing and
+communication, joint range and angle estimation, large language
+model, multiple signal classification.
+Received 18 September 2025; revised 29 December 2025;
+accepted 17 February 2026. Date of current version 3 March 2026.
+The work of Jifa Zhang was supported in part by the National Natural
+Science Foundation of China (NSFC) under Grant 625B2030 and Grant
+U23A20271. The work of Naofal Al-Dhahir was supported by the Erik
+Jonsson Distinguished Professorship at The University of Texas at Dallas
+(UT-Dallas). An earlier version of this paper was presented in part at
+the 2026 IEEE WCNC [1]. The associate editor coordinating the review of
+this article and approving it for publication was G. Zhu. (Corresponding
+author: Nan Zhao.)
+Jifa Zhang, Na Deng, and Nan Zhao are with the School of Information
+and Communication Engineering, Dalian University of Technology, Dalian,
+Liaoning 116024, China (e-mail: jifazhang@mail.dlut.edu.cn; dengna@
+dlut.edu.cn; zhaonan@dlut.edu.cn).
+Ruichen Zhang and Dusit Niyato are with the College of Computing and
+Data Science, Nanyang Technological University, Singapore 639798 (e-mail:
+ruichen.zhang@ntu.edu.sg; dniyato@ntu.edu.sg).
+Chengwen Xing is with the School of Information and Electron-
+ics, Beijing Institute of Technology, Beijing 100081, China (e-mail:
+xingchengwen@gmail.com).
+Naofal Al-Dhahir is with the Department of Electrical and Computer
+Engineering, The University of Texas at Dallas, Richardson, TX 75080 USA
+(e-mail: aldhahir@utdallas.edu).
+George K. Karagiannidis is with the Department of Electrical and Com-
+puter Engineering, Aristotle University of Thessaloniki, 541 24 Thessaloniki,
+Greece (e-mail: geokarag@auth.gr).
+Digital Object Identifier 10.1109/TWC.2026.3666846
+I. INTRODUCTION
+NOWADAYS, diverse applications in fifth-generation (5G)
+networks, such as low-altitude economy (LAE) and
+autonomous driving, require ubiquitous communication and
+sensing [2]. However, conventional communication or sensing
+systems may have difficulty facilitating specific applications
+due to their single functionality [3]. Fortunately, integrated
+sensing and communication (ISAC) is becoming a promising
+technology to enable diverse applications effectively [4]. In
+particular, ISAC can integrate the communication and sensing
+functionalities into a single platform with shared spectrum and
+hardware, enjoying the advantages of low cost and high spec-
+trum efficiency [5]. Moreover, ISAC also introduces mutual
+benefits between these two functionalities, i.e., communication
+can assist the sensing and vice versa [6], [7]. For example,
+Dong et al. in [6] proposed a communication-aided sensing
+scheme with two waveform design frameworks. Meng et al. in
+[7] investigated sensing-assisted communication in vehicular
+networks, and a two-stage ISAC protocol was developed to
+boost the communication performance benefit from sensing.
+Ye et al. in [8] investigated the ISAC-enabled LAE where an
+unmanned aerial vehicle (UAV) acts as both the communica-
+tion user and sensing target served by a base station (BS),
+and proposed a deep reinforcement algorithm to deal with
+the joint optimization of transmit beamforming at BS and
+UAV trajectory. In [9], Zhang et al. proposed a bistatic ISAC
+for LAE to boost the coverage range and sensing accuracy.
+Different from the above-mentioned two works, Kuang et al. in
+[10] investigated a UAV-enabled ISAC scheme, where a UAV
+with a moveable-antenna array (MA) provides communication
+and sensing services for the LAE applications simultaneously.
+In many scenarios, wireless channels can be highly dynamic
+due to the high mobility of users or targets. This poses
+stricter demands on real-time channel estimation and resource
+allocation [11]. Although diverse channel estimation algo-
+rithms exist, such as minimum mean squared error (MMSE)
+estimation [12] and deep learning-based methods [13], they
+rely heavily on pilot transmissions and channel feedback,
+which are time-consuming. Additionally, estimating the chan-
+nel per interval significantly increases overhead. Fortunately,
+the ISAC-BS can first transmit the probing signal and
+then estimate the communication channels before information
+transmission, without the need for the pilot transmission and
+feedback. Additionally, by leveraging temporal correlations
+1536-1276 © 2026 IEEE. All rights reserved, including rights for text and data mining, and training of artificial intelligence and
+similar technologies. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12838 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+TABLE I
+COMPARISON BETWEEN THIS WORK AND RELATED PUBLICATION
+within coherent periods, future channels can be predicted
+based on estimated channels from previous time slots. This
+bypasses the need for frequent channel estimation and signif-
+icantly reduces overhead [14], [15]. For instance, Xia et al. in
+[14] developed a two-stage beamforming prediction scheme
+for ISAC-enabled vehicle-to-infrastructure networks. Specif-
+ically, they first leveraged a neural network (NN) to predict
+the future channels according to the former estimated channels,
+and then jointly optimized the active and passive beamforming
+vectors. In [15], Yuan et al. investigated predictive beam-
+forming for ISAC-aided vehicular networks. They leveraged
+the echoes to estimate and predict the motion parameters of
+vehicles and designed the beamforming vector, achieving less
+overhead than the feedback-based counterpart. In addition,
+Liu et al. in [16] tracked and predicted the movement of each
+vehicle according to the extended Kalman filtering, and then
+allocated the transmit power to boost the communication and
+sensing performance. On the other hand, many deep learn-
+ing based low-complexity beamforming schemes have been
+proposed to facilitate online deployment [17]. For example,
+Song et al. in [18] proposed an unsupervised learning based
+beamforming scheme, where the penalty-version of objective
+function was utilized as the loss function to train the NN
+to learn the mapping from the channel to the corresponding
+beamforming vector. In [19], Zhang et al. developed a deep
+reinforcement learning based scheme to deal with the joint
+waveform and beamforming design in a trial-and-error manner.
+Nevertheless, the above-mentioned schemes may struggle in
+dealing with the non-convex optimization with complicated
+constraints [20].
+Recently, large language models (LLMs) have demonstrated
+remarkable semantic understanding and reasoning capabilities,
+achieving significant success in natural language processing
+(NLP) [21], [22]. Several major applications, such as chat
+generative pre-trained transformer (ChatGPT) [23] and Sora
+[24], have transformed the paradigm of human-computer inter-
+action. For LLMs, the principle of digital content generation
+is to predict the next token according to the given preceding
+context. Moreover, LLMs can capture long-distance indepen-
+dence thanks to the attention mechanism. Consequently, LLMs
+have demonstrated the powerful prediction capabilities. Addi-
+tionally, LLMs can be adapted to various downstream tasks,
+such as time series forecasting [25] and trajectory prediction
+[26], via fine-tuning with task-specific data, enabling their
+applications in diverse prediction tasks. For example, Lan et al.
+in [26] leveraged the pre-trained LLM to predict the future
+trajectories of cars based on the history trajectories. Due to
+its high prediction accuracy and generalization, LLM-based
+channel prediction is also becoming a hot topic. In [27],
+Liu et al. developed a pre-trained LLM-based scheme for
+channel prediction and proposed a modal alignment method.
+Leveraging the capability of next-token generation of LLMs,
+Fan et al. in [28] developed another LLM-based CSI prediction
+scheme with a modality alignment approach. Xu et al. in
+[29] investigated LLM-enabled near-field communication for
+the LAE, where the LLM was utilized as an optimization
+solver to handle the beamforming optimization. Nevertheless,
+LLM-enabled ISAC is still in its infancy.
+To the best of our knowledge, LLM for sensing-aided
+communication has not been well studied, which motivates this
+work. In this paper, we first design a novel ISAC architecture
+to balance the performance and overhead, and then propose
+an LLM-based two-stage beamforming prediction scheme. In
+addition, comparisons between this work and related ones
+are presented in Table I. The contributions of this paper are
+summarized as below.
+• This paper investigates the LLM for sensing-aided com-
+munication in high-dynamic scenarios. We first propose a
+novel hybrid ISAC architecture, adopting the paradigm of
+“estimate before predicting”. Then, we develop an LLM-
+based two-stage beamforming prediction method.
+• In the first stage, we develop an LLM-based channel pre-
+diction method by learning the mapping from the history
+echoes to future channels. To overcome the difficulty of
+modality mismatch, we propose the data pre-processing
+and embedding modules.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12839
+TABLE II
+SUMMARY OF NOTATIONS
+• In the second stage, we first formulate the beamforming
+optimization problem according to the predicted CSI,
+and then derive its dual problem. Finally, we introduce
+a Primary-dual network (PD-Net) with the unsupervised
+adversarial learning to handle the dual problem, bypass-
+ing the need for manual labels.
+The rest of this paper is organized as below. Section II intro-
+duces the system model and problem formulation. Section III
+and IV describe the LLM-based channel prediction in the
+first stage and deep learning based beamforming design in the
+second stage, respectively. Section V presents the simulation
+results and this paper is concluded in Section VI. Table II
+summarizes the notations through this manuscript.
+II. SYSTEM MODEL AND PROBLEM FORMULATION
+In this section, we first present the system model with the
+proposed novel ISAC architecture. Then, the channel predic-
+tion problem and beamforming optimization problem involved
+in the two-stage beamforming prediction are formulated.
+A. System Model
+A typical ISAC network is illustrated in Fig. 1,
+where an ISAC-BS serves K > 1 flying UAVs1
+[15]. The ISAC-BS is equipped with M > 1 transmit antennas
+and N > 1 receive antennas, and each UAV is equipped with
+a single antenna. Without loss of generality, the transmit and
+receive antennas at the ISAC-BS are co-located.
+The channel vector from the ISAC-BS transmitter to the
+k-th UAV can be written as
+ht,k =
+q
+L0r−α
+k at(θk), (1)
+where L0 refers to the path-loss at the reference distance of
+1 meter, α denotes the path-loss exponent, rk is the distance
+between the ISAC-BS and the k-th UAV, and
+at(θk) =
+h
+1, . . . , e2π(M−1) d
+λ0
+sin θk
+iT
+, (2)
+1The number of target can be obtained via diverse estimation algorithms
+[30].
+Fig. 1. A typical ISAC network, where an ISAC-BS serves K flying UAVs.
+Fig. 2. Proposed novel ISAC architecture. In the first q time slots, the ISAC-
+BS delivers the communication information based on the estimated CSI and
+information transmission is conducted according to the predicted CSI in the
+last Q − q time slots.
+denotes the steering vector towards θk with wavelength λ0.
+Similarly, the channel vector from the k-th target to the
+ISAC-BS receiver can be formulated as
+hr,k =
+q
+L0r−α
+k ar(θk), (3)
+where
+ar(θk) =
+h
+1, . . . , e2π(N−1) d
+λ0
+sin θk
+iT
+, (4)
+denotes the receive steering vector.
+B. ISAC Architecture
+Owing to the high mobility of UAVs, the channels between
+the ISAC-BS and UAVs are highly time-varying. Conventional
+pilot-based channel estimation approaches usually involve
+the pilot transmission and channel feedback, undergoing the
+challenges of high overhead and latency [16]. In this paper, we
+develop a novel ISAC architecture for the channel estimation
+and information transmission as shown in Fig. 2. In particular,
+the time period T is equally divided into Q > 1 time slots.
+In the i-th time slot (i ≤ q), the ISAC-BS first transmits
+the probing signal and then jointly estimates the range and
+angle of each UAV via analyzing the echo, bypassing the need
+for the channel feedback. Then, the ISAC-BS can conduct
+the information transmission based on the estimated CSI. For
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12840 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+the last Q − q time slots, only information transmission is
+performed according to the predicted CSI to improve the
+communication performance.
+The conventional uniform linear array (ULA) can only
+achieve the angle estimation, and the range estimation relies
+on other techniques, such as pulse compression [31]. To deal
+with this issue, the ISAC-BS adopts the frequency diverse
+array (FDA) to achieve high-resolution joint range and angle
+estimation [32]. Taking the i-th time slot (i ≤ q) as an
+example,2
+the transmitted signal at the m-th transmit antenna
+is given by
+sm(t) = φm(t)e2πfmt
+, 0 ≤ t ≤ Tp, ∀m, (5)
+where fm = f0 +(m−1)∆f denotes the carrier frequency, f0
+refers to the reference carrier frequency, ∆f is the frequency
+increment, Tp is the pulse duration, and φm(t) represents the
+m-th orthogonal waveform, satisfying
+Z
+Tp
+φm1 (t)φ∗
+m2
+(t−τ)e2π∆f(m1−m2)
+dt=0, m1 6=m2, ∀τ, (6)
+where τ > 0 is the arbitrary time delay.
+Assume that the UAVs can be viewed as the point-like
+targets due to the long distance. Taking the k-th target as an
+example, the time delay of signal propagation from the m-th
+transmit antenna to the n-th receive antenna can be formulated
+as
+τm,n =
+2rk
+c
+−
+(m − 1)d sin θk
+c
+−
+(n − 1)d sin θk
+c
+, (7)
+where c denotes the speed of light.
+Consequently, the echo of the k-th target at the n-th receive
+antenna can be written as
+yn(t) = δk
+M
+X
+m=1
+φm(t − τm,n)e2πfm(t−τm,n)
+, (8)
+where δk ∼ CN(0, σ2
+k) represents the complex reflection coef-
+ficient of the k-th target. Afterwards, yn(t) is first transformed
+into the baseband signal via down conversion and then mixed
+with e−2π∆f(m−1)t
+. Finally, the received signal is passed by a
+bank of matched filters {φ`(t)}M
+`=1, and the m-th output signal
+can be written as
+ym,n = δke−2π fm
+c 2rk
+e2π fm
+c (d(m+n−2) sin θk)
+, (9a)
+≈ ζke−4π ∆f
+c (m−1)rk
+e2π
+f0
+c (d(m+n−2) sin θk)
+, (9b)
+where ζk = δke−4π
+f0
+c rk
+.
+Therefore, the received signal vector at the n-th receive
+antenna can be formulated as
+yn = [y1,n, y2,n, . . . , yM,n]T
+, (10a)
+= ζk
+
+
+
+
+
+
+1
+e− 4π∆f
+c rk+ 2πd
+λ0
+sin θk
+.
+.
+.
+e− 4π∆f
+c (M−1)rk+ 2πd
+λ0
+(M−1) sin θk
+
+
+
+
+
+
+e 2πd
+λ0
+(n−1) sin θk
+.
+(10b)
+2For brevity, the time slot index is omitted.
+Therefore, the echo of K targets at the N receive antennas
+is given by
+r(`) =
+
+yT
+1 , . . . , yT
+N
+T
+, (11a)
+= As(`) + n(`), (11b)
+= (Ar ◦ At)s(`) + n(`), ` = 1, · · · , L, (11c)
+where L > 1 denotes the number of snapshots, s(`) =
+[ζ1,`, . . . , ζK,`] represents the complex reflection coefficient
+vector of K targets in the `-th snapshot, and n(`) ∼
+CN(0, σ2
+nI) denotes the additive white Gaussian noise
+(AWGN) vector. A = Ar ◦ At ∈ CMN×K
+refers to the joint
+transmit-receive steering vector, and At and Ar stand for the
+transmit and receive steering vectors, respectively, formulated
+as
+At = [ãt(θ1, r1), . . . , ãt(θK, rK)], (12a)
+ãt(θk, rk) = at(θk) ãt(rk), (12b)
+=
+h
+1, e2πftk
+, . . . , e2π(M−1)ftk
+iT
+, (12c)
+ãt(rk) =
+h
+1, e−4π ∆f
+c rk
+, . . . , e−4π ∆f
+c (M−1)rk
+iT
+, (12d)
+Ar = [ar(θ1), . . . , ar(θK)], (12e)
+where ftk = −2∆f
+c rk + d
+λ0
+sin θk and frk = d
+λ0
+sin θk.
+The estimated covariance matrix of echo is given by
+R̂ =
+1
+L
+L
+X
+`=1
+r(`)rH
+(`), (13a)
+=
+K
+X
+i=1
+λieieH
+i +
+MN
+X
+i=K+1
+λieieH
+i , (13b)
+= ÊsΣsÊH
+s + σ2
+nÊnÊH
+n , (13c)
+where λ1 ≥ λ2 ≥ . . . ≥ λK > λK+1 = . . . = λMN = σ2
+n
+denote the M × N eigenvalues arranged in the descending
+order, ei denotes the i-th eigenvector corresponds to λi,
+σ2
+n denotes the noise power, and Ês and Ên stand for the
+estimated signal and noise subspaces spanned by {e1, . . . , eK}
+and {eK+1, . . . , eMN }, respectively.
+The spatial spectrum at the angle θ θ ∈
+
+−π
+2 , π
+2
+
+and
+range r (r ∈ [r1, r2]) can be formulated as
+P(θ, r) =
+1
+ãH
+t (θ, r)ÊnÊH
+n ãt(θ, r)
+, (14a)
+=
+1
+kÊH
+n ãt(θ, r)k2
+2
+. (14b)
+According to the multiple signal classification (MUSIC)
+algorithm [33], the joint range and angle estimation can be
+achieved via the two-dimensional (2D) peak search.3
+C. Beamforming Design
+In the information transmission period, the transmit signal
+can be formulated as
+x =
+K
+X
+k=1
+wksk, (15)
+3Without loss of generality, the number of targets is assumed to be
+known [32].
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12841
+Fig. 3. The architecture of proposed LLM-based two-stage beamforming prediction scheme. In the first stage, the LLM outputs the predicted CSI according
+to the history echoes and the PD-Net outputs the beamforming vector based on the predicted CSI in the second stage.
+where wk ∈ CM×1
+and sk ∼ CN(0, 1) represent the
+beamforming vector and communication symbol for the k-th
+UAV, respectively.
+The received signal at the k-th UAV can be given by
+yk = ĥH
+k x + nk, (16)
+where ĥk ∈ CM×1
+represents the estimated/predicted channel
+from the ISAC-BS to the k-th UAV, and nk ∼ CN(0, σ2
+c )
+denotes the AWGN with power σ2
+c .
+Consequently, the achievable rate of the k-th UAV can be
+written as
+Rk = log2 1 +
+|ĥH
+k wk|2
+kĥH
+k W−kk2
+2 + σ2
+c
+!
+, ∀k, (17)
+where W , [w1, . . . , wK] and W−k ,
+[w1, . . . , wk−1, wk+1, . . . , wK].
+To guarantee the communication performance, the achiev-
+able sum rate is maximized while satisfying the constraints
+of quality of service (QoS) and transmit power by the beam-
+forming optimization, yielding the optimization problem as
+max
+W
+K
+X
+k=1
+Rk (18a)
+s.t. Rk ≥ γk, ∀k, (18b)
+K
+X
+k=1
+kwkk2
+2 = P, (18c)
+where γk > 0 refers to the achievable rate threshold of the k-th
+UAV and P > 0 represents the transmit power. (18b) and (18c)
+stand for the QoS constraint of the k-th UAV and the transmit
+power constraint, respectively. The investigated optimization
+problem (18) is non-convex owing to the non-concave objec-
+tive function and non-convex constraints, making it difficult
+to tackle.
+In the following, we propose an LLM-based two-stage
+beamforming prediction scheme as shown in Fig. 3, which
+consists of the LLM-based high-accuracy channel prediction in
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12842 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+the first stage and the DL-based low-complexity beamforming
+design in the second stage.
+III. LLM-BASED CHANNEL PREDICTION
+The high-speed movement of UAVs degrades the channel
+correlation in a time period and increases the difficulty of
+high-accuracy channel prediction, making the conventional
+prediction methods intractable. Leveraging the remarkable
+capabilities of non-linear fitting and time-series processing,
+we develop an LLM-based channel prediction scheme for
+the first stage in Fig. 3. In particular, we first design the
+data preprocessing and embedding module to overcome the
+difficulty of modality mismatch. Then, a generative pre-trained
+transformer (GPT)-2 based model with supervised fine-tuning
+is developed to fit the non-linear mapping from the history
+echoes to the future channels.
+A. Data Preprocessing
+In order to boost the convergence and stability in the training
+period, the echo signal matrix X ∈ Cq×NM×L
+is normalized
+as
+X̃ =
+X − µ
+ν
+, (19)
+where µ and ν refer to the mean and variance of X. Since the
+NNs prefer to the real-number operations, the real part X̃r and
+imaginary part X̃i should be fed into the NN, respectively.
+B. Embedding Module
+To simplify subsequent processing, X̃i and X̃r are first
+processed by a linear layer to obtain X̄i ∈ Rq×df
+and
+X̄r ∈ Rq×df
+, where df stands for the feature dimension
+of X̃i and X̃r. Afterwards, the multi-head attention module
+is employed to extract the feature of X̄i ∈ Rq×df
+and
+X̄r ∈ Rq×df
+along the temporal axis. In particular, taking
+the processing of X̄r as an example, the query matrix, key
+matrix, and value matrix for the head j ∈ {1, . . . , J} can be
+formulated as
+Q̃r
+j = X̄rWQ̃
+j , K̃r
+j = X̄rWK̃
+j , Ṽr
+j = X̄rWṼ
+j , (20)
+respectively. In addition, the output matrix of the j-th head
+can be formulated as
+Ar
+j = softmax
+Q̃r
+j K̃r,T
+j
+√
+d0
+!
+Ṽr
+j , ∀j, (21)
+where d0 > 0 denotes the scaling coefficient and softmax(·)
+stands for the Softmax function.
+Similarly, the j-th output matrix corresponding to X̄i can
+be formulated as
+Ai
+j = softmax
+Q̃i
+jK̃i,T
+j
+√
+d0
+!
+Ṽi
+j, ∀j, (22)
+where Q̃i
+j = X̄iWQ̃
+j , K̃i
+j = X̄iWK̃
+j and Ṽi
+j = X̄iWṼ
+j .
+Finally, all the output matrices are concatenated to obtain the
+data A ∈ Rq×2×dmodel
+with dmodel = df × J.
+C. Backbone Model
+LLMs have demonstrated powerful capabilities in dealing
+with diverse time series prediction tasks. Although LLMs
+were initially used for NLP, they have great potential for
+handling various physical-layer tasks in wireless communica-
+tions, such as channel prediction and resource allocation. The
+main reasons are listed below. First, LLMs excel at solving a
+variety of structured modeling problems beyond text. Second,
+LLMs demonstrate remarkable generalization and reasoning
+capabilities. Pre-trained LLMs can handle unseen data with
+satisfactory performance. Third, LLMs can be aligned with
+CSI data through data preprocessing and fine-tuning. Inspired
+by existing works [27], [28], we use a fine-tuned LLM for
+channel prediction.
+The GPT-2, which follows the architecture of decoder-only
+transformer, is adopted as the backbone model.4
+The fine-
+tune method is low-rank adaptation (LoRA), which leverages
+bypass matrices to approximate the full-parameter fine-tuning
+[34]. In particular, we only retrain the Q̃ and Ṽ computations
+within the multi-head attention component via the LoRA,
+with the remaining components frozen. Consequently, most
+parameters of GPT-2 are frozen, and the scale of trainable
+parameters is small. This approach not only maintains the
+general knowledge within GPT-2 in the pre-training period,
+but also reduces the computational complexity significantly.
+In addition, this approach can reduce the requirement on
+the number of training samples owing to the small scale of
+trainable parameters.
+Fig. 3 depicts the architecture of the proposed LLM for
+channel prediction in the first stage. Before being fed into
+the GPT-2 backbone, the data matrix A ∈ Rq×2×dmodel
+is first
+processed by a linear layer to transform its dimension to Ã ∈
+RT ×dmodel
+. Then, taking Ã as the input, the output of GPT-2
+backbone is given by
+ÃLLM = LLMLoRA(Ã), (23)
+where LLMLoRA refers to the GPT-2 backbone fine-tuned by
+the LoRA.
+D. Output Module
+The output of GPT-2 backbone ÃLLM is processed by a
+linear layer followed by a rearranging operation to obtain the
+output as
+Z = rearrange(FC(ÃLLM)) ∈ R(Q−q)×K×2
+. (24)
+Accordingly, we denormalize Z to obtain the predicted
+range and angle of targets as
+Ẑ = σZ + µ. (25)
+We adopt supervised learning to fine-tune the proposed
+LLM scheme with normalized mean squared error (NMSE)
+as the loss function, formulated as
+LLLM =
+1
+|D|
+X
+D
+kẐ˜
+d − Zt
+˜
+d
+k2
+F
+kZt
+˜
+d
+k2
+F
+, (26)
+4Note that other state-of-the-art LLMs, such as Qwen, can be also employed
+as the backbone model, and the selection of LLMs should take both the
+performance and complexity into consideration.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12843
+where D denotes the training set with |D| training samples,
+Ẑ˜
+d and Zt
+˜
+d
+refer to the ˜
+d-th predicted matrix and estimated
+channel matrix by the MUSIC algorithm, respectively. The
+principle of proposed LLM-based channel prediction is to fit
+the mapping from the history echoes to the future channel via
+the LLM scheme.
+Algorithm 1 Training Process of Proposed LLM Scheme
+1: Initialize the network parameters of GPT-2.
+2: for e = 1 to E1 do
+3: for d = 1 to D1 do
+4: Sample a min-batch training samples B1 from the
+dataset randomly.
+5: Feed B1 into the proposed LLM and calculate its
+loss function via (26).
+6: Fine-tune the parameters of proposed LLM.
+7: end for
+8: end for
+9: Output: the fine-tuned LLM.
+E. Training Procedure
+The training procedure of our proposed LLM scheme is
+presented in Algorithm 1. In particular, the parameters of our
+proposed LLM are first initialized, and then the proposed LLM
+is trained over E1 epoches. In each epoch, the training dataset
+is randomly divided into D1 batches, and each batch is fed
+into our proposed LLM scheme to obtain the predicted CSI.
+Then, the loss of our proposed LLM scheme can be calculated
+to fine-tune its parameters by the stochastic gradient descent
+(SGD). Through several epoches of supervised learning, the
+parameters of our proposed LLM scheme can be optimized.
+For the proposed LLM, its approximate inference compu-
+tational complexity is dominated by the backbone, which can
+be formulated as
+O(NLq2
+dLLM + NLqd2
+LLM ), (27)
+where NL and dLLM denote the number of Transformer
+decoder layers and hidden dimension of GPT-2, respectively.
+Remark 1: Although LLMs are initially proposed to handle
+the text, they can be aligned with the CSI via the data
+processing and embedding module. Thanks to the specific
+network architecture,5
+the learned general knowledge in the
+pre-trained stage and the supervised fine-tuning, LLMs can fit
+the mapping from the echo matrix to the corresponding CSI,
+enabling the high-accuracy CSI prediction.
+IV. DL-BASED BEAMFORMING DESIGN
+The beamforming optimization problem (18) in the sec-
+ond stage of Fig. 3 involves complicated and non-convex
+5In general, LLMs adopt the Transformer architecture, which can handle
+input data in parallel and capture the long-distance independence thanks to
+the attention mechanism.
+constraints, making the conventional deep learning methods
+intractable. In this section, we develop a PD-Net to solve it.
+Specifically, we first derive its dual problem and then leverage
+two NNs with the unsupervised adversarial training to fit the
+mappings from the CSI to the primary and dual variables,
+respectively.
+A. Problem Reformulation
+The original problem (18) can be equivalently formulated
+as
+min
+W
+1
+PK
+k=1 Rk
+(28a)
+s.t. γk − Rk ≤ 0, ∀k, (28b)
+kWk2
+F = P, (28c)
+whose partial Lagrangian optimization problem can be formu-
+lated as
+min
+W
+L(W) + λT
+f(W) +
+β
+2
+kf(W)+
+k2
+2 (29a)
+s.t. kWk2
+F = P, (29b)
+where L(W) , c0
+PK
+k=1 Rk
+is the scaled objective function, λ ∈
+RK×1
+(λ ≥ 0) denotes the Lagrangian Multiplier vector, c0 >
+0 is a constant, β > 0 is a penalty coefficient, f(W) = [γ1 −
+R1, . . . , γK − RK]T
+and (·)+
+= max(·, 0).
+The dual problem of (29) is given by
+min
+W∈Ω
+max
+λ
+L(W) + λT
+f(W) +
+β
+2
+kf(W)+
+k2
+2, (30)
+where Ω ,
+
+W|kWk2
+F = P stands for the feasible region
+of (29).
+B. Primary Dual Network
+Since the beamforming matrix and Lagrangian Multiplier
+vector can be viewed as the functions of estimated/predicted
+channels {ĥk}, we aim to utilize a primary NN (P-Net) with
+the learnable parameter ω and a dual NN (D-Net) with the
+learnable parameter φ to fit the non-linear mappings from
+{ĥk} to W and λ, formulated as W = W({ĥk}, ω) and
+λ = λ({ĥk}, φ), respectively. Consequently, the optimization
+problem (30) can be transformed into as in (31), shown at the
+bottom of the page.
+According to (31), the loss functions of P-Net and D-Net
+can be, respectively, written as [35]
+Lp = L(W({ĥk}, ω)) + λT
+({ĥk}, φ)f(W({ĥk}, ω))
++
+β
+2
+kf(W({ĥk}, ω))+
+k2
+2, (32a)
+Ld = −λT
+({ĥk}, φ)f(W({ĥk}, ω)). (32b)
+Fig. 4 depicts the framework of PD-Net, and both P-Net
+and D-Net are the feed-forward NNs (FNNs) with rectified
+min
+ω
+max
+φ
+L(W({ĥk}, ω), λ({ĥk}, φ)) = L(W({ĥk}, ω)) + λT
+({ĥk}, φ)f(W({ĥk}, ω)) +
+β
+2
+kf(W({ĥk}, ω))+
+k2
+2. (31)
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12844 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+Fig. 4. Framework of PD-Net, where the primary and dual networks are
+trained in an adversarial manner to learn the mappings from the CSI to the
+primary and dual variables.
+linear unit (ReLU) as the activation function. Specifically, the
+inputs of P-Net and D-Net are the sets of estimated/predicted
+channels {ĥk}.6
+P-Net and D-Net are F- and G-layer FNNs
+with Fh > 1 and Gh > 1 neurons per layer, respectively.
+The outputs of P-Net and D-Net are W and λ, respectively.
+In order to satisfy the power constraint, the output of P-Net
+should be projected to the feasible region Ω.
+The parameters of P-Net and D-Net can be updated by the
+SGD, formulated as
+ω = ω − αω
+∂Lp
+∂ω
+, (33a)
+φ = φ − αφ
+∂Ld
+∂φ
+, (33b)
+where αω > 0 and αφ > 0 refer to the learning rates.
+C. Training Procedure
+The training procedure of PD-Net is presented in Algo-
+rithm 2. In particular, the network parameters are first
+initialized. Then, the PD-Net is trained over E2 episodes.
+In each epoch, the training set is randomly divided into D2
+batches with the batch size |B2|. Afterwards, the samples of
+each batch are utilized to train the PD-Net for I2 times, and
+the parameters of P-Net and D-Net are alternatingly updated
+via the SGD. Finally, the optimal network parameters αω > 0
+and αφ > 0 can be obtained. Once well trained, the P-Net
+can be utilized for the online beamforming design according
+to the estimated/predicted channels.
+The approximate computational complexity of PD-NET for
+training per sample can be formulated as
+O(I2/2(4KNtFh + 4KNtGh + FF2
+h + GG2
+h)). (34)
+In addition, the approximate computational complexity of
+PD-NET for inference per sample can be formulated as
+O(4KNtFh + FF2
+h ). (35)
+Remark 2: The P-Net takes the estimated/predicted CSI as
+the input and outputs the corresponding beamforming matrix.
+Consequently, the pre-trained P-Net can be concatenated with
+the pre-trained LLM to achieve the two-stage beamforming
+prediction, as shown in Fig. 3.
+6Note that the operations in NN must be real-number, and the real and
+imaginary parts should be fed into it separately.
+Algorithm 2 Training Procedure of PD-Net
+1: Initialize the network parameters ω and φ.
+2: for e = 1 to E2 do
+3: for d = 1 to D2 do
+4: Sample a min-batch training samples B2 from the
+dataset randomly.
+5: for i = 1 to I2 do
+6: Feed B2 into P-Net and D-Net and calculate their
+losses.
+7: if i % 2 = 0 then
+8: Update ω by (33a).
+9: else
+10: Update φ by (33b).
+11: end if
+12: end for
+13: end for
+14: end for
+15: Output: optimal network parameters ω∗
+and φ∗
+.
+TABLE III
+HYPERPARAMETERS OF PROPOSED LLM
+TABLE IV
+HYPERPARAMETERS OF PROPOSED PD-NET
+V. SIMULATION RESULTS
+In this section, simulation results are provided to verify the
+effectiveness of the proposed scheme. Unless otherwise stated,
+we set M = 10, N = 10, L = 10, K = 2, Q = 10,
+q = 5, f0 = 10 GHz, P = 0.1 W, γk = 0.1 bps/Hz,
+I2 = 10, c0 = 20, β = 104
+, σ2
+c = −70 dBm, ∆f = 30 KHz,
+c = 3 × 108
+m/s, d = c
+2(f0+∆f) , δk = 1.5, ∀k, and λ0 = c
+f0
+[32], [36]. The initial positions of K UAVs are randomized
+and their trajectories follow the uniform linear motion model.
+The training set contains 22000 samples with UAVs’ velocity
+uniformly distributed between 5 m/s and 25 m/s. The testing
+set includes 5 velocities ranging from 5 m/s to 25 m/s,
+with 1000 samples per velocity. We conduct all experiments
+on one NVIDIA RTX 4000ada with 20GB RAM, and the
+proposed NNs are implemented in Python 3.8.20 with Pytorch
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12845
+Fig. 5. Joint range and angle estimation of three consecutive frames by the 2D MUSIC algorithm. (a) 1-th frame; (b) 2-th frame; (c) 3-th frame.
+Fig. 6. Training and validation NMSEs of the proposed LLM versus the
+learning rate (LR).
+2.4.1. The hyperparameters of LLM and PD-Net are listed in
+Table III and Table IV, respectively.
+Fig. 5 depicts the joint range and angle estimation of three
+consecutive frames by the 2D MUSIC algorithm, where the
+two red dots represent the real ranges and angles of two
+UAVs, and the yellow points stand for the peaks of range-angle
+spectrum. From Fig. 5, we can observe that the 2D MUSIC
+algorithm can form two narrow peaks towards two UAVs with
+very low sidelobes. Consequently, the range and angle of each
+target can be estimated by the peak search method.
+A. Channel Prediction
+As for the channel prediction, we consider the following
+benchmarks for comparison.
+• Transformer: Jiang et al. in [37] developed a transformer-
+based channel prediction method, which can predict the
+channels in parallel.
+• LSTM: A long short-term memory (LSTM) based chan-
+nel prediction scheme was developed in [38].
+• GRU:Gated recurrent unit (GRU), as a simplified version
+of LSTM, can deal with the long-term dependencies and
+reduce the computational complexity [39]. For fairness,
+the hyperparameters of GRU are same as those of LSTM.
+Fig. 7. The NMSEs of different schemes versus the velocity of UAVs.
+Fig. 6 depicts the training and validation NMSEs of the
+proposed LLM versus the learning rate (LR). From the results,
+it can be observed that the proposed LLM can converge within
+50 epoches and the training NMSE is close to the validation
+NMSE when LRs are 5 × 10−4
+, 1 × 10−4
+and 5 × 10−5
+. In
+addition, a larger LR can reduce both training and validation
+NMSEs. Consequently, the LR is set as 5 × 10−4
+.
+Fig. 7 illustrates the NMSEs of different schemes versus the
+velocity of UAVs. We can see that the NMSE of each scheme
+increases with the velocity of UAVs because a larger flying
+velocity results in a more highly time-varying wireless chan-
+nel, increasing the difficulty of channel prediction. In addition,
+the proposed LLM significantly outperforms the benchmarks
+in the prediction accuracy. Consequently, the superiority of the
+proposed LLM is verified.
+Fig. 8 illustrates the NMSE of each scheme versus the
+prediction step, with q = 5. We can observe that the NMSE
+of each scheme increases with the prediction steps because
+the correlation between the estimated channel and predicted
+channel decreases with the time steps, increasing the difficulty
+of channel prediction. In addition, under the same prediction
+step, a larger flying velocity also increases the NMSE of
+each scheme owing to the increased dynamic of wireless
+channels. Under the same prediction step and velocity of
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12846 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+Fig. 8. NMSE of each scheme versus the prediction steps, with q = 5. (a) LLM; (b) Transformer; (c) LSTM; (d) GRU.
+TABLE V
+NETWORK PARAMETERS (TRAINING PARAMETERS/TOTAL PARAMETERS), AND THE TRAINING AND INFERENCE TIME PER BATCH OF EACH SCHEME
+UAV, the proposed LLM scheme achieves the lowest NMSE
+among all schemes, verifying the effectiveness of the proposed
+scheme.
+Table V presents the network parameters, and the train-
+ing and inference time per batch of each scheme. It can
+be observed that the proposed LLM has the fewest train-
+ing parameters among the three schemes because most of
+its parameters are frozen. In contrast, all the parameters
+of Transformer and LSTM are trained from scratch. Nev-
+ertheless, the proposed LLM is slightly inferior to the
+two benchmarks in both training and inference speeds
+due to the complicated model architecture with a larger
+number of hidden layers. Therefore, the performance improve-
+ment comes at the cost of a little higher computational
+complexity.
+B. Beamforming Design
+For the beamforming comparison, the following benchmarks
+are taken into consideration.
+• SCA: Successive convex approximation (SCA), as a rep-
+resentative non-convex optimization algorithm, is utilized
+to deal with the beamforming optimization problem [40].
+In particular, the SCA relaxes the original non-convex
+problem to a series of convex ones via introducing
+slack variables and Taylor expression, and then solves
+the slacked problems alternately.
+• PFNN: The beamforming problem is first transformed
+into an unconstrained problem via moving the con-
+straints to the objective function as a penalty term. Then,
+the penalty-version objective function serves as a loss
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12847
+Fig. 9. Training loss of the proposed PD-Net versus the LR.
+Fig. 10. Training loss of the proposed PD-Net versus the number of inner-
+layer training.
+function to train the FNN [20]. For a fair comparison,
+the FNN has 8 hidden layers with 64 neurons each layer.
+Fig. 9 shows the training loss of the proposed PD-Net versus
+the LR. As shown in Fig. 9, under different LRs, the proposed
+PD-Net can converge within about 1200 batch indexes. In
+addition, the convergence speed increases with LR and the
+training loss reduces with LR. Moreover, the stationary points
+that the proposed PD-Net with LR = 10−4
+and LR = 5×10−5
+converge to are close to each other. Consequently, the LR of
+PD-Net is set as 10−4
+.
+The training loss of the proposed PD-Net versus the number
+of inner-layer training I2 is illustrated in Fig. 10. From the
+results, we can see that the convergence speed of PD-Net
+increases with I2 at the cost of more training time because the
+number of parameter updates of PD-Net per batch increases
+with I2. In addition, the proposed PD-Net can converge to
+almost the same stationary point with different I2. Thus,
+to balance the convergence speed and training time, we set
+I2 = 10.
+Fig. 11. Training loss of the proposed PD-Net versus the number of hidden
+layers.
+Fig. 12. Average achievable rate of each scheme versus the maximum transmit
+power.
+Fig. 11 depicts the training loss of the proposed PD-Net
+versus the number of hidden layers F. From the results, the
+convergence speed of PD-Net increases with F because a large
+F can improve the fitting capability of NNs. Moreover, the
+convergence curves of PD-NET with F = 4 and F = 5
+are almost the same. Since the PD-Net with F = 4 can
+keep a better balance between the convergence speed and
+computational complexity than the counterparts, the number
+of hidden layers is set as 4.
+Fig. 12 shows the average achievable rate of each scheme
+versus the maximum transmit power. It can be observed that
+the average achievable rate of each scheme increases with the
+maximum transmit power because of the enhanced communi-
+cation signal-to-interference-plus-noise ratio (SINR). The SCA
+achieves the best performance among all the schemes. In addi-
+tion, the PD-Net outperforms the PFNN and the performance
+gap increases with the maximum transmit power. The reason
+may be that the penalty-based approach constrains the feasible
+region of original problem. Consequently, the effectiveness of
+PD-Net is verified.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12848 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+Fig. 13. Average achievable rate of each scheme versus the number of transmit
+antennas.
+TABLE VI
+NETWORK PARAMETERS AND THE TRAINING AND INFERENCE TIME PER
+BATCH OF EACH SCHEME
+TABLE VII
+CPU INFERENCE TIME (SECOND) VERSUS Nt
+Fig. 13 depicts the average achievable rate of each scheme
+versus the number of transmit antennas. For both the SCA
+and PD-Net, the average achievable rate increases with M
+because of the larger degrees of freedom (DoFs). Nevertheless,
+the performance of PFNN is not positively correlated with M
+because the PFNN struggles in exploring a better solution in
+a large feasible region. In addition, the PD-Net is superior to
+the PFNN but inferior to the SCA.
+Table VI presents the network parameters and the training
+and inference time per batch of each scheme. In Table VI,
+the PFNN has more parameters than the PD-Net due to more
+neurons per hidden layer. Moreover, the training time of
+PD-Net is almost ten times than that of the PFNN because
+of more updating times per batch. The PD-Net achieves
+the fastest inference speed among all schemes, and the two
+NNs are superior to the SCA in inference speed significantly
+because of the iteration nature of SCA. For both the PD-Net
+and PFNN, their inference speeds are faster than the training
+speeds. Consequently, the PD-Net can be trained off-line and
+deployed on-line to keep a balance between performance and
+complexity.
+Table VII compares the CPU inference time of each algo-
+rithm versus Nt. In Table VII, the CPU inference time
+increases with Nt for each algorithm because a larger Nt
+increases the dimension of optimization variable. In addition,
+both PD-Net and PFNN are superior to the SCA in CPU
+inference time and PD-Net achieves the fastest inference speed
+among three algorithms under the same Nt.
+Remark 3: Compared with the two benchmarks, the
+PD-Net can keep a better balance between performance and
+computational complexity. Since the high-dynamic scenarios
+pose a higher requirement on the real-time beamforming, the
+PD-Net is more suitable for the online beamforming in the
+high-dynamic scenarios.
+VI. CONCLUSION
+In this paper, we have developed an LLM-based two-stage
+beamforming prediction in the sensing-aided communication
+scenario. In the first stage, we have proposed an LLM-
+based approach to predict the future CSI according to the
+history echoes and the data preprocessing and supervised
+fine-tuning methods are developed to align the LLM with
+the CSI data. In the second stage, we have formulated a
+beamforming optimization problem based on the predicted
+CSI and then derived its dual problem. Afterwards, we have
+utilized the PD-Net with an unsupervised adversarial learn-
+ing manner to fit the mapping from the channels to the
+primary and dual variables respectively, facilitating the low-
+complexity beamforming. Compared with the benchmarks, the
+proposed beamforming prediction scheme not only achieves a
+higher channel prediction accuracy for ISAC but also keeps
+a better balance between the performance and computational
+complexity.
+REFERENCES
+[1] J. Zhang et al., “Large-language-models based beamforming prediction
+for sensing-aided communication,” in Proc. IEEE WCNC, Apr. 2026.
+[2] Z. Lyu, G. Zhu, and J. Xu, “Joint maneuver and beamform-
+ing design for UAV-enabled integrated sensing and communication,”
+IEEE Trans. Wireless Commun., vol. 22, no. 4, pp. 2424–2440,
+Apr. 2023.
+[3] J. Zhang et al., “Intelligent integrated sensing and communication: A
+survey,” Sci. China Inf. Sci., vol. 68, no. 3, Mar. 2025, Art. no. 131301.
+[4] Y. Gao et al., “Vision-aided ISAC in low-altitude economy networks via
+de-diffused visual priors,” 2025, arXiv:2507.01574.
+[5] J. Zhang, J. Xu, W. Lu, N. Zhao, X. Wang, and D. Niyato, “Secure
+transmission for IRS-aided UAV-ISAC networks,” IEEE Trans. Wireless
+Commun., vol. 23, no. 9, pp. 12256–12269, Sep. 2024.
+[6] F. Dong et al., “Communication-assisted sensing in 6G networks,” IEEE
+J. Sel. Areas Commun., vol. 43, no. 4, pp. 1371–1386, Apr. 2025.
+[7] K. Meng, Q. Wu, W. Chen, and D. Li, “Sensing-assisted communica-
+tion in vehicular networks with intelligent surface,” IEEE Trans. Veh.
+Technol., vol. 73, no. 1, pp. 876–893, Jan. 2024.
+[8] X. Ye, Y. Mao, X. Yu, S. Sun, L. Fu, and J. Xu, “Integrated sensing and
+communications for low-altitude economy: A deep reinforcement learn-
+ing approach,” IEEE Trans. Wireless Commun., vol. 25, pp. 351–367,
+2026.
+[9] Z. Zhang et al., “Cooperative bistatic ISAC systems for low-altitude
+economy,” 2025, arXiv:2506.18067.
+[10] Z. Kuang et al., “Movable-antenna array empowered ISAC systems for
+low-altitude economy,” in Proc. IEEE/CIC Int. Conf. Commun. China
+(ICCC Workshops), Hangzhou, China, Aug. 2024, pp. 776–781.
+[11] G. Sun et al., “Generative artificial intelligence for beamforming in low-
+altitude economy,” IEEE Wireless Commun., early access, Nov. 17, 2025,
+doi: 10.1109/MWC.2025.3623988.
+[12] B. Yang, Z. Cao, and K. B. Letaief, “Analysis of low-complexity
+windowed DFT-based MMSE channel estimator for OFDM systems,”
+IEEE Trans. Commun., vol. 49, no. 11, pp. 1977–1987, Nov. 2001.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+ZHANG et al.: LARGE-LANGUAGE-MODEL-ENABLED SENSING-AIDED COMMUNICATION 12849
+[13] Y. Jin, J. Zhang, S. Jin, and B. Ai, “Channel estimation for cell-free
+mmWave massive MIMO through deep learning,” IEEE Trans. Veh.
+Technol., vol. 68, no. 10, pp. 10325–10329, Oct. 2019.
+[14] F. Xia et al., “Sensing-enabled predictive beamforming design for RIS-
+assisted V2I systems: A deep learning approach,” IEEE Trans. Wireless
+Commun., vol. 23, no. 6, pp. 5571–5586, Jun. 2024.
+[15] W. Yuan, F. Liu, C. Masouros, J. Yuan, D. W. K. Ng, and N. González-
+Prelcic, “Bayesian predictive beamforming for vehicular networks: A
+low-overhead joint radar-communication approach,” IEEE Trans. Wire-
+less Commun., vol. 20, no. 3, pp. 1442–1456, Mar. 2021.
+[16] F. Liu, W. Yuan, C. Masouros, and J. Yuan, “Radar-assisted predictive
+beamforming for vehicular links: Communication served by sensing,”
+IEEE Trans. Wireless Commun., vol. 19, no. 11, pp. 7704–7719, Nov.
+2020.
+[17] W. Yu, F. Sohrabi, and T. Jiang, “Role of deep learning in wireless
+communications,” IEEE BITS Inf. Theory Mag., vol. 2, no. 2, pp. 56–72,
+Nov. 2022.
+[18] H. Song, M. Zhang, J. Gao, and C. Zhong, “Unsupervised learning-
+based joint active and passive beamforming design for reconfigurable
+intelligent surfaces aided wireless networks,” IEEE Commun. Lett.,
+vol. 25, no. 3, pp. 892–896, Mar. 2021.
+[19] J. Zhang et al., “Joint design for STAR-RIS aided ISAC: Decou-
+pling or learning,” IEEE Trans. Wireless Commun., vol. 23, no. 10,
+pp. 14365–14379, Oct. 2024.
+[20] J. Gao, C. Zhong, X. Chen, H. Lin, and Z. Zhang, “Unsupervised
+learning for passive beamforming,” IEEE Commun. Lett., vol. 24, no. 5,
+pp. 1052–1056, May 2020.
+[21] H. Naveed et al., “A comprehensive overview of large language models,”
+ACM Trans. Intell. Syst. Technol., vol. 16, no. 5, pp. 1–72, Jun. 2025.
+[22] R. Zhang et al., “Covert prompt transmission for secure large language
+model services,” IEEE J. Sel. Areas Commun., vol. 44, pp. 1589–1603,
+2026.
+[23] R. Zhang et al., “Generative AI agents with large language model for
+satellite networks via a mixture of experts transmission,” IEEE J. Sel.
+Areas Commun., vol. 42, no. 12, pp. 3581–3596, Dec. 2024.
+[24] X. Wang et al., “Sora for intelligent vehicles: A step from constraint-
+based simulation to artificiofactual experiments through dynamic
+visualization,” IEEE Trans. Intell. Veh., vol. 9, no. 3, pp. 4249–4253,
+Mar. 2024.
+[25] X. Wang, M. Feng, J. Qiu, J. Gu, and J. Zhao, “From news to forecast:
+Integrating event analysis in LLM-based time series forecasting with
+reflection,” in Proc. Adv. Neural Inf. Process. Syst., vol. 37, Dec. 2024,
+pp. 58118–58153.
+[26] Z. Lan, L. Liu, B. Fan, Y. Lv, Y. Ren, and Z. Cui, “Traj-LLM: A
+new exploration for empowering trajectory prediction with pre-trained
+large language models,” IEEE Trans. Intell. Vehicles, vol. 10, no. 2,
+pp. 794–807, Feb. 2025.
+[27] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, “LLM4CP: Adapting
+large language models for channel prediction,” J. Commun. Inf. Netw.,
+vol. 9, no. 2, pp. 113–125, Jun. 2024.
+[28] S. Fan, Z. Liu, X. Gu, and H. Li, “CSI-LLM: A novel downlink
+channel prediction method aligned with LLM pre-training,” in Proc.
+IEEE Wireless Commun. Netw. Conf. (WCNC), Milan, Italy, Mar. 2025,
+pp. 1–6.
+[29] Z. Xu, T. Zheng, and L. Dai, “LLM-empowered near-field communica-
+tions for low-altitude economy,” IEEE Trans. Commun., vol. 73, no. 11,
+pp. 11186–11196, Nov. 2025.
+[30] Y. Zhang and B. P. Ng, “MUSIC-like DOA estimation without estimating
+the number of sources,” IEEE Trans. Signal Process., vol. 58, no. 3,
+pp. 1668–1676, Mar. 2010.
+[31] H. L. Van Trees, Optimum Array Processing: Part IV of Detection,
+Estimation, and Modulation Theory. Hoboken, NJ, USA: Wiley, 2002.
+[32] J. Xiong, W.-Q. Wang, and K. Gao, “FDA-MIMO radar range-angle
+estimation: CRLB, MSE, and resolution analysis,” IEEE Trans. Aerosp.
+Electron. Syst., vol. 54, no. 1, pp. 284–294, Feb. 2018.
+[33] X. Chen et al., “Multiple signal classification based joint communication
+and sensing system,” IEEE Trans. Wireless Commun., vol. 22, no. 10,
+pp. 6504–6517, Oct. 2023.
+[34] S. Wang, L. Yu, and J. Li, “LoRA-GA: Low-rank adaptation with gra-
+dient approximation,” in Proc. Adv. Neural Inf. Process. Syst., vol. 37,
+Dec. 2024, pp. 54905–54931.
+[35] G. Bao, D. Wang, and B. Zou, “WANCO: Weak adversarial networks
+for constrained optimization problems,” 2024, arXiv:2407.03647.
+[36] L. Liu, H. Zhang, L. Lan, and J.-Y. Deng, “Joint range and angle
+estimation by FDA-MIMO radar with unknown mutual coupling,” IEEE
+Trans. Aerosp. Electron. Syst., vol. 59, no. 4, pp. 3669–3683, Aug. 2023.
+[37] H. Jiang, M. Cui, D. W. K. Ng, and L. Dai, “Accurate channel prediction
+based on transformer: Making mobility negligible,” IEEE J. Sel. Areas
+Commun., vol. 40, no. 9, pp. 2717–2732, Sep. 2022.
+[38] T. Zhou, H. Zhang, B. Ai, C. Xue, and L. Liu, “Deep-learning-
+based spatial–temporal channel prediction for smart high-speed railway
+communication networks,” IEEE Trans. Wireless Commun., vol. 21,
+no. 7, pp. 5333–5345, Jul. 2022.
+[39] M. Ravanelli, P. Brakel, M. Omologo, and Y. Bengio, “Light gated
+recurrent units for speech recognition,” IEEE Trans. Emerg. Topics
+Comput. Intell., vol. 2, no. 2, pp. 92–102, Apr. 2018.
+[40] J. Zhang, W. Wang, J. Tang, N. Zhao, Y. Chen, and X. Wang, “Active
+IRS aided secure transmission with hybrid beamforming,” IEEE Trans.
+Veh. Technol., vol. 73, no. 11, pp. 17812–17817, Nov. 2024.
+Jifa Zhang (Graduate Student Member, IEEE)
+received the M.S. degree from Beihang Univer-
+sity, China, in 2023. He is currently pursuing the
+Ph.D. degree with the School of Information and
+Communication Engineering, Dalian University of
+Technology, China. His current research interests
+include artificial intelligence, optimization theory,
+and integrated sensing and communication. He won
+the Best Paper Award in the 2024 WCSP.
+Ruichen Zhang (Member, IEEE) received the
+B.E. degree from Henan University (HENU), China,
+in 2018, and the Ph.D. degree from Beijing Jiaotong
+University (BJTU), China, in 2023. He is currently a
+Post-Doctoral Research Fellow with the College of
+Computing and Data Science, Nanyang Technologi-
+cal University (NTU), Singapore. In 2024, he was a
+Visiting Scholar with the College of Information and
+Communication Engineering, Sungkyunkwan Uni-
+versity, Suwon, South Korea. His research interests
+include the agentic AI, LLM-empowered network-
+ing, reinforcement learning-enabled wireless communications, generative AI
+models, and heterogeneous networks.
+Na Deng (Senior Member, IEEE) received the B.S.
+and Ph.D. degrees in information and communica-
+tion engineering from the University of Science and
+Technology of China (USTC), Hefei, China, in 2010
+and 2015, respectively. From 2015 to 2016, she was
+a Senior Engineer at Huawei Technologies Company
+Ltd., Shanghai, China. Currently, she is an Associate
+Professor with Dalian University of Technology,
+Dalian, China. Her scientific interests include net-
+working and wireless communications, low-altitude
+communications, space–air–ground integrated net-
+works, and covert communications.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+12850 IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. 25, 2026
+Chengwen Xing (Member, IEEE) received the
+B.Eng. degree from Xidian University, Xi’an, China,
+in 2005, and the Ph.D. degree from The University
+of Hong Kong, Hong Kong, China, in 2010. Since
+September 2010, he has been with the School of
+Information and Electronics, Beijing Institute of
+Technology, Beijing, China, where he is currently a
+Full Professor. His current research interests include
+machine learning, statistical signal processing, con-
+vex optimization, multivariate statistics, and array
+signal processing.
+Nan Zhao (Senior Member, IEEE) received the
+Ph.D. degree in information and communication
+engineering from Harbin Institute of Technology,
+Harbin, China, in 2011. He is currently a Professor
+with Dalian University of Technology, China. He
+won the best paper awards in IEEE VTC 2017
+Spring, ICNC 2018, WCSP 2018, and WCSP 2019.
+He also received the IEEE Communications Society
+Asia–Pacific Board Outstanding Young Researcher
+Award in 2018. He is serving on the editorial boards
+for IEEE WIRELESS COMMUNICATIONS and IEEE
+WIRELESS COMMUNICATIONS LETTERS.
+Dusit Niyato (Fellow, IEEE) received the
+B.Eng. degree from the King Mongkut’s Institute
+of Technology Ladkrabang (KMITL), Thailand,
+and the Ph.D. degree in electrical and computer
+engineering from the University of Manitoba,
+Canada. He is currently a Professor with the
+College of Computing and Data Science, Nanyang
+Technological University, Singapore. His research
+interests include sustainability, edge intelligence,
+decentralized machine learning, and incentive
+mechanism design.
+Naofal Al-Dhahir (Fellow, IEEE) received the
+Ph.D. degree from Stanford University. He was a
+Principal Member of Technical Staff at the GE
+Research Center and the AT&T Shannon Laboratory
+from 1994 to 2003. He is currently an Erik Jons-
+son Distinguished Professor and the ECE Associate
+Head of UT-Dallas. He is the co-inventor of 43
+issued patents, the co-author of over 680 articles, and
+a co-recipient of nine IEEE best paper awards. He is
+an AAIA Fellow. He is a fellow of the U.S. National
+Academy of Inventors, a member of the European
+Academy of Sciences and Arts, and a Web of Science Clarivate Highly
+Cited Researcher. He received the 2019 IEEE COMSOC SPCC Technical
+Recognition Award, the 2021 Qualcomm Faculty Award, and the 2022 IEEE
+COMSOC RCC Technical Recognition Award. He served as the Editor-in-
+Chief for IEEE TRANSACTIONS ON COMMUNICATIONS from January 2016
+to December 2019.
+George K. Karagiannidis (Fellow, IEEE) received
+the Ph.D. degree in telecommunications engineer-
+ing from the Electrical Engineering Department,
+University of Patras, Greece, in 1998. He is cur-
+rently a Professor with the Electrical and Computer
+Engineering Department, Aristotle University of
+Thessaloniki, Thessaloniki, Greece, and the Head
+of Wireless Communications and Information Pro-
+cessing (WCIP) Group. His research interests are
+in the areas of wireless communications systems
+and networks, signal processing, optical wireless
+communications, and signal processing for biomedical engineering. He has
+received three prestigious awards: The 2021 IEEE ComSoc RCC Technical
+Recognition Award, the 2018 IEEE ComSoc SPCE Technical Recognition
+Award, and the 2022 Humboldt Research Award from Alexander von Hum-
+boldt Foundation. He is one of the Highly Cited Authors across all areas
+of Electrical Engineering, recognized from Clarivate Analytics as the Web-
+of-Science Highly-Cited Researcher in the ten consecutive years 2015-2024.
+Currently, he is the Editor-in Chief of IEEE TRANSACTIONS ON COMMUNI-
+CATIONS and in the past was the Editor-in Chief of IEEE COMMUNICATIONS
+LETTERS.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:01 UTC from IEEE Xplore. Restrictions apply.
+

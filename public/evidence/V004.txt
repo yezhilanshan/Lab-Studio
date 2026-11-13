@@ -1,0 +1,457 @@
+对你这种 **15 FPS 毫米波雷达 + 30 FPS Femto Bolt + 3D 骨架监督**，软件同步可以拆成三层：
+
+$$
+\boxed{\text{统一时钟}}
+\rightarrow
+\boxed{\text{逐帧时间匹配}}
+\rightarrow
+\boxed{\text{Pose 插值}}
+$$
+
+mmMind 论文只明确说了“以 radar timestamp 为基准，对 RGB-D/Pose 做 matching 或 interpolation”，并没有公开更底层的时钟映射实现。([arXiv][1]) 下面这套是我建议你实际采集时采用的完整方案。
+
+1. **采集时，每一帧同时保存“设备时间戳”和“电脑时间戳”。** 雷达帧保存：
+
+$$
+R_i=(frame_i,\ t^{dev}_{r,i},\ t^{host}_{r,i})
+$$
+
+相机 Depth 帧保存：
+
+$$
+C_j=(depth_j,\ t^{dev}_{c,j},\ t^{host}_{c,j})
+$$
+
+其中 `device timestamp` 是设备自己生成的采集时间；`host timestamp` 是电脑收到这一帧时，用同一个单调时钟记录的时间。Windows 可以用 `QueryPerformanceCounter`，C++ 用 `std::chrono::steady_clock`，不要用普通系统日期时间。Femto Bolt SDK 本身支持读取 frame timestamp/metadata。([doc.orbbec.com][2])
+
+最重要的是，**Pose 不要重新打时间戳**。例如：
+
+```text
+Depth frame
+timestamp = 12.433 s
+       ↓
+Body Tracking
+       ↓ 可能计算了 40 ms
+Skeleton
+```
+
+这个 Skeleton 的时间仍然应该是：
+
+$$
+t_{\text{pose}}=12.433s
+$$
+
+而不是算法输出时的 12.473 s。
+
+2. **把两个设备的本地时钟转换到同一个 Host 时间轴。** 假设雷达自己的时间从 0 开始：
+
+$$
+0,\ 0.0667,\ 0.1334,\dots
+$$
+
+相机可能也是：
+
+$$
+0,\ 0.0333,\ 0.0666,\dots
+$$
+
+不能认为它们的“0”是同一时刻。因此采集过程中得到很多：
+
+$$
+(t^{dev},t^{host})
+$$
+
+样本，然后分别拟合：
+
+$$
+\boxed{
+t^{host}_r=a_r t^{dev}_r+b_r
+}
+$$
+
+以及：
+
+$$
+\boxed{
+t^{host}_c=a_c t^{dev}_c+b_c
+}
+$$
+
+这里 $b$ 解决**启动时间不同（clock offset）**，$a$ 解决**设备晶振漂移（clock drift）**。
+
+例如实际可能拟合出来：
+
+$$
+t_r^{host}=1.000013\,t_r^{dev}+125.327
+$$
+
+$$
+t_c^{host}=0.999997\,t_c^{dev}+125.891
+$$
+
+转换以后，两台设备就进入了：
+
+$$
+\boxed{\text{同一 PC monotonic timeline}}
+$$
+
+实际拟合不要直接相信每次 USB 到达时间，因为 USB/线程调度会产生 jitter。推荐用大量样本做 **Huber regression 或 RANSAC**，把偶尔几十毫秒的接收延迟异常点排掉。
+
+3. **把设备 timestamp 转换成真正用于匹配的 acquisition time。** 这里还有一个容易忽略的问题：相机 timestamp 可能对应曝光开始，而毫米波 timestamp 可能对应一帧 chirp sequence 的开始。
+
+例如毫米波：
+
+$$
+t_r=10.000s
+$$
+
+但这一帧雷达实际上采集：
+
+$$
+10.000\sim10.041s
+$$
+
+那么最能代表这一整帧的时间其实是：
+
+$$
+t^{center}_r
+=
+10.000+\frac{0.041}{2}
+=
+10.0205s
+$$
+
+因此理想情况下统一采用：
+
+$$
+\boxed{\text{measurement center time}}
+$$
+
+如果 SDK 没有提供足够信息，也可以先直接使用 acquisition timestamp，再通过后面的运动相关性校准一个固定 offset。
+
+4. **以雷达帧为基准寻找相邻两个相机帧。** 这正是 mmMind 的做法：雷达 15 FPS、RGB-D 30 FPS，并且每一个 radar frame 作为 temporal reference。([arXiv][1])
+
+假设统一时间轴以后：
+
+```text
+Camera:
+C0       C1       C2       C3       C4
+|--------|--------|--------|--------|
+0      33.3ms   66.7ms   100ms   133.3ms
+
+Radar:
+R0                R1                R2
+|-----------------|-----------------|
+0               66.7ms           133.3ms
+```
+
+理想情况下：
+
+$$
+R_1\leftrightarrow C_2
+$$
+
+但真实数据不会这么完美。例如：
+
+```text
+C10:  2.300 s
+R5:   2.319 s
+C11:  2.333 s
+```
+
+那么 Radar $R_5$ 位于：
+
+$$
+C_{10}<R_5<C_{11}
+$$
+
+之间。
+
+5. **不要简单选最近 Pose，最好做 3D 骨架时间插值。** 假设：
+
+$$
+t_{C10}=2.300
+$$
+
+$$
+t_R=2.319
+$$
+
+$$
+t_{C11}=2.333
+$$
+
+先计算：
+
+$$
+\alpha=
+\frac{2.319-2.300}
+{2.333-2.300}
+=0.576
+$$
+
+对于第 $k$ 个人体关节点：
+
+$$
+P_k(t_R)
+=
+(1-\alpha)P_k(C_{10})
++
+\alpha P_k(C_{11})
+$$
+
+于是得到：
+
+$$
+\boxed{
+Radar_i
+\leftrightarrow
+Pose_i^{interp}
+}
+$$
+
+例如手腕在两帧相机里的位置：
+
+$$
+P_{10}=(0.40,0.25,1.20)
+$$
+
+$$
+P_{11}=(0.44,0.27,1.25)
+$$
+
+插值后就是雷达真正采样时刻对应的手腕位置。
+
+最终你的训练数据就从：
+
+$$
+30FPS\ Pose
+$$
+
+变成：
+
+$$
+\boxed{
+15FPS\ Radar
+\leftrightarrow
+15FPS\ Pose
+}
+$$
+
+也就是说你的 Radar Encoder 每个 $F_t$ 都有一个时间上对应的 3D Skeleton GT。这也是 mmMind Stage I 所需要的形式；论文明确是每个 radar frame token 都监督一个 17-joint 3D pose。([arXiv][1])
+
+6. **必须处理掉帧，绝不能用帧号硬配。** 正常 30 FPS 相机：
+
+$$
+\Delta t_c\approx33.3ms
+$$
+
+假如突然：
+
+```text
+2.300
+2.333
+2.366
+2.466   ← 中间掉了几帧
+```
+
+就不能跨这个 100 ms 空洞直接插值。
+
+你的程序应该判断：
+
+$$
+t_{C_{j+1}}-t_{C_j}>\tau
+$$
+
+就把对应 Radar-Pose pair 标记为：
+
+```text
+valid_pose = False
+```
+
+我的建议是正常插值只允许相邻 Pose 时间间隔大约不超过 **50 ms**；超过后宁可屏蔽这一帧的 Pose loss，也不要生成假的 GT。
+
+因此你的 Pose loss 实际应该带 mask：
+
+$$
+L_{pose}
+=
+\frac{
+\sum_t M_t
+\left\|
+\hat P_t-P_t
+\right\|_1
+}{
+\sum_t M_t
+}
+$$
+
+7. **最后一定要做一次“运动信号交叉相关”验证同步误差。** 这一招对于你特别实用。
+
+从毫米波提取一个非常简单的运动强度：
+
+$$
+E_r(t)
+=
+\frac1N
+\sum_i |v_i(t)|
+$$
+
+从骨架计算：
+
+$$
+E_p(t)
+=
+\sum_{j=1}^{J}
+\left\|
+P_j(t)-P_j(t-1)
+\right\|_2
+$$
+
+比如让受试者做几次明显的抬臂、坐下、站起。
+
+理论上两个曲线应该同时出现峰：
+
+```text
+Pose:
+          /\              /\
+_________/  \____________/  \____
+
+Radar:
+          /\              /\
+_________/  \____________/  \____
+```
+
+然后计算 cross-correlation：
+
+$$
+\delta^*
+=
+\arg\max_\delta
+Corr(E_r(t),E_p(t+\delta))
+$$
+
+如果得到：
+
+$$
+\delta^*=+12ms
+$$
+
+说明还存在约 12 ms 固定偏移，就统一修正：
+
+$$
+t_c'=t_c-12ms
+$$
+
+如果录制开头偏 5 ms、半小时后偏 30 ms，那么就不是固定 offset，而是 **clock drift**，说明前面的 $a$ 也需要修正。
+
+---
+
+### 最终你的整个程序就是这样
+
+```text
+                  ┌─ device timestamp
+Radar acquisition ┤
+                  └─ host monotonic timestamp
+                         │
+                         ├─ Clock mapping
+                         │
+                         ▼
+                 Radar common timestamp
+                         │
+                         │ temporal reference
+                         ▼
+------------------------------------------------
+
+                  ┌─ device timestamp
+Femto Depth ──────┤
+                  └─ host monotonic timestamp
+                         │
+                         ├─ Clock mapping
+                         ▼
+                 Camera common timestamp
+                         │
+                         ▼
+                  Body Tracking
+                         │
+                         │ inherit Depth timestamp
+                         ▼
+                       Pose
+                         │
+              C_j < R_i < C_{j+1}
+                         │
+                  linear interpolation
+                         ▼
+                Pose aligned to R_i
+                         │
+                         ▼
+
+       Radar_i  ↔  Pose_i
+       Radar_i+1 ↔ Pose_i+1
+       Radar_i+2 ↔ Pose_i+2
+```
+
+在 Python 中，核心的逐帧对齐甚至只有这么几行：
+
+```python
+j = np.searchsorted(camera_time, radar_time[i])
+
+t0 = camera_time[j - 1]
+t1 = camera_time[j]
+
+alpha = (radar_time[i] - t0) / (t1 - t0)
+
+pose_aligned[i] = (
+    (1 - alpha) * pose[j - 1]
+    + alpha * pose[j]
+)
+```
+
+当然前面必须先做好：
+
+$$
+t_{\text{device}}\rightarrow t_{\text{common}}
+$$
+
+的时钟转换。
+
+### 对你的实验，我建议的实际方案
+
+你不需要追求微秒级同步。因为你的毫米波只有：
+
+$$
+15FPS\Rightarrow66.7ms/frame
+$$
+
+Femto Bolt：
+
+$$
+30FPS\Rightarrow33.3ms/frame
+$$
+
+对于你要做的 **Pose-guided Radar Encoder**，我会把软件同步的目标定为：
+
+$$
+\boxed{\text{稳定控制在约 10–20 ms 量级}}
+$$
+
+这样已经明显小于一个 Radar frame。最关键的不是“第 100 帧对应第 200 帧”，而是保证：
+
+$$
+\boxed{
+Radar\ acquisition\ time
+\leftrightarrow
+Skeleton\ acquisition\ time
+}
+$$
+
+mmMind 本身确认的也是 **以 radar timestamp 为 reference，然后对 RGB-D 与 3D pose 进行 temporal interpolation/matching**，而不是帧序号配对。([arXiv][1])
+
+另外，Femto Bolt 内部的 RGB 和 Depth 本身具有硬件同步机制，官方文档说明单台相机内部的 capture 会根据硬件工作模式进行时间同步；所以你真正需要自己处理的主要是 **Femto Bolt ↔ mmWave Radar** 这一层。([Orbbec 文档][3])
+
+如果你后面确定了毫米波雷达型号，我可以进一步直接给你设计成一个**实际的数据采集程序架构**：两个采集线程怎么写、CSV 保存哪些 timestamp 字段、Pose 怎么绑定 Depth timestamp、离线 `sync.py` 怎么实现。
+
+[1]: https://arxiv.org/abs/2608.04127 "Teaching Foundation Models to Read mmWave: Pose-Guided Kinematic Representation for Human Behavior Understanding"
+[2]: https://doc.orbbec.com/documentation/Orbbec%20Femto%20Bolt%20Documentation/Orbbec%20SDK%20and%20Orbbec%20SDK%20K4A%20Wrapper%20%28Femto%20Bolt%29?utm_source=chatgpt.com "DOC"
+[3]: https://doc.orbbec.com/documentation/Orbbec%20Femto%20Bolt%20Documentation/Femto%20Bolt%20Device%20Synchronization?utm_source=chatgpt.com "DOC"
+

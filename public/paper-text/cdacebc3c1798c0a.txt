@@ -1,0 +1,948 @@
+PREPRINT 1
+TENT: Connect Language Models with IoT
+Sensors for Zero-Shot Activity Recognition
+Yunjiao Zhou, Jianfei Yang, Han Zou, Lihua Xie, Fellow, IEEE
+✦
+Abstract—Recent achievements in language models have showcased
+their extraordinary capabilities in bridging visual information with se-
+mantic language understanding. This leads us to a novel question: can
+language models connect textual semantics with IoT sensory signals to
+perform recognition tasks, e.g., Human Activity Recognition (HAR)? If
+so, an intelligent HAR system with human-like cognition can be built,
+capable of adapting to new environments and unseen categories. This
+paper explores its feasibility with an innovative approach, IoT-sEnsors-
+language alignmEnt pre-Training (TENT), which jointly aligns textual
+embeddings with IoT sensor signals, including camera video, LiDAR,
+and mmWave. Through the IoT-language contrastive learning, we derive
+a unified semantic feature space that aligns multi-modal features with
+language embeddings, so that the IoT data corresponds to specific
+words that describe the IoT data. To enhance the connection between
+textual categories and their IoT data, we propose supplementary de-
+scriptions and learnable prompts that bring more semantic information
+into the joint feature space. TENT can not only recognize actions that
+have been seen but also “guess” the unseen action by the closest textual
+words from the feature space. We demonstrate TENT achieves state-of-
+the-art performance on zero-shot HAR tasks using different modalities,
+improving the best vision-language models by over 12%.
+Index Terms—IoT sensing, multi-modal learning, human activity recog-
+nition, zero-shot classification, language model.
+1 INTRODUCTION
+Large language models (LLM) like GPT-3 [1] and Alpaca [2]
+demonstrate remarkable capabilities in comprehending and pro-
+cessing natural language. Recently, the advancements in language
+models have contributed significantly to visual sensing tasks, e.g.,
+semantic-guided object recognition [3], [4] and segmentation [5],
+[6], by associating lingual patterns with visual clues. By the
+alignment of visual and language representation space using
+deep neural networks, the visual features are directly mapped
+into the semantic labels, mimicking the recognition process in a
+human-like manner. Moreover, the richer semantic language space
+enables the model to have zero-shot classification capacity [7], i.e.,
+recognizing unobserved objects [8], [9]. The amazing progress in
+computer vision leads us to a compelling question in the Internet
+of Things (IoT) field: is it possible to connect the sensory signals
+with language models to attain semantic understandings for IoT
+tasks? If IoT sensors can be connected to language models, we
+Y. Zhou, J. Yang, Z. Han, and L. Xie are with the School of Electrical
+and Electronics Engineering, Nanyang Technological University, Singapore
+(yunjiao001@e.ntu.edu.sg; yang0478@e.ntu.edu.sg; zouh0005@e.ntu.edu.sg;
+elhxie@ntu.edu.sg).
+Jianfei Yang is the project lead and corresponding author.
+Fig. 1: TENT utilizes linguistic supervision to generate multi-
+modal IoT pre-train models, facilitating the zero-shot applications
+in various IoT sensing scenarios. The IoT encoders are pretrained
+with abundant pairs of IoT signals and activity categories, in-
+tegrating multi-modal information into each uni-modal encoder.
+These encoders can attend to various IoT sensing tasks separately,
+even with unseen categories, addressing the limitation of a single
+modality.
+can force the model to explain what happens behind the IoT
+data, benefiting various IoT applications, such as smart homes,
+autonomous robots, and healthcare.
+To explore the feasibility of connecting language models with
+IoT sensors, our research is centered on IoT-enabled Human
+Activity Recognition (HAR) which is a foundational task for
+various downstream human perception applications [10]–[13].
+Current HAR algorithms based on different IoT sensors, such cam-
+eras [14], [15], LiDAR [16], [17] and RF sensors [18]–[23], adopt
+the conventional supervised training using a one-hot vector that
+represents the category of human activity. Problematically, such
+a unique numerical identifier that denotes the activity category
+limits the range of recognizable activities and does not contain
+any semantic supervision signals. Consequently, existing methods
+can only recognize human activities that have been trained before,
+and the prediction is a restrained numerical identifier. In this
+paper, we explore the utilization of textual supervision and aim to
+align the IoT signal feature space to the semantic language space,
+arXiv:2311.08245v1
+[cs.CV]
+14
+Nov
+2023
+PREPRINT 2
+which enables zero-shot generalization to unknown classes. We
+transform the activity recognition task from the traditional multi-
+class classification task into a sensor-language similarity matching
+problem, i.e., retrieving the closest activity category using the IoT
+sensor data in the semantic space.
+However, building a unified feature space between IoT sensory
+signals and languages encounters several technical challenges.
+Firstly, various IoT sensors are enabled by different physical prin-
+ciples, and thus their data modalities have distinct characteristics.
+For instance, the camera focuses on colorful appearance; LiDAR
+delves into spatial voxels; and mmWave radar tracks only dynamic
+motions, which pose a significant challenge when aligning them
+with the textual modality. There are some potential solutions, such
+as IMAGEBIND [24] that uses images as the intermediary modal-
+ity to gain indirect alignment between text and other modalities
+(e.g., depth, thermal data, video), yet it highly relies on high-
+quality large-scale paired data which is not available in the IoT
+field. Secondly, IoT data is difficult to intuitively understand and
+interpret. The annotations are more complicated, resulting in fewer
+sensor-text pairs available compared to vision-language research.
+Thirdly, the language models can be heavily influenced by the text
+prompt during their connection to IoT sensory signals, especially
+when extending to unseen categories. Crafting the appropriate
+prompt is crucial to the model adaptation to a spectrum of inputs
+and tasks.
+Confronted with the aforementioned challenges, our approach
+aims to leverage the rich semantic information inherent in text
+for HAR while fully harnessing the distinctive attributes of each
+sensor modality. To align the unique strengths of each modality
+with the same textual embedding, it is intuitive to establish a
+unified space that directly bridges the gaps between multi-modal
+sensor data and text for deep mutual information exchanges.
+We design a modality-mutual learning strategy that jointly trains
+multisensor-text pairs to build IoT-semantic space. Through the
+deep alignment, each uni-modal pre-training encoder becomes
+more robust by learning from other modalities and forms a unified
+multi-modal feature space, overcoming limitations in IoT sensing
+scenarios constrained by a single modality. Furthermore, we shall
+address the deficiency of limited textual information in HAR
+from two perspectives: increasing the volume of textual input
+and enhancing the model’s adaptability to text. These strategies
+are expected to provide ample and adaptive semantic information,
+generating more appropriate text prompts for zero-shot HAR.
+In this case, we propose an IoT-sEnsors-language alignmEnt
+pre-Training (TENT) model that utilizes language supervision
+to enable better HAR of IoT sensors. We offer an effective
+multi-modal pre-trained method by jointly aligning the sensors
+of camera, LiDAR, and mmWave with the text embedding into
+a representative semantic space via contrastive learning, which
+not only improves the zero-shot performance of each sensor
+modality but also takes effect in scenarios where not all sensor
+modalities are available. Additionally, a customized text encoder
+is designed to capture sensor nuances for activity categories with
+two key strategies. We embed a structural description explaining
+the body movement for each class, serving as a complementary
+prompt to improve the model’s authentic comprehension of activ-
+ity categories. A learnable text embedding is then introduced to
+generate soft prompts, facilitating the adaptability of the model
+to different inputs and fostering cross-modal comprehension in
+depth. Experiments demonstrate the promising feasibility and
+significant effectiveness of combining language with IoT sensors,
+proving that language models can be seamlessly extended into the
+realm of IoT sensors.
+The contributions of this work are summarized as follows:
+• We explore sensor-language learning for IoT sensing
+scenarios, marking the first work of deeply connecting
+language models with IoT sensors to enhance cross-modal
+HAR through text-based semantic information.
+• We propose a novel method, TENT, that aligns the sensors
+of RGB, LiDAR, and mmWave simultaneously into a
+shared textual space using contrastive learning, customized
+descriptions and soft prompts design.
+• Extensive experiments demonstrate that TENT possesses
+exceptional capabilities in understanding unknown activ-
+ities and generalizing known ones, achieving remarkable
+zero-shot performance for HAR.
+2 RELATED WORK
+2.1 Cross-modal Language Pre-training Model
+Recent advancements in language models [1], [2] have signifi-
+cantly impacted various domains by enhancing natural language
+understanding and reasoning capabilities. The connection of lan-
+guage models to images, such as CLIP [8] and ALIGN [25], has
+proven that the supervision of language exhibits powerful benefits
+to comprehend and interact with visual representations, enabling
+open-vocabulary classification [26], [27], image-text retrieval [28],
+[29] and so on. Building upon the foundation of large-scale pre-
+trained language models, several recent research fuses language
+with various visual-related modalities to extend the applicability of
+language knowledge to a broader spectrum of tasks. For instance,
+certain works [30]–[32] have aligned semantic embeddings with
+spatial-temporal visual features, enabling tasks like video retrieval
+and classification through the utilization of text. Simultaneously,
+other research [33], [34] has extended language models into 3D
+world. They achieve this by mapping 3D point clouds into multi-
+view 2D image features, indirectly aligning them with the help of
+image-text pre-training guidance. Additionally, IMAGEBIND [24]
+harnesses images as an intermediary modality, enabling alignment
+between text and a multitude of multi-modal visual-related modal-
+ities, including audio, depth, thermal, and Egocentric Videos.
+This opens avenues for cross-modal retrieval and reasoning across
+multiple modalities.
+However, a critical limitation of current methods lies in their
+heavy reliance on the effectiveness of aligning images with text.
+Particularly in tasks that demand fine-grained IoT perception,
+where images might struggle to capture comprehensive spatial
+information, these approaches often fail to achieve reliable align-
+ment with language. Instead, TENT takes an approach to directly
+align IoT sensors with language, aiming to derive informative rep-
+resentations from multiple sensors while mitigating the limitations
+associated with image-based alignment.
+2.2 Zero-shot Human Activity Recognition
+Zero-shot HAR [35] is a crucial area in IoT applications. While ex-
+isting studies [36]–[39] have achieved precise activity estimation
+in known categories, traditional supervised classification methods
+have limitations when dealing with unseen activity classes, hinder-
+ing their broader application in the real world. To enhance zero-
+shot capabilities, current efforts [40]–[43] mainly adopt semantic
+space-based approaches by introducing category information for
+PREPRINT 3
+the knowledge transfer to unseen classification. [40] firstly tackles
+the zero-shot problem with manual-defined attributes, which pro-
+vides high-level characters to transfer the knowledge from seen
+to unseen classes. Nonetheless, it heavily relies on subjective
+human judgment and can involve significant labor to identify
+suitable attributes. Recently, many works [42], [44], [45] leverage
+word embeddings of category names to provide supplementary
+information. For instance, [42] employs adversarial mechanisms
+to determine whether features belong to unseen classes, enabling
+concise and effective zero-shot classification without requiring
+extensive manual processing. However, the brief activity category
+may offer vague and misleading guidance, posing a significant
+challenge for fine-grained and highly variable activities. In con-
+trast, our work aims to generate robust and representative semantic
+embeddings that vividly capture the spatial distribution of activity
+categories, fostering the widespread of activity sensing.
+3 METHOD
+TENT introduces a novel multi-sensor pre-training pipeline that
+leverages linguistic supervision for HAR. As shown in Fig. 2,
+TENT is structured into three fundamental components: sen-
+sor embedding extraction, language embedding extraction, and
+sensor-language alignment. Sensor embedding extraction captures
+distinctive features from each modality, while language embed-
+ding extraction generates adaptive prompts reflecting specific
+activity information for each category. Then sensor-language
+alignment serves as a bridge to connect sensor and language rep-
+resentations in a shared space, realizing cross-modal knowledge
+transferring. In the training phase, a joint training approach aligns
+video, LiDAR, and mmWave sensor modalities with text through
+contrastive loss to gain pre-train encoders for each sensor. During
+testing, inference for unseen categories can be conducted indepen-
+dently using the encoder specific to each modality, avoiding the
+necessity of acquiring all the data modalities. Such pre-training
+strategy integrates useful information from different aspects of
+sensors to each single modality, playing an important role in
+various IoT application scenarios with only one sensor modality.
+In the subsequent sections, we will present detailed descriptions
+of each component.
+3.1 Sensor Embeddings Extraction
+Given an IoT activity recognition dataset consisting of multiple
+signal streams of IoT sensors, we divide it into seen set (D)
+with ks training classes and unseen set (D̂) from ku disjoint
+label classes. It is important to note that these two sets have no
+overlapping categories, indicated by the constraint D ∩ D̂ = ∅.
+This separation represents a zero-shot learning scenario, where
+the objective is to recognize activities not seen during the training
+phase.
+For the seen set (D), the data input is structured as tuples
+of all the sensor modalities and their corresponding activity
+categories It
+i over a period of time series S, including video
+Iv
+i ∈ R3×224×224×S
+, LiDAR Il
+i ∈ R3×Nl×S
+and mmWave
+radar Ir
+i ∈ R5×Nr×S
+, denoted as Ii = (Iv
+i , Il
+i, Ir
+i , It
+i ), where Nl
+and Nr represent the variable number of point clouds in LiDAR
+and mmWave radar. While the unseen set (D̂) contains a flexible
+number of the available sensor modalities to represent various
+application scenarios. Thus the input of the unseen set can be
+written as Îi = (ˆ
+Im
+i , ˆ
+It
+i ), m ∈ (v, l, r), where m is the dynamic
+subset of all the sensors. TENT aims to predict the correct activity
+categories based on Îi from the unseen set.
+Due to the distinct data structures and characteristics of
+each modality, sensor embedding extraction module is designed
+with separate encoder for each modality. These encoders map
+different sensor inputs to the common-sized embeddings Em
+i ∈
+R768
+, m ∈ (v, l, r), effectively extracting modality-specific ac-
+tivity information. To accomplish this, we leverage established
+frameworks for each modality as the backbone for our sensor
+encoders (F). Specifically, we employ TimesFormer [46] for video
+data, harnessing its attention mechanisms to efficiently capture
+spatio-temporal patterns of videos. Meanwhile, for LiDAR and
+mmWave radar data, which present unique characteristics in the
+form of point clouds, Point Transformer [47] is adopted to model
+the complex spatial dependencies within 3D data by point-wise
+interaction between neighbors via self-attention mechanisms. It
+has strong contextual understanding, demonstrating state-of-the-
+art performance in various point cloud recognition tasks. Thus the
+process of sensor embedding extraction can be expressed as:
+Em
+i = Fm
+(Im
+i ), m ∈ (v, l, r). (1)
+The sensor embedding extraction captures the representative fea-
+tures of the IoT sensors, which contain descriptive temporal and
+spatial information based on different sensor perspectives. It forms
+a crucial foundation for the subsequent cross-modal alignment.
+3.2 Language Embedding Extraction
+Language embedding extraction is proposed to generate seman-
+tically meaningful and robust text embeddings for both seen and
+unseen classes, aiming to reflect the spatial distribution of activity
+categories based on the semantic distance. To achieve this, we
+leverage the pre-trained text encoder (Ft) sourced from CLIP [8]
+as our backbone, transferring its powerful ability of natural lan-
+guage understanding to IoT sensing. Trained on extensive textual
+data, it is able to capture diverse semantic information effectively
+without further modification.
+Our dataset (C̃k = C ∪ Ĉ, k ∈ {1, 2, ..., ks + ku =
+27}) includes 22 activity categories used for training (Ca, a ∈
+{1, 2, ..., ks = 22}), with an additional 5 unseen categories
+introduced for zero-shot testing (Ĉb, b ∈ {1, 2, ..., ku = 5}).
+Consequently, the available textual semantic information is rel-
+atively sparse and limited, where the model can hardly gain
+enough prior knowledge of the classes. To address it, we introduce
+descriptions (D̃k = D∪D̂, k ∈ {1, 2, ..., ks+ku = 27}) for each
+activity category to provide supplementary information, enriching
+the encoder’s semantic understanding of activity categories. For
+instance, “Bowing” is described as “an activity of a person bending
+forward at the waist”. These descriptions offer detailed explana-
+tions of the specific body movements involved in each activity,
+providing a more reliable basis for constructing the embedding
+spatial distribution of activity categories. The names together with
+descriptions of each class are fed into a tokenizer to generate the
+text token ta for further extraction:
+ta = ⊕(ϕ(Ca), ϕ(Da)), (2)
+where ϕ represents the tokenizer to convert text into numerical
+representations for computational processing, and ⊕ is the con-
+catenation operation.
+However, the hard combination between the categories and
+descriptions may lead to an overfitting issue towards the seen
+PREPRINT 4
+Fig. 2: Overview of IoT-sEnsors-language alignmEnt pre-Training (TENT), which consists of three modules of sensor embedding
+extraction, language embedding extraction and Sensor-Language alignment. Distinct feature extractors are tailored for different sensors,
+while text, tokenized customarilly via complementary description and learnable prompt, is extracted by a frozen encoder and a mapping
+layer. During the training stage, TENT calculates the similarity scores between embedding of three sensors and text embedding, and
+maximizes the similarity scores for the ground-truth class. At test time TENT can make zero-shot predictions for any sensor modality
+based on the highest similarity scores.
+set, decreasing the zero-shot performance on the unseen set.
+Hence, motivated by CoOp [48], we introduce learnable prompts
+to dynamically generate prompts that benefit the understanding of
+textual information in a flexible manner, enhancing the model’s
+adaptability and robustness for unseen text. In TENT, n learnable
+prompts are placed both before and after the text token ta to adapt
+to the specific context of the data, ensuring that the model can
+effectively leverage textual cues during activity recognition tasks.
+The token of each category Ta is gained via the concatenation of
+learnable prompt pn and text token ta:
+Ta = ⊕(p1, , , pn, ta, pn+1, , , p2n), (3)
+where pn is the n-th learnable prompt in the tokens, and n is set
+to be 16 in our experiments.
+To extract the representative text embeddings, the tokens are
+firstly extracted by the fixed text encoder (Ft), which can under-
+stand vast numbers of natural language to produce the semantic
+embeddings. As the objective of TENT is to align the language
+model to IoT sensors, the embeddings are supposed to go through
+a mapping layer (G) to fine-tune the text embeddings, driving the
+semantic embedding to IoT sensor space. Therefore, the formula
+of language embedding extraction is denoted as:
+Et
+a = G(Ft(Ta)). (4)
+Language embedding extraction harnesses the text processing
+capabilities of large language models to effectively generate em-
+beddings from textual activity categories. This process exhibits
+strong inference efficacy, even for unseen categories, enabling
+robust reasoning. It can effectively map the unseen classes into
+the semantic space shared with seen ones based on semantic
+similarity, greatly enhancing the model’s ability to comprehend
+activities accurately within IoT sensing applications.
+3.3 Modality-Mutual Learning
+After obtaining feature embeddings of both sensor modalities
+and language, we propose modality-mutual learning to realize
+sensor-language alignment, bridging the gap between languages
+and different sensor modalities. Specifically, we design a joint
+optimization approach that refines the parameters in both language
+extraction and sensor encoders for the three modalities. Such an
+optimization process follows a contrastive strategy, wherein the
+objective is to encourage sensor embeddings to closely align with
+their respective text embeddings for the same activity class while
+maintaining separation from unrelated classes. In consequence,
+the text embedding will be mapped into the IoT sensor domain,
+comprehensively capturing the distinctive characteristics of all
+sensor modalities. To achieve these goals, we calculate similarity
+scores between text embeddings and three sensor modalities. This
+is targeted to maximize the similarity between the embeddings
+from the same activity category while minimizing the similarity
+between embeddings from different categories. The process is
+realized via infoNCE [49] losses Lmt
+for each sensor modality:
+Lmt
+= − log
+exp(Em
+i · {Et
+a}+
+/τ)
+P
+Et
+a∈{{Et
+a}+,{Et
+a}−} exp(Em
+i · Et
+a/τ)
+, (5)
+PREPRINT 5
+where m ∈ (v, l, r), τ refers to a scalar temperature, exp() is
+the exponential function, and {Et
+a}+
+, {Et
+a}−
+} denote the positive
+and negative text embeddings overlapping with sensor embeddings
+Em
+i respectively. The term exp(Em
+i · {Et
+a/}+
+τ) measures the
+similarity between the embedding of a specific sensor modality
+and the corresponding text embedding, while the denominator
+considers similarities with all the categories. By minimizing this
+loss, we ensure that the model assigns high similarity scores to the
+correct category pairs.
+The training objective of TENT involves integrating the con-
+trastive losses of each sensor modality simultaneously:
+L = αLvt
++ βLlt
++ γLrt
+, (6)
+where α, β and γ are the hyper-parameters that assign different
+weights for the sensor modalities. These weights determine the
+balance among the three sensor modalities during the alignment
+process, essentially indicating which modality the text embedding
+should pay more attention to. In our practical experiments, we
+observed that LiDAR and Radar contain much 3D information,
+making them more robust in zero-shot scenarios. Consequently,
+we assign higher weights to these two modalities.
+In summary, sensor-language alignment effectively bridges the
+gaps between sensor data and linguistic semantics through joint
+training, facilitating the model’s cross-modal comprehension of
+activity recognition. It drives the modality information to exchange
+with each other, integrating the multi-modal and linguistic per-
+spective into each single sensor encoder. Therefore, when a single
+modality encoder is used for inferring unseen activity categories,
+it can leverage the perspectives from all sensor modalities for
+comprehensive reasoning, thus achieving a more robust zero-shot
+performance.
+3.4 Zero-Shot Human Activity Recognition
+Building on the robust multi-modal pre-training model through
+joint training, TENT’s primary goal is to produce general encoders
+for each sensor modality which can predict the correct results
+for unseen activity categories. Unlike conventional methods that
+usually require extensive retraining or demand labeled data for
+new activity classes, TENT tackles these tasks without further
+training process, contributing to great convenience and widespread
+application of IoT sensing.
+During testing, it is likely that not all the sensor modalities
+are accessible. Taking an unseen class of LiDAR signal (ˆ
+Il
+i) for
+example, all the parameters in the test are fixed and adopted
+with the pre-training modal. TENT first exacts robust LiDAR
+embedding (Êl
+i) via the pretrained LiDAR encoder (Fl
+), which
+is integrated with multi-modal information from the other two
+sensors with the help of the alignment to IoT sensor semantic
+space:
+Êl
+i = Fl
+(ˆ
+Il
+i). (7)
+As for language embedding extraction, we feed both seen and
+unseen classes into the encoder, aiming to achieve powerful
+activity recognition on both seen and unseen categories. The text
+embedding in the zero-shot stage is generated by:
+t̂k = ⊕(ϕ(C̃k), ϕ( ˜
+Ck)), (8)
+T̂k = ⊕(p1, , , pn, t̂k, pn+1, , , p2n), (9)
+Êt
+k = G(Ft(T̂k)). (10)
+Finally, through similarity calculation between LiDAR embed-
+ding Êl
+i and text embeddings of all the categories Êt
+k, TENT
+makes the activity prediction ŷ based on the highest similarity
+score among the k activity categories.
+ŷ = arg max
+k
+(Êl
+i · Êt
+k). (11)
+In a nutshell, these simple procedures ensure TENT can be applied
+in a wide range of uni-modal and multi-modal scenarios, where
+each sensor encoder predicts accurate activities from the unified
+multi-modal feature space, thereby promoting the further adoption
+and development of IoT sensing.
+4 EXPERIMENT
+4.1 Setup
+Dataset. To enable multi-sensor alignment, there is a high re-
+quirement for a dataset with a substantial number of sensor pairs
+and synchronized IoT signals. We adopt the recent multi-model
+non-intrusive human dataset denoted MM-Fi [50], which offers
+much convenience for the connection between language and IoT
+sensors, to evaluate the performance of TENT. As depicted in
+Fig. 3, it comprises various IoT signals, including images, LiDAR,
+and mmWave radar point clouds, of 27 daily or rehabilitation
+activity categories. MM-Fi invites 40 subjects to perform each
+of the 27 activities for 30 seconds at 4 different environmental
+scenes, serving as a large public human dataset with 320k synchro-
+nized frames for comprehensive evaluations. In our experiments,
+we aggregate data from each sensor modality by combining 8
+consecutive frames to reflect the temporal information as each
+modality input, contributing to totally 8640 sequences for each
+modality.
+To enable a robust zero-shot evaluation, 5 classes, namely
+Left twist (Z01), Both limb extension (Z02), Right side lunge
+(Z03), Waving left hand (Z04), and Right side throwing (Z05),
+are excluded from the training set and only used for testing.
+This selection aligns with the core principle of zero-shot learning:
+ensuring unknown categories differ from known ones but share
+certain similarities. For example, the Right twist in a known
+category and the Left twist in an unknown category both rotate the
+body, but the direction of the rotation is different and symmetrical
+to each other. During the zero-shot interference stage, the network
+can classify unknown classes reasonably based on their proximity
+to the known class label space.
+Experimental details. In the experimental setup, each image
+frame is resized to a standard 224x224 pixel size to meet the
+input requirements of TimesFormer. To manage varying numbers
+of point clouds in LiDAR and radar clips, we balanced the number
+of point clouds within each batch based on the maximum point
+cloud count, ensuring a consistent data structure. Additionally,
+the loss weights for video, LiDAR, and radar are set at 0.4, 1.3,
+and 1.3, respectively, ensuring the unified feature space containing
+many 3D spatial details.
+Our experiments were conducted using the PyTorch frame-
+work, with optimization performed through the Stochastic Gra-
+dient Descent with Momentum (SGDM) algorithm. Key hyper-
+parameters include a batch size of 10, a learning rate of 0.001,
+a momentum value of 0.9, and a weight decay of 0.0005. The
+training process spanned 50 epochs, and we implemented a step-
+wise learning rate schedule with reductions occurring at the 20th,
+30th, and 40th epochs.
+PREPRINT 6
+Fig. 3: The visualization of three activities in MM-Fi. Two
+limb extension actions are similar and waving left hand is quite
+different, which is reflected by the latent space in Figure 4.
+4.2 Overall Performance
+To assess the necessity of connecting the language model to IoT
+sensors, we first conduct preliminary experiments to evaluate the
+individual performance of each modality’s backbone denoted as
+Vanilla. These experiments follow the conventional approach of
+training each modality separately for one-hot classification. As
+shown in Table 1, the vanilla backbones in all three modalities
+demonstrate excellent recognition performance within their train-
+ing knowledge. However, they lose the effect when confronted
+with entirely unfamiliar activity categories. This limitation is a
+common challenge in one-hot classification, which arises from the
+fact that these models lack any prior information about unknown
+categories, making zero-shot categorization a difficult task.
+Recent visual-based HAR works prove that great improvement
+in zero-shot can be achieved by the introduction of language em-
+beddings. In this manner, we make extensive comparisons between
+the current SOTA methods and TENT. Due to the absence of
+dedicated zero-shot algorithms for Lidar and mmWave in activity
+recognition, we replicated algorithms from the video domain for
+comparison and marked them with an asterisk (∗). As observed in
+table 1, both the vanilla model and zero-shot algorithms achieve
+competitive and high accuracy of activity recognition on the seen
+set.
+In contrast, it is crucial to note that only the language-related
+methods enable zero-shot ability for the unseen activity categories.
+This underscores the importance of incorporating language in-
+formation to construct a semantic space that accurately reflects
+the distribution of activity categories. Among them, TENT brings
+a significant enhancement to the average of zero-shot perfor-
+mance across all the modalities, improving the average results
+of video, LiDAR and Radar by exceeding 12%, 24% and 12%,
+respectively. The great increase may stem from the joint pre-
+training strategy that enables each uni-modal encoder to exact
+the feature embeddings from the unified multi-modal perspectives,
+surmounting the constraints of the specific modality. The above
+findings demonstrate that language models can effectively connect
+various IoT sensors to a joint feature space, transferring the
+semantic information of activity categories to the sensor modalities
+for unseen classes.
+4.3 Cross-Domain Evaluation
+Our experiments are conducted under the random split setting by
+default, where the training and testing sets share the same data
+distribution, including subjects and environments. However, in
+practical applications, new subjects or experimental contexts may
+often emerge in the testing set, posing challenges for zero-shot
+HAR. In such scenarios, we investigate TENT’s enhanced zero-
+shot capability under more complex conditions, with a specific
+focus on its recognition of unknown activities for new subjects
+or experimental scenes. MM-Fi dataset offers three data split
+strategies, consisting of Random Split (80% for training and 20%
+for testing), Cross-Subject Split (32 subjects for training and 8 for
+testing) and Cross-Environment Split (3 environments for training
+and 1 for testing). Table. 2 shows the performance of TENT on
+the seen and unseen sets with the different split settings.
+Among these settings, TENT exhibits the best zero-shot
+performance under the Random Split setting across all three
+modalities. This is attributed to the prior exposure of the network
+to the characteristics of the subjects and environments present
+in the testing set. In the Cross-Subject Split setting, where new
+subjects are introduced and the environmental context remains
+consistent with the training data, TENT achieves high zero-shot
+results similar to those in the Random Split setting. While the
+Cross-Environment Split setting, where the testing data features
+new environmental contexts but with subjects seen during training,
+suffers a consistent decline in performance, the zero-shot scores
+still surpass those of the current state-of-the-art methods shown in
+Table. 1. In a nutshell, these results highlight TENT’s robustness
+and adaptability in zero-shot performance, even in challenging
+scenarios involving new subjects or environments. Such advance-
+ment extends the applicability of HAR in real-world IoT sensing,
+improving the effective recognition of new activity categories in
+new scenarios with an increasing number of additional subjects.
+4.4 Ablation Study
+To verify the effectiveness of TENT, extensive ablation experi-
+ments are conducted on the trained and unseen set of MM-Fi
+dataset with results demonstrated in Table 3. All experiments
+are conducted with linguistic supervision, where ”joint” refers to
+whether the three modalities are jointly trained, and ”description”
+and ”soft prompt” denote customized language extraction compo-
+nents discussed in Section 3. The bold figures represent the best
+results for each modality in the specific unseen categories. The
+influence of joint training is significant. Models trained with a
+joint approach consistently outperform those trained separately on
+PREPRINT 7
+TABLE 1: Top 1 accuracy comparison for zero-shot performance on MM-Fi dataset.
+Modality Method Seen set
+Unseen set
+Z01 Z02 Z03 Z04 Z05 Avg
+Video
+Vanilla 88.8 0.0 0.0 0.0 0.0 0.0 0.0
+CEWGAN-OD [42] 88.9 1.3 12.1 9.7 9.6 3.3 7.25
+I-VL [30] 59.6 2.8 0.0 6.6 32.8 6.3 8.5
+CLIP4Clip [31] 89.7 0.9 2.5 4.7 76.9 8.7 18.4
+CoOp [48] 90.3 10.3 2.8 2.5 77.5 2.2 19.8
+TENT 88.2 10.6 7.2 42.2 73.1 23.4 32.4
+Lidar
+Vanilla 90.5 0.0 0.0 0.0 0.0 0.0 0.0
+CEWGAN-OD* 91.3 0.3 46.3 15.6 18.8 5.3 17.6
+CLIP4Clip* 92.2 1.0 44.8 39.9 36.4 5.8 26.5
+CoOp* 91.9 4.4 0.9 38.1 31.6 0.6 15.4
+TENT 92.8 14.1 73.4 51.6 76.6 36.6 50.0
+Radar
+Vanilla 81.7 0.0 0.0 0.0 0.0 0.0 0.0
+CEWGAN-OD* 87.6 0.8 28.8 9.7 16.8 2.4 11.7
+CLIP4Clip* 87.6 10.4 51.0 32.8 50.6 6.5 31.8
+CoOp* 88.4 23.4 3.1 44.4 47.5 11.6 26.0
+TENT 88.1 21.9 47.5 47.8 71.3 15.6 43.9
+TABLE 2: The performance of TENT with different dataset split settings.
+Setting Modality Seen set
+Unseen set
+Z01 Z02 Z03 Z04 Z05 Avg
+Random Split
+Video 88.2 10.6 7.2 42.2 73.1 23.4 32.4
+LiDAR 92.8 14.1 73.4 51.6 76.6 36.6 50.0
+Radar 88.1 21.9 47.5 47.8 71.3 15.6 43.9
+Cross-Subject Split
+Video 91.0 12.5 3.1 12.5 48.4 50.0 27.5
+LiDAR 93.2 3.1 68.8 56.2 73.4 46.9 49.1
+Radar 86.0 34.4 34.4 50.0 64.1 20.3 43.1
+Cross-Environment Split
+Video 57.8 6.2 16.2 17.5 25.0 25.0 17.5
+LiDAR 65.7 28.7 42.5 72.5 21.3 42.5 40.7
+Radar 86.8 32.5 20.0 20.0 52.5 15.0 29.5
+individual modalities with the same setting of language extraction.
+It is evident that joint training enables the model to create a more
+expressive and information-dense semantic space by integrating
+video, LiDAR, and radar modalities. Consequently, all three
+modalities exhibit notable performance enhancements in terms of
+zero-shot accuracy. Secondly, as for the design choices within the
+language extractor, the introduction of textual descriptions yields
+a remarkable boost in zero-shot performance across all modal-
+ities. For instance, compared to the same experimental setting,
+descriptions improve the overall zero-shot accuracy of mmWave
+radar by a large margin of exceeding 7%. This enhancement arises
+from the richer semantic information embedded in descriptions,
+which allows for a clearer representation of semantic affinities
+among activity categories. Thus, cross-modal alignment is driven
+closer to the true distribution of IoT scenes, enhancing the model’s
+adaptability to new classes. Additionally, the incorporation of soft
+prompts empowers the model to adaptively generate text embed-
+dings. Though it may cause instability when used independently,
+soft prompt exhibits a significant increase in performance when
+combined with joint training and descriptions. With rich semantic
+and modality information, soft prompt effectively balances the
+relationships among various modalities, aligning the text semantic
+space closely with the embeddings of IoT sensors, thus enabling
+the model to achieve more stable and robust zero-shot recognition
+results. The ablation study proves the effectiveness of TENT
+with joint training across modalities and the customized designs
+of the language extractor. These results emphasize the necessity
+of establishing a shared semantic space to guide multi-modal
+recognition and highlight the significance of detailed descriptions
+and soft prompts in amplifying zero-shot performance.
+4.5 Visualization Analysis
+To better illustrate TENT’s capacity to effectively encode textual
+information and establish a Sensor-Language unified space, we
+conducted a visualization analysis through mapping the embed-
+dings from various modalities of selected categories into a shared
+space, as shown in Figure 4. It is evident that the distributions
+of IoT sensor embeddings cluster near their corresponding textual
+features within the same category, which proves TENT’s effec-
+tiveness in bridging the gaps between semantic information and
+the IoT sensing domain. Furthermore, the visualizations offer a
+clear depiction of the semantic space distances between different
+activity categories. For instance, activities that share similarities,
+but differ mainly in direction, tend to exhibit relatively close
+spatial distributions. Conversely, activities that are notably distinct
+are often situated far apart from other activities. Notably, for
+unseen classes like A11 and A17, TENT successfully maps them
+into the correct clusters of limb extension and waving hands,
+respectively, based on semantic information. This illustrates the
+accuracy of TENT to position activity categories in the spatial
+context, achieving robust zero-shot alignment.
+5 CONCLUSION
+In this work, we propose a multi-modal pre-training model that
+first proves the feasibility and effectiveness of the language model
+PREPRINT 8
+TABLE 3: Ablation results for TENT on MM-Fi Dataset.
+Joint Description Soft prompt Modality Seen set
+Unseen set
+Z01 Z02 Z03 Z04 Z05 Avg
+1 % % %
+Video 89.7 0.9 2.5 4.7 76.9 8.7 18.4
+LiDAR 92.2 1.0 44.8 39.9 36.4 5.8 26.5
+Radar 87.6 10.4 51.0 32.8 50.6 6.5 31.8
+2 % ! %
+Video 89.9 2.8 1.3 16.2 77.5 36.6 25.5
+LiDAR 92.8 5.2 20.1 55.8 52.3 34.1 34.8
+Radar 88.0 15.3 53.2 42.2 56.8 19.5 38.5
+3 % ! !
+Video 89.3 4.4 1.3 25.6 78.1 20.0 25.1
+LiDAR 93.1 7.5 19.1 57.5 58.1 14.7 31.2
+Radar 88 18.1 34.1 36.6 50.0 11.6 32.5
+4 ! % %
+Video 89.9 0.6 4.1 0.9 79.4 13.1 18.8
+LiDAR 93.5 7.5 57.5 53.8 59.1 22.5 38.2
+Radar 87.7 19.1 45.6 29.7 56.9 6.6 34.3
+5 ! ! %
+Video 90.5 1.3 1.3 6.6 71.9 48.1 26.1
+LiDAR 92.8 22.5 43.4 55.0 57.2 41.6 40.8
+Radar 87.7 10.3 61.6 40.9 59.1 21.9 41.3
+6 ! % !
+Video 89.2 11.6 7.8 2.5 85.3 14.4 22.1
+LiDAR 91.1 2.8 75.0 49.1 70.6 21.6 44.4
+Radar 87.7 13.8 30.3 12.8 38.1 6.2 23.5
+TENT ! ! !
+Video 88.2 10.6 7.2 42.2 73.1 23.4 32.4
+LiDAR 92.8 14.1 73.4 51.6 76.6 36.6 50.0
+Radar 88.1 21.9 47.5 47.8 71.3 15.6 43.9
+Fig. 4: T-SNE visualization of the joint feature space.
+to connect IoT sensors for zero-shot activity recognition. We
+design a joint training pipeline through directly aligning text em-
+bedding with a series of IoT sensors, leading to a unified seman-
+tic space with instructive representations learned from multiple
+modalities. To enhance the spatial mapping of semantic features,
+customized language extraction is proposed with a supplementary
+description to provide informative details of categories and a
+learnable prompt to ensure the robustness of semantic embedding.
+Our extensive experimental results clearly showcase significant
+improvements in activity recognition performance for unseen
+classes across various IoT modalities. This advancement opens up
+new possibilities for intelligent and interactive IoT sensing with
+instruction from natural language.
+REFERENCES
+[1] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal,
+A. Neelakantan, P. Shyam, G. Sastry, A. Askell et al., “Language mod-
+els are few-shot learners,” Advances in neural information processing
+systems, vol. 33, pp. 1877–1901, 2020.
+[2] R. Taori, I. Gulrajani, T. Zhang, Y. Dubois, X. Li, C. Guestrin,
+P. Liang, and T. B. Hashimoto, “Alpaca: A strong, replicable instruction-
+following model,” Stanford Center for Research on Foundation Models.
+https://crfm. stanford. edu/2023/03/13/alpaca. html, vol. 3, no. 6, p. 7,
+2023.
+[3] Z. Huang, Z. Zeng, B. Liu, D. Fu, and J. Fu, “Pixel-bert: Aligning
+image pixels with text by deep multi-modal transformers,” arXiv preprint
+arXiv:2004.00849, 2020.
+[4] Y. Du, F. Wei, Z. Zhang, M. Shi, Y. Gao, and G. Li, “Learning to prompt
+for open-vocabulary object detection with vision-language model,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2022, pp. 14 084–14 093.
+[5] M. Xu, Z. Zhang, F. Wei, Y. Lin, Y. Cao, H. Hu, and X. Bai, “A simple
+baseline for open-vocabulary semantic segmentation with pre-trained
+vision-language model,” in European Conference on Computer Vision.
+Springer, 2022, pp. 736–753.
+[6] S. Yun, S. H. Park, P. H. Seo, and J. Shin, “Ifseg: Image-free se-
+mantic segmentation via vision-language model,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2023, pp. 2967–2977.
+[7] R. Mishra, A. Gupta, H. P. Gupta, and T. Dutta, “A sensors based deep
+learning model for unseen locomotion mode identification using multiple
+semantic matrices,” IEEE Transactions on Mobile Computing, vol. 21,
+no. 3, pp. 799–810, 2020.
+[8] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal,
+G. Sastry, A. Askell, P. Mishkin, J. Clark et al., “Learning transferable
+visual models from natural language supervision,” in International con-
+ference on machine learning. PMLR, 2021, pp. 8748–8763.
+[9] T. Kojima, S. S. Gu, M. Reid, Y. Matsuo, and Y. Iwasawa, “Large lan-
+guage models are zero-shot reasoners,” Advances in neural information
+processing systems, vol. 35, pp. 22 199–22 213, 2022.
+PREPRINT 9
+[10] L. M. Dang, K. Min, H. Wang, M. J. Piran, C. H. Lee, and H. Moon,
+“Sensor-based and vision-based human activity recognition: A compre-
+hensive survey,” Pattern Recognition, vol. 108, p. 107561, 2020.
+[11] F. Luo, S. Khan, Y. Huang, and K. Wu, “Binarized neural network
+for edge intelligence of sensor-based human activity recognition,” IEEE
+Transactions on Mobile Computing, 2021.
+[12] Y. Zhou, J. Yang, H. Huang, and L. Xie, “Adapose: Towards cross-site
+device-free human pose estimation with commodity wifi,” arXiv preprint
+arXiv:2309.16964, 2023.
+[13] Y. Zhou, H. Huang, S. Yuan, H. Zou, L. Xie, and J. Yang, “Metafi++:
+Wifi-enabled transformer-based human pose estimation for metaverse
+avatar simulation,” IEEE Internet of Things Journal, 2023.
+[14] H. Jhuang, J. Gall, S. Zuffi, C. Schmid, and M. J. Black, “Towards un-
+derstanding action recognition,” in Proceedings of the IEEE international
+conference on computer vision, 2013, pp. 3192–3199.
+[15] J. Zhu, B. Wang, X. Yang, W. Zhang, and Z. Tu, “Action recognition
+with actons,” in Proceedings of the IEEE International Conference on
+Computer Vision, 2013, pp. 3559–3566.
+[16] J. Roche, V. De-Silva, J. Hook, M. Moencks, and A. Kondoz, “A
+multimodal data processing system for lidar-based human activity recog-
+nition,” IEEE Transactions on Cybernetics, vol. 52, no. 10, pp. 10 027–
+10 040, 2021.
+[17] F. Luo, S. Poslad, and E. Bodanese, “Temporal convolutional networks
+for multiperson activity recognition using a 2-d lidar,” IEEE Internet of
+Things Journal, vol. 7, no. 8, pp. 7432–7442, 2020.
+[18] M. Wang, Y. D. Zhang, and G. Cui, “Human motion recognition
+exploiting radar with stacked recurrent neural network,” Digital Signal
+Processing, vol. 87, pp. 125–131, 2019.
+[19] D. Banerjee, S. Rani, A. M. George, A. Chowdhury, S. Dey, A. Mukher-
+jee, T. Chakravarty, and A. Pal, “Application of spiking neural networks
+for action recognition from radar data,” in 2020 International Joint
+Conference on Neural Networks (IJCNN). IEEE, 2020, pp. 1–10.
+[20] F. Luo, S. Khan, A. Li, Y. Huang, and K. Wu, “Edgeactnet: Edge
+intelligence-enabled human activity recognition using radar point cloud,”
+IEEE Transactions on Mobile Computing, 2023.
+[21] J. Yang, H. Zou, and L. Xie, “Securesense: Defending adversarial attack
+for secure device-free human activity recognition,” IEEE Transactions
+on Mobile Computing, 2022.
+[22] J. Yang, H. Zou, H. Jiang, and L. Xie, “Device-free occupant activity
+sensing using wifi-enabled iot devices for smart homes,” IEEE Internet
+of Things Journal, vol. 5, no. 5, pp. 3991–4002, 2018.
+[23] D. Wang, J. Yang, W. Cui, L. Xie, and S. Sun, “Airfi: empowering
+wifi-based passive human gesture recognition to unseen environment via
+domain generalization,” IEEE Transactions on Mobile Computing, 2022.
+[24] R. Girdhar, A. El-Nouby, Z. Liu, M. Singh, K. V. Alwala, A. Joulin,
+and I. Misra, “Imagebind: One embedding space to bind them all,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2023, pp. 15 180–15 190.
+[25] C. Jia, Y. Yang, Y. Xia, Y.-T. Chen, Z. Parekh, H. Pham, Q. Le, Y.-
+H. Sung, Z. Li, and T. Duerig, “Scaling up visual and vision-language
+representation learning with noisy text supervision,” in International
+conference on machine learning. PMLR, 2021, pp. 4904–4916.
+[26] G. Ghiasi, X. Gu, Y. Cui, and T.-Y. Lin, “Scaling open-vocabulary
+image segmentation with image-level labels,” in European Conference
+on Computer Vision. Springer, 2022, pp. 540–557.
+[27] J. Xu, S. Liu, A. Vahdat, W. Byeon, X. Wang, and S. De Mello, “Open-
+vocabulary panoptic segmentation with text-to-image diffusion models,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2023, pp. 2955–2966.
+[28] Q. Zhang, Z. Lei, Z. Zhang, and S. Z. Li, “Context-aware attention
+network for image-text retrieval,” in Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition, 2020, pp. 3536–
+3545.
+[29] H. Chen, G. Ding, X. Liu, Z. Lin, J. Liu, and J. Han, “Imram: Iterative
+matching with recurrent attention memory for cross-modal image-text
+retrieval,” in Proceedings of the IEEE/CVF conference on computer
+vision and pattern recognition, 2020, pp. 12 655–12 663.
+[30] C. Ju, T. Han, K. Zheng, Y. Zhang, and W. Xie, “Prompting visual-
+language models for efficient video understanding,” in European Confer-
+ence on Computer Vision. Springer, 2022, pp. 105–124.
+[31] H. Luo, L. Ji, M. Zhong, Y. Chen, W. Lei, N. Duan, and T. Li, “Clip4clip:
+An empirical study of clip for end to end video clip retrieval and
+captioning,” Neurocomputing, vol. 508, pp. 293–304, 2022.
+[32] H. Xu, G. Ghosh, P.-Y. Huang, D. Okhonko, A. Aghajanyan,
+F. Metze, L. Zettlemoyer, and C. Feichtenhofer, “Videoclip: Contrastive
+pre-training for zero-shot video-text understanding,” arXiv preprint
+arXiv:2109.14084, 2021.
+[33] R. Zhang, Z. Guo, W. Zhang, K. Li, X. Miao, B. Cui, Y. Qiao, P. Gao, and
+H. Li, “Pointclip: Point cloud understanding by clip,” in Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2022, pp. 8552–8562.
+[34] Y. Hong, H. Zhen, P. Chen, S. Zheng, Y. Du, Z. Chen, and C. Gan, “3d-
+llm: Injecting the 3d world into large language models,” arXiv preprint
+arXiv:2307.12981, 2023.
+[35] L. Chen, Y. Zhang, S. Miao, S. Zhu, R. Hu, L. Peng, and M. Lv,
+“Salience: An unsupervised user adaptation model for multiple wearable
+sensors based human activity recognition,” IEEE Transactions on Mobile
+Computing, 2022.
+[36] W. Li, Z. Zhang, and Z. Liu, “Action recognition based on a bag of 3d
+points,” in 2010 IEEE computer society conference on computer vision
+and pattern recognition-workshops. IEEE, 2010, pp. 9–14.
+[37] X. Yang and Y. Tian, “Effective 3d action recognition using eigenjoints,”
+Journal of Visual Communication and Image Representation, vol. 25,
+no. 1, pp. 2–11, 2014.
+[38] J. Yang, X. Chen, H. Zou, D. Wang, and L. Xie, “Autofi: Towards
+automatic wifi human sensing via geometric self-supervised learning,”
+IEEE Internet of Things Journal, 2022.
+[39] J. Yang, X. Chen, H. Zou, D. Wang, Q. Xu, and L. Xie, “Efficientfi:
+Toward large-scale lightweight wifi sensing via csi compression,” IEEE
+Internet of Things Journal, vol. 9, no. 15, pp. 13 086–13 095, 2022.
+[40] C. H. Lampert, H. Nickisch, and S. Harmeling, “Learning to detect
+unseen object classes by between-class attribute transfer,” in 2009 IEEE
+conference on computer vision and pattern recognition. IEEE, 2009,
+pp. 951–958.
+[41] W. Xu, Y. Xian, J. Wang, B. Schiele, and Z. Akata, “Attribute proto-
+type network for zero-shot learning,” Advances in Neural Information
+Processing Systems, vol. 33, pp. 21 969–21 980, 2020.
+[42] D. Mandal, S. Narayan, S. K. Dwivedi, V. Gupta, S. Ahmed, F. S.
+Khan, and L. Shao, “Out-of-distribution detection for generalized zero-
+shot action recognition,” in Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, 2019, pp. 9985–9993.
+[43] S. Chen and D. Huang, “Elaborative rehearsal for zero-shot action
+recognition,” in Proceedings of the IEEE/CVF International Conference
+on Computer Vision, 2021, pp. 13 638–13 647.
+[44] C.-C. Lin, K. Lin, L. Wang, Z. Liu, and L. Li, “Cross-modal repre-
+sentation learning for zero-shot action recognition,” in Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2022, pp. 19 978–19 988.
+[45] J. Qin, L. Liu, L. Shao, F. Shen, B. Ni, J. Chen, and Y. Wang, “Zero-shot
+action recognition with error-correcting output codes,” in Proceedings of
+the IEEE Conference on Computer Vision and Pattern Recognition, 2017,
+pp. 2833–2842.
+[46] G. Bertasius, H. Wang, and L. Torresani, “Is space-time attention all you
+need for video understanding?” in ICML, vol. 2, no. 3, 2021, p. 4.
+[47] H. Zhao, L. Jiang, J. Jia, P. H. Torr, and V. Koltun, “Point transformer,”
+in Proceedings of the IEEE/CVF international conference on computer
+vision, 2021, pp. 16 259–16 268.
+[48] K. Zhou, J. Yang, C. C. Loy, and Z. Liu, “Learning to prompt for vision-
+language models,” International Journal of Computer Vision, vol. 130,
+no. 9, pp. 2337–2348, 2022.
+[49] A. v. d. Oord, Y. Li, and O. Vinyals, “Representation learning with
+contrastive predictive coding,” arXiv preprint arXiv:1807.03748, 2018.
+[50] J. Yang, H. Huang, Y. Zhou, X. Chen, Y. Xu, S. Yuan, H. Zou, C. X.
+Lu, and L. Xie, “Mm-fi: Multi-modal non-intrusive 4d human dataset
+for versatile wireless sensing,” in NeurIPS-23 Datasets and Benchmarks
+Track, 2023.
+

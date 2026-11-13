@@ -1,0 +1,628 @@
+Spiking-UNet: Spiking Neural Networks for
+Spectrum Occupancy Monitoring
+Kosta Dakic†, Bassel Al Homssi⋆, and Akram Al-Hourani†
+† School of Engineering, RMIT University, Melbourne, Australia
+⋆ School of Engineering & Technology, UNSW Canberra, Canberra, Australia
+Emails: kosta.dakic@ieee.org, akram.hourani@rmit.edu.au
+Abstract—With the exponential growth of the Internet of
+Things (IoT) landscape and the resulting spectrum congestion,
+innovative techniques for spectrum monitoring are crucial. This
+paper presents an approach to spectrum monitoring harnessing
+the power of spiking neural networks (SNNs) with a focus on
+image segmentation using the UNet architecture. Traditional
+methods, including energy detection, have been widely used
+but are not without challenges, especially in environments with
+varying signal-to-noise ratios. In contrast, the presented SNN
+approach in this paper demonstrates through simulations per-
+formance metrics that significantly surpass energy detection
+methods and closely align with conventional convolutional neu-
+ral network techniques while also exhibiting favorable energy
+efficiency. Future explorations will delve into enhancing the
+framework using machine learning techniques for advanced
+feature extraction and multi-class segmentation.
+Index Terms—Spiking Neural Networks, Spectrum Sensing,
+Machine Learning, Neuromorphic Computing, and Image Seg-
+mentation
+I. INTRODUCTION
+The Internet of Things (IoT) has experienced rapid ex-
+pansion, connecting billions of devices and enabling a wide
+range of applications in numerous industries, including smart
+cities, healthcare, and industrial automation [1]. Due to the
+IoT networks’ quick proliferation, radio frequency spectrum
+resources have further decreased in supply and are increasingly
+congested [2]. With its dynamic spectrum access capabilities,
+cognitive radio (CR) technology offers an attractive answer
+to the problem of spectrum scarcity and enhances spectrum
+usage in IoT environments.
+To alleviate spectrum scarcity through CR, it is imperative
+to sense the spectrum. This not only facilitates the optimal
+utilization of resources by pinpointing unused or underutilized
+spectrum bands but also plays a pivotal role in detecting
+potential interferences. By doing so, it ensures uninterrupted
+and seamless communication, preventing overlaps with other
+active signals [3]. However, The cost of implementing spec-
+trum sensing technologies can be high, especially for wideband
+sensing due to the computational power needed. The algo-
+rithms required for spectrum sensing can be complex, requir-
+ing advanced signal processing techniques. Another challenge
+is the possibility of false detection, i.e., sensing a channel as
+free when it is actually occupied, or vice versa [3].
+The main conventional methods of spectrum sensing that
+are demonstrated in the literature include matched filter-based
+sensing, spectral correlation-based sensing (cyclo-stationery),
+radio identification-based sensing, and waveform-based sens-
+ing [4]. Nevertheless, these conventional methods require
+additional information about the signals such as the bandwidth,
+modulation type, or the presence of a known pilot signal or
+preamble. Energy detection-based sensing is the most common
+approach due to its low computational complexity and ease
+of implementation. However, its accuracy is heavily degraded
+at low signal-to-noise ratios (SNRs) [4]. This challenge has
+encouraged researchers to look into machine learning and deep
+learning to improve their performance for spectral sensing
+relative to conventional methods.
+Machine and deep learning have revolutionized fields such
+as computer vision by enabling the creation of sophisticated
+models that can recognize complex patterns and classify
+objects [5]. These advances have been facilitated by the
+power of data-driven approaches, neural networks (NN), and
+various learning algorithms. With the success in these do-
+mains, researchers have started to explore the potential of
+machine learning to cluster signals in wideband spectrograms
+for clearer signal boundaries [6], drawing bounding boxes to
+localize user signals in the time-frequency domain [7], and
+utilizing deep learning in the area of spectrum sensing [8]. By
+employing similar techniques, it is possible to develop models
+that can efficiently detect and classify signals, adapt to changes
+in the radio environment, and handle the challenges associated
+with radio spectrum analysis.
+Nonetheless, the energy efficiency of these algorithms needs
+to be further improved, particularly for low-power IoT devices
+which must be energy-efficient to optimize battery life and
+operational time [9]. The energy consumption of machine and
+deep learning algorithms is primarily due to the high computa-
+tional requirements associated with the training and inference
+of the models. These algorithms often require a large number
+of mathematical operations, memory access, and data move-
+ment, all of which contribute to high energy consumption.
+Enhancing energy efficiency is crucial for facilitating larger
+networks and becomes increasingly vital in edge computing
+environments, which include satellites, IoT devices, UAVs, etc.
+Edge computing involves processing data closer to its source,
+which is essential for real-time applications and reducing the
+load on central servers. However, many edge devices, such
+as satellites and UAVs, have strict energy constraints due to
+their remote locations and the difficulty in replenishing their
+energy sources [10]. To address the requirement of energy-
+979-8-3503-0358-2/24/$31.00 ©2024 IEEE
+2024
+IEEE
+Wireless
+Communications
+and
+Networking
+Conference
+(WCNC)
+|
+979-8-3503-0358-2/24/$31.00
+©2024
+IEEE
+|
+DOI:
+10.1109/WCNC57260.2024.10571312
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+Fig. 1. An illustration of the leaky integrate-and-fire neuron model.
+efficient operation, a new class of NNs could be incorporated
+called the Spiking Neural Network (SNN).
+SNNs present an alternative approach to conventional deep
+learning and machine learning methods For spectrum sensing.
+Mimicking the behavior of biological neurons, SNNs transmit
+information using spikes or events, allowing for increased
+energy efficiency and real-time processing capabilities, making
+them a promising option for radio spectrum analysis applica-
+tions. In this paper, we present an innovative spectrum sensing
+technique that leverages an SNN based on the UNet archi-
+tecture [11] to segment wideband spectrograms, effectively
+distinguishing between signals of interest and background
+noise. In addition to the strong performance characteristics,
+our SNN approach maintains the advantages of spiking-based
+approaches, namely; higher energy efficiency compared to the
+conventional convolutional neural network (CNN) model, real-
+time inference, and high parallelism. The contributions of this
+work are summarized as follows:
+• We introduce a novel SNN-based architecture specifi-
+cally tailored for spectrum analysis, which seamlessly
+integrates the principles of spiking neurons with the
+robustness of the UNet model.
+• Our approach showcases the Spiking-UNet architecture’s
+efficacy, which not only maintains similar accuracy per-
+formance to the conventional CNN UNet architecture but
+also outperforms traditional energy detection methods.
+• We showcase the power efficiency compared to the con-
+ventional CNN UNet architecture.
+II. SPIKING NEURAL NETWORKS
+In recent years, deep learning has been extensively em-
+ployed in wireless systems for various tasks such as signal
+detection [12], [13], modulation classification [14], and nu-
+merous other applications. However, these methods come at
+the expense of increased power consumption, hardware costs,
+and system complexity. SNNs have emerged as a valuable and
+energy-efficient alternative. SNNs offer a distinct advantage
+over traditional NNs due to their incorporation of spatiotem-
+poral aspects in spike trains rather than solely utilizing single-
+element vectors to convey weights and biases. This feature
+enables SNNs to transmit significant amounts of information
+using fewer neurons than generic NNs [15]. Consequently,
+SNNs excel at handling real-time, continuous, and temporally
+rich data streams, such as wireless signals [10]. Moreover,
+SNNs are only activated upon spike generation or reception,
+in contrast to conventional NNs, which require continuous
+operation for every new input.
+SNNs have been applied in numerous prior research endeav-
+ors, such as in [16] for image segmentation. However, research
+with SNNs related to wireless communication is in its infancy.
+Nevertheless, some research work has been conducted for
+implementing SNNs in telecommunications including mod-
+ulation classification [17], [18], signal detection [19], [20],
+and resource management [21]. In the aforementioned re-
+search works relating to wireless communications, researchers
+propose using SNNs to leverage the network’s low power
+consumption and superior spatiotemporal data processing ca-
+pabilities. A key advantage of SNN-based spectrum analysis is
+to provide robust packet localization in the spectrum with in-
+terference, anomalies, and high AWGN, all while maintaining
+low power consumption.
+The spiking neuron is heavily influenced by biologi-
+cally plausible neuron models, such as the Hodgkin-Huxley
+model [22]. Nonetheless, while the model offers detailed
+biophysical mechanisms including ion channel dynamics, is
+computationally intensive due to its intricate differential equa-
+tions and multiple state variables. As a consequence of its
+computational complexity, the more straightforward leaky
+integrate-and-fire (LIF) neuron model is often used instead
+for SNN architectures. The LIF neuron model calculates the
+sum of weighted input pulses, which are then integrated over
+time with a specific exponential decay, or leakage. Fig.1
+demonstrates that a membrane potential accumulates from the
+input current Iin, and if the integrated value surpasses a chosen
+threshold Vth, the LIF neuron emits a voltage spike κ(t). The
+output κ and voltage V (t) relationship can be expressed as,
+κ(t) = u (V (t) − Vth) , (1)
+where u(.) represents the Heaviside step function. Upon
+triggering a spike, the membrane potential should be reset.
+One major issue of spiking-based networks is the non-
+differentiability of spikes. The minimization of the loss func-
+tion is not immediately solvable using conventional gradient-
+based techniques because the spiking mechanism in (1) is
+non-differentiable due to the inclusion of the threshold Vth.
+To address this issue, surrogate gradients (SG) techniques
+substitute the derivative of the threshold with an appropriate
+differentiable estimate. For a more comprehensive understand-
+ing of this method, we recommend the readers consult the
+research work [23].
+III. SYSTEM MODEL
+The primary contribution of this article is the introduction
+of a new approach to spectrum monitoring based on spiking
+mechanisms and image segmentation. In this section, we
+will delve into the channel model and implementation of the
+Spiking-UNet.
+A. Spectrum Model
+The spectrum’s state can be categorized into two: either
+occupied by a signal or unoccupied. Hence, we utilize a binary
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+conv 3x3, LIF
+conv 1x1, LIF
+up-conv 2x2
+max-pool 2x2
+copy and crop
+1 16 16
+64 64
+128 128
+256
+256 128
+128 64
+32
+64 32
+16 16 1
+16 16
+Fig. 2. The Spiking-UNet architecture used in this work.
+classification model where S = 1 indicates occupancy and
+S = 0 denotes non-occupancy,
+S =
+(
+1 if spectrum is occupied
+0 if spectrum is unoccupied.
+(2)
+Channel conditions, such as additive white Gaussian noise
+(AWGN), can mislead observations, making an unoccupied
+spectrum appear occupied and vice versa. To address these
+false detection challenges, we introduce an SNN framework
+designed to precisely identify and pinpoint occupied temporal
+and frequency segments within a spectrum. A significant
+advantage of our proposed model is its ability to operate
+without further adaptation to different spectrums. Once trained,
+the framework is immediately operational. In contrast, energy
+detection methods rely on a modifiable threshold power,
+denoted as θ. This method determines the channel’s status
+exclusively based on this threshold. If the received power
+exceeds θ, the channel is labeled as busy; if not, it is marked
+as idle. This can be described mathematically as,
+S =
+(
+1 if P > θ
+0 if P ≤ θ
+(3)
+where the received power, denoted as P, exceeds θ, the
+channel is labeled as busy or idle.
+The received time-series signal at the simulated receiver is
+depicted as,
+y(t) =
+N
+X
+j
+H(t)xj(t − τ) exp(j2πν(t) + κ(t) + n(t), (4)
+where xj(t) is the data signal with N number of packets
+per spectrogram frame. Each packet has a time-shift τ and
+carrier frequency ν. The noise signal n(t) is assumed to be
+independent and identically distributed (i.i.d.) with a zero-
+mean Gaussian distribution, where CN(0, σ2
+) is the complex
+AWGN noise, and σ2
+is the average noise of the receiver
+channel. The channel is modeled with H(t) and κ(t) being the
+Rayleigh attenuation and phase rotation effects respectively.
+B. Proposed Spiking-Based Architecture
+In this research, we adapt the renowned UNet architecture,
+incorporating LIF neurons for our spiking-based approach.
+Originally conceptualized as a CNN for image segmentation
+tasks, the UNet has found significant application in biomedical
+image segmentation [11]. The UNet architecture consists of
+an encoder (downsampling) path and a decoder (upsampling)
+path, forming its characteristic U-shape. This unique design
+enables the network to harness both local and global contextual
+information, ensuring precise image segmentation. The encod-
+ing path features a sequence of convolutional and max-pooling
+layers. Each block in this path integrates two convolutional
+layers with rectified linear unit (ReLU) activation functions,
+succeeded by a max-pooling layer to downsample. This design
+extracts features from the input image, systematically reducing
+its spatial dimensions.
+The decoding path is in charge of upsampling the feature
+maps acquired from the encoding path and merging them
+with the high-resolution features from the encoding path
+through skip connections. Every block in the decoding path
+features an upsampling operation, succeeded by concatenation
+with the corresponding feature map from the encoding path.
+Subsequently, two convolutional layers with ReLU activation
+functions are applied. The number of feature channels is
+reduced by half at each upsampling step. Lastly, a 1×1
+convolution is utilized at the final layer of the decoding path to
+produce the segmentation map, which has the same number of
+channels as the target classes. To convert the UNet architecture
+to use LIF neurons, in addition to the convolutional layers for
+feature extraction interleaved by a max pooling layer, we add
+a LIF neuron layer, The architecture is illustrated in Fig. 2.
+C. Network Implementation and Spectrum Segmentation
+In this work, we employ the SnnTorch [23], an open-source
+Python library, to implement the SNN. This library is pivotal
+for converting input data into spike trains, essential for SNNs.
+We employ constant current injection for encoding, where
+each data sample is treated as a constant current input across
+each time step, with ten time steps in total. This methodology
+facilitates the static data to be interpreted as a direct current
+input, allowing the consistent delivery of identical features to
+the SNN’s input layer at every time step. While this remains
+our selected method, there exist other renowned encoding
+strategies like rate encoding, latency encoding, and delta
+modulation, which might be instrumental for extorting more
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+Fig. 3. This figure illustrates the packet labeling process on the time-frequency
+spectrogram image. In (a), the labeling process for a noisy sample is shown,
+where Bn and Tn represent the bandwidths and packet times of the n packets.
+As a result, (b) shows the labeled sample.
+temporal data for SNNs [23]. Other encoding methods are
+subject to future analysis.
+1) Spike Encoding and Decoding: The spikes produced at
+each time step are aggregated and processed via the Binary
+Cross Entropy (BCE) Loss function during output decoding.
+This practice endorses the activation of the accurate class at
+each time interval while attempting to repress the activation of
+the wrong classes. To mitigate the possibility of the network
+misclassifying the entire image as positive, we integrate the
+Dice coefficient into the loss function. The Dice coefficient,
+denoted as DC, measures the overlap between two samples
+and is mathematically represented as,
+DC =
+2|X ∩ Y |
+|X| + |Y |
+, (5)
+where X and Y are the predicted and ground-truth binary
+masks, respectively. During the computation of the loss for a
+batch, the loss is updated as,
+L = L + (1 − DC) , (6)
+where L is the loss. This not only diminishes the false
+positive rate but also ensures an enhanced overlap between
+the predicted and actual regions, leading to more accurate
+segmentation outcomes.
+The combined loss, Ltotal, is computed as,
+Ltotal = LBCE + LDice. (7)
+2) Loss Setup and Output Decoding: Conventional neural
+networks typically choose the neuron with the highest activa-
+tion for classification. Conversely, SNNs provide unique output
+spike interpretations. Two primary methods are,
+• Rate coding: The neuron with the most pronounced firing
+rate is considered the predicted class.
+• Latency coding: The first neuron to fire represents the
+predicted class.
+Focusing on rate coding for our binary classification problem,
+our aim is to stimulate the correct neuron class to produce the
+most spikes throughout a simulation run. To classify the output
+into one of the two classes, we apply the sigmoid function to
+the neuron’s membrane potential, resulting in,
+p(t) =
+1
+1 + e−U(t)
+, (8)
+where p(t) is the probability of the positive class at time t
+and U(t) is the membrane potential. The binary cross-entropy
+between p(t) and the binary target y ∈ {0, 1} is then,
+LCE(t) = −ylog(p(t)) − (1 − y)log(1 − p(t)). (9)
+The total BCE loss spanning all time steps is,
+LBCE =
+X
+t
+LCE(t). (10)
+This methodology is among several available for applying a
+loss function to SNNs. Further advanced functionalities are
+available in the snnTorch module, meriting exploration in
+subsequent discussions.
+3) Image Segmentation: Collecting the dataset for spectrum
+monitoring with image segmentation entails collecting many
+samples of the spectrum as a 2D spectrogram image. The com-
+putation of a spectrogram matrix is accomplished by executing
+the Short-Time Fourier Transform (STFT) and subsequently
+obtaining the squared magnitude as illustrated below,
+Y (ω, q) =
+NFFT−1
+X
+m=0
+s(m)h(m − q)e−jωm
+2
+, (11)
+where x(m) represents the acquired sample of a truncated
+discrete-time signal and the Hamming windowing function is
+represented by h(.). The number of FFT windows is denoted
+as NFFT.
+From the collected STFT data, a labeling mask is created
+for training, in which we designate a class for each pixel
+in the STFT. The labeling is done by manually drawing a
+filled-in bounding box around each signal of interest. This
+is illustrated in Fig. 3. Furthermore, Fig. 4 presents a detailed
+spectrum analysis. In the leftmost subplot, the raw spectrogram
+obtained post-STFT application is depicted. The central sub-
+plot illustrates the observed occupancy via energy detection.
+In contrast, the rightmost subplot showcases the estimated
+occupancy achieved using the SNN UNet. Notably, the energy
+detection approach exhibits numerous misdetections, predomi-
+nantly because the set threshold struggles to accurately identify
+low-power packets. Conversely, the SNN UNet effectively
+captures all packets irrespective of their power levels.
+IV. RESULTS
+In this section, we present the simulation performance
+results of our proposed spectrum monitoring method. To
+assess the improvements brought about by our suggested SNN
+framework over energy detection, we introduce a simulated
+signal affected by Rayleigh fading into a channel with AWGN.
+Contrary to spectrum monitoring scenarios, the signal’s SNR,
+denoted by γ, and bandwidth are determined and acknowl-
+edged before detection. We designate the channel’s properties
+and the corresponding noise baseline. The false alarm prob-
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+-150 -115 -80 -45 -10 25
+Received Power [dBm]
+SNN Segmentation
+(Proposed)
+Energy Detection
+Spectrogram
+Fig. 4. Spectrum analysis comparison: Spectrogram representation of synthetic IoT signals, showcasing the inherent intricacies and spectral characteristics
+(left); (b) Spectrum analysis using traditional energy detection, highlighting potential inaccuracies and missed nuances (middle); (c) Advanced spectrum
+analysis leveraging our proposed SNN UNet approach, illustrating improved clarity, precision, and distinction of signals (right).
+-30 -20 -10 0 10 20 30
+SNR [dB]
+0
+0.2
+0.4
+0.6
+0.8
+1
+Energy detection
+CNN UNet
+SNN UNet
+Fig. 5. A plot of the true positive rate TPr plotted against SNR. The
+probability of a false alarm constant at pf = 7.6e − 5 with θ = −145
+dBm/Hz.
+ability and the misdetection likelihood for a Rayleigh fading
+channel without diversity for energy detection is given by [24],
+pf = exp
+
+−
+θ
+σ2
+
+,
+pm =
+1
+1 + γ
+exp
+
+−
+θ
+σ2
+
+, (12)
+respectively. By adjusting the SNR but keeping the threshold
+consistent, and contrasting the detected signal through our
+framework against the introduced signal, we compute the
+detection probability as shown in Fig. 5.
+From Fig. 5, it is shown that the SNN and CNN far
+outperform the ED method in terms of TPr. Also, the SNN
+and CNN methods have similar performance, only in very
+low SNR regions the SNN method has slightly higher TPr.
+However, the slightly increased TPr of the SNN approach
+comes at the cost of a slightly higher FPr compared to the
+CNN method at low SNRs. At higher SNRs the discrepancy
+becomes negligible. This is shown in Fig. 6.
+0 0.005 0.01 0.015 0.02 0.025
+0
+0.2
+0.4
+0.6
+0.8
+1
+Energy Detection
+CNN UNet
+SNN UNet
+SNR = 10 dB
+SNR = 0 dB
+SNR = -10 dB
+SNR = 10 dB
+SNR = 0 dB
+SNR = -10 dB
+Fig. 6. A plot of the true positive rate TPr vs. the false positive rate FPr.
+A. Energy Efficiency
+One of the predominant merits of SNNs over conventional
+neural networks is their potential for improved energy ef-
+ficiency. This is relevant in applications requiring real-time
+processing on resource-constrained devices or for minimizing
+the power draw on large-scale deployments.
+In Table I, we provide an analysis of the energy consump-
+tion per inference between the CNN UNet and the proposed
+SNN UNet. The energy is recorded using the KerasSpiking
+Python power profiling package from Nengo [25]. The CNN
+UNet is executed on a general-purpose GPU, whereas the SNN
+UNet is run on the Loihi neuromorphic chip.
+As can be observed, the SNN UNet yields substantial energy
+savings, consuming an order of magnitude less energy per in-
+ference than its CNN counterpart. Specifically, the SNN UNet
+achieves a remarkable 10× reduction in energy consumption.
+This underscores the energy-efficient nature of neuromorphic
+hardware when coupled with SNNs, paving the way for their
+potential deployment in scenarios where power efficiency is
+paramount.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+TABLE I
+ENERGY CONSUMPTION
+Network Energy per inference (J) Platform
+CNN UNet 1.06 GPU
+SNN UNet 1.04×10−1 Loihi
+V. CONCLUSION
+This paper presented a novel approach to spectrum monitor-
+ing using image segmentation with SNNs, where it showcases
+a notable image segmentation architecture called the UNet
+network, adapted to an SNN architecture using LIF neurons.
+The performance of the proposed method far outperforms
+the ED method in terms of accuracy and precision metrics.
+Furthermore, our method also closely follows the conventional
+CNN UNet performance all while maintaining the inherent
+benefits of the SNN. The advantages of the SNN relative to
+the CNN include a much higher power efficiency, which we
+experimentally demonstrated in this paper, real-time inference,
+and advanced parallel processing. For future work, we plan
+to extend our proposed framework to real-world data and
+use machine learning techniques to extract relevant features
+from the spectrum data, which can then be fed into the SNN
+for better accuracy and multi-class segmentation for spectrum
+sensing.
+REFERENCES
+[1] B. Al Homssi, A. Al-Hourani, K. Magowe, J. Delaney, N. Tom, J. Ying,
+H. Wolf, S. Maselli, S. Kandeepan, K. Wang, and K. M. Gomez, “A
+Framework for the Design and Deployment of Large-Scale LPWAN
+Networks for Smart Cities Applications,” IEEE Internet of Things
+Magazine, vol. 4, no. 1, pp. 53–59, 2021.
+[2] B. Al Homssi, A. Al-Hourani, R. J. Evans, K. G. Chavez, S. Kandeepan,
+W. S. T. Rowe, and M. Loney, “Free Spectrum for IoT: How Much Can
+It Take?” in 2018 IEEE International Conference on Communications
+Workshops (ICC Workshops), 2018, pp. 1–6.
+[3] I. F. Akyildiz, B. F. Lo, and R. Balakrishnan, “Cooperative spectrum
+sensing in cognitive radio networks: A survey,” Physical Communica-
+tion, vol. 4, no. 1, pp. 40–62, 2011.
+[4] R. Tandra and A. Sahai, “SNR Walls for Signal Detection,” IEEE
+Journal of Selected Topics in Signal Processing, vol. 2, no. 1, pp. 4–17,
+2008.
+[5] J. Long, E. Shelhamer, and T. Darrell, “Fully convolutional networks for
+semantic segmentation,” in 2015 IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR), 2015, pp. 3431–3440.
+[6] B. Al Homssi, A. Al-Hourani, Z. Krusevac, and W. S. T. Rowe,
+“Machine Learning Framework for Sensing and Modeling Interference
+in IoT Frequency Bands,” IEEE Internet of Things Journal, vol. 8, no. 6,
+pp. 4461–4471, 2021.
+[7] T. Gale, T. Šolc, R.-A. Moşoi, M. Mohorčič, and C. Fortuna, “Automatic
+Detection of Wireless Transmissions,” IEEE Access, vol. 8, pp. 24 370–
+24 384, 2020.
+[8] J. Gao, X. Yi, C. Zhong, X. Chen, and Z. Zhang, “Deep Learning
+for Spectrum Sensing,” IEEE Wireless Communications Letters, vol. 8,
+no. 6, pp. 1727–1730, 2019.
+[9] B. Al Homssi, A. Al-Hourani, S. Chandrasekharan, K. M. Gomez, and
+S. Kandeepan, “On the Bound of Energy Consumption in Cellular
+IoT Networks,” IEEE Transactions on Green Communications and
+Networking, vol. 4, no. 2, pp. 355–364, 2020.
+[10] B. A. Homssi, K. Dakic, K. Wang, T. Alpcan, B. Allen, R. Boyce,
+S. Kandeepan, A. Al-Hourani, and W. Saad, “Artificial Intelligence
+Techniques for Next-Generation Massive Satellite Networks,” IEEE
+Communications Magazine, pp. 1–7, 2023.
+[11] O. Ronneberger, P. Fischer, and T. Brox, “U-Net: Convolutional Net-
+works for Biomedical Image Segmentation,” in Medical Image Com-
+puting and Computer-Assisted Intervention – MICCAI 2015, 2015, pp.
+234–241.
+[12] K. Dakic, B. A. Homssi, M. Lech, and A. Al-Hourani, “HybNet:
+A Hybrid Deep Learning - Matched Filter Approach for IoT Signal
+Detection,” IEEE Transactions on Machine Learning in Communications
+and Networking, pp. 1–1, 2023.
+[13] K. Dakic, B. Al Homssi, A. Al-Hourani, and M. Lech, “LoRa Signal
+Demodulation Using Deep Learning, a Time-Domain Approach,” in
+2021 IEEE 93rd Vehicular Technology Conference (VTC2021-Spring),
+2021, pp. 1–6.
+[14] Y. Wang, M. Liu, J. Yang, and G. Gui, “Data-Driven Deep Learning
+for Automatic Modulation Recognition in Cognitive Radios,” IEEE
+Transactions on Vehicular Technology, vol. 68, no. 4, pp. 4074–4077,
+2019.
+[15] M. Chen, U. Challita, W. Saad, C. Yin, and M. Debbah, “Artificial Neural
+Networks-Based Machine Learning for Wireless Networks: A Tutorial,”
+IEEE Communications Surveys &amp; Tutorials, vol. 21, no. 4, pp.
+3039–3071, 2019.
+[16] Y. Kim, J. Chough, and P. Panda, “Beyond classification: directly train-
+ing spiking neural networks for semantic segmentation,” Neuromorphic
+Computing and Engineering, vol. 2, no. 4, p. 044015, 2022.
+[17] E. J. Knoblock and H. R. Bahrami, “Investigation of Spiking Neural
+Networks for Modulation Recognition using Spike-Timing-Dependent
+Plasticity,” in 2019 IEEE Cognitive Communications for Aerospace Ap-
+plications Workshop (CCAAW). IEEE, 2019, Conference Proceedings.
+[18] A. Khodamoradi, K. Denolf, and R. Kastner, “S2N2: A FPGA Acceler-
+ator for Streaming Spiking Neural Networks,” in The 2021 ACM/SIGDA
+International Symposium on Field-Programmable Gate Arrays. ACM,
+2021, Conference Proceedings.
+[19] K. Dakic, B. Al Homssi, S. Walia, and A. Al-Hourani, “Spiking Neu-
+ral Networks for Detecting Satellite-Based Internet-of-Things Signals,”
+2023.
+[20] J. Chen, N. Skatchkovsky, and O. Simeone, “Neuromorphic Integrated
+Sensing and Communications,” IEEE Wireless Communications Letters,
+vol. 12, no. 3, pp. 476–480, 2023.
+[21] F. Ortiz, N. Skatchkovsky, E. Lagunas, W. A. Martins, G. Eappen,
+S. Daoud, O. Simeone, B. Rajendran, and S. Chatzinotas, “Energy-
+Efficient On-Board Radio Resource Management for Satellite Commu-
+nications via Neuromorphic Computing,” 2023.
+[22] A. L. Hodgkin and A. F. Huxley, “A quantitative description of mem-
+brane current and its application to conduction and excitation in nerve,”
+J Physiol, vol. 117, no. 4, pp. 500–44, 1952.
+[23] J. K. Eshraghian, M. Ward, E. O. Neftci, X. Wang, G. Lenz, G. Dwivedi,
+M. Bennamoun, D. S. Jeong, and W. D. Lu, “Training Spiking Neural
+Networks Using Lessons From Deep Learning,” Proceedings of the
+IEEE, pp. 1–39, 2023.
+[24] F. F. Digham, M.-S. Alouini, and M. K. Simon, “On the Energy De-
+tection of Unknown Signals Over Fading Channels,” IEEE Transactions
+on Communications, vol. 55, no. 1, pp. 21–24, 2007.
+[25] KerasSpiking, “Estimating model energy,” 2022, [Online]. Available:
+https://www.nengo.ai/keras-spiking/examples/model-energy.html
+[Accessed: Oct. 27, 2022].
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:35:37 UTC from IEEE Xplore. Restrictions apply.
+

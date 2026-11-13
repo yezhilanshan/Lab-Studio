@@ -1,0 +1,664 @@
+MMSense: Adapting Vision-based Foundation
+Model for Multi-task Multi-modal Wireless Sensing
+Zhizhen Li∗, Xuanhao Luo∗, Xueren Ge†, Longyu Zhou‡, Xingqin Lin§, Yuchen Liu∗
+∗North Carolina State University, USA; †University of Virginia, USA;
+‡Singapore University of Technology and Design; §NVIDIA Corporation, USA
+Abstract—Large AI models have been widely adopted in
+wireless communications for channel modeling, beamforming,
+and resource optimization. However, most existing efforts remain
+limited to single-modality inputs and channel-specific objec-
+tives, overlooking the broader potential of large foundation
+models for unified wireless sensing. To bridge this gap, we
+propose MMSense, a multi-modal, multi-task foundation model
+that jointly addresses channel-centric, environment-aware, and
+human-centered sensing. Our framework integrates image, radar,
+LiDAR, and textual data by transforming them into vision-
+compatible representations, enabling effective cross-modal align-
+ment within a unified feature space. A modality gating mecha-
+nism adaptively fuses these representations, while a vision-based
+large language model backbone enables unified feature align-
+ment and instruction-driven task adaptation. Furthermore, task-
+specific sequential attention and uncertainty-based loss weighting
+mechanisms enhance cross-task generalization. Experiments on
+real wireless scenario datasets show that our approach outper-
+forms both task-specific and large-model baselines, confirming
+its strong generalization across heterogeneous sensing tasks.
+I. INTRODUCTION
+With the evolution toward 6G wireless networks, artifi-
+cial intelligence (AI) has emerged as a foundational enabler
+for achieving ubiquitous connectivity, integrated sensing and
+communication (ISAC), and intelligent network management.
+Future network infrastructures are expected not only to provide
+ultra-reliable and low-latency communication but also to en-
+able advanced capabilities such as environmental perception,
+human-centric sensing, and autonomous mobile computing.
+These new demands substantially increase the complexity of
+communication system design, calling for unified and predic-
+tive frameworks that can seamlessly generalize across dynamic
+environments and heterogeneous tasks.
+To enable the perception of environmental dynamics, user
+activities, and spatial context beyond conventional data trans-
+mission, many studies have explored AI-driven approaches
+for wireless sensing and perception. Leveraging the power of
+deep learning, researchers have developed diverse data-driven
+frameworks to enhance channel understanding and signaling
+awareness. Unlike traditional model-driven methods that rely
+on simplified physical assumptions, AI-based techniques can
+capture complex nonlinear relationships and adapt to highly
+dynamic propagation environments. For instance, [1] pro-
+posed a deep transfer learning framework employing fully
+connected neural networks to transfer knowledge from uplink
+to downlink channels, enhanced with meta-learning for rapid
+adaptation under limited data. In [2], a spatial–temporal ar-
+chitecture combining graph neural networks (GNNs) and long
+short-term memory (LSTM) models was introduced to predict
+link quality under dynamic blockage conditions. Similarly, [3]
+transformed channel state information (CSI) into the angular
+domain and applied a vision Transformer for localization,
+while [4] designed a customized deep neural network (DNN)
+for low-complexity precoding in MU-MIMO-OFDM systems,
+achieving near-weighted minimum mean square error per-
+formance with substantially lower computational cost. These
+advances demonstrate that deep learning offers significant
+advantages for wireless sensing and communication, provid-
+ing both efficiency and scalability compared with traditional
+model-based approaches. However, current methods are highly
+task-specific—developed for channel estimation, prediction,
+localization, or precoding, which restricts cross-task applica-
+bility and slows progress toward more unified solutions.
+Recently, the paradigm of foundation models (FMs) and
+large language models (LLMs) has demonstrated remarkable
+impact in the areas of natural language processing and com-
+puter vision. By pretraining on large-scale datasets and fine-
+tuning with minimal task-specific data, FMs exhibit strong
+multi-task and few-shot learning capabilities. Inspired by this,
+several pioneering works have adapted LLMs for wireless
+domains. For instance, [5] proposed an LLM-based channel
+prediction framework that demonstrates substantially enhanced
+few-shot generalization capability over different scenarios.
+However, these related studies remain confined to solving
+individual sensing or communication tasks, without harnessing
+the task-level generalization and cross-domain adaptability that
+FMs can offer. Motivated by this gap, a few recent efforts have
+begun exploring multi-task large models capable of integrating
+multiple wireless functions within a unified framework. For
+example, [6] investigated multi-task fine-tuning for channel-
+related tasks, [7] introduced a wireless-native model leverag-
+ing in-context learning for multi-user precoding and channel
+prediction, and [8] incorporated environmental awareness into
+a multi-task foundation model.
+While these advances demonstrate the promise of large
+models for wireless intelligence, they remain limited by two
+fundamental challenges – 1) Modality constraint: they often
+rely on aligning or converting wireless-domain data into the
+textual input space of pre-trained LLMs—an indirect cross-
+modal adaptation that leads to loss of representation fidelity
+arXiv:2511.12305v1
+[cs.LG]
+15
+Nov
+2025
+and limited scalability across heterogeneous wireless tasks; 2)
+Task limitation: current multi-task designs largely focus on
+channel-centric objectives, neglecting broader sensing dimen-
+sions such as human activity recognition, environmental per-
+ception, and multi-modal fusion. Addressing these challenges
+requires a new class of FMs capable of natively representing
+and generalizing across diverse wireless modalities and tasks.
+To address these gaps, we propose MMSense, a multi-
+modal, multi-task wireless foundation model that unifies
+channel sensing, human sensing, and environment sensing
+within a single cohesive framework. Our motivation arises
+from the observation that these seemingly distinct tasks are
+inherently correlated, as they all originate from and are gov-
+erned by the same underlying radio-frequency (RF) signals
+that carry both communication and perceptual information.
+For instance, channel sensing tasks such as beam prediction
+not only characterize propagation dynamics but also implic-
+itly encode information about user presence, mobility, and
+activity patterns. Likewise, human sensing leverages subtle
+variations in RF signal reflections and scattering to infer
+motion, gestures, and behavioral context, inherently carrying
+rich perceptual and environmental cues. By integrating mul-
+tiple sensing modalities, including image, radar, and LiDAR
+data, our framework captures complementary representations
+that enhance both robustness and adaptability of predictions.
+Concurrently, the multi-task learning module facilitates the
+extraction of shared channel-centric knowledge across tasks,
+improving learning efficiency and generalization performance.
+Furthermore, modality embeddings produced by individual
+modality encoders are fused within the cross-attention layers
+of a backbone Vision-based LLM, where they dynamically
+interact with instruction tokens in the text branch to enable
+context-aware, multi-modal reasoning.
+The contributions of this paper are summarized as follows:
+• We develop a unified framework that jointly addresses
+channel sensing, human sensing, and environment sensing
+through multi-modal data fusion, substantially extending
+the task scope beyond prior channel-centric approaches.
+Unlike existing methods that homogenize inputs by
+converting all modalities into a single representation,
+our framework organically integrates heterogeneous data
+sources, including image, radar, LiDAR, and textual
+modalities, to preserve their complementary structures
+and maximize cross-domain information synergy.
+• We introduce a modality-adaptive gating scheme that
+dynamically weights multi-modal features according to
+their contextual reliability and task relevance, enabling
+the model to selectively emphasize the most informative
+modalities under varying sensing conditions. In parallel,
+a task-specific sequential attention module progressively
+refines signal feature representations across backbone
+FM layers, capturing hierarchical channel dependencies
+and task-aware feature evolution to achieve fine-grained
+adaptation for each sensing objective.
+• Extensive experiments on the real-world datasets show
+that our method consistently outperforms existing base-
+lines, demonstrating strong cross-modality generalization
+and robustness to diverse wireless sensing scenarios.
+II. PROBLEM FORMULATION AND TASK DESCRIPTION
+In this section, we define the problem setting and outline the
+tasks addressed in this work. Specifically, we focus on three
+representative sensing categories that collectively characterize
+wireless perception: channel sensing, human sensing, and
+environment sensing.
+A. Channel-Centric Sensing
+For channel sensing, we focus on the beam prediction
+task, which is fundamental in high-frequency wireless systems
+such as mmWave and THz communication. In these systems,
+accurate beam alignment is essential to overcome severe
+path loss and maintain reliable connectivity, making beam
+prediction a key enabler for efficient channel utilization and
+robust link performance. The objective of beam prediction is
+to infer the optimal beam index based on observed multi-
+modal data. Formally, given multi-modal inputs X, the model
+outputs the beam index b̂ ∈ {1, 2, . . . , B} that maximizes the
+achievable spectral efficiency. This is formulated as a multi-
+class classification problem:
+b̂ = arg max
+b∈{1,...,B}
+P(b | X; θ), (1)
+where P(b | X; θ) is the predicted probability distribution over
+beam indices parameterized by θ.
+B. Human-Centered Sensing
+Human sensing plays a central role in enabling human-
+centric 6G applications such as smart environments, health-
+care, and human–machine interaction. In this sensing category,
+we consider two representative tasks: human activity recogni-
+tion (HAR) and human pose estimation (HPE).
+HAR can be formulated as a multi-class classification
+problem. Given input X, the model predicts the activity label
+ŷh ∈ {1, . . . , Ch}:
+ŷh = arg max
+c∈{1,...,Ch}
+P(yh = c | X; θ), (2)
+where Ch is the number of activity classes. As a regression
+problem, HPE aims to predict the 3D positions of keypoints
+for a human subject based on multi-modal RF signal inputs.
+Formally, given the same input X, the model outputs the
+predicted keypoints:
+ŷp = fHPE(X; θ), ŷp = [p̂1, p̂2, . . . , p̂J ], p̂j ∈ Rd
+, (3)
+where fHPE(·) is the model function parameterized by θ, J is
+the number of keypoints, and d is the coordinate dimension.
+C. Environment-Aware Sensing
+Moving blockages, such as pedestrians, vehicles, or other
+dynamic obstacles, pose a major challenge to high-frequency
+wireless links by inducing rapid fluctuations and sudden drops
+in signal quality. Unlike conventional static blockage detection,
+our task focuses on predicting future environmental changes
+caused by moving obstacles, inferred from variations in beam
+patterns and link quality between transceivers. Formally, given
+current multi-modal observations Xt at time t, the objective
+is to predict whether the link will experience disruption at a
+future time t+∆. By forecasting future blockage events rather
+than merely detecting existing ones, this task enables proac-
+tive situational awareness to support critical communication
+functions such as beam management, handover planning, and
+resource allocation in dynamic environments. We formulate
+this as a binary classification problem:
+ŷe,t+∆ = I [P(ye,t+∆ = 1 | Xt; θ) > 0.5] , (4)
+where ye,t+∆ = 1 indicates that a blockage will occur at time
+t + ∆, and I[·] is the indicator function that returns 1 if its
+argument is true and 0 otherwise.
+D. Unified Multi-Task Formulation
+While each of the above tasks targets a distinct sensing
+objective, they are inherently correlated through the shared
+radio environment and object-level contextual information.
+To exploit these cross-task dependencies, we formulate them
+within a unified multi-task learning framework. Formally,
+given a multi-modal input X, the model jointly predicts the
+outputs for all sensing tasks as follows:
+ŷ = fMMSense(X; θ) = {b̂, ŷh, ŷp, ŷe}, (5)
+where b̂ denotes the beam index, ŷh is the human activity label,
+ŷp is the predicted keypoint coordinates, and ŷe represents
+future blockage prediction. To optimize the model parameters
+θ, we formulate a joint learning objective that enables shared
+representation learning across related sensing tasks while pre-
+serving task-specific specialization. The overall optimization
+objective is defined as a weighted sum of task-specific losses:
+min{Ltotal =
+X
+t∈{BP, HAR, HPE, FBP}
+λt Lt}, (6)
+where λt are task-specific weights that balance the contribution
+of each task in a shared radio environment.
+III. MMSENSE: MULTI-TASK MULTI-MODAL SENSING
+To address the optimization problem defined in Eq. (6), we
+introduce the MMSense framework as a unified solution. The
+overall architecture are illustrated in Fig. 1.
+A. Modality-Specific Feature Encoding
+Each sensing modality exhibits unique structural charac-
+teristics, necessitating specialized feature extractors. Let Xm
+denote the input of modality m ∈ {image, radar, LiDAR}. We
+develop pre-trained modality-specific encoders Fm(·; θF,m) to
+extract high-dimensional representations defined as:
+zm = Fm(Xm; θF,m). (7)
+For the image modality, which contains rich spatial and seman-
+tic cues, we adopt a ResNet backbone to capture hierarchical
+visual features that effectively represent scene-level context
+and object appearance. For radar and LiDAR modalities,
+which provide geometric and structural information of the
+physical wireless environment, we employ Point Transformer
+encoders [9] to model fine-grained 3D spatial relations among
+point clouds. This design preserves geometric fidelity and en-
+ables robust feature learning under varying signal conditions.
+In this way, the framework ensures that each sensing input
+is transformed into a semantically aligned, high-dimensional
+representation space suitable for subsequent joint learning.
+B. Modality-Aware Gating Mechanism
+While each modality contributes complementary informa-
+tion, their relative reliability varies across sensing conditions.
+For instance, radar tends to perform better in low-light or
+adverse weather scenarios, whereas LiDAR remains more ef-
+fective under visual occlusion. Consequently, assigning equal
+importance to all modalities can lead to suboptimal fusion and
+degraded overall performance. To overcome this limitation,
+we introduce a modality-adaptive gating network, inspired
+by the mixture-of-experts paradigm, which dynamically eval-
+uates the contextual relevance of each modality and generates
+adaptive fusion weights to achieve more effective and robust
+multi-modal integration. The gating network g(·; θg) computes
+modality weights:
+[wimg, wradar, wLiDAR] = softmax(g([zimg, zradar, zLiDAR]; θg)),
+(8)
+where
+P
+m wm = 1 and wm ≥ 0, and z(·) is derived from
+Eq. (7). This gating network first aggregates multi-modal
+extracted features into a compact intermediate representation
+that captures cross-modality interactions and dependencies.
+Such representation is then mapped into modality-specific
+scores through trainable neural layers. Next, the scores are
+converted into normalized weights via the softmax operation,
+explicitly reflecting the instantaneous importance of each
+sensing modality.
+C. Cross-Modal Attention Fusion
+After obtaining the modality-specific embeddings and
+weighting them via the gating mechanism, the next step is
+to integrate them into a unified cross-modal representation
+suitable for various downstream tasks. Simply concatenating
+or averaging these weighted embeddings is insufficient, as it
+fails to capture complex dependencies across modalities. To
+address this, we design a cross-modal attention module, which
+explicitly models information exchange between modalities
+while preserving distinctive features. Let {fm}D
+m=1 denote the
+gated embeddings from D modalities, where fm = wmzm. We
+concatenate them to form a multi-modal sequence as:
+bmm = [fimg; fradar; fLiDAR] ∈ R(nf ·D)×d
+, (9)
+where nf is the number of tokens per modality and d is the
+embedding dimension. The sequence is then linearly projected
+into queries, keys, and values:
+{Qmm, Kmm, Vmm} = {bmmWQ, bmmWK, bmmWV }. (10)
+Vision-LLM Backbone
+Image Feature
+Extractor
+Radar Feature
+Extractor
+LiDAR Feature
+Extractor
+Gating Module
+… … …
+Predict the human activity
+from multi-modal input.
+Question
+Cross Attention
+LLaMA Layer
+LLaMA Layer
+Cross Attention
+LLaMA Layer
+LLaMA Layer
+……
+MLP
+Task1
+……
+LLaMA Layer MLP
+MLP
+Data Flow
+Concatenation
+Cross Modal Attention
+Weighted Embedding
+N
+Multi-head Att MLP
+…
+…
+…
+Input Weight
+Fig. 1. MMSense Framework with interrelated modules: (i) Modality-specific feature encoder; (ii) Modality-aware gating mechanism; (iii) Vision-LLM
+Backbone; (iv) Task-specific multi-Layer attention modules.
+Next, the multi-head dot-product attention is applied to model
+dependencies among modality features as follow:
+Attn(Qmm, Kmm, Vmm) = softmax
+
+QmmK⊤
+mm
+√
+d
+
+Vmm. (11)
+By combining the gating mechanism with the cross-modal
+attention operation, the model learns to emphasize the most
+reliable modality while still aligning complementary features.
+D. Vision-LLM Backbone Integration
+After obtaining the fused cross-modal representation bmm,
+we feed it into a vision–language model backbone (such as
+the LLaMA model architecture from [10]). This design choice
+is motivated by two key considerations. First, Vision-LLMs
+are pre-trained on large-scale multi-modal datasets, endowing
+them with strong cross-modal alignment and reasoning capa-
+bilities. Second, the cross-attention layers within the Vision-
+LLM naturally align our fused multi-modal embeddings with
+the textual embedding space, enabling natural language super-
+vision and instruction tuning. This integration introduces an
+additional modality—language—allowing the model to benefit
+from human-interpretable guidance and continual adaptation
+across diverse sensing and reasoning tasks.
+For instance, we introduce task-specific prompts that de-
+scribe the sensing objective – “Predict the human activ-
+ity from multi-modal inputs”. These textual instructions are
+tokenized and combined with the previously fused embed-
+ding bmm through the Vision-LLM’s cross-attention layers,
+enabling interaction between semantic language tokens and
+multi-sensor representations. Moreover, we apply low-rank
+adaptation (LoRA) fine-tuning to efficiently adapt the Vision-
+LLM to multi-modal sensing data without retraining the full
+backbone model. This lightweight adaptation injects low-rank
+updates into attention layers, preserving language knowledge
+while specializing the model for sensing-related tasks.
+As a result, the Vision-LLM backbone unifies heterogeneous
+sensing modalities in a text-aligned space, and enables multi-
+task learning under a shared instruction-following paradigm.
+E. Task-Specific Multi-Layer Attention Modules
+As the last step, to effectively exploit the hierarchical
+representations within the Vision-LLM backbone, we do not
+directly take the final hidden state for all sensing tasks. Instead,
+we design task-specific attention modules that progressively
+aggregate information from multiple intermediate layers.
+Let {Hl
+}L
+l=1 denote the hidden states from the L trans-
+former layers of the Vision-LLM backbone. For each down-
+stream task t, we attach a sequence of attention modules
+{At
+1, At
+2, . . . , At
+K}, each operating on one hidden state. The
+output of one module is concatenated with the next layer’s
+hidden state and passed to the next module as follows:
+zt
+1 = At
+1(Hl1
+), (12)
+zt
+k = At
+k([zt
+k−1; Hlk
+]), k = 2, . . . , K, (13)
+where [ · ; · ] denotes concatenation along the feature dimen-
+sion. Specifically, each attention module At
+k(·) is implemented
+as a lightweight two-layer MLP that learns an adaptive weight-
+ing over its input features. This module effectively reweights
+the importance of sensing features and captures task-relevant
+cues before passing them to the next stage.
+To jointly optimize all tasks while balancing their relative
+importance, we adopt an uncertainty-based multi-task loss
+weighting strategy. Instead of manually tuning task-specific
+coefficients, the model learns adaptive loss weights based on
+the homoscedastic uncertainty associated with each task [11].
+Let Lt denote the loss function for task t. Each task
+is associated with a learnable log-variance parameter σ2
+t ,
+representing the observation uncertainty. Thus, the cross-task
+training objective becomes:
+Ltotal =
+X
+t
+1
+2σ2
+t
+Lt + log σt. (14)
+Here, 1
+2σ2
+t
+adaptively scales each task’s contribution accord-
+ing to its uncertainty, while the log σt term regularizes the
+optimization to prevent trivial solutions.
+IV. EXPERIMENTS AND VALIDATION
+In this section, we evaluate the performance of the proposed
+MMSense. We first introduce the datasets used for our experi-
+ments, followed by a description of the baseline methods. We
+then present quantitative results to validate the effectiveness
+of our model across multiple sensing tasks.
+A. Datasets and Platform
+First, the MM-Fi dataset [12] provides a large-scale bench-
+mark for human sensing tasks. It includes synchronized multi-
+modal data collected from RGB cameras, radar sensors, and
+LiDAR scanners, covering a wide range of human activities
+and poses. We utilize the dataset for our two human sensing
+tasks. The first task is the human activity recognition task,
+where a total number of 27 activity categories is included.
+For the human pose estimation task, the dataset contains
+over 320,000 synchronized frames collected from 40 human
+subjects. The ground-truth labels include 17 key human joint
+positions. Second, the DeepSense 6G dataset [13] is an ex-
+tensive multi-modal dataset designed for wireless research.
+It provides co-located measurements of communication and
+sensing modalities, including mmWave channel state infor-
+mation, radar range–angle maps, LiDAR scans, and syn-
+chronized camera images across various indoor and outdoor
+environments. We employ this dataset for our channel and
+environment sensing tasks. The MMSense model is trained
+with 1 A100 GPU using NVIDIA Saturn Cloud platform.
+B. Baseline Schemes and Evaluation Metrics
+To validate the effectiveness of the proposed framework,
+we compare our model with several learning-based methods.
+We first compare our model with the single-task small models.
+These models are dedicated to a specific sensing task, and they
+have relatively small model parameters.
+• MLP-based model [14]: A multi-layer perceptron trained
+on the flattened input features. This model serves as a
+simple baseline to assess the non-linear fitting capability.
+• CNN-based model [15]: CNN-based methods mainly
+utilize local convolutional kernels to extract spatially
+localized features from image-like modalities.
+• Transformer-based model [16]: This scheme leverages
+self-attention mechanisms to model global dependencies
+among features. Unlike CNNs, they do not rely on local
+receptive fields, allowing them to capture long-range
+spatial or temporal relationships across modalities.
+Besides the small models that focus on a single task, we
+also compare our method with state-of-the-art large models:
+TABLE I
+PERFORMANCE COMPARISON OF OUR METHOD AND BASELINES ACROSS
+FOUR SENSING TASKS. THE BEST RESULT IS BOLDFACED, AND THE
+SECOND BEST IS UNDERLINED.
+Method
+Beam
+Prediction ↑
+HAR ↑ HPE ↓
+Blockage
+Prediction ↑
+MLP 0.0656 0.8491 0.0268 0.9403
+CNN 0.1438 0.8583 0.0177 0.9326
+Transformer 0.1972 0.8550 0.0151 0.9378
+LLM4WM 0.1504 0.8816 0.0119 0.9433
+Ours 0.3942 0.8766 0.0058 0.9453
+• LLM4WM [6]: This is the first work that applies LLM
+as backbone to solve multiple tasks in wireless networks.
+We adapt this framework to the multi-modal setting for
+a fair comparison with our method.
+For each sensing task, we employ task-specific evaluation
+metrics. Specifically, for human activity recognition, beam
+prediction, and blockage prediction, which are formulated as
+classification tasks, we use Top-1 accuracy to assess perfor-
+mance. For human pose estimation, which involves continuous
+keypoint regression, we use the Mean Squared Error (MSE)
+to evaluate the precision of the predicted joint coordinates.
+C. Accuracy of Sensing Tasks
+Table I reports the performance comparison of our method
+and four baselines across the all sensing tasks. It is observed
+that our approach achieves the best results in three tasks and
+competitive performance in the remaining one, demonstrating
+its strong sensing capability across diverse tasks. For the
+beam prediction task, our method attains the highest accuracy,
+substantially surpassing all baselines. This validates the effec-
+tiveness of our modality-aware gating mechanism and cross-
+modal attention fusion in exploiting complementary radar
+and LiDAR information. In human sensing tasks, our model
+achieves the best performance in HPE, while the HAR accu-
+racy is slightly below the top-performing baseline. This can
+be attributed to HAR being a high-level semantic task where
+image features alone capture most discriminative cues, thus
+limiting the marginal gains from the multi-modal fusion. For
+the blockage prediction task, our method again achieves the
+highest accuracy, reflecting improved environmental awareness
+and robustness enabled by the multi-task learning design.
+In detail, Table II presents the ablation study of our MM-
+sense to analyze the impact of two design components: the
+modality-aware gating mechanism and the task-specific multi-
+layer attention. First, removing the gating mechanism leads
+to noticeable performance drops in both beam prediction and
+blockage prediction tasks, confirming that adaptive modality
+weighting plays a critical role in managing modality reliability
+variations under diverse sensing conditions. Second, removing
+the task-specific multi-layer attention leads to a significant
+degradation in HPE performance, confirming that our sequen-
+tial attention design is essential for refining hierarchical feature
+representations. Interestingly, HAR accuracy improves in this
+TABLE II
+ABLATION STUDY OF OUR PROPOSED FRAMEWORK.
+Method
+Beam
+Prediction ↑
+HAR ↑ HPE ↓
+Blockage
+Prediction ↑
+w/o Gating 0.3272 0.8386 0.0068 0.9378
+w/o Task-Att 0.3785 0.8807 0.1152 0.9410
+Full Model 0.3942 0.8766 0.0058 0.9453
+ablation setting, as high-level activity recognition primarily
+depends on image semantics. Aggregating multiple hidden
+states from the LLM may introduce redundant information or
+noise, whereas removing this component enables the model
+to focus on the most discriminative features, thereby preserv-
+ing semantic clarity and improving classification accuracy.
+Overall, the full MMSense model achieves the consistently
+high performance across all tasks, demonstrating that both
+components contribute synergistically to improving the multi-
+modal and multi-task sensing capability.
+D. Generalization Ability Across Sensing Tasks
+Fig. 2. Generalization performance of our model and the baseline.
+To evaluate the generalization capability of the proposed
+MMSense framework, we investigate its zero-shot and few-
+shot performance on the human sensing tasks, as shown in
+Fig. 2. In the zero-shot setting, the model is tested on actions
+performed by unseen human subjects. MMSense achieves
+noticeably higher HAR accuracy and significantly lower HPE
+error compared to the baseline model, demonstrating its strong
+ability to transfer knowledge across heterogeneous modalities
+and tasks without additional fine-tuning. This also highlights
+the effectiveness of the proposed cross-modal fusion and task-
+specific attention mechanisms in capturing shared semantic
+structures and enhancing generalization to unseen scenarios.
+In the few-shot setting, where only 10% of labeled samples
+are available for fine-tuning, MMSense further improves both
+HAR and HPE performance, surpassing the baseline across
+all evaluation metrics. The performance gain is particularly
+notable in HPE, indicating that MMSense effectively leverages
+limited supervision to refine fine-grained spatial and structural
+understanding of human motion. These zero- and few-shot
+results further reveal that MMSense effectively leverages the
+Vision-LLM backbone’s reasoning and generalization capabil-
+ities in complex wireless sensing environments.
+V. CONCLUSION
+In this paper, we propose MMSense, a multi-modal, multi-
+task foundation model that unifies channel, human, and en-
+vironment sensing within a cohesive framework. By inte-
+grating image, radar, and LiDAR data into a vision-aligned
+embedding space, our approach enables effective cross-modal
+feature alignment and instruction-driven task adaptation. The
+proposed modality-aware gating mechanism and task-specific
+multi-layer attention modules allow the model to dynamically
+prioritize relevant modalities and refine hierarchical represen-
+tations for each task. Extensive experiments on real-world
+datasets demonstrate that MMSense consistently outperforms
+both single-task and existing large-model baselines in sensing
+accuracy and task generalization performance.
+REFERENCES
+[1] Y. Yang, F. Gao, Z. Zhong, B. Ai, and A. Alkhateeb, “Deep transfer
+learning-based downlink channel prediction for fdd massive mimo
+systems,” IEEE Transactions on Communications, vol. 68, no. 12, pp.
+7485–7497, 2020.
+[2] Z. Li, M. Chen, G. Li, and Y. Liu, “Spatial-temporal attention-based
+mmwave link quality prediction under dynamic blockages,” in GLOBE-
+COM 2023-2023 IEEE Global Communications Conference, 2023.
+[3] Z. Li, X. Luo, M. Chen, C. Xu, and Y. Liu, “Bfmloc: Transformer-based
+indoor positioning leveraging beamforming feedback matrices,” in IEEE
+ICC International Conference on Communications, 2025.
+[4] M. Zhang, J. Gao, and C. Zhong, “A deep learning-based framework for
+low complexity multiuser mimo precoding design,” IEEE Transactions
+on Wireless Communications, vol. 21, no. 12, pp. 11 193–11 206, 2022.
+[5] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, “Llm4cp: Adapting large
+language models for channel prediction,” Journal of Communications
+and Information Networks, vol. 9, no. 2, pp. 113–125, 2024.
+[6] X. Liu, S. Gao, B. Liu, X. Cheng, and L. Yang, “Llm4wm: Adapting llm
+for wireless multi-tasking,” IEEE Transactions on Machine Learning in
+Communications and Networking, 2025.
+[7] Y. Wen, X. Chen, M. Zhang, and Z. Zhang, “Icwlm: A multi-
+task wireless large model via in-context learning,” arXiv preprint
+arXiv:2507.18167, 2025.
+[8] T. Zheng, J. Guo, L. Dai, S. Jin, and J. Zhang, “Muse-fm: Multi-task
+environment-aware foundation model for wireless communications,”
+arXiv preprint arXiv:2509.01967, 2025.
+[9] H. Zhao, L. Jiang, J. Jia, P. H. Torr, and V. Koltun, “Point transformer,”
+in Proceedings of the IEEE/CVF international conference on computer
+vision, 2021, pp. 16 259–16 268.
+[10] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux,
+T. Lacroix, B. Rozière, N. Goyal, E. Hambro, F. Azhar et al.,
+“Llama: Open and efficient foundation language models,” arXiv preprint
+arXiv:2302.13971, 2023.
+[11] A. Kendall, Y. Gal, and R. Cipolla, “Multi-task learning using uncer-
+tainty to weigh losses for scene geometry and semantics,” in Proceedings
+of the IEEE conference on computer vision and pattern recognition,
+2018, pp. 7482–7491.
+[12] J. Yang, H. Huang, Y. Zhou, X. Chen, Y. Xu, S. Yuan, H. Zou, C. X.
+Lu, and L. Xie, “Mm-fi: Multi-modal non-intrusive 4d human dataset for
+versatile wireless sensing,” Advances in Neural Information Processing
+Systems, vol. 36, pp. 18 756–18 768, 2023.
+[13] A. Alkhateeb, G. Charan, T. Osman, A. Hredzak, J. Morais,
+U. Demirhan, and N. Srinivas, “Deepsense 6g: A large-scale real-world
+multi-modal sensing and communication dataset,” IEEE Communica-
+tions Magazine, 2023.
+[14] M. Alrabeiah and A. Alkhateeb, “Deep learning for mmwave beam and
+blockage prediction using sub-6 ghz channels,” IEEE Transactions on
+Communications, vol. 68, no. 9, pp. 5504–5518, 2020.
+[15] M. S. Safari, V. Pourahmadi, and S. Sodagari, “Deep ul2dl: Data-
+driven channel knowledge transfer from uplink to downlink,” IEEE Open
+Journal of Vehicular Technology, vol. 1, pp. 29–44, 2019.
+[16] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in
+neural information processing systems, vol. 30, 2017.
+

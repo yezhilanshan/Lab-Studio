@@ -1,0 +1,1165 @@
+Computer Vision and Image Understanding 271 (2026) 104891
+Contents lists available at ScienceDirect
+Computer Vision and Image Understanding
+journal homepage: www.elsevier.com/locate/cviu
+PAL: Predictive Action Logic for online action segmentation
+Tongjie Xu1
+, Rongxuan Zhang1
+, Xudong Tian, Yi Chen, Zhichao Zheng ∗
+, Junsheng Zhou ∗
+School of Computer Science and Electronic Information, Nanjing Normal University, Nanjing, 210023, Jiangsu, China
+A R T I C L E I N F O
+Communicated by Massimiliano Mancini
+Keywords:
+Temporal online action segmentation
+Video understanding
+Information bottleneck
+A B S T R A C T
+Online Action Segmentation (OAS) aims to recognize and segment human actions from continuous video
+streams in real time. The absence of future context makes OAS vulnerable to local ambiguity and over-
+segmentation, as most existing methods treat it as a reactive pattern recognition problem over past features.
+We argue that robust online understanding can benefit from a predictive view that leverages predicted future
+dynamics as logical priors for current decisions. To this end, we propose Predictive Action Logic (PAL), which
+reformulates OAS as a predict-verify process. Specifically, PAL predicts short-term motion trends to capture the
+dynamic invariants underlying action logic, and jointly leverages these predictions with past observations to
+infer the current action. To ensure the semantic faithfulness of the predicted future, we introduce Asymmetric
+Self-Distillation that characterizes the dynamic invariants of actions while filtering task-irrelevant details. On
+this basis, we design a temporal calibrator to align the current frame representation with the past and predicted
+future representations, thereby mitigating local ambiguities and promoting temporally consistent recognition.
+Experiments on multiple benchmarks show that PAL is particularly effective at improving segment-level
+temporal consistency.
+1. Introduction
+Online Action Segmentation (OAS) aims to recognize and segment
+human actions from continuous video streams in real time. In contrast
+to offline protocols (Ahn and Lee, 2021; Behrmann et al., 2022; Kumar
+et al., 2022), which leverage the complete video and global context,
+OAS is restricted to processing incoming frames sequentially and mak-
+ing predictions using only past observations. This causal constraint,
+coupled with the need for immediate response, makes OAS particularly
+suitable for real-world applications such as autonomous driving and
+intelligent surveillance, where systems are required to react promptly
+to ongoing behaviors rather than waiting for an event to conclude.
+However, the absence of future context fundamentally constrains
+the understanding of ongoing actions, making the model vulnerable to
+local ambiguity and prone to boundary misprediction, leading to frag-
+mented and unreliable outputs. To address this, existing OAS models
+primarily rely on reusing or enhancing historical frames, commonly
+through architectures such as memory mechanisms (Zhong et al., 2024)
+or task-graph-based modeling (Shen and Elhamifar, 2024). More re-
+cently, prototype-based approaches (Han et al., 2025) have emerged,
+attempting to augment current feature representations by retrieving
+static behavior prototypes that encode global class-level commonali-
+ties. Despite their effectiveness, a significant performance gap remains
+∗ Corresponding authors.
+E-mail addresses: xutongjie@nnu.edu.cn (T. Xu), zhangrongxuan@nnu.edu.cn (R. Zhang), 51194501066@stu.ecnu.edu.cn (X. Tian), cs_chenyi@njnu.edu.cn
+(Y. Chen), zhengzhichao@njnu.edu.cn (Z. Zheng), zhoujs@njnu.edu.cn (J. Zhou).
+1
+These authors contributed equally to this work.
+compared to offline methods. This gap arises because existing methods
+remain fundamentally reactive regardless of their reliance on historical
+information or static prototypes. They formulate OAS as a retrospective
+pattern recognition problem or a static matching task that passively
+processes signals. Consequently, they treat actions as isolated visual
+patterns, failing to capture the causal and temporal regularities of
+specific action instances, i.e., the dynamic action logic. This limitation
+makes models highly susceptible to local ambiguity when context is
+limited. For example, as shown in Fig. 1(a), a short sequence of frames
+like ‘‘holding a knife’’ could be part of ‘‘cut cucumber’’ or ‘‘cut lettuce’’.
+Without access to subsequent information, a model operating purely
+from a pattern recognition perspective cannot resolve this ambiguity.
+In contrast, humans also perceive actions in an online manner, but
+predictive processing theory (Friston, 2010; Clark, 2013) indicates the
+human brain operates differently from passive signal processors such as
+OAS models. Rather than merely reacting to incoming sensory streams,
+the brain serves as an active prediction system: it uses past experiences
+and its understanding of action logic to anticipate future sensory input.
+These predictions function as strong priors that help resolve perceptual
+ambiguities (Zacks et al., 2007). For example, observing a knife moving
+toward a cucumber, rather than the lettuce beside it, leads the brain to
+predict the image of the cucumber being cut. Subsequently, based on
+https://doi.org/10.1016/j.cviu.2026.104891
+Received 22 February 2026; Received in revised form 16 July 2026; Accepted 27 July 2026
+Available online 30 July 2026
+1077-3142/© 2026 Published by Elsevier Inc.
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Fig. 1. (a) General online action segmentation: Identifies the current action
+using only past and present frames, with no access to future data. (b) Our
+method: First, it predicts future states based on past information. Then, it
+identifies the current action by jointly reasoning with the actual past and the
+predicted future.
+this prediction, the brain cognitively classifies the current action as ‘‘cut
+cucumber’’.
+Drawing on this theoretical foundation, we propose the Predictive
+Action Logic (PAL) framework to address the limitations of reactive
+OAS models. PAL shifts the paradigm from retrospective recognition
+to a predict–verify mechanism, where future prediction serves as a
+critical regularization to disambiguate current observations. Specifi-
+cally, before classifying the action at the current moment, PAL predicts
+short-term future motion trends to capture the dynamic invariants
+underpinning action logic, then integrates this predicted future with
+the observed past to yield a temporally coherent interpretation of
+the current frame. A critical challenge in this predictive paradigm
+is ensuring that predictions rely on genuine action dynamics rather
+than irrelevant nuisances. Video data contains two primary sources of
+interference: static redundancy (backgrounds) and dynamic noise (non-
+target motion). To rigorously address these, PAL introduces a two-stage
+filtering mechanism within its Future Motion Prediction module. First,
+to eliminate static redundancy, we employ explicit motion trend model-
+ing via first-order differencing, forcing the model to focus on temporal
+variations. Second, to strip away dynamic noise entangled with task-
+relevant motion, we propose Asymmetric Self-Distillation (ASD). Unlike
+standard mutual information methods that assume global alignment,
+ASD enforces a granular consistency constraint. It leverages a subset-
+based matching mechanism to align the predicted future representation
+with its specific supporting past context. This effectively filters out
+stochastic dynamic noise that lacks temporal grounding. Finally, a
+Temporal Calibration Module aligns these purified future priors with
+historical data to infer the current action.
+In summary, the main contributions of this paper are as follows:
+• We propose the Predictive Action Logic (PAL) framework for on-
+line action segmentation. This framework implements a ‘‘predict-
+verify’’ mechanism to transition the model from being reactive to
+predictive, addressing the over-segmentation challenge.
+• We introduce Asymmetric Self-Distillation (ASD) to decouple dy-
+namic invariants from noise. By enforcing consistency between
+predicted future trends and their supporting past contexts, ASD
+encourages the model to learn robust action logic.
+• We design a Temporal Calibration Module (TCM) that enforces
+‘‘past-present-future’’ consistency, effectively resolving local am-
+biguities by integrating purified future priors with historical ob-
+servations.
+• Extensive experiments on multiple benchmarks show that our
+framework improves segment-level metrics on several bench-
+marks, demonstrating the effectiveness of our proposed frame-
+work.
+2. Related works
+2.1. Action segmentation
+The task of temporal action segmentation can be broadly divided
+into three categories based on the level of supervision employed:
+unsupervised (Kumar et al., 2022; Sarfraz et al., 2021; Shen et al.,
+2021; Tran et al., 2024; Wang et al., 2022; Zhukov et al., 2019), weakly
+supervised (Chang et al., 2019; Ding and Xu, 2018; Li and Todorovic,
+2020, 2021; Li et al., 2019), and fully supervised approaches (Ahn and
+Lee, 2021; Behrmann et al., 2022; Farha and Gall, 2019; Huang et al.,
+2020; Ishikawa et al., 2021; Kuehne et al., 2016). However, the vast
+majority of existing methods focus on addressing action segmentation
+in offline settings, and significant progress has been achieved in this
+domain. Nonetheless, offline methods (Ahn and Lee, 2021; Behrmann
+et al., 2022; Kumar et al., 2022) necessitate prior access to the en-
+tire video sequence, thereby limiting their applicability in real-world
+scenarios that demand real-time responsiveness.
+In the task of online action segmentation, which is constrained
+to leveraging only past and current information, existing fully super-
+vised methods have achieved notable success. For instance, ProTAS
+(Shen and Elhamifar, 2024) introduces causal constraints, action pro-
+gression prediction, and task graphs to enhance stability and logical
+consistency. Meanwhile, OnlineTAS (Zhong et al., 2024) strengthens
+temporal modeling and corrects over-segmentation through context
+enhancement, adaptive memory, and post-processing. More recently,
+to mitigate the absence of future context, (Han et al., 2025) proposed
+Behavior-Centered Feature Augmentation (BCFA), which utilizes be-
+havior prototypes to capture global action semantics and enhances
+the intrinsic representation of the currently observed behavior to re-
+duce reliance on local context. However, the underlying paradigm of
+these methods remains largely retrospective or static-focused. They
+either rely heavily on historical information to infer the current state
+or attempt to compensate for the lack of future context by anchor-
+ing on pre-learned prototypes, often necessitating post-hoc correction
+mechanisms.
+Conversely, we argue that action coherence arises not only from
+historical context but also from anticipating future events. We therefore
+advocate for integrating both retrospective and prospective perspec-
+tives to better capture the internal logic of human actions.
+2.2. Online action detection/anticipation
+Online action detection (Eun et al., 2020; Qu et al., 2020; Shou
+et al., 2018; Gao et al., 2019) identifies actions in video streams in
+real-time, restricted to historical and present information like online
+action segmentation. Action anticipation forecasts future actions from
+limited observations, including short-term (Kong et al., 2018; Girase
+et al., 2023) and long-term predictions (Gong et al., 2022; Wang et al.,
+2021). Early methods employed recurrent neural networks (Chen et al.,
+2022; De Geest and Tuytelaars, 2018; Li et al., 2016; Furnari and
+Farinella, 2019; Gammulle et al., 2019; Kong et al., 2018) for temporal
+modeling. However, Transformers have gained dominance in vision
+(Dosovitskiy et al., 2021; Liu et al., 2021) and video tasks (Chen
+et al., 2023; Liu et al., 2022) via attention mechanisms. Consequently,
+Transformer-based models (Cao et al., 2023; Kim et al., 2022; Rangrej
+et al., 2023; Girase et al., 2023; Gong et al., 2022; Wang et al.,
+2023) now prevail for online detection and anticipation. These tasks
+share similar architectures and complementary temporal modeling ca-
+pabilities, leading to recent integration efforts. For example, Wang
+et al. (2021) proposed OadTR, where an encoder captures historical
+dependencies and a decoder aggregates predicted future segments to
+recognize current actions. Kim et al. (2021) introduced FATSNet, which
+achieves temporally coherent, frame-level predictions by aggregating
+features from both historical and anticipated future frames.
+2
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Fig. 2. Our Predictive Action Logic Framework is a multi-stage architecture.
+The first stage only performs temporal encoding, while subsequent stages
+apply the Future Motion Prediction and Temporal Calibration Module. During
+inference, the prediction results are derived from the output of the last stage.
+Although online action detection also uses future prediction, its
+objectives focus on class-level confirmation or boundary verification,
+which only require coarse future cues. Online action segmentation,
+however, demands frame-level disambiguation of subtle motion states,
+making high-dimensional future reconstruction or class-level anticipa-
+tion inadequate. Our approach instead predicts future motion trends,
+a compact and causally meaningful signal specifically suited to the
+fine-grained temporal precision required in segmentation.
+3. Method
+3.1. Problem formulation
+The objective of online action segmentation (OAS) can be defined
+as learning a model , parameterized by 𝜃, that estimates the proba-
+bility distribution over action classes based only on past and current
+observations. Formally, given an input sequence of frame features 𝑋 =
+{𝑥𝑡}𝑇
+𝑡=1
+∈ R𝑇 ×𝐷𝐼 and the corresponding ground truth labels 𝑌 = {𝑦𝑡}𝑇
+𝑡=1
+,
+where 𝑦𝑡 ∈ , the model aims to produce a sequence of predictions
+̂
+𝑌 = {̂
+𝑦𝑡}𝑇
+𝑡=1
+. Here, 𝑇 denotes the sequence length, 𝐷𝐼 denotes the input
+feature dimension, and  represents the set of all action classes. The
+objective of OAS can be given as:
+̂
+𝑦𝑡 = argmax
+𝑐∈
+𝑝(𝑦𝑡 = 𝑐 ∣ 𝑋1∶𝑡; 𝜃), (1)
+where 𝑝(𝑦𝑡 = 𝑐 ∣ 𝑋1∶𝑡; 𝜃) is the conditional probability estimated by the
+model.
+3.2. Overview
+To address the local ambiguity resulting from the purely reactive
+nature of existing OAS methods, the proposed Predictive Action Logic
+(PAL) framework recognizes actions by constructing a temporally co-
+herent context through a predict–verify mechanism, which integrates
+both past observations and predicted future cues. As illustrated in Fig.
+2, PAL consists of four sequential stages, where frame features are first
+projected into the hidden dimension 𝐷𝐻 and subsequently processed
+by our two proposed modules:
+Future Motion Prediction (FMP). This module predicts short-
+term future motion trends to guide recognition of the current frame.
+To ensure faithfulness, it sequentially applies frame differencing and
+asymmetric self-distillation to remove static redundancy and dynamic
+noise, respectively, thereby obtaining future features that capture the
+dynamic invariants underlying the action logic.
+Temporal Calibration Module (TCM). This module enforces tem-
+poral coherence by aligning past observations with predicted future
+cues, allowing the model to focus on dynamic invariants that effectively
+resolve local ambiguities.
+3.3. Future motion prediction
+This module is motivated by the predictive mechanism of the human
+brain, which anticipates potential future actions and leverages these
+predictions to support current recognition. This property motivates
+leveraging past observations together with predicted future cues, rather
+than interpreting each frame in isolation. To this end, the module filters
+static and dynamic redundancy while refining the predictive signals,
+yielding a minimal sufficient description of the future motion trend.
+3.3.1. Modeling of motion trends
+For video data, static redundancy refers to content that remains
+constant across consecutive frames (e.g., backgrounds or objects irrele-
+vant to the target motion). This makes first-order frame differencing
+an efficient and effective strategy for driving the model’s attention
+toward signals that vary over time. Formally, given a past window 𝐻𝑡 =
+{𝑥𝑖}𝑡
+𝑖=𝑡−𝑀+1
+∈ R𝑀×𝐷𝐻 consisting of 𝑀 frames ending at the current
+frame 𝑥𝑡, the motion trend sequence ̂
+𝐻𝑡 is obtained by first-order
+differencing:
+̂
+𝐻𝑡 = {𝛥𝑥𝑖}𝑡
+𝑖=𝑡−𝑀+1
+∈ R𝑀×𝐷𝐻 , 𝛥𝑥𝑖 = 𝑥𝑖 − 𝑥𝑖−1. (2)
+Intuitively, 𝛥𝑥𝑖 can be interpreted as a discrete approximation of the
+first-order temporal derivative of 𝑥 w.r.t time. Given the smooth tem-
+poral evolution of human actions, its direction and magnitude provide
+a concise characterization of the action’s short-term progression, i.e.,
+the motion trend.
+Afterward, we employ 𝑁 query tokens 𝑆𝑡 = {𝑠𝑡,𝑖}𝑁
+𝑖=1
+∈ R𝑁×𝐷𝐻 to
+infer the future motion trend ̂
+𝑆𝑡 based on ̂
+𝐻𝑡. Formally, we have:
+𝐴𝑡 = softmax(
+𝑊𝑄, ̂
+𝑆
+𝑆𝑡(𝑊𝐾, ̂
+𝑆
+̂
+𝐻𝑡)𝑇
+√
+𝐷𝐻
+), (3)
+̂
+𝑆𝑡 = 𝐴𝑡(𝑊𝑉 , ̂
+𝑆
+̂
+𝐻𝑡), (4)
+where 𝑊𝑄, ̂
+𝑆
+, 𝑊𝐾, ̂
+𝑆
+, and 𝑊𝑉 , ̂
+𝑆
+are all learnable parameters.
+On this basis, to capture the precise temporal structure of actions,
+we inject positional information into both the past motion trends ̂
+𝐻𝑡
+and the future query tokens 𝑆𝑡. Unlike standard absolute encodings,
+we employ a Present-Centric strategy where the current time step 𝑡
+serves as the reference anchor (position 0). Formally, let 𝑟𝑒𝑙 denote the
+relative index set. For the past motion window of size 𝑀, the indices
+are defined as 𝐩𝑝𝑎𝑠𝑡 = {−𝑀 + 1, … , 0}. For the 𝑁 future query tokens,
+the indices are 𝐩𝑓𝑢𝑡 = {1, … , 𝑁}. We map these indices to sinusoidal
+embeddings 𝐏𝐄(⋅) using the standard formulation:
+𝐏𝐄(𝑝, 2𝑗) = sin
+(
+𝑝
+100002𝑗∕𝐷𝐻
+)
+, 𝐏𝐄(𝑝, 2𝑗+1) = cos
+(
+𝑝
+100002𝑗∕𝐷𝐻
+)
+, (5)
+where 𝑝 ∈ 𝑟𝑒𝑙 is the relative position and 𝑗 indexes the channel
+dimension. These encodings are injected via element-wise addition
+to align the past and future representations in a unified temporal
+coordinate system:
+̂
+𝐻𝑡 ← ̂
+𝐻𝑡 + 𝐏𝐄(𝐩𝑝𝑎𝑠𝑡), 𝑆𝑡 ← 𝑆𝑡 + 𝐏𝐄(𝐩𝑓𝑢𝑡). (6)
+By centering the encoding at the current frame, this mechanism ensures
+that the model learns translation-invariant temporal dependencies, fo-
+cusing on the relative evolution of the action rather than absolute video
+timestamps.
+3.3.2. Asymmetric self-distillation
+Dynamic noise is often entangled with task-relevant motion cues,
+inevitably leading to the dilemma between isolating the target trends
+and disregarding predictive clues. Though an information-theoretic for-
+mulation appears promising for extracting minimal sufficient predictive
+representations, existing methods (Tian et al., 2021; Ba et al., 2024)
+rely on point-to-point mutual information, which presumes aligned
+input–target pairs and is inherently incapable of handling the temporal
+dependencies (e.g., ̂
+𝑆𝑡 is inferred through a set of trends and tokens).
+3
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Fig. 3. A detailed description of the Future Motion Prediction (FMP) and Temporal Calibration Module (TCM). The FMP consists of two stages. First, the
+Modeling of Motion Trends eliminates static redundancy through first-order differencing, enabling the model to focus on the motion trends of actions. Second,
+the Asymmetric Self-Distillation removes dynamic noise in features, using future prediction as a regularization constraint to guide the model in learning action
+logic and focusing on the dynamic invariants of actions. The TCM aligns the current moment’s features with past motion trend features and predicted future
+motion trend features, which helps eliminate local ambiguity during decision-making at the current moment.
+To address this, we first construct a subset-based matching between
+past trends and predicted future cues. As shown in Fig. 3, we identify
+a supporting past context 𝑜𝑡,𝑖 for each predicted future motion trend
+feature ̂
+𝑠𝑡,𝑖 by selecting the Top-K elements from the past trend ̂
+𝐻𝑡 based
+on the cross-attention scores in Eq. (3). This yields 𝑂𝑡 = {𝑜𝑡,𝑖}𝑁
+𝑖=1
+, where
+each 𝑜𝑡,𝑖 contains the past features most relevant to generating ̂
+𝑠𝑡,𝑖. Next,
+we forward the past-future pairs (𝑜𝑡,𝑖, ̂
+𝑠𝑡,𝑖) to a shared classifier 𝑓𝑐𝑙𝑠 to
+obtain the corresponding predicted distribution P𝑜𝑡,𝑖
+and P̂
+𝑠𝑡,𝑖
+, which
+enables us to enforce predictive consistency between each inferred
+future token and its past cues by:
+ASD = E𝑜∼𝐸𝜃(𝑜|𝑥)
+[
+Ê
+𝑠∼𝐸𝜙(̂
+𝑠| ̂
+𝐻,𝑠)
+[
+𝐷𝐾𝐿[P𝑜 ∥ P̂
+𝑠]
+]]
+, (7)
+where 𝜃 and 𝜙 denote the parameters of the temporal encoder and
+cross-attention module, respectively. Considering that Eq. (7) distills
+each predicted future token from its asymmetric past context, we refer
+to this strategy as Asymmetric Self-Distillation (ASD).
+In particular, Eq. (7) enforces predictive consistency by aligning
+each future token to its corresponding past contexts. This consistency
+constraint encourages the model to capture temporal dependencies
+required to distinguish the underlying motion trend from the dynamic
+noise entangled with it, thereby improving the fidelity of the predicted
+future.
+3.4. Temporal calibration module
+Since the action representation 𝑥𝑡 is instantaneous and context-
+independent, directly using it for classification makes the process sus-
+ceptible to local ambiguity. To address this problem, the TCM is de-
+signed to ensure that the feature at time 𝑡 aligns with the action logic
+inherent in both its past and future motion trends. For any given
+𝑥𝑡, we construct the local temporal context 𝐶𝑡 by concatenating 𝑀
+features of past motion trend ̂
+𝐻𝑡 with predicted future motion trend ̂
+𝑆𝑡.
+Subsequently, the TCM computes cross-attention using 𝑥𝑡 as the query
+and 𝐶𝑡 as both key and value. This process aligns 𝑥𝑡 with the context,
+thereby generating a temporally coherent representation:
+̂
+𝑥𝑡 = softmax(
+𝑊𝑄,̂
+𝑥𝑡
+𝑥𝑡(𝑊𝐾,̂
+𝑥𝑡
+𝐶𝑡)𝑇
+√
+𝐷𝐻
+) ⋅ (𝑊𝑉 ,̂
+𝑥𝑡
+𝐶𝑡), (8)
+where 𝑊𝑄,̂
+𝑥𝑡
+, 𝑊𝐾,̂
+𝑥𝑡
+, and 𝑊𝑉 ,̂
+𝑥𝑡
+are all learnable parameters. By at-
+tending to both past and predicted future motion trends, TCM injects
+temporal context into 𝑥𝑡 as a corrective prior, reducing the influence of
+ambiguous cues inconsistent with the action evolution. This refines 𝑥𝑡
+into an enhanced representation ̂
+𝑥𝑡 for temporally coherent recognition.
+The calibrated representation ̂
+𝑥𝑡 is directly fed into a frame-wise
+classifier:
+𝑃 𝑐
+(𝑡, ⋅) = softmax(Conv1D1×1(̂
+𝑥𝑡)), (9)
+where Conv1D1×1 maps 𝐷𝐻 channels to || action logits and is shared
+across all time steps. 𝑃 𝑐(𝑡, ⋅) ∈ R|| denotes the predicted class-
+probability distribution for frame 𝑡.
+3.5. Training objective
+The framework is trained in an end-to-end manner using a com-
+posite loss function that balances classification accuracy, predictive
+fidelity, and temporal smoothness.
+At each time step, we calculate the cross-entropy loss between the
+predicted labels of the current frame and the ground-truth labels, as
+well as the corresponding temporal smoothing loss. Furthermore, to
+ensure the ASD module learns meaningful representations, we apply
+auxiliary supervision to both the supporting past contexts 𝑜𝑡,𝑖 and the
+predicted future tokens ̂
+𝑠𝑡,𝑖. Since the future labels are not available in
+an online setting, we use the labels of the corresponding future frames
+4
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Table 1
+Comparison on EgoProceL and EgoPER. ProTAS1 denotes the model with MS-TCN as backbone, while ProTAS2 denotes the model
+with ASFormer as backbone. Bold denotes the highest value for each metric. Underline denotes the highest value among models
+using I3D features.
+Methods
+EgoProceL EgoPER
+Acc. Edit F1@10 F1@25 F1@50 Acc. Edit F1@10 F1@25 F1@50
+MS-TCN Farha and Gall (2019) 64.5 42.5 45.2 41.6 33.0 71.8 48.9 56.2 52.2 39.4
+ASFormer Yi et al. (2021) 64.8 48.1 49.8 45.0 35.4 70.3 60.6 66.1 62.3 44.7
+ProTAS1 Shen and Elhamifar (2024) 67.8 48.8 51.5 46.0 35.7 70.2 60.7 65.4 61.2 46.3
+ProTAS2
+Shen and Elhamifar (2024) 68.5 52.1 51.6 48.9 36.8 71.7 62.4 68.8 65.9 48.6
+BCFA Han et al. (2025) 69.1 56.9 56.3 53.0 41.0 76.2 72.3 73.3 70.4 58.4
+PAL+I3D 84.4 62.5 61.1 58.2 48.8 72.4 71.1 70.9 66.3 56.9
+PAL+V-JEPA 89.6 71.0 70.2 68.8 61.5 83.1 79.7 80.1 79.1 73.9
+from the training set as the supervision signal for the predicted tokens.
+These losses are denoted as:
+CE = −
+1
+𝑇
+𝑇
+∑
+𝑡
+log 𝑃𝑐
+(𝑡, 𝑦𝑡)
+−
+1
+𝑇 𝑁
+(
+𝑇
+∑
+𝑡
+𝑁
+∑
+𝑖
+log 𝑃 𝑜
+(𝑡 + 𝑖, 𝑦𝑡+𝑖)
++
+𝑇
+∑
+𝑡
+𝑁
+∑
+𝑖
+log 𝑃̂
+𝑠
+(𝑡 + 𝑖, 𝑦𝑡+𝑖)),
+(10)
+smooth =
+1
+𝑇 ||
+∑
+𝑡
+∑
+𝑘
+(𝑃𝑚
+𝑡−1,𝑘
+− 𝑃 𝑚
+𝑡,𝑘)2
+, (11)
+𝑃 𝑚(𝑡, 𝑘) in the smooth represents the probability of class 𝑘 at time 𝑡.
+Finally, we perform a weighted combination of all loss components to
+obtain the overall training objective:
+total = 𝜆1CE + 𝜆2smooth + 𝜆3ASD (12)
+where 𝜆1, 𝜆2, and 𝜆3 are hyperparameters controlling the relative
+contributions of each loss term.
+4. Experiments
+4.1. Datasets
+We evaluate PAL on six datasets in this study. 50Salads (Stein
+and McKenna, 2013) contains 50 salad preparation videos with 17
+action categories, averaging 6 min in duration and approximately 20
+action instances per video. Breakfast (Kuehne et al., 2014) includes
+1712 breakfast preparation videos across 18 kitchens, with 48 actions
+and approximately 6 instances per video. EgoProceL (Bansal et al.,
+2022) comprises 1055 videos featuring various tasks (e.g., car repair,
+cooking), which contain 130 action categories and approximately 21
+segments per video. EgoPER (Lee et al., 2024) consists of 386 videos
+that feature users performing five procedural tasks. GTEA (Fathi et al.,
+2011) consists of 28 videos, featuring 11 actions and an average of
+33 segments per video. Cholec80 (Twinanda et al., 2016) contains
+80 laparoscopic cholecystectomy videos annotated with seven surgical
+phases. Following the commonly used 40/40 split of Cholec80, we used
+the first 40 videos for training and the remaining 40 videos for testing.
+4.2. Evaluation metrics
+We evaluate all methods using mean frame accuracy (Acc.), edit
+distance, and the segmental F1 score. The F1 score is computed at
+temporal Intersection-over-Union (tIoU) thresholds of 10%, 25%, and
+50%. Specifically, Acc. is defined as the proportion of frames cor-
+rectly predicted by the model and is used to measure the frame-wise
+classification performance. The edit distance quantifies the similarity
+between two segment sequences by calculating the minimum number
+of insertion, deletion, and substitution operations required to convert
+one segment sequence into the other, thereby evaluating the struc-
+tural correctness of the predicted action sequence. F1 score evaluates
+the intersection over union between each predicted segment and the
+corresponding ground truth annotation, based on a given threshold. A
+predicted segment is considered a true positive only if its IoU with a
+ground truth segment exceeds the threshold and it is the first correct
+match within the same ground truth action region. We report both
+frame-wise and segment-level metrics because they capture different
+aspects of online segmentation: Acc. reflects instantaneous classifica-
+tion correctness, whereas Edit and F1 are more sensitive to fragmented
+boundaries and over-segmentation.
+Since Cholec80 is primarily used in surgical phase recognition stud-
+ies, we adopt the relaxed evaluation protocol commonly used in this
+literature rather than unrelaxed evaluation metrics, to ensure com-
+parability with the methods reported in Table 4. The relaxed evalu-
+ation metrics are denoted as R-Accuracy, R-Precision, R-Recall, and
+R-Jaccard. Under this protocol, a prediction is considered correct if it
+falls within a 10-second temporal window before or after a surgical
+phase transition and the predicted class corresponds to an adjacent
+surgical phase.
+4.3. Implementation details
+For the standard OAS benchmarks, we follow prior studies and use
+pre-extracted 2048-dimensional I3D (Carreira and Zisserman, 2017)
+features as the main input representation for fair comparison with I3D-
+based baselines. To examine whether PAL benefits from stronger visual
+features, we also evaluate it with V-JEPA 2.1 (Mur-Labadia et al., 2026)
+ViT-g/16 features, whose output dimension is 1408. For Cholec80,
+we follow GDPA (Wang et al., 2025) and common surgical workflow
+recognition practice by using CLIP ViT-B/16 to extract 768-dimensional
+visual features.
+Our model is composed of four stages, each containing 10 dilated
+convolution blocks. To ensure causality and real-time performance, the
+first stage performs initial spatiotemporal aggregation following the
+approach of ProTAS (Shen and Elhamifar, 2024). The subsequent three
+stages progressively introduce our proposed future motion prediction
+and temporal calibration module. The hidden dimension 𝐷𝐻 is set to
+64. In the future motion prediction, for each frame 𝑡, the differential
+window 𝑀 is set to 32, and the number of query tokens 𝑁 is set to
+4. The value of 𝐾 in Asymmetric Self-Distillation (ASD) is set to 8.
+We train the model for 150 epochs using the AdamW optimizer with a
+learning rate of 0.0005. The loss weights are configured as follows: the
+weight 𝜆1 of the main classification loss is set to 1.0, the weight 𝜆2 of
+the smoothness loss to 0.15, and the weight 𝜆3 of the ASD loss to 0.3.
+4.4. Comparison with existing online methods
+We compare our proposed Predictive Action Logic (PAL) framework
+against recent fully supervised online action segmentation methods
+to verify whether forecasting future trends can refine the temporal
+structure of online predictions. Unless otherwise specified, baseline
+results are taken from the corresponding cited papers under their online
+evaluation protocols. The quantitative results across five benchmarks
+are summarized in Tables 1, 2, and 3. We use the experimental results
+of MS-TCN (Farha and Gall, 2019) and ASFormer (Yi et al., 2021)
+with the online setup reported in ProTAS for Tables 1 and 3, and
+the experimental results of MS-TCN with the online setup reported in
+OnlineTAS for Table 2.
+5
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Table 2
+Comparison on 50Salads and Breakfast. Bold denotes the highest value for each metric. Underline denotes the highest value
+among models using I3D features. ProTAS∗ refers to experiments replicated via the official source code.
+Methods
+50Salads Breakfast
+Acc. Edit F1@10 F1@25 F1@50 Acc. Edit F1@10 F1@25 F1@50
+MS-TCN Farha and Gall (2019) 75.2 19.6 26.8 24.4 19.6 55.3 18.7 15.1 11.7 8.3
+ProTAS∗ Shen and Elhamifar (2024) 72.4 25.3 35.0 30.2 21.7 56.2 18.1 16.0 13.2 8.9
+OnlineTAS Zhong et al. (2024) 80.9 28.8 36.1 31.0 23.3 56.7 19.3 16.8 13.9 9.3
+PAL+I3D 74.1 34.6 41.1 38.3 32.6 53.1 25.6 24.8 21.3 14.8
+PAL+V-JEPA 78.8 46.0 51.9 49.2 45.3 57.4 33.4 31.2 27.6 19.8
+Table 3
+Comparison on GTEA. ProTAS1 denotes the model with MS-TCN as backbone, while
+ProTAS2 denotes the model with ASFormer as backbone. Bold denotes the highest value
+for each metric. Underline denotes the highest value among models using I3D features.
+Methods
+GTEA
+Acc. Edit F1@10 F1@25 F1@50
+MS-TCN Farha and Gall (2019) 74.0 64.4 71.8 69.4 56.0
+ASFormer Yi et al. (2021) 77.2 73.3 79.6 77.1 65.0
+ProTAS1 Shen and Elhamifar (2024) 74.3 69.2 77.1 74.1 59.7
+ProTAS2
+Shen and Elhamifar (2024) 77.0 74.1 80.2 77.5 66.1
+OnlineTAS Zhong et al. (2024) 76.2 63.5 72.6 68.3 58.8
+BCFA Han et al. (2025) 77.3 78.6 82.2 79.4 67.6
+PAL+I3D 75.5 75.5 79.2 75.9 68.6
+PAL+V-JEPA 79.3 79.2 83.6 83.6 73.6
+Table 4
+Additional cross-domain validation on Cholec80 under the relaxed surgical phase
+recognition protocol. R-Accuracy is a video-level metric, while R-Precision, R-Recall,
+and R-Jaccard (mean ± std) are phase-level metrics. PAL+ViT denotes PAL using
+CLIP ViT-B/16 features. Bold denotes the highest value for each metric.
+Methods R-Accuracy R-Precision R-Recall R-Jaccard
+LoViT Liu et al. (2025) 92.4±6.3 89.9±6.1 90.6±4.4 81.2±9.1
+SKiT Liu et al. (2023) 93.4±5.2 90.9 91.8 82.6
+Surgformer Yang et al. (2024) 93.4±6.4 91.9±4.7 92.1±5.8 84.1±8.0
+GDPA Wang et al. (2025) 94.0±4.7 92.9±3.4 91.4±7.0 83.8±6.8
+MS-ASCT Zhang et al. (2024) 95.2±3.4 92.7±5.6 92.1±9.0 85.3±10.9
+TUNeS Funke et al. (2025) 93.9±5.0 - - 84.2±8.3
+PAL+ViT 96.2±3.1 94.6±4.3 93.7±7.2 87.5±7.3
+Table 1 presents the model’s performance on large-scale egocentric
+datasets. PAL shows its clearest advantage on EgoProceL. We attribute
+this behavior to the procedural nature of EgoProceL: videos contain
+diverse tasks, many action categories, and long action chains with
+distinct procedural structures. In such scenarios, local visual features
+tend to be ambiguous, while short-term future motion trends act as
+effective priors to clarify the logic of current actions. However, on
+the EgoPER dataset, BCFA achieves the best results. This suggests
+that prototype-based behavior augmentation remains effective when
+the dataset contains a relatively small number of recurring procedural
+tasks and its class-level behavior prototypes are stable. Nevertheless,
+the gap between PAL and BCFA is small, indicating that PAL remains
+competitive on EgoPER.
+The results on the 50Salads and Breakfast datasets in Table 2 reveal
+a different behavior pattern. OnlineTAS achieves slightly higher frame-
+wise accuracy, whereas PAL performs better in terms of Edit and F1
+scores. This indicates a trade-off between instantaneous frame-wise
+classification and segment-level temporal coherence. PAL can sup-
+press short, isolated label changes caused by local ambiguity, thereby
+improving Edit and F1 scores by reducing fragmented segments. There-
+fore, PAL is more suitable for applications where stable action intervals
+and reliable boundary structures are more important than maximizing
+the number of correctly classified individual frames, such as procedural
+monitoring and step-level assistance.
+Table 3 summarizes the model performance on the GTEA dataset.
+PAL achieves the best result only on F1@50. This is because GTEA is
+relatively small and contains short actions with frequent transitions,
+making the future trends predicted from a limited historical window
+unstable, while temporal calibration may also over-smooth rapid action
+changes. Therefore, although PAL can improve the strict F1@50 metric
+by reducing fragmented segments, it does not perform best on metrics
+that are more sensitive to coarse boundary localization or frame-wise
+classification. This indicates that PAL is more suitable for mitigat-
+ing over-segmentation through predictive temporal consistency, rather
+than for scenarios with extremely short actions or limited training data.
+We further report PAL with V-JEPA features as a feature robustness
+setting. Across all five datasets, PAL+V-JEPA consistently improves
+segment-level metrics. These gains are particularly evident in segment-
+level metrics such as Edit and F1@50, indicating that stronger self-
+supervised video representations can provide more reliable motion
+cues for future trend prediction and temporal calibration. These re-
+sults further reveal a division of labor between representation learning
+and temporal reasoning: V-JEPA provides stronger motion-aware fea-
+tures, making the predicted future trends less affected by appearance
+noise and local ambiguity; PAL then converts these cleaner trends into
+temporal priors for current-frame calibration.
+4.5. Online surgical phase recognition
+We further evaluate PAL on Cholec80 as an additional cross-domain
+validation in surgical videos. Since Cholec80 differs from the standard
+OAS benchmarks in its visual domain and evaluation protocol, we
+report it as a separate study. The experimental results of the compared
+methods (Funke et al., 2025; Liu et al., 2025, 2023; Yang et al.,
+2024; Zhang et al., 2024; Wang et al., 2025) are taken from the
+values reported in their corresponding references. As shown in Table 4,
+PAL obtains the highest reported results in this comparison under the
+relaxed protocol. These results indicate that PAL’s predictive temporal
+calibration remains effective even when neighboring phases in surgical
+workflow videos may appear visually similar and phase boundaries are
+often highly ambiguous, suggesting its applicability to surgical phase
+recognition.
+6
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Table 5
+Effects of predicted future.
+Methods Acc. Edit F1@10 F1@25 F1@50
+M1 56.8 25.5 28.6 26.4 18.6
+M2 67.4 24.9 32.1 29.0 22.6
+M3 71.9 46.6 53.6 50.3 41.5
+PAL 74.1 34.6 41.1 38.3 32.6
+Table 6
+Effects of motion trend. RSR stands for ‘‘remove static redun-
+dancy’’, and RDN stands for ‘‘remove dynamic noise’’.
+RSR RDN Acc. Edit F1@10 F1@25 F1@50
+× × 72.6 25.3 32.1 30.3 24.4
+✓ × 71.1 26.6 32.8 30.4 25.4
+× ✓ 71.8 35.2 42.6 39.5 29.7
+✓ ✓ 74.1 34.6 41.1 38.3 32.6
+4.6. Ablation study
+In this section, we validate each specific design in our approach via
+a thorough ablation study. All ablation experiments are carried out on
+the 50Salads dataset.
+4.6.1. Effects of predicted future
+To investigate the impact of the future prediction mechanism on
+model performance, we conduct the experiments summarized in
+Table 5:
+(1) M1 removes all components for future feature generation and
+utilization from the PAL framework. This configuration yields the poor-
+est performance, indicating that the absence of contextual information
+makes model decision-making more challenging.
+(2) M2 retains the future motion prediction module but removes
+the temporal calibration module, meaning the predicted future is not
+used to enhance current frame recognition. M2 shows significant im-
+provement compared to M1. This indicates that even without using the
+predictions for inference, the ASD in future motion prediction acts as
+a regularizer, forcing the model to internalize underlying action logic,
+which benefits inference.
+(3) M3 replaces the predicted future trend features with real future
+visual features, allowing the model to observe 𝑁 future frames directly.
+M3 outperforms PAL by 8.9 percentage points in terms of F1@50.
+However, PAL outperforms M1, which does not predict the future, by
+14 percentage points in terms of F1@50. This suggests the predicted
+future trend features can, to a certain extent, replace real visual features
+in providing context for model reasoning.
+4.6.2. Effects of motion trend
+Table 6 validates the necessity of our two-stage motion modeling.
+Predicting future trends directly from raw features (Row 1) yields the
+poorest F1@50, as the model overfits to static redundancy. Notably,
+applying only First-order Differencing causes a slight accuracy drop.
+We attribute this to the fact that while differencing removes static
+backgrounds, it inadvertently amplifies high-frequency stochastic noise
+(e.g., camera jitter). Asymmetric Self-Distillation is thus critical; it acts
+as a purifier that extracts consistent action logic from these variations.
+The optimal performance in Row 4 confirms the synergy: RSR isolates
+temporal variations, while RDN filters the resulting dynamic noise,
+yielding the best trade-off between sensitivity and stability.
+4.6.3. Sampling strategy for 𝑂𝑡
+Table 7 investigates strategies for selecting the supporting past
+context 𝑂𝑡 to distill the predicted future tokens. We compare our
+attention-based approach against two rigid heuristics:
+• M4: Uniformly dividing the past trend feature sequence into 𝑁
+subsets.
+• M5: A cross sliding-window sampling strategy.
+Table 7
+Sampling Strategy for 𝑂𝑡.
+Methods Acc. Edit F1@10 F1@25 F1@50
+M4 71.1 30.6 37.4 33.9 27.8
+M5 71.2 33.0 40.3 36.3 29.3
+PAL 74.1 34.6 41.1 38.3 32.6
+Table 8
+Ablation on future prediction methods.
+Methods Acc. Edit F1@10 F1@25 F1@50
+Conv. 72.0 25.9 32.5 31.8 25.3
+LSTM 73.8 26.9 35.2 32.8 27.7
+PAL 74.1 34.6 41.1 38.3 32.6
+The results indicate that rigid strategies are insufficient for captur-
+ing complex action logic. M4 yields the lowest performance because it
+ignores the variable duration of action phases, leading to semantic mis-
+alignment between the past and predicted future. M5 performs slightly
+better by maintaining local continuity but fails to capture long-range
+dependencies where the causal cue lies in the past. In contrast, PAL
+achieves the highest performance across all metrics. This demonstrates
+that action dependencies are often content-based rather than strictly
+time-based. By leveraging cross-attention scores to select the Top-K
+relevant features, PAL dynamically anchors predictions to their most
+semantically significant historical events, regardless of their temporal
+distance.
+4.6.4. Ablation on future prediction methods
+We investigated different methods for generating future motion
+trend features, as shown in Table 8. The convolutional pooling method
+was inferior to LSTM with pooling, indicating that effectively learning
+temporal features is crucial. Our proposed approach, which uses an
+attention mechanism and query tokens, improved performance further.
+This is attributable to two factors: on the one hand, the attention
+mechanism adaptively selects dynamic patterns most relevant to the
+progression of the current action; on the other hand, the query token
+actively retrieves the most probable future motion directions from
+past trends via cross-attention, rather than depending on a predefined
+temporal aggregation method.
+4.6.5. Ablation on past and future context
+This experiment investigates the required lengths for the historical
+feature window 𝑀 and the future prediction window 𝑁 to classify the
+present frame. As shown in Fig. 4, we evaluated different configurations
+of 𝑀 and 𝑁. When 𝑀 = 8, all performance metrics are relatively low.
+This suggests that insufficient context hinders both the generation of
+reasonable future representations and the accuracy of present frame
+classification. The model achieves the highest F1@50 score at 𝑀 =
+32 and 𝑁 = 4. As 𝑁 decreases, performance drops, suggesting that
+too little future information cannot provide sufficient contextual cues.
+Conversely, as 𝑁 increases, performance also degrades. This implies
+that predicting too far into the future yields unstable feature represen-
+tations that cannot provide a coherent motion logic for classification.
+Overall, performance at 𝑀 = 64 is comparable to that at 𝑀 = 32.
+This indicates that an excessively long context window is unnecessary,
+as it not only increases computational load but also may introduce
+redundant information.
+4.7. Ablation on positional encoding strategy
+We investigate the effect of positional encoding in the Future Motion
+Prediction module. As shown in Table 9, global-oriented standard
+absolute positional encoding (Abs. PE) degrades performance compared
+with the variant without positional encoding. In contrast, the proposed
+present-centric relative positional encoding (PC-Rel. PE) achieves the
+best results across all metrics. By taking the current frame as the
+7
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Fig. 4. The performance of the model under different 𝑀 and 𝑁 settings.
+Table 9
+Effect of positional encoding strategies in the Future Motion Prediction
+module.
+Abs. PE PC-Rel. PE Acc. Edit F1@10 F1@25 F1@50
+× × 73.6 29.4 38.5 36.2 30.7
+✓ × 72.0 28.3 37.3 33.1 28.0
+× ✓ 74.1 34.6 41.1 38.3 32.6
+Table 10
+Comparative experiment of per-frame action segmenta-
+tion in streaming video. All results are measured by us
+under the same streaming inference setting.
+Methods FPS MFLOPs Time (sec.) F1@50
+ProTAS2
+24.81 2789.15 0.0403 36.8
+M1 25.71 2677.98 0.0389 18.6
+PAL 22.43 2924.52 0.0446 48.8
+temporal anchor, PC-Rel. PE encodes past and future motion trends
+in a unified local temporal coordinate system. This helps the model
+align predicted future trends with their supporting past context while
+avoiding the unstable temporal bias introduced by absolute timestamps.
+These results show that PAL benefits specifically from present-centric
+relative temporal modeling, rather than from simply adding positional
+encoding.
+4.8. Streaming video test
+To validate the practicality of PAL in real-world deployments, we
+simulate a strictly online inference setting where video features are
+streamed frame-by-frame on the EgoProceL dataset. Table 10 illustrates
+the performance dynamics among the purely reactive baseline (M1),
+the causal-graph-based ProTAS, and our proposed PAL. The integration
+of the Future Motion Prediction and Temporal Calibration modules
+inevitably introduces additional computational demands. Specifically,
+PAL requires 2924.52 MFLOPs per frame and incurs a latency of
+0.0446 s, resulting in an inference speed of 22.43 FPS. Compared to
+ProTAS, this represents a marginal 4.8% increase in computational
+footprint and a 4.3-ms increase in per-frame latency.
+Crucially, this additional computation improves segmentation sta-
+bility. PAL achieves an F1@50 score of 48.8%, outperforming the
+baseline M1 by 30.2 percentage points and ProTAS2 by 12.0 percent-
+age points. While M1 operates at the highest throughput, its severe
+boundary mispredictions render it inadequate for precision-critical pro-
+cedural tasks. Ultimately, while PAL trades a fraction of inference
+speed for improved temporal coherence, its 22.43 FPS throughput
+remains well within the acceptable real-time operational bounds for
+most online video understanding systems. This demonstrates an optimal
+trade-off that prioritizes semantic fidelity and temporal coherence with-
+out breaking the latency constraints required for ongoing behavioral
+analysis.
+4.9. Qualitative results
+4.9.1. Visualization of predictive fidelity
+To intuitively verify whether PAL captures realistic action dynamics,
+we visualize and compare the feature distributions of the predicted
+future motion trends and the ground truth. We select 10 test videos
+from split 5 of 50Salads and uniformly sample 270 time points from
+each video. Since each time point produces 4 future trend tokens, this
+yields 10,800 predicted trend features and 10,800 ground truth trend
+features. The predicted trend features are taken from the output of the
+Modeling of Motion Trends module in the last refinement stage, namely
+̂
+𝑆𝑡, while the ground-truth trend features are computed by applying
+first-order differencing to the corresponding real future latent features.
+For t-SNE visualization, we apply channel-wise z-score normalization
+using the union statistics of the predicted and oracle features, followed
+by 𝐿2 normalization to reduce the influence of feature magnitude.
+As shown in Fig. 5, the two distributions show substantial overlap,
+indicating that the predicted trends are aligned with real future motion
+dynamics.
+We further quantify the distributional discrepancy using Maximum
+Mean Discrepancy (MMD) and Sliced Wasserstein Distance (SWD) in
+the original latent trend feature space. For both metrics, we apply
+only the joint channel-wise z-score normalization. For MMD, we use
+the biased empirical estimator with a Gaussian RBF kernel whose
+8
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Fig. 5. t-SNE visualization of the future motion trend feature space.
+Fig. 6. Visualization of the online action segmentation.
+bandwidth is determined by the median pairwise Euclidean distance
+over the pooled normalized features. SWD is computed as the second-
+order sliced Wasserstein distance using 1000 random unit projections,
+with the same projection directions used for all compared variants. PAL
+achieves an MMD of 0.021 and an SWD of 0.033, whereas removing
+ASD increases these values to 0.048 and 0.064, respectively. These re-
+sults indicate that ASD reduces the distributional discrepancy between
+the predicted and ground-truth future motion trends.
+4.9.2. Visualization of segmentation
+Fig. 6 compares the action segmentation results of our proposed PAL
+model against ProTAS and several ablation variants on the EgoProceL
+and EgoPER datasets. The areas enclosed by red boxes show that PAL
+exhibits more stable segmentation performance. For example, although
+both actions ‘‘Measure 12 ounces of cold water’’ and ‘‘Transfer water
+to kettle’’ involve the state of holding a cup in hand, PAL distinguishes
+the two actions more reliably, while ProTAS frequently confuses the
+two action categories. A comparison between the ‘‘w/o. Future’’ variant
+(lacking future features) and the ‘‘w/o. Trend’’ variant (which ignores
+motion trends) reveals that both action trends and future features
+are critical components, enabling PAL to mitigate over-segmentation
+effectively.
+5. Conclusion
+In this paper, we introduce Predictive Action Logic (PAL), a new
+framework that reformulates online action segmentation as a predict-
+verify process. PAL explicitly predicts short-term future motion trends
+as logical priors for inferring the current action, thereby reducing local
+ambiguity and the risk of over-segmentation. To ensure that the pre-
+dicted future remains semantically accurate, we propose Asymmetric
+Self-Distillation, which filters out task-irrelevant noise while preserving
+9
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+the dynamic invariants that are essential for action logic. Based on this,
+the Temporal Calibration Module aligns representations across the past,
+present, and predicted future, with a focus on the temporal coherence
+of actions at the feature level. Experiments on six datasets show that
+PAL is effective at improving segment-level metrics such as Edit and
+F1, especially in procedural videos with strong temporal regularities.
+CRediT authorship contribution statement
+Tongjie Xu: Writing – review & editing, Writing – original draft,
+Visualization, Software, Methodology, Conceptualization. Rongxuan
+Zhang: Writing – review & editing, Writing – original draft, Soft-
+ware, Methodology, Conceptualization. Xudong Tian: Writing – re-
+view & editing, Methodology. Yi Chen: Writing – review & editing.
+Zhichao Zheng: Writing – review & editing, Writing – original draft,
+Supervision, Project administration, Funding acquisition. Junsheng
+Zhou: Writing – review & editing, Writing – original draft, Supervision,
+Project administration, Funding acquisition.
+Declaration of competing interest
+The authors declare that they have no known competing finan-
+cial interests or personal relationships that could have appeared to
+influence the work reported in this paper.
+Acknowledgments
+This work is supported by the National Natural Science Foundation
+of China[http://dx.doi.org/10.13039/501100001809] [grant numbers
+62277031, 62407021]; the Frontier Technologies R&D Program of
+Jiangsu [grant number BF2024076]; and the Natural Science Founda-
+tion of Jiangsu Province, China (Youth Fund Project) [grant number
+BK20240583].
+Data availability
+Data will be made available on request.
+References
+Ahn, H., Lee, D., 2021. Refining action segmentation with hierarchical video repre-
+sentations. In: Proceedings of the IEEE/CVF International Conference on Computer
+Vision. pp. 16302–16310.
+Ba, Z., Liu, Q., Liu, Z., Wu, S., Lin, F., Lu, L., Ren, K., 2024. Exposing the deception:
+Uncovering more forgery clues for deepfake detection. In: Proceedings of the AAAI
+Conference on Artificial Intelligence, vol. 38, (2), pp. 719–728.
+Bansal, S., Arora, C., Jawahar, C., 2022. My view is the best view: Procedure learning
+from egocentric videos. In: European Conference on Computer Vision. Springer, pp.
+657–675.
+Behrmann, N., Golestaneh, S.A., Kolter, Z., Gall, J., Noroozi, M., 2022. Unified fully
+and timestamp supervised temporal action segmentation via sequence to sequence
+translation. In: European Conference on Computer Vision. Springer, pp. 52–68.
+Cao, S., Luo, W., Wang, B., Zhang, W., Ma, L., 2023. E2e-load: end-to-end long-form
+online action detection. In: Proceedings of the IEEE/CVF International Conference
+on Computer Vision. pp. 10422–10432.
+Carreira, J., Zisserman, A., 2017. Quo vadis, action recognition? a new model and the
+kinetics dataset. In: Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition. pp. 6299–6308.
+Chang, C.-Y., Huang, D.-A., Sui, Y., Fei-Fei, L., Niebles, J.C., 2019. D3tw: Discriminative
+differentiable dynamic time warping for weakly supervised action alignment and
+segmentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition. pp. 3546–3555.
+Chen, J., Mittal, G., Yu, Y., Kong, Y., Chen, M., 2022. Gatehub: Gated history
+unit with background suppression for online action detection. In: Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp.
+19925–19934.
+Chen, G., Zheng, Y.-D., Wang, J., Xu, J., Huang, Y., Pan, J., Wang, Y., Wang, Y.,
+Qiao, Y., Lu, T., et al., 2023. Videollm: Modeling video sequence with large
+language models. arXiv preprint arXiv:2305.13292.
+Clark, A., 2013. Whatever next? Predictive brains, situated agents, and the future of
+cognitive science. Behav. Brain Sci. 36 (3), 181–204.
+De Geest, R., Tuytelaars, T., 2018. Modeling temporal structure with lstm for online
+action detection. In: 2018 IEEE Winter Conference on Applications of Computer
+Vision. WACV, IEEE, pp. 1549–1557.
+Ding, L., Xu, C., 2018. Weakly-supervised action segmentation with iterative soft
+boundary assignment. In: Proceedings of the IEEE Conference on Computer Vision
+and Pattern Recognition. pp. 6508–6516.
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., De-
+hghani, M., Minderer, M., Heigold, G., Gelly, S.a., 2021. An image is worth 16x16
+words: Transformers for image recognition at scale. In: International Conference
+on Learning Representations.
+Eun, H., Moon, J., Park, J., Jung, C., Kim, C., 2020. Learning to discriminate
+information for online action detection. In: Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition. pp. 809–818.
+Farha, Y.A., Gall, J., 2019. Ms-tcn: Multi-stage temporal convolutional network for
+action segmentation. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 3575–3584.
+Fathi, A., Ren, X., Rehg, J.M., 2011. Learning to recognize objects in egocentric
+activities. In: CVPR 2011. IEEE, pp. 3281–3288.
+Friston, K., 2010. The free-energy principle: a unified brain theory? Nature Rev.
+Neurosci. 11 (2), 127–138.
+Funke, I., Rivoir, D., Krell, S., Speidel, S., 2025. Tunes: A temporal u-net with self-
+attention for video-based surgical phase recognition. IEEE Trans. Biomed. Eng. 72
+(7), 2105–2119.
+Furnari, A., Farinella, G.M., 2019. What would you expect? anticipating egocentric
+actions with rolling-unrolling lstms and modality attention. In: Proceedings of the
+IEEE/CVF International Conference on Computer Vision. pp. 6252–6261.
+Gammulle, H., Denman, S., Sridharan, S., Fookes, C., 2019. Predicting the future:
+A jointly learnt model for action anticipation. In: Proceedings of the IEEE/CVF
+International Conference on Computer Vision. pp. 5562–5571.
+Gao, M., Xu, M., Davis, L.S., Socher, R., Xiong, C., 2019. Startnet: Online detection of
+action start in untrimmed videos. In: Proceedings of the IEEE/CVF International
+Conference on Computer Vision. pp. 5542–5551.
+Girase, H., Agarwal, N., Choi, C., Mangalam, K., 2023. Latency matters: Real-time action
+forecasting transformer. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 18759–18769.
+Gong, D., Lee, J., Kim, M., Ha, S.J., Cho, M., 2022. Future transformer for long-
+term action anticipation. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 3052–3061.
+Han, Z., Jiang, X., Wang, Z., Liu, X., Shen, F., Xu, X., 2025. Egocentric online
+action segmentation with behavior-centred feature augmentation. In: 2025 IEEE
+International Conference on Multimedia and Expo. ICME, IEEE, pp. 1–6.
+Huang, Y., Sugano, Y., Sato, Y., 2020. Improving action segmentation via graph-based
+temporal reasoning. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 14024–14034.
+Ishikawa, Y., Kasai, S., Aoki, Y., Kataoka, H., 2021. Alleviating over-segmentation errors
+by detecting action boundaries. In: Proceedings of the IEEE/CVF Winter Conference
+on Applications of Computer Vision. pp. 2322–2331.
+Kim, Y.H., Kang, H., Kim, S.J., 2022. A sliding window scheme for online tempo-
+ral action localization. In: European Conference on Computer Vision. Springer,
+pp. 653–669.
+Kim, Y.H., Nam, S., Kim, S.J., 2021. Temporally smooth online action detection using
+cycle-consistent future anticipation. Pattern Recognit. 116, 107954.
+Kong, Y., Gao, S., Sun, B., Fu, Y., 2018. Action prediction from videos via memorizing
+hard-to-predict samples. In: Proceedings of the AAAI Conference on Artificial
+Intelligence, vol. 32, (1).
+Kuehne, H., Arslan, A., Serre, T., 2014. The language of actions: Recovering the
+syntax and semantics of goal-directed human activities. In: Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition. pp. 780–787.
+Kuehne, H., Gall, J., Serre, T., 2016. An end-to-end generative framework for video
+segmentation and recognition. In: 2016 IEEE Winter Conference on Applications of
+Computer Vision. WACV, IEEE, pp. 1–8.
+Kumar, S., Haresh, S., Ahmed, A., Konin, A., Zia, M.Z., Tran, Q.-H., 2022. Unsupervised
+action segmentation by joint representation learning and online clustering. In: Pro-
+ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+pp. 20174–20185.
+Lee, S.-P., Lu, Z., Zhang, Z., Hoai, M., Elhamifar, E., 2024. Error detection in egocentric
+procedural task videos. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 18655–18666.
+Li, Y., Lan, C., Xing, J., Zeng, W., Yuan, C., Liu, J., 2016. Online human action de-
+tection using joint classification-regression recurrent neural networks. In: European
+Conference on Computer Vision. Springer, pp. 203–220.
+Li, J., Lei, P., Todorovic, S., 2019. Weakly supervised energy-based learning for
+action segmentation. In: Proceedings of the IEEE/CVF International Conference on
+Computer Vision. pp. 6243–6251.
+10
+T. Xu, R. Zhang, X. Tian et al. Computer Vision and Image Understanding 271 (2026) 104891
+Li, J., Todorovic, S., 2020. Set-constrained viterbi for set-supervised action segmenta-
+tion. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition. pp. 10820–10829.
+Li, J., Todorovic, S., 2021. Anchor-constrained viterbi for set-supervised action seg-
+mentation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition. pp. 9806–9815.
+Liu, Y., Boels, M., Garcia-Peraza-Herrera, L.C., Vercauteren, T., Dasgupta, P., Grana-
+dos, A., Ourselin, S., 2025. Lovit: Long video transformer for surgical phase
+recognition. Med. Image Anal. 99, 103366.
+Liu, Y., Huo, J., Peng, J., Sparks, R., Dasgupta, P., Granados, A., Ourselin, S., 2023.
+Skit: a fast key information video transformer for online surgical phase recognition.
+In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp.
+21074–21084.
+Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., Lin, S., Guo, B., 2021. Swin
+transformer: Hierarchical vision transformer using shifted windows. In: Proceedings
+of the IEEE/CVF International Conference on Computer Vision. pp. 10012–10022.
+Liu, X., Wang, Q., Hu, Y., Tang, X., Zhang, S., Bai, S., Bai, X., 2022. End-to-end temporal
+action detection with transformer. IEEE Trans. Image Process. 31, 5427–5441.
+Mur-Labadia, L., Muckley, M., Bar, A., Assran, M., Sinha, K., Rabbat, M., LeCun, Y.,
+Ballas, N., Bardes, A., 2026. V-JEPA 2.1: Unlocking dense features in video
+self-supervised learning. arXiv preprint arXiv:2603.14482.
+Qu, S., Chen, G., Xu, D., Dong, J., Lu, F., Knoll, A., 2020. Lap-net: Adaptive features
+sampling via learning action progression for online action detection. arXiv preprint
+arXiv:2011.07915.
+Rangrej, S.B., Liang, K.J., Hassner, T., Clark, J.J., 2023. Glitr: Glimpse transformers
+with spatiotemporal consistency for online action prediction. In: Proceedings of the
+IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 3413–3423.
+Sarfraz, S., Murray, N., Sharma, V., Diba, A., Van Gool, L., Stiefelhagen, R., 2021.
+Temporally-weighted hierarchical clustering for unsupervised action segmentation.
+In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition. pp. 11225–11234.
+Shen, Y., Elhamifar, E., 2024. Progress-aware online action segmentation for egocentric
+procedural task videos. In: Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition. pp. 18186–18197.
+Shen, Y., Wang, L., Elhamifar, E., 2021. Learning to segment actions from visual
+and language instructions via differentiable weak sequence alignment. In: Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+pp. 10156–10165.
+Shou, Z., Pan, J., Chan, J., Miyazawa, K., Mansour, H., Vetro, A., Nieto, X.G., Chang, S.-
+F., 2018. Online action detection in untrimmed, streaming videos-modeling and
+evaluation. In: ECCV, vol. 1, (2), p. 5.
+Stein, S., McKenna, S.J., 2013. Combining embedded accelerometers with computer
+vision for recognizing food preparation activities. In: Proceedings of the 2013
+ACM International Joint Conference on Pervasive and Ubiquitous Computing. pp.
+729–738.
+Tian, X., Zhang, Z., Lin, S., Qu, Y., Xie, Y., Ma, L., 2021. Farewell to mutual information:
+Variational distillation for cross-modal person re-identification. In: Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp.
+1522–1531.
+Tran, Q.-H., Mehmood, A., Ahmed, M., Naufil, M., Zafar, A., Konin, A., Zia, Z.,
+2024. Permutation-aware activity segmentation via unsupervised frame-to-segment
+alignment. In: Proceedings of the IEEE/CVF Winter Conference on Applications of
+Computer Vision. pp. 6426–6436.
+Twinanda, A.P., Shehata, S., Mutter, D., Marescaux, J., De Mathelin, M., Padoy, N.,
+2016. Endonet: a deep architecture for recognition tasks on laparoscopic videos.
+IEEE Trans. Med. Imaging 36 (1), 86–97.
+Wang, J., Chen, G., Huang, Y., Wang, L., Lu, T., 2023. Memory-and-anticipation
+transformer for online action understanding. In: Proceedings of the IEEE/CVF
+International Conference on Computer Vision. pp. 13824–13835.
+Wang, Z., Chen, H., Li, X., Liu, C., Xiong, Y., Tighe, J., Fowlkes, C., 2022. Sscap:
+Self-supervised co-occurrence action parsing for unsupervised temporal action
+segmentation. In: Proceedings of the IEEE/CVF Winter Conference on Applications
+of Computer Vision. pp. 1819–1828.
+Wang, S., Guo, Y., Shao, H., Liu, Y., Xiong, J., Wang, L., Yan, X., Yan, Y., 2025.
+GDPA: A parameter-efficient gated dual-path spatiotemporal adapter for surgical
+workflow recognition. In: 2025 IEEE International Conference on Bioinformatics
+and Biomedicine. BIBM, IEEE, pp. 6495–6503.
+Wang, X., Zhang, S., Qing, Z., Shao, Y., Zuo, Z., Gao, C., Sang, N., 2021. Oadtr: Online
+action detection with transformers. In: Proceedings of the IEEE/CVF International
+Conference on Computer Vision. pp. 7565–7575.
+Yang, S., Luo, L., Wang, Q., Chen, H., 2024. Surgformer: Surgical transformer with
+hierarchical temporal attention for surgical phase recognition. In: International
+Conference on Medical Image Computing and Computer-Assisted Intervention.
+Springer, pp. 606–616.
+Yi, F., Wen, H., Jiang, T., 2021. Asformer: Transformer for action segmentation. In:
+The British Machine Vision Conference. BMVC.
+Zacks, J.M., Speer, N.K., Swallow, K.M., Braver, T.S., Reynolds, J.R., 2007. Event
+perception: a mind-brain perspective.. Psychol. Bull. 133 (2), 273.
+Zhang, B., Meng, J., Cheng, B., Biskup, D., Petculescu, S., Chapman, A., 2024.
+Friends across time: Multi-scale action segmentation transformer for surgical phase
+recognition. In: 2024 46th Annual International Conference of the IEEE Engineering
+in Medicine and Biology Society. EMBC, IEEE, pp. 1–6.
+Zhong, Q., Ding, G., Yao, A., 2024. Onlinetas: An online baseline for temporal action
+segmentation. Adv. Neural Inf. Process. Syst. 37, 58984–59005.
+Zhukov, D., Alayrac, J.-B., Cinbis, R.G., Fouhey, D., Laptev, I., Sivic, J., 2019. Cross-
+task weakly supervised learning from instructional videos. In: Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 3537–3545.
+11
+

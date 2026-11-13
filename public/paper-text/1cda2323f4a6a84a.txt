@@ -1,0 +1,585 @@
+1
+Fast Wireless Foundation Models with Early-Exits
+Omar Mashaal, Student Member, IEEE, and Hatem Abou-Zeid, Member, IEEE
+Abstract—While wireless foundation models (FMs) are demon-
+strating strong potential to enable AI-Native 6G networks, their
+high computational cost remains a critical barrier to deployment.
+The large computational cost stems from the rigid, full-depth
+execution of the FM backbone for every task − a process we
+show is not only inefficient but can also degrade performance on
+unseen out-of-distribution (OOD) tasks. In this paper, we propose
+a novel early-exit FM framework that attaches lightweight, per-
+task heads, at the most appropriate exit-stage of a frozen wireless
+FM encoder, enabling variable-depth inference tailored to each
+task’s preferred representation depth. Our results demonstrate
+that these intermediate-layer features not only speed-up inference
+significantly (up to 93% fewer FLOPs), but also provide more
+transferable representations that exceed the full encoder accuracy
+on unseen tasks. We further demonstrate that a simple fixed-exit
+strategy per task is more effective than traditional early-exiting
+policies that route different samples to different exits based on
+their perceived difficulty levels.
+Index Terms—Foundation Models, Early Exiting, OOD Gen-
+eralization, MIMO systems.
+I. INTRODUCTION
+THE vision for AI-native 6G wireless systems involves
+embedding intelligence to enhance network performance,
+spectrum efficiency, and adaptability [1]. Deep learning has
+already shown strong potential across many wireless applica-
+tions, such as modulation recognition, channel estimation, and
+waveform design—typically through supervised learning (SL).
+While SL enabled early breakthroughs, it faces key limitations:
+labeled data is often scarce and expensive, models are task-
+specific, and they struggle to generalize in dynamic wireless
+environments. Even small shifts in conditions can require full
+retraining, making large-scale deployment impractical.
+Wireless foundation models (WFMs) learn general repre-
+sentations for diverse tasks and environments. Recent works
+have explored WFMs for CSI, spectrograms [2]–[4], and raw-
+IQ streams, including multi-task SSL [5] and our prior work
+IQFM [6]. However, their runtime cost and inference latency
+hinder deployment on resource-limited devices.
+The high computational cost of WFMs can be attributed
+to the design convention of exclusively using features from
+the encoder’s final layer for downstream tasks. This practice
+requires executing the full backbone for every task, a process
+we demonstrate can be suboptimal. Our intuition is that
+features from shallower layers are often more generalizable
+and may be sufficient for general out-of-distribution tasks.
+Manuscript received XX XX, 2025; revised XX XX, 2025; accepted XX
+XX, 2025. Date of publication XX XX, 2025; date of current version XX XX,
+2025. This work was supported in part by Alberta Innovates and in part by
+the Natural Sciences and Engineering Research Council of Canada (NSERC)
+under Grant RGPIN-2021-04050. (Corresponding author: Hatem Abou-Zeid.)
+The authors are with the Department of Electrical and Software Engi-
+neering, University of Calgary, Calgary, AB T2N 1N4, Canada (e-mail:
+omar.mashaal1@ucalgary.ca; hatem.abouzeid@ucalgary.ca).
+In addition, the final layer’s features carry the risk of be-
+ing over-specialized and biased toward the pretraining data.
+By attaching lightweight heads to these intermediate layers
+(Fig.1), we can bypass the full computational path and improve
+performance, especially for unseen, out-of-distribution (OOD)
+downstream tasks. This motivates our central question: is a
+full-depth execution of a WFM always necessary − or is
+it possible to identify the shallowest exit per task that
+preserves or improves the performance while substantially
+reducing inference time?
+This notion of branching is known as early exiting (EE) [7],
+which reduces inference latency by allowing predictions at
+intermediate layers. In wireless, EE has been applied to single-
+task networks, such as for AMC [8], [9] and collaborative
+edge-cloud inference [10]. These prior works typically allow
+easier samples (e.g., high-SNR signals) to exit early based
+on a confidence threshold.In contrast, we consider a frozen
+WFM adapted independently to multiple downstream tasks,
+where the dominant variation is across tasks rather than across
+samples within a single task. Different tasks may therefore
+prefer different representation depths. As shown in Fig. 1, we
+attach lightweight task-specific heads at intermediate stages
+and compare classical confidence-based routing with a fixed-
+exit policy that selects one task-appropriate exit for each
+task. Unlike conventional EE, which is typically framed as an
+accuracy–latency tradeoff, we find that in the WFM setting,
+intermediate exits reduce latency while also improving task
+performance. Our contributions are:
+• We propose the first multi-exit neural architecture for
+wireless FMs. This architecture attaches lightweight, per-
+task heads at the most appropriate encoder depths to en-
+able task-specific inference paths that significantly reduce
+latency and computational cost.
+• We demonstrate that this approach reduces inference cost
+significantly (up to 93% fewer FLOPs) while concur-
+rently surpassing the full encoder accuracy on unseen
+tasks by up to 8.0%, thereby showing that the typical
+accuracy-cost tradeoff of EE need not hold in this setting.
+• We provide a comprehensive, per-task analysis of our
+multi-exit WFM architecture across diverse wireless tasks
+including RF fingerprinting, beam prediction, and classi-
+fication of interference signals and modulation types.
+• We propose and evaluate a few-shot best-exit selection
+method that identifies the best exit for each task. We
+compare this strategy against classical dynamic-routing
+policies, including Pareto and Greedy EE approaches.
+Our results show that the fixed-exit captures all, or most,
+of the achievable benefit while avoiding the additional
+dynamic routing and threshold-checking overhead.
+By converting a single-path WFM into a multi-exit pipeline,
+arXiv:2606.29640v1
+[eess.SP]
+28
+Jun
+2026
+2
+Fig. 1: Proposed Wireless Foundation Model with Early Exits.
+Algorithm 1 Training Early-Exit Task Heads
+1: Input: frozen encoder blocks f1:K; pooling P(·); task
+dataset Dt = {(X, Y )}
+2: Output: trained heads {ht,k}K
+k=1
+3: for k = 1 to K do
+4: Initialize head ht,k ▷ same arch/hparams for all k
+5: for epochs do
+6: for mini-batch (X, Y ) ⊂ Dt do
+7: Zk ← fk(· · · f1(X)) ▷ encoder frozen
+8: uk ← P(Zk) ▷ global avg pooling
+9: b
+y
+[k]
+t ← ht,k(uk)
+10: L ← CE for classification or MAE for regress.
+11: update parameters of ht,k only
+12: end for
+13: end for
+14: end for
+our approach delivers predictable low latency and substantial
+compute and latency savings, while improving performance
+on new tasks. This paper provides the foundation and demon-
+strates the strong potential of such EE architectures for WFMs.
+II. MULTI-EXIT WIRELESS FOUNDATION MODEL
+A. Signal and Input Representation
+We consider narrowband, far-field reception at a uniform
+linear array (ULA) with M antennas. The complex baseband
+signal at antenna m is
+xm(t) = α s(t) ej 2π
+λ pm sin θ
++ nm(t), pm = (m−1) dant,
+(1)
+where s(t) is the transmitted baseband waveform, α is the
+complex path gain, λ the wavelength, dant the inter-element
+spacing, and θ the angle of arrival. The additive noise nm(t) is
+typically modeled as AWGN, though in over-the-air datasets
+it may also encompass practical impairments. The received
+signal is then sampled and stacked into an IQ tensor X ∈
+RM×2×T
+, where M is the number of antennas and T is the
+number of time samples. This format preserves both array
+structure and temporal context for downstream learning tasks.
+B. Proposed Foundation Model with Multiple Exits
+As shown in Fig. 1, we use a pretrained raw IQ foundation
+encoder presented in [6] as a frozen backbone decomposed
+into K sequential blocks:
+Z0 = X, Zk = fk(Zk−1), k = 1, . . . , K, (2)
+The intermediate feature set after block k (Stage k) is Zk. Each
+stage defines an early exit; we apply global average pooling
+(GAP) P(·) to obtain uk = P(Zk), and attach a lightweight
+head ht,k for task t,
+b
+y
+[k]
+t = ht,k(uk), (3)
+We index the frozen backbone blocks {fk} by k, where
+K = 5 corresponds to the major computational blocks of
+the ShuffleNetV2-x0.5 stages. This structure allows the WFM
+to exit at task-specific depths rather than a fixed final point,
+enabling improved performance and efficiency.
+III. TRAINING AND EXIT SELECTION METHODOLOGY
+We adapt a frozen IQ foundation model by training
+lightweight heads at multiple exit points. Unlike classical
+early-exiting methods, our approach performs a one-time,
+offline selection of the optimal inference depth for each task.
+We first describe the training of the early-exit heads, followed
+by the few-shot and unlabeled selection strategies.
+A. IQFM Pretraining using Contrastive Learning
+We adopt the IQFM backbone pretrained via self-supervised
+SimCLR/InfoNCE learning on raw multi-antenna IQ data [6].
+B. Head Architecture and Training Procedure
+We train heads at all exits on the frozen encoder and
+select the top-performing exit per task. This procedure, which
+yields one specialized head per task and per exit stage, is
+formalized in Algorithm 1. For each task t and exit stage k,
+the corresponding feature map Zk is first globally averaged
+to a vector uk = P(Zk). This vector is then processed by a
+linear layer to produce logits,
+zt,k = Wt,k uk + bt,k, (4)
+pt,k = softmax(zt,k). (5)
+where zt,k represents the logits for exit k and task t,
+i.e., the unnormalized scores generated by the final linear
+layer, and pt,k denotes the predicted class probabilities. To
+ensure a fair comparison that isolates the quality of the
+encoder’s representations rather than the head’s capacity, all
+heads share an identical architecture and are trained with the
+same hyperparameters (e.g., AdamW optimizer, learning-rate
+schedule). In addition, each exit uses GAP to form a compact
+3
+Algorithm 2 Classical Early-Exit Inference (adapted from
+prior confidence-based early-exit methods [7])
+1: Input: IQ input x; frozen encoder f1:K; pooling P; heads
+{ht,k}K
+k=1; normalized entropy thresholds {Tk}K−1
+k=1 , with
+Tk = τ̄ ln Ct for all k < K, τ̄ ∈ [0, 1]
+2: Output: predicted label ŷ
+3: Z0 ← x
+4: for k = 1 to K do
+5: Zk ← fk(Zk−1)
+6: uk ← P(Zk); pt,k ← softmax ht,k(uk)
+
+7: Hk ← −
+P
+c pt,k(c) log pt,k(c) ▷ predictive entropy
+8: if k < K and Hk ≤ Tk then ▷ confidence test
+9: return arg maxc pt,k(c)
+10: end if
+11: end for
+12: return arg maxc pt,K(c)
+Algorithm 3 Proposed Exit Selection and Inference Algorithm
+1: Input: IQ inputs X; frozen encoder blocks f1:K; pooling
+P; heads {ht,k}K
+k=1; few-shot set S or unlabeled set U
+2: Output: predicted labels Ŷ; chosen exit k⋆
+t
+3: One-time exit selection (offline, per task):
+4: if S available then ▷ few-shot;
+5: k⋆
+t ← arg maxk
+b
+At(k; S) ▷ few-shot val. acc.
+6: else ▷ unlabeled
+7: c̄k ←
+1
+|U|
+P
+x∈U maxc pt,k(c | x) for each k
+8: k⋆
+t ← arg maxk c̄k ▷ equiv. arg mink H̄k;
+9: end if
+10: Ŷ ← [ ]
+11: for each x in X do ▷ fixed-depth inference at k⋆
+t
+12: Z0 ← x; for k=1..k⋆
+t : Zk ← fk(Zk−1)
+13: u ← P(Zk⋆
+t
+); p ← softmax ht,k⋆
+t
+(u)
+
+14: append
+
+Ŷ, arg maxc p(c)
+
+15: end for
+16: return Ŷ, k⋆
+t
+fixed-size representation before classification. Our experiments
+with more expressive heads showed the same overall preferred-
+exit trend, indicating that the main conclusion is not specific
+to the linear head design. Each head is trained independently
+to minimize the standard cross-entropy loss on its task-specific
+training data:
+Lcls
+t,k = −
+1
+N
+N
+X
+i=1
+log p
+(i)
+t,k(yi) . (6)
+C. Inference Routing and Exit Selection Strategies
+We consider two deployment profiles that differ only in how
+an input is routed through exits.
+Classical Early Exits: At inference, after stage k, the
+head produces probabilities pt,k(· | x). If the predictive
+entropy H(pt,k) ≤ Tk (where lower entropy implies higher
+confidence), the model exits; otherwise, it proceeds to stage
+k+1 (see Algorithm 2). To make thresholds comparable across
+tasks, we normalize them by the maximum entropy of the
+task. Specifically, we set Tk = τ̄ ln Ct, where τ̄ ∈ [0, 1] is
+a normalized threshold and ln Ct is the maximum entropy
+for a Ct-class task. While dynamic EE allows easy inputs to
+exit early, it introduces input-dependent runtime, can exit at
+suboptimal depths, and its gating logic (entropy computation
+and branching) can add latency over a single fixed exit.
+Proposed Single Exit Selection Algorithm: Under the
+fixed-exit policy, we choose a single exit k⋆
+t per task once, of-
+fline, and then run all inputs to that fixed depth (Algorithm 3).
+Since FMs are designed to adapt with few labels, this selector
+is designed to operate with minimal or no labels. The exit is
+determined either from:
+1) Unlabeled data exit selection. For each exit k, define
+probabilities by pt,k(· | x) = softmax ht,k(P(f1:k(x)))
+
+. Per-
+sample confidence is ck(x) = maxc pt,k(c | x) and predictive
+entropy is
+H(pt,k(· | x)) = −
+Ct
+X
+c=1
+pt,k(c | x) log pt,k(c | x)
+(in nats). Average over U:
+c̄k = 1
+|U|
+X
+x∈U
+ck(x), H̄k = 1
+|U|
+X
+x∈U
+H(pt,k(· | x)) .
+Select k⋆
+t = arg maxk c̄k (equivalently, k⋆
+t = arg mink H̄k),
+breaking ties toward smaller k.
+2) Few-shot exit selection. Given S = {(xi, yi)}, select
+k⋆
+t = arg maxk
+b
+At(k; S), where
+b
+At(k; S) =
+1
+|S|
+X
+(xi,yi)∈S
+1
+n
+arg max
+c
+pt,k(c | xi) = yi
+o
+,
+breaking ties toward smaller k.
+D. Datasets
+For downstream evaluation, we use five datasets, categorized
+as either in-distribution (ID) or out-of-distribution (OOD)
+relative to the IQFM pretraining/adaptation setting. ID refers
+to the same data and task setting as in IQFM, whereas OOD
+refers to a shift in data distribution, task definition, or both.
+ID tasks: We evaluate on Angle of Arrival (AoA) and mod-
+ulation classification using the same in-house IQFM testbed
+data as in [6]. These tasks represent the in-distribution setting.
+Collection details, including hardware setup, signal types, and
+the 225 AoA classes, are provided in [6].
+OOD tasks: We evaluate on four downstream tasks using raw
+IQ inputs; all samples are zero-padded to match the model’s
+4-channel input.
+DeepBeam (beam selection, task and distribution shift). [11]
+mmWave beam prediction with five discrete beams using
+provided beamformed IQ, from which we extract (1, 2, 256)
+slices for 5-way classification.
+RML2016.10a (modulation classification, distribution
+shift). [12] Eleven-class modulation recognition across SNRs
+from −20 to +18 dB, evaluated using standard (1, 2, 128) IQ
+windows.
+4
+TABLE I: Test accuracy (%) at each exit per task (500 shots/class). General-
+ization: ID = in-distribution w.r.t. IQFM pretraining; OOD = unseen datasets
+and/or tasks. Best per row in bold.
+Task Generalization S2 S3 S4 Full
+RF fing. (RF ID). OOD 90.461 86.830 86.016 83.166
+RML OOD 63.774 71.783 69.755 65.866
+OWL-INT OOD 93.146 92.951 92.286 90.286
+DeepBeam OOD 48.562 50.897 46.748 42.917
+AoA ID 97.280 99.419 99.750 99.754
+Mod ID 95.744 99.936 99.964 99.967
+POWDER RF fingerprinting (device ID, task and distribu-
+tion shift). [13] Device identification from over-the-air Wi-Fi
+captures, using (1, 2, 256) IQ samples for 4-way classification.
+OWL-INT (interference classification, task and distri-
+bution shift). [14] Interference classification over Blue-
+tooth/WiFi/802.15.4 IQ traces with 21 SNRs and channel
+offsets, using (1, 2, 128) windows for 15-class classification.
+IV. RESULTS AND DISCUSSION
+We validate our framework on a frozen IQFM [6]
+(ShuffleNetV2-x0.5) instrumented with exits after its compu-
+tational blocks: Stage 2 (S2), Stage 3 (S3), and Stage 4 (S4),
+as shown in Fig.1. We first compare each exit’s performance
+against the conventional final head (Full) on six evaluation
+tasks: two ID tasks and four OOD downstream tasks. We then
+study the classical EE accuracy-latency trade-off and evaluate
+our proposed unlabeled and few-shot selection methods. For
+each task/exit, we train a linear head on 500 samples/class for
+100 epochs (AdamW) while keeping the encoder frozen. All
+experiments used an NVIDIA GeForce RTX 3080 Ti GPU.
+A. Early Exits Deliver Performance Gains and Efficiency
+Our results demonstrate that for a frozen foundation model,
+shallower exits can deliver both performance gains and signif-
+icant efficiency. As shown in Figure 2a and Table I, interme-
+diate exits outperform the full model on all four OOD tasks.
+Notably, S2 improves RF fingerprinting by +7.3 percentage
+points (pp). The S3 exit improves DeepBeam by +8.0 pp,
+OWL-INT by +2.3 pp, and RML (by +5.9 pp for SNRs >
+0, and from 40.5% to 43.2% for all SNRs).
+For ID tasks, the Full exit remains optimal, but the S3 and
+S4 exits perform negligibly worse (within 0.335 pp). This
+indicates that the deepest features are not always optimal and
+can even be detrimental to generalization (Table I).
+These accuracy gains are paired with significant compu-
+tational savings (Table II). Exiting at S2 reduces FLOPs by
+93% (a 5.6× speedup), while the S3 exit, which excels on
+three OOD tasks, has 71% fewer FLOPs. These results suggest
+that the FM’s final layers can over-specialize to the pretraining
+distribution, harming OOD, while intermediate representations
+transfer more robustly [15], [16]. Fig. 2b supports these
+trends through normalized Calinski–Harabasz (CH) scores that
+quantify between-cluster separation relative to within-cluster
+spread. As shown, OOD tasks benefit from intermediate exits,
+whereas ID tasks have higher CH scores at deeper stages.
+Note that for RFID, the highest accuracy is at S2 but the CH
+(a) (b)
+Fig. 2: (a) Test accuracy change (pp) of early exits (S2–S4) relative to the
+Full backbone. (b) Normalized CH trend across representative OOD tasks and
+the ID tasks.
+0.25 0.50 0.75 1.00
+Entropy Threshold
+−8
+−6
+−4
+−2
+0
+Δ
+Accuracy
+(pp)
+(a)
+0.25 0.50 0.75 1.00
+Entropy Threshold
+0
+2
+4
+6
+Δ
+Time
+(μs)
+(b)
+DeepBeam OWL-INT RF_ID RML
+Fig. 3: Performance of shared-entropy EE vs. best fixed exit. (a) Accuracy
+gain (higher is better); (b) Latency reduction (lower is better).
+is slightly higher at S4. PCA analysis indicates that RFID
+forms very dense clusters at S4 which increases the CH score.
+However, the overall cluster structure does not translate into
+better linear separability, resulting in lower accuracy compared
+with S2.
+B. Dynamic Routing vs. Fixed-Exit Inference
+We next evaluate a classical EE policy (Algorithm 2) against
+our proposed fixed-exit-per-task strategy. We first study the
+shared-threshold setting by evaluating various entropy thresh-
+olds (τ) (Sec. III-C). Figure 3(a-b) plots the accuracy and
+latency (µs) change relative to the best fixed exit for that
+task, both as a function of the shared threshold τ. These
+results show that the gains are generally small and inconsistent.
+We therefore study two stronger dynamic-routing variants as
+well. Greedy is a per-exit tuned dynamic method that selects
+thresholds sequentially for the intermediate exits, allowing
+different exits to use different confidence thresholds. Pareto
+selects a shared threshold using validation data to determine
+the best τ̄. We sweep τ̄ while computing validation accuracy
+and exit cost, and select the operating point with the highest
+validation accuracy, using lower cost as a tie-breaker.
+Our results showed that these dynamic routing methods also
+offer no clear advantage over the fixed-exit baseline in the
+TABLE II: FLOPs and Number of Parameters cost by exit (cumulative
+up to the exit; heads excluded)
+Model FLOPs (M) # of Parameters Avg. Infer. Time(us)
+Stage2 0.438 7,800 0.928
+Stage3 1.889 53,352 2.746
+Stage4 3.433 143,304 4.286
+Full 6.579 341,960 5.238
+5
+(a) RML16: Acc. vs. latency (b) RML16: Exit-rate heatmap (c) OWL: Acc. vs. latency (d) OWL: Exit-rate heatmap
+Fig. 4: Representative dynamic-routing results on RML16 and OWL. Accuracy–latency plots compare BestFixed, Pareto, and Greedy; heatmaps show exit-rate
+allocations. Most samples concentrate at one dominant intermediate exit, explaining the competitiveness of BestFixed.
+TABLE III: Best-exit comparison across selection methods.
+Task Best Exit Confidence Entropy Few-shot
+RML16 S3 S3 S3 S3
+RF ID S2 S3 S3 S2
+DeepBeam S3 S3 S3 S3
+OWL-INT S2 S3 S3 S2
+accuracy–latency tradeoff. Representative results are shown in
+Fig. 4. Here, BestFixed serves as a fixed-exit reference, since
+our goal is to test whether dynamic routing provides a mean-
+ingful advantage beyond a carefully chosen fixed-exit policy.
+For RML16, Greedy achieves only a slight accuracy gain over
+BestFixed, but at substantially higher latency, whereas Pareto
+is both slower and less accurate. A similar trend appears for
+OWL, where Greedy provides only a marginal improvement
+and Pareto again underperforms the fixed-exit baseline. The
+heatmaps help explain this behavior: in both tasks, routing
+remains heavily concentrated at one dominant intermediate
+exit, with limited benefit from distributing samples across
+multiple depths. This suggests that, in the considered WFM
+setting, a carefully selected fixed exit captures most of the
+achievable benefit while avoiding the additional routing and
+threshold-check overhead of dynamic methods.
+C. Choosing the Best Single Exit with Minimal Labels
+Having established the superiority of a single-exit approach,
+the remaining question is how to pick the exit while staying
+data-efficient. As detailed in Sec. III-C, we evaluate three low-
+cost selectors: two label-free (average confidence, entropy) and
+a few-shot (FS) validator (k=20/class). Table III shows the
+label-free options can be misleading, confidence and entropy
+do not reliably track correctness, whereas few-shot validation
+consistently selects the best exit. We note that the required
+number of labeled samples is not universal and may depend
+on the dataset, sample representativeness, and the performance
+differences between candidate exits; a detailed analysis of this
+dependence is left for future work.
+V. CONCLUSION & FUTURE WORK
+In this letter, we proposed a depth-aware framework that
+improves the inference speed of wireless foundation models.
+Our analysis reveals that exiting early from the encoder is not
+merely an efficiency trade-off but a key strategy for improving
+OOD generalization. Experimental results demonstrate that
+intermediate features provide noticeable accuracy gains (up
+to 8.0 pp) while drastically reducing latency. Furthermore, we
+showed that selecting a single, optimal exit for each task is a
+more robust strategy than complex dynamic multi-exit policies.
+The early-exit framework is not tied to a specific backbone
+and can be extended to other architectures. Future work will
+focus on developing more label-efficient and ideally fully
+label-free, exit selection methods and studying exit stability
+under large post-deployment channel and hardware variations.
+Further optimizations of dynamic multi-exit algorithms may
+also be possible and are another direction for future work.
+REFERENCES
+[1] B. Brik, K. Boutiba, and A. Ksentini, “Deep learning for B5G open
+radio access network: Evolution, survey, case studies, and challenges,”
+IEEE Open J. Commun. Soc., vol. 3, pp. 228–250, 2022.
+[2] A. Aboulfotouh, E. Mohammed, and H. Abou-Zeid, “6G WavesFM: A
+foundation model for sensing, communication, and localization,” IEEE
+Open J. Commun. Soc., vol. 6, pp. 6792–6807, 2025.
+[3] J. Jiang, W. Yu, Y. Li, Y. Gao, and S. Xu, “A MIMO wireless
+channel foundation model via CIR-CSI consistency,” arXiv preprint
+arXiv:2502.11965, 2025.
+[4] T. Yang, P. Zhang, M. Zheng, Y. Shi, L. Jing, J. Huang, and N. Li,
+“WirelessGPT: A generative pre-trained multi-task learning framework
+for wireless communication,” IEEE Network, vol. 39, no. 5, pp. 58–65,
+2025.
+[5] O. Kanu, A. Eshaghbeigi, and H. Abou-Zeid, “Self-supervised radio
+representation learning: Can we learn multiple tasks?” in Proc. IEEE
+Int. Conf. Commun. (ICC), 2025, pp. 511–517.
+[6] O. Mashaal and H. Abou-Zeid, “IQFM: A wireless foundational model
+for I/Q streams in AI-native 6G,” arXiv preprint arXiv:2506.06718,
+2025.
+[7] S. Teerapittayanon, B. McDanel, and H. Kung, “BranchyNet: Fast
+inference via early exiting from deep neural networks,” in Proc. 23rd
+Int. Conf. Pattern Recognit. (ICPR), 2016, pp. 2464–2469.
+[8] E. Mohammed, O. Mashaal, and H. Abou-Zeid, “Using early exits for
+fast inference in automatic modulation classification,” in Proc. IEEE
+GLOBECOM, 2023, pp. 291–296.
+[9] D. Verbruggen, H. Sallouha, and S. Pollin, “Deep learning with width-
+wise early exiting and rejection for computationally efficient and trust-
+worthy modulation classification,” IEEE Trans. Mach. Learn. Commun.
+Netw., vol. 3, pp. 1143–1159, 2025.
+[10] M. Jankowski, D. Gündüz, and K. Mikolajczyk, “Adaptive early exiting
+for collaborative inference over noisy wireless channels,” in Proc. IEEE
+Int. Conf. Mach. Learn. Commun. Netw. (ICMLCN), 2024, pp. 126–131.
+[11] M. Polese, F. Restuccia, and T. Melodia, “Deepbeam: Deep waveform
+learning for coordination-free beam management in mmwave networks,”
+in Proc. ACM MobiHoc, 2021, pp. 61–70.
+[12] T. J. O’Shea and N. West, “Radio machine learning dataset generation
+with gnu radio,” in Proc. GNU Radio Conference, vol. 1, no. 1, 2016.
+[13] G. Reus-Muns, D. Jaisinghani, K. Sankhe, and K. R. Chowdhury, “Trust
+in 5g open RANs through machine learning: RF fingerprinting on the
+POWDER PAWR platform,” in Proc. IEEE GLOBECOM, 2020, pp. 1–6.
+[14] M. Schmidt, D. Block, and U. Meier, “Owl-int wireless interference
+dataset,” IEEE Dataport, 2022.
+[15] A. Uselis and S. J. Oh, “Intermediate layer classifiers for ood general-
+ization,” in Proc. Int. Conf. Learn. Representations (ICLR), 2025.
+[16] O. Skean, M. R. Arefin, D. Zhao, N. Patel, J. Naghiyev, Y. LeCun, and
+R. Shwartz-Ziv, “Layer by layer: Uncovering hidden representations in
+language models,” arXiv:2502.02013 [cs.LG], 2025.
+

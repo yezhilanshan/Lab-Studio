@@ -1,0 +1,1351 @@
+FisherPoser: Human Motion Estimation from Sparse Observations with
+Hierarchical Region-Wise Fisher-Matrix Uncertainty Modeling
+Songpengcheng Xia 1
+Qingyu Zhang 1
+Zhuo Su 2
+Jiarui Yang1
+Zengyuan Lai 1
+Qi Wu1
+Ling Pei1 *
+1
+Shanghai Jiao Tong University 2
+ByteDance
+Abstract
+Full-body motion estimation from sparse VR observa-
+tions is an inherently under-constrained problem, with only
+three 6-DoF trackers (HMD and controllers) available to
+infer a full skeletal pose. To address this ambiguity, we in-
+troduce a probabilistic framework that models joint orienta-
+tions as distributions on SO(3) using the Matrix Fisher dis-
+tribution. Instead of predicting a single deterministic pose,
+our network outputs a distribution for each joint, whose
+mode and concentration directly quantify prediction uncer-
+tainty on the rotation manifold. This enables likelihood-
+based training and principled uncertainty propagation. At
+the core of our model is a causal Transformer encoder
+that fuses sparse observations with motion history. We fur-
+ther propose region-wise tokens for the torso, arms, and
+legs, obtained via attention pooling over local joint features
+and semantic VR anchors. These tokens guide compact,
+per-region Fisher regression. To ensure kinematic coher-
+ence efficiently, we employ a limb refinement module, where
+each child joint’s Fisher parameters are conditioned on its
+parent’s distribution and the regional context, propagat-
+ing pose and uncertainty hierarchically. Extensive exper-
+iments on standard sparse-VR benchmarks show that our
+approach achieves state-of-the-art performance, while pro-
+viding well-calibrated joint-wise uncertainty.
+1. Introduction
+Recent advances in markerless motion capture and embod-
+ied AI have greatly expanded the reach of interactive and
+immersive VR systems [15, 20, 47, 55, 57, 61]. Among
+sensing configurations, sparse VR tracking—typically re-
+lying on an HMD and two hand-held controllers—poses a
+unique challenge: the system observes only three 6-DoF
+rigid bodies, with no direct signals for the torso or lower
+*Corresponding authors
+This work was supported by the National Nature Science Foundation of
+China (NSFC) under Grant 62273229.
+Right Hand Left Hand
+z
+y
+x
+Head
+Sparse Observation
+Fisher
+Matrix
+Diag(10, 10, 10) Diag(25, 5, 1)
+13 16 18 20
+Torso
+L-Arm R-Arm
+L-Leg R-Leg
+Five Body Region
+2
+5
+8
+11
+Hierarchical Kinematic Estimation
+with Fisher Matrix
+Diverse Pose Candidates Probability-driven Choice
+1.0
+0.5
+0.0
+Figure 1. FisherPoser can estimate the full-body motion using
+three tracking signals (HMD and hand controllers).
+limbs [4, 51, 62]. This lack of full-body observability ren-
+ders full-body motion estimation from consumer VR fun-
+damentally underconstrained. Consequently, this sparse
+setup leads to a severe one-to-many ambiguity: infinitely
+many kinematically plausible poses can explain the same
+head–hand trajectories, making deterministic single-pose
+regression brittle and unreliable.
+To address the under-constrained nature of estimating
+full-body pose from sparse head and hand inputs, a vari-
+ety of approaches have been explored. The data-driven ap-
+proaches, trained on large motion capture datasets such as
+AMASS, learn a direct mapping from head and hand sig-
+nals to full-body poses. These include deterministic regres-
+sion models, which output a single pose per frame [17, 62],
+as well as generative approaches such as VAEs, normal-
+izing flows, and diffusion models that can sample mul-
+tiple plausible poses [3, 9, 11]. Despite their efficiency,
+deterministic regressors tend to converge to a single, of-
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+28413
+ten fragile solution, while generative methods rely heav-
+ily on data priors and frequently lack well-calibrated un-
+certainty estimates, making it difficult to select among hy-
+potheses reliably during inference. Other lines of work have
+turned to reinforcement learning or physics-based simula-
+tion to generate motion without direct motion-capture su-
+pervision [23, 49]. Although these methods can produce
+physically plausible motions, they are often sensitive to
+reward design and simulation-to-real domain gaps, which
+may result in motions that are only loosely constrained by
+the actual user input. Alternatively, some systems improve
+pose accuracy by incorporating additional sensors on the
+pelvis or feet [6, 35, 36]. While effective, this strategy
+increases hardware complexity and impedes user comfort,
+limiting practical adoption.
+Despite these advances, the core challenge of one-to-
+many ambiguity in motion estimation from sparse obser-
+vations remains largely unresolved. Existing methods ei-
+ther oversimplify the solution space, depend excessively on
+learned priors, or impose additional hardware requirements.
+Our work aims to enhance the robustness of full-body pose
+estimation from sparse head–hand observations alone. We
+identify three pivotal limitations in current learning-based
+frameworks and propose corresponding improvements:
+1) Lack of Intrinsic Uncertainty Quantification. Cur-
+rent frameworks predominantly perform deterministic re-
+gression, failing to model or propagate the intrinsic uncer-
+tainty arising from sparse observations [6, 62]. For weakly
+constrained joints like those in the lower body, the sys-
+tem should explicitly represent orientation ambiguity rather
+than commit to a single, potentially inaccurate, estimate.
+We therefore formulate pose estimation as a problem of
+probabilistic inference over joint rotations. Specifically, we
+adopt the Matrix–Fisher distribution on the SO(3) manifold
+to represent the belief state of each joint. This approach
+is crucial because SO(3) provides a principled mathemati-
+cal framework for modeling 3D rotational uncertainty. Un-
+like vector space representations, the concentration param-
+eters of the Matrix–Fisher distribution naturally and geo-
+metrically encode how strongly each joint’s orientation is
+constrained by the observations, directly quantifying the
+one-to-many ambiguity. This enables training via maxi-
+mum likelihood estimation on the manifold and supports
+uncertainty-aware applications such as sampling diverse
+plausible poses, as shown in Fig.1.
+2) Homogeneous Treatment of Heterogeneous Body
+Regions. Modeling the body as a monolithic unit overlooks
+the significant heterogeneity in motion statistics and ob-
+servability across different regions [59]. Sparse signals im-
+pose asymmetrical constraints; for instance, the upper body
+is well-observed while the lower body is largely uninstru-
+mented. To address this, we introduce a region-based pose
+representation, partitioning the body into five kinematic re-
+gions (torso, left/right arms, left/right legs), each with a
+learnable identifier. Our model uses attention-based pool-
+ing to first distill region-specific motion contexts, which are
+then integrated into a globally coherent full-body pose.
+3) Violation of Kinematic Chain Dependencies. Hu-
+man motion is inherently hierarchical, with a child joint’s
+state (e.g., the wrist) being strongly dependent on its par-
+ent’s state (e.g., the elbow and shoulder) [37]. Many con-
+temporary methods predict joints in parallel, violating this
+kinematic structure and risking physiologically implausible
+outputs. We thus design a hierarchical autoregressive de-
+coder that strictly adheres to the kinematic tree. It predicts
+joint rotations sequentially, propagating the parent’s pose
+and, critically, its calibrated uncertainty to the child. This
+ensures kinematic coherence and yields anatomically plau-
+sible results.
+In summary, our main contributions are as follows:
+• We propose FisherPoser, a probabilistic framework that
+represents joint orientations as Matrix–Fisher distribu-
+tions on SO(3), enabling geometrically consistent, cali-
+brated per-joint uncertainty estimation and accurate full-
+body pose inference under sparse VR observations, with
+likelihood-based training on the rotation manifold.
+• We design a hybrid hierarchical decoder that couples
+region-wise conditioning with limb-wise recursion: the
+body is partitioned into five regions (torso, left/right arms,
+left/right legs); limb joints are decoded sequentially by
+conditioning each child on its parent’s distribution to
+propagate pose and uncertainty, while torso joints follow
+a direct path for efficiency—balancing local specificity
+with global consistency.
+• Comprehensive experiments demonstrate that our method
+consistently outperforms state-of-the-art baselines un-
+der sparse VR tracking, improving spatial accuracy and
+perceptual smoothness. Ablations verify that both the
+region-aware conditioning and the limb-recursive mecha-
+nism are necessary and complementary.
+2. Related Work
+2.1. Motion Estimation from Sparse Observations
+Wearable human pose estimation has evolved along two
+primary hardware configurations: multi-inertial measure-
+ment unit (IMU) systems that instrument multiple body seg-
+ments [15, 19, 46, 50, 54, 59], and minimal virtual real-
+ity (VR) setups that rely solely on a head-mounted display
+and two hand-held controllers [3, 6, 10, 17, 18, 62]. Al-
+though systems with six or more IMUs generally achieve
+higher pose accuracy, HMD-based approaches are increas-
+ingly favored for their practical deployment advantages. A
+growing body of work demonstrates that even three tracking
+points can yield plausible full-body motion. For instance,
+AvatarPoser [17] introduced a transformer-based architec-
+28414
+ture to directly regress the body pose from head and hand
+inputs; Zheng et al. [62] proposed a two-stage model to bet-
+ter capture kinematic joint dependencies. Several works
+have integrated physics simulation into the pipeline, such
+as QuestSim [49] and QuestEnvSim [23], which leverage
+NVIDIA’s Isaac Gym [30] and reinforcement learning for
+motion synthesis. To address the inherent one-to-many am-
+biguity in sparse-to-dense pose estimation, generative ap-
+proaches—including variational autoencoders, normalizing
+flows [2, 8], state space model [60, 61] and more recently,
+diffusion models [9, 11, 40]—have been employed to sam-
+ple multiple plausible pose hypotheses. Another line of
+work enhances robustness by incorporating additional sen-
+sors, such as pelvis or foot trackers [6, 35, 36], albeit at the
+cost of sacrificing minimal setup simplicity.
+We adopt the minimal HMD-plus-controllers configu-
+ration and tackle input ambiguity through an uncertainty-
+centric formulation: instead of a single pose, we predict a
+distribution per joint, delivering calibrated confidence for
+under-observed limbs and reducing mode collapse while
+preserving real-time feasibility.
+2.2. Pose Estimation with Uncertainty Modeling
+The sparse nature of observations in 3D human pose estima-
+tion introduces significant uncertainty, particularly for un-
+observed joints, as identical inputs can correspond to mul-
+tiple valid pose hypotheses [11, 59, 62]. This challenge
+is especially evident in monocular vision-based pose esti-
+mation [5, 14, 24, 26, 52], where depth ambiguity consti-
+tutes a major source of uncertainty. To address this, a num-
+ber of probabilistic and multi-hypothesis approaches have
+been proposed. Wehrbein et al. [48] modeled the poste-
+rior distribution of 3D poses using normalizing flows, while
+MHFormer [26] employed a multi-hypothesis transformer
+to capture diverse pose modes via a one-to-many mapping.
+More recently, Shan et al. [38] introduced a diffusion-based
+aggregation method that enforces joint-wise consistency
+across multiple hypotheses. Beyond modeling hypothesis
+diversity, uncertainty in deep learning is commonly catego-
+rized into aleatoric (data-dependent) and epistemic (model-
+dependent) types [21]. Several works leverage these notions
+to improve pose estimation—e.g., through uncertainty-
+guided sampling and attention mechanisms [25], robust
+negative log-likelihood objectives with epistemic uncer-
+tainty guidance [58], and uncertainty-weighted sensor fu-
+sion in wearable settings [53].
+Recently, modeling probability distributions directly on
+the rotation manifold for uncertainty-aware rotation esti-
+mation has been gaining attention. [7, 13] adopted the
+Bingham distribution over unit quaternions to jointly es-
+timate a probability distribution over all axes. Mohlin et
+al. [32] leveraged the Matrix-Fisher distribution on SO(3)
+for deep rotation regression. Although both the Bingham
+and Matrix-Fisher distributions share similarities with the
+Gaussian distribution in Euclidean space, the Matrix-Fisher
+benefits from a continuous rotation matrix representation
+and unconstrained distribution parameters, yielding supe-
+rior performance in practice [34]. Similarly, recent stud-
+ies [22, 56] have also introduced these distribution estima-
+tions on the rotation manifold to human pose estimation,
+achieving notable performance gains.
+Building on these advances, we model a per-joint Ma-
+trix–Fisher field on SO(3) and train by maximum likeli-
+hood. Unlike prior rotation-level MF regressors, we intro-
+duce region-wise conditioning and limb-hierarchical refine-
+ment that propagate pose and uncertainty down the kine-
+matic chains, expressly tailored to the head–hand sparsity.
+3. Method
+3.1. Problem Statement
+Our goal is to reconstruct full-body human motion θ from
+sparse VR observations X, which consist solely of a head-
+mounted display (HMD) and two hand controllers. For a se-
+quence of T frames, the observations xt at time t aggregate
+the positions p∗
+t , linear velocities ṗ∗
+t , and rotation matrices
+R∗
+t ∈ R3×3
+of the head and both hands, which can be rep-
+resented as a Nc = 45-dimensional vector. Then, we adopt
+a standard SMPL-style kinematic tree with J = 22 body
+joints. The body pose at time t is represented by the relative
+rotations of all joints with respect to their parents, denoted
+as R
+(j)
+t ∈ SO(3) for joint j. We concatenate these rotations
+(in vectorized form) to obtain a pose representation:
+θt = vec
+
+{R
+(j)
+t }J
+j=1
+
+∈ R9J
+= R198
+. (1)
+With only three sparse tracking signals, most joints re-
+main unobserved, which results in the same sparse input of-
+ten corresponding to multiple plausible motions. To expose
+this inherent ambiguity rather than collapsing it to a single
+estimate, we formulate pose prediction as probabilistic ro-
+tation estimation on the manifold SO(3). Specifically, for
+each joint j at time t, our network predicts a Matrix–Fisher
+parameter F
+(j)
+t ∈ R3×3
+that defines a distribution over that
+joint’s rotation:
+p
+
+R
+(j)
+t | F
+(j)
+t
+
+=
+1
+c(F
+(j)
+t )
+exp
+
+tr
+
+(F
+(j)
+t )⊤
+R
+(j)
+t )
+
+,
+(2)
+where c(·) is the normalization constant. The distribution
+could be characterized by a mode R̂
+(j)
+t and a concentration
+vector s
+(j)
+t ∈ R3
+, which jointly capture the most likely pose
+and its directional uncertainty.
+As illustrated in Fig. 2, our framework consists of three
+core components: (1) An auto-regressive motion encod-
+ing fuses the VR inputs with pose history via a causal Trans-
+28415
+Autoregressive Motion Encoding
+Time
+E
+Input Observation
+Embedding
+E
+Pose Embedding
+…
+…
+Transformer
+Position
+Embedding
+𝑿𝑿
+𝑿𝑿𝒉𝒉𝒉𝒉
+𝒁𝒁𝑿𝑿
+𝒁𝒁𝒉𝒉𝒉𝒉
+𝒁𝒁𝑺𝑺
+𝒁𝒁𝑯𝑯
+Head Observation
+Right Hand Observation
+Left Hand Observation Region Semantic Anchors
+Region Pose
+Embedding
+Torso
+L-Arm R-Arm
+L-Leg R-Leg
+Time
+Torso
+L-Arm R-Arm
+L-Leg R-Leg
+Region Index
+Embedding
+Local Motion Representation Hierarchical Probability Estimation
+Region Tokens
+Cross-Attention
+Linear
+𝐹𝐹𝒐𝒐𝒐𝒐𝒐𝒐
+Fisher Matrix
+Concen
+tration
+Recursion along limb chains
+Region
+Tokens
+𝒁𝒁𝑯𝑯
+Fisher Matrix
+Concen
+tration
+Concatenate
+𝐹𝐹
+𝒐𝒐𝒐𝒐𝒐𝒐
+Prediction Fusion
+Fisher Matrix
+Concen
+tration
+Time
+Proper SVD
+Concentration
+normalization and final
+assembly
+Final Motion
+Regression
+Figure 2. Overview of FisherPoser, consisting of three core components: (1) A Transformer-based auto-regressive motion encoding for
+global context extraction. (2) Region-wise token construction for local Matrix-Fisher estimation. (3) A recursive propagator that refines
+limb poses hierarchically for kinematic consistency.
+former to produce a global representation for the Matrix-
+Fisher estimation and uncertainty quantification. (2) Local
+motion representation constructs five region tokens (torso,
+L/R arms, L/R legs) from semantic anchors and joint fea-
+tures, which drive per-region Matrix–Fisher regression on
+SO(3). (3) Hierarchical probability estimation refines
+limb poses by propagating parent joint distributions to their
+children, enforcing kinematic consistency.
+3.2. Motion and Uncertainty Estimation with
+Matrix-Fisher Distribution over SO(3)
+Estimating human motion from sparse VR observations
+is fundamentally challenging due to the severely under-
+constrained nature. While temporal modeling alleviates
+some ambiguity, the lack of direct measurements for most
+joints still leads to significant prediction uncertainty. To ad-
+dress this, we propose a probabilistic framework that esti-
+mates both pose and uncertainty by leveraging the geometry
+of SO(3) through the Matrix–Fisher distribution.
+Autoregressive temporal encoder. To effectively lever-
+age temporal information and motion dynamics, we employ
+a causal Transformer encoder to model temporal dynam-
+ics with auto-regression framework. The model encodes
+the historical motion states Xhm ∈ RT ×198
+together with
+sparse observations X ∈ RT ×45
+from VR device with two
+projection networks ϕx and ϕp, producing an observation
+embedding ZX = ϕx(X) and a pose-history embedding
+Zhm = ϕp(Xhm). These are concatenated into a shallow
+representation ZS = [ZX, Zhm] and fed into the Trans-
+former Ft, which outputs a context vector ZH = Ft(ZS)
+summarizing past motion dynamics without accessing fu-
+ture frames. During training, we inject mild noise into
+Xhm to improve robustness. While the Transformer cap-
+tures temporal dynamics, it only yields a deterministic pose
+estimate. To quantify the reliability of predictions, we ap-
+pend a probabilistic output layer that models each joint ro-
+tation as a Matrix–Fisher distribution.
+Motion and uncertainty estimation. For each joint
+j ∈ {1, ..., J}, we predict a Matrix–Fisher parameter F
+(j)
+t ,
+that determines the density using Eq.(2). To extract the
+distribution’s mode and concentration, we perform singular
+value decomposition (SVD) on F
+(j)
+t :
+F
+(j)
+t = U
+(j)
+t S
+(j)
+t V
+(j)⊤
+t , (3)
+where S
+(j)
+t = diag(s1, s2, s3) is a diagonal matrix com-
+posed of the singular values of F
+(j)
+t with s1 ≥ s2 ≥ s3 ≥ 0,
+capturing directional uncertainty. U
+(j)
+t , V
+(j)
+t ∈ R3×3
+are
+orthonormal matrices, and the mode rotation R̂
+(j)
+t can be
+calculated as follows:
+R̂
+(j)
+t = U
+(j)
+t diag(1, 1, |UV|)V
+(j)⊤
+t (4)
+Leveraging the motion representation ZH and a regres-
+sion network, our model could predict the Matrix–Fisher
+parameter F̂ for each joint. Drawing inspiration from [22],
+we address the challenge of unstable optimization posed by
+the significant variation in the dynamic range of the singu-
+lar values S in F̂ , which naturally encode concentration.
+We introduce a learnable, data-dependent scalar u as an un-
+certainty adjustment. The final concentration, modulated as
+exp(u) · S, stabilizes the training by adaptively scaling the
+distribution’s dispersion.
+Training objectives. Based on the predicted Fisher
+Matrix F and the ground-truth of human motion R, we train
+our model using the negative log-likelihood (NLL) loss and
+learn the probabilistic model of rotation, which could be
+expressed by:
+LMF = − log(p(R; F)) = log(c(F)) − tr[FT
+R]. (5)
+Additionally, with the predicted mode rotation R̂ (Eq.4)
+28416
+and the groundtruth of rotation R, we incorporate the rota-
+tion loss as stated:
+LR = −tr[R̂T
+R]. (6)
+This formulation unifies temporal modeling with geo-
+metric uncertainty quantification, yielding accurate pose es-
+timates and a principled measure of confidence.
+3.3. Learning Local Motion Representation with
+Five Local Body Regions
+Sparse VR sensing imposes highly heterogeneous observ-
+ability across the body: the upper torso is indirectly con-
+strained by the HMD, arms are partially guided by the con-
+trollers, while the lower limbs remain almost entirely un-
+observed. Treating the body as a single monolithic target
+forces one decoder to reconcile disparate statistics and of-
+ten dilutes the few informative signals. To address this, we
+introduce a region-wise conditioning mechanism that parti-
+tions the body into five semantic regions—Torso, Left/Right
+Arm, and Left/Right Leg—enabling specialized feature ex-
+traction and uncertainty-aware pose estimation for each.
+Concretely, we partition human body into five regions
+R = {Torso,L-Arm,R-Arm,L-Leg,R-Leg}, with their joint
+index sets Jr∈R. The Torso spans pelvis–spine–neck–head;
+each Arm covers shoulder–elbow–wrist–hand; and each
+Leg includes hip–knee–ankle–foot. This structured decom-
+position aligns model capacity with regional observability
+while preserving global coherence through the autoregres-
+sive state ZH.
+Joint features and semantic anchors. We derive in-
+put features for region token construction from two com-
+plementary sources: the recent pose history and the current
+sparse observation. From the previous time step t − 1, we
+embed each joint’s rotation into a feature vector using a lin-
+ear projection ϕJ and a learnable joint-type embedding tj:
+h
+(j)
+t−1 = ϕJ vec(R
+(j)
+t−1)
+
++ tj, (7)
+This yields a set of joint-wise history features h
+(j)
+t−1 that en-
+code recent kinematic states. In parallel, we construct se-
+mantic anchor vectors from the current observation xt to
+provide instantaneous spatial context for each region. Each
+anchor is designed to capture distinct kinematic properties:
+The torso anchor is built from the absolute head posi-
+tion, velocity, and orientation, serving as a global state ref-
+erence:
+aTorso
+t = WTorso
+[pH
+t , ṗH
+t , vec(RH
+t )], (8)
+The arm anchors for left/right limbs utilize the head-
+centric relative transformation, including positional offset,
+relative velocity, and relative rotation, to capture upper-
+body articulation:
+aArm
+t = WL/R
+[p
+L/R
+t −pH
+t , ṗ
+L/R
+t −ṗH
+t , vec(RH⊤
+t R
+L/R
+t )],
+(9)
+The leg anchors employ a weak prior derived from the
+HMD’s forward direction fH
+t , head height pH
+t,z, and head
+speed |ṗH
+t |, providing a stable base for lower-body estima-
+tion under sparse sensing:
+a
+L/R−Leg
+t = WL/R−Leg
+[fH
+t , pH
+t,z, |ṗH
+t |]. (10)
+Here fH
+t is the forward direction unit vector of the HMD
+(the third column of RH
+t ), and pH
+t,z is the vertical (height)
+component of the head position. Each W(·)
+is a learned lin-
+ear projection outputting a fixed-dimensional vector. These
+anchors provide immediate, region-specific evidence that
+complements the global motion context ZH.
+Region token construction. For each region r ∈ R,
+we construct a region token T r that encapsulates its current
+kinematic state. We first form a query vector by concate-
+nating the global context zHt, the region-specific semantic
+anchor a
+(r)
+t , and a learnable region index embedding er,
+followed by a linear projection:
+Q
+(r)
+t = WQ[zHt; a
+(r)
+t ; er]. (11)
+This query attends to the historical joint features
+{h
+(j)
+t−1}j∈Jr
+within the region r via a cross-attention mech-
+anism, producing a pooled representation pool
+(r)
+t that sum-
+marizes relevant motion context. We then construct an aug-
+mented region descriptor by concatenating:
+r̃
+(r)
+t =
+
+pool
+(r)
+t ; zHt; a
+(r)
+t ; er
+
+. (12)
+which is passed through a two-layer MLP Πr to produce the
+final region token T r:
+T r = Πr r̃
+(r)
+t
+
+. (13)
+This process is applied in parallel for all five body re-
+gions, yielding compact tokens T r that efficiently encode
+regional kinematics while maintaining global coherence.
+We leverage the region tokens to estimate per-joint pose
+distributions. For each region r, we concatenate its token
+T r with the global context zHt, and pass the result through
+a region-specific regression head Hr. This network predicts
+an initial Matrix–Fisher parameter e
+F
+(j)
+t and a scalar con-
+centration logit e
+u
+(j)
+t for each joint j ∈ Jr. The outputs
+from all regions are then gathered to form the full-body set
+of parameters F
+(j)
+t
+22
+j=1 and u
+(j)
+t
+22
+j=1, which are passed to the
+subsequent hierarchical refinement stage.
+In summary, the region-conditioned module incorporates
+localized sensor evidence through semantic anchors, selec-
+tively aggregates historical joint information via attention,
+and employs region-specific networks to generate pose dis-
+tributions. This design enables the model to adapt to vary-
+ing observability across body regions under extreme input
+sparsity, while the shared global context zHt maintains tem-
+poral and structural consistency throughout the full pose.
+28417
+3.4. Hierarchical Kinematic Probability Distribu-
+tions Estimation
+While region-wise predictions account for heterogeneous
+observability, they estimate each joint independently, ig-
+noring critical kinematic dependencies between parent and
+child joints. Therefore, we introduce a hierarchical refine-
+ment stage that recursively propagates pose and uncertainty
+along the four limb chains (left/right arms and legs), con-
+ditioning each child joint’s distribution on its parent’s pre-
+dicted distribution.
+Recursion along limb chains. We perform refinement
+sequentially along each limb’s joint hierarchy (e.g. shoulder
+→ elbow → wrist for an arm, or hip → knee → ankle for a
+leg). Let p be a parent joint and c its child. We construct a
+feature vector for refining joint c by concatenating: (i) the
+global context zHt, (ii) the region token of T r(c),t joint c,
+and (iii) the parent’s current Matrix–Fisher F
+(p)
+pred,t and its
+raw concentration vector u
+(p)
+pred,t:
+f
+(c)
+t =
+h
+zHt; T r(c),t; vec
+
+F
+(p)
+pred,t
+
+; u
+(p)
+pred,t
+i
+. (14)
+Here F
+(p)
+pred,t and u
+(p)
+pred,t denote the current parameter ma-
+trix and concentration for the parent joint p, which are set
+to the direct region-predicted F
+(p)
+dir,t and u
+(p)
+dir,t) (from Sec.
+3.3) at the start of recursion. We then pass f
+(c)
+t through two
+child-specific predictors: one network Γ
+(c)
+F outputs an up-
+dated Matrix–Fisher parameter F
+(c)
+prop,t, and another network
+Γ
+(c)
+u outputs an updated concentration vector u
+(c)
+prop,t. We
+then blend the recursive predictions with the direct predic-
+tions for joint c using a mixing weight λ ∈ [0, 1]:
+F
+(c)
+pred,t = (1 − λ)F
+(c)
+dir,t + λF
+(c)
+prop,t, (15)
+u
+(c)
+pred,t = (1 − λ)u
+(c)
+dir,t + λu
+(c)
+prop,t. (16)
+This recursion is applied from proximal to distal joints in
+each limb, ensuring that children inherit not only the pose
+but also the uncertainty characteristics of their parents. The
+process is fully vectorized and runs in a single pass per limb.
+Following the recursive estimation of the Matrix–Fisher
+parameters F
+(j)
+pred,t and scalar concentration logits u
+(j)
+pred,t
+for all joints along the limb chains, we finalize the full-body
+probabilistic pose representation,
+F
+(j)
+final,t = U
+(j)
+pred,texp(u
+(c)
+pred,t)S
+(j)
+pred,tV
+(j)⊤
+pred,t, (17)
+where U
+(j)
+pred,t, S
+(j)
+pred,t and V
+(j)
+pred,t are obtained by perform-
+ing SVD on F
+(j)
+pred,t.
+Final training objectives. We train the entire model us-
+ing the outputs F
+(j)
+final,t of this hierarchical refinement. Our
+loss includes the Matrix–Fisher negative log-likelihood for
+all joints,
+LMF =
+22
+X
+j=1
+
+log c
+
+F
+(j)
+final,t
+
+− tr
+
+F
+(j)
+final,t
+⊤
+R
+(j)
+gt,t
+
+,
+(18)
+as well as a geodesic mode alignment loss to penalize any
+residual rotation error:
+Lmode =
+22
+X
+j=1
+∥ log
+
+R̂
+(j)⊤
+t R
+(j)
+gt,t
+
+∥2
+2, (19)
+where log(·) denotes the matrix log map on SO(3), which
+is the squared geodesic distance between the predicted and
+true joint rotations. Following [62], we have also applied
+some effective physics-related loss terms, which will be de-
+tailed in our supplement.
+4. Experiment
+To rigorously evaluate the efficacy of our proposed method,
+we first introduce the datasets, evaluation metrics, and base-
+line algorithms. We then compare our approach with state-
+of-the-art methods, illustrating its effectiveness and perfor-
+mance gains. The contribution of each module is quantita-
+tively analyzed through ablation experiments. For further
+insight, additional case studies and in-depth discussions are
+available in the supplementary material.
+Datasets. Our experiments are conducted on the
+AMASS dataset [29], a large-scale aggregation of human
+motion capture data represented in the SMPL body model.
+To ensure rigorous evaluation and facilitate fair comparison
+with existing literature, we adopt two established experi-
+mental protocols from prior work [4, 6].
+Protocol 1 (P1) follows the data partitioning strategy de-
+scribed in [11, 16, 17, 62], where the CMU [44], BMLrub
+[41], and HDM05 [33] subsets are randomly divided by a
+90%/10% ratio for training and testing respectively. Pro-
+tocol 2 (P2) employs a larger-scale benchmark configura-
+tion outlined in [6, 11], utilizing multiple AMASS subsets
+[1, 12, 27, 28, 31, 33, 42–45] for training while reserving
+the Transitions [29] and HumanEva [39] for evaluation.
+Competing methods. We compare the our motion esti-
+mation performance with the state-of-the-art methods, in-
+cluding AvatarPoser [17], AGRoL [9], AvatarJLM [62],
+SAGE [11], HMDPoser [6], RPM[4].
+Following [51, 62], our evaluation is conducted using
+the following metrics, the mean per-joint rotation error
+(MPJRE, in degrees), the mean pre-joint position error
+(MPJPE, mm), the mean per-joint velocity error (MPJVE,
+mm/s) and the Jitter metric.
+28418
+FisherPoser GT
+HMDPoser
+AvatarJLM SAGE RPM
+Figure 3. Visualization of motion estimation on three test sequences from AMASS-P1.
+Table 1. The performance comparison with SOTAs.
+Protocol 1
+MPJRE(°) MPJPE(mm) MPJVE(mm/s) Jitter
+AvatarPoser[17] 2.94 58.4 266.0 13.97
+AGRoL[9] 2.70 57.3 190.8 7.65
+AvatarJLM[62] 2.81 50.3 209.1 6.97
+SAGE[11] 2.53 32.8 206.2 6.55
+HMDPoser[6] 2.28 31.9 174.7 6.07
+RPM-Reactive[4] 3.25 40.8 174.1 4.21
+Ours 2.04 29.7 205.2 5.33
+Protocol 2
+MPJRE(°) MPJPE(mm) MPJVE(mm/s) Jitter
+AvatarPoser[17] 4.68 66.2 331.6 10.79
+AGRoL[9] 4.38 67.4 241.4 8.32
+AvatarJLM[62] 4.45 59.6 275.0 6.94
+SAGE[11] 4.62 58.6 335.4 7.13
+HMDPoser[6] 4.27 54.4 301.5 5.62
+RPM-Reactive[4] 5.15 65.6 271.6 4.99
+Ours 3.89 53.4 270.4 3.18
+4.1. Comparison with the State-of-the-Art
+Quantitative Experimental Analysis. Tab. 1 summarizes
+performance under Protocols 1 and 2, where our method
+sets a new state-of-the-art on the most metrics in both eval-
+uation protocols.
+Protocol 1. Our approach yields the lowest rotation and
+translation errors, with an MPJRE of 2.04° and an MPJPE
+of 29.7 mm. This corresponds to a relative improvement
+of 10.5% in MPJRE and 6.9% in MPJPE over the pre-
+vious best method, HMDPoser (2.28°, 31.9 mm), and a
+19.4% reduction in MPJRE and 9.5% in MPJPE compared
+to SAGE (2.53°, 32.8 mm). Our estimated motion is also
+smooth, reaching Jitter 5.33, which improves upon SAGE
+and HMDPoser by 18.7% and 12.2%. Compared to the
+RPM, our model strikes a better accuracy–smoothness bal-
+ance. RPM achieves the best temporal smoothness and low-
+est MPJVE, but at a substantial cost in accuracy of motion
+estimation, which exhibits a performance degradation of
+37.2% and 21.8% in the MPJRE and MPJPE metrics com-
+1 2 3 4 5 6
+1
+2
+3
+4
+5
+6
+Figure 4. Visualization on the changes in concentration of left
+knee; the lower the concentration, the higher uncertainty.
+pared to our method.
+Protocol 2. Our proposed method also achieves the best
+pose estimation performance in Protocol 2. We achieve the
+best MPJRE of 3.89° and MPJPE of 53.4 mm, surpassing
+HMDPoser by 8.9% and 1.8%, respectively. Our jitter score
+drops markedly to 3.18, improving over HMDPoser (5.62)
+and SAGE (7.13) by 43.4% and 55.4%. In MPJVE, our
+result of 270.4 is second only to AGRoL (241.4), yet still
+better than other competing methods, where our MPJVE
+drops by 10.3% and 19.4%, compared with HMDPoser and
+SAGE. These results confirm that our region-wise Fisher
+modeling and recursive limb refinement enhance both spa-
+tial accuracy and perceptual smoothness, with only a minor
+compromise in velocity error.
+Qualitative Experimental Analysis. Fig. 3 contrasts our
+results with state-of-the-art competing methods under Pro-
+tocol S1. Across diverse motions—deep squats, step-
+ping transitions, in-place turns, and rapid arm swings—our
+method recovers more faithful lower-body articulation and
+contact behavior. The gains are most pronounced in actions
+with large joint excursions (e.g., squats, climbs), where
+we maintain realistic hip hinge and knee flexion without
+pelvis drift. Under high dynamics (running, jumping), our
+model sustains coherent stride timing and aerial–landing
+phases with markedly fewer foot slides and inter-frame
+flips; limb orientations evolve smoothly with visibly re-
+duced jitter. Specifically, relative to RPM, our approach
+28419
+FisherPoser GT
+Ours-AR
+Figure 5. Visualization results for ablation study.
+shows advantages in both upper- and lower-limb pose es-
+timation across high-dynamic sequences. Compared with
+HMDPoser and SAGE, it produces more plausible lower-
+limb estimates in squatting and jumping. We attribute these
+effects to the synergy between region-wise conditioning and
+the limb-hierarchical Matrix–Fisher decoder: the former
+concentrates capacity where observations are informative,
+while the latter propagates parent pose and calibrated un-
+certainty along kinematic chains. This combination miti-
+gates overconfident leg estimates from head–hand signals
+alone, yielding temporally consistent lower-body motion
+and aligning with our quantitative gains.
+Fig. 4 further shows the predicted uncertainty of the left-
+knee rotation over time. We use the predicted the Matrix-
+Fisher parameter to calculate the concentration, where the
+curve in Fig. 4 shows a concentration magnitude (smaller
+represents lower concentration, higher uncertainty). The
+snapshots above mark representative frames, where we
+draw multiple pose hypotheses by sampling the left-knee
+rotation from the predicted Fisher and rendering the cor-
+responding skeletons. During complex, contact-changing
+phases (④ and ⑤), concentration drops and the samples
+disperse, reflecting genuine ambiguity in the observations.
+In steadier phases, rises and the samples collapse around
+a single mode. The tight coupling between concentra-
+tion dips/peaks and the spread of samples indicates that
+our modeling produces calibrated, motion-dependent uncer-
+tainty rather than over- or under-confident predictions.
+4.2. Ablation Study
+Effectiveness of the Components of our Model. We con-
+ducted ablation studies comparing our method with three
+variants: Ours-AR: an auto-regressive transformer-based
+network; Ours-Fisher: The baseline using a Matrix–Fisher
+output head trained with NLL loss; ③ Ours-Fisher-Part:
+adding five region tokens for per-region Fisher regression;
+Ours: the full model adding limb-level parent-to-child re-
+finement. As showing in Tab. 2, moving from Ours-AR
+to Ours-Fisher already lowers errors and stabilizes trajec-
+tories, showing the benefit of calibrated, geometry-aware
+uncertainty. Introducing region-wise conditioning (Ours-
+Fisher-Part) provides the largest gain by matching capacity
+to heterogeneous observability across torso, arms, and legs.
+The final limb-hierarchical refinement further improves all
+metrics, indicating that uncertainty modeling, regional to-
+Table 2. The ablation study on our method.
+MPJRE(°) MPJPE(mm) MPJVE(mm/s) Jitter
+Ours-AR 4.26 63.2 240.7 8.06
+Ours-Fisher 2.87 38.7 238.4 5.64
+Ours-Fisher-Part 2.13 30.9 207.8 5.36
+Ours 2.04 29.7 205.2 5.33
+Table 3. The ablation study on the uncertainty estimation.
+MPJRE(°) MPJPE(mm) MPJVE(mm/s) Jitter
+Ours-AR 4.26 63.2 240.7 8.06
+Ours-AR-Gaussian 3.03 45.0 292.0 20.73
+Ours 2.04 29.7 205.2 5.33
+kens, and parent-to-child propagation are complementary
+and jointly responsible for the overall performance. Some
+visualization results are shown in Fig. 5.
+Effectiveness of the Uncertainty Estimation. To probe
+how the parameterization of uncertainty affects perfor-
+mance, we keep the causal Transformer fixed and vary only
+the uncertainty head: (i) a deterministic regressor (Ours-
+AR), (ii) a heteroscedastic Gaussian head in axis–angle
+space (Ours-AR-Gaussian), and (iii) Matrix–Fisher head
+on SO(3) with region tokens and limb refinement (Ours).
+As shown in Tab. 3, introducing uncertainty is beneficial,
+as Gaussian NLL lowers rotation and position errors rel-
+ative to the deterministic baseline; however, it noticeably
+harms temporal stability (higher MPJVE and jitter), indi-
+cating a mismatch between Euclidean parameterization and
+rotation geometry. Our method overcomes this trade-off:
+it achieves higher accuracy while restoring smooth motion
+by modeling rotations on SO(3) and separating the mode
+from axis-wise concentration. Moreover, the comparison
+with Ours-Fisher in Tab. 2, a variant that differs only by the
+Matrix–Fisher output head, further confirms that manifold-
+aware uncertainty yields better-calibrated predictions.
+5. Conclusion
+This paper presented a probabilistic framework for full-
+body motion estimation from sparse VR observations. By
+predicting Matrix–Fisher distributions per joint on SO(3)
+and training via likelihood on the rotation manifold, our
+approach makes ambiguity explicit and yields calibrated,
+joint-level confidence while remaining efficient. Coupled
+with causal temporal encoding of head–hand streams, it
+produces kinematically coherent and temporally stable mo-
+tion under severe under-observation. Ablation studies cor-
+roborate the effectiveness of our design and indicate practi-
+cal deployment potential.
+Limitation and future works. Auto-regressive architec-
+tures may exhibit drift failures in long-term series inference.
+Future work includes richer anchors (contacts and terrain
+cues); Extending to real-world, long-horizon sessions with
+latency and drift, and to interaction scenarios with objects,
+will further validate the approach.
+28420
+References
+[1] Ijaz Akhter and Michael J Black. Pose-conditioned joint an-
+gle limits for 3d human pose reconstruction. In Proceed-
+ings of the IEEE conference on computer vision and pattern
+recognition, pages 1446–1455, 2015. 6
+[2] Sadegh Aliakbarian, Pashmina Cameron, Federica Bogo,
+Andrew Fitzgibbon, and Thomas J Cashman. Flag: Flow-
+based 3d avatar generation from sparse observations. In Pro-
+ceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition, pages 13253–13262, 2022. 3
+[3] Sadegh Aliakbarian, Fatemeh Saleh, David Collier, Pash-
+mina Cameron, and Darren Cosker. Hmd-nemo: Online
+3d avatar motion generation from sparse observations. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, pages 9622–9631, 2023. 1, 2
+[4] German Barquero, Nadine Bertsch, Manojkumar Marram-
+reddy, Carlos Chacón, Filippo Arcadu, Ferran Rigual,
+Nicky Sijia He, Cristina Palmero, Sergio Escalera, Yuting
+Ye, et al. From sparse signal to smooth motion: Real-time
+motion generation with rolling prediction models. In Pro-
+ceedings of the Computer Vision and Pattern Recognition
+Conference, pages 1850–1860, 2025. 1, 6, 7
+[5] Rongyu Chen, Linlin Yang, and Angela Yao. Mhentropy:
+Entropy meets multiple hypotheses for pose and shape re-
+covery. In Proceedings of the IEEE/CVF International Con-
+ference on Computer Vision, pages 14840–14849, 2023. 3
+[6] Peng Dai, Yang Zhang, Tao Liu, Zhen Fan, Tianyuan Du,
+Zhuo Su, Xiaozheng Zheng, and Zeming Li. Hmd-poser:
+On-device real-time human motion tracking from scalable
+sparse observations. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition, pages
+874–884, 2024. 2, 3, 6, 7
+[7] Haowen Deng, Mai Bui, Nassir Navab, Leonidas Guibas,
+Slobodan Ilic, and Tolga Birdal. Deep bingham networks:
+Dealing with uncertainty and ambiguity in pose estima-
+tion. International Journal of Computer Vision, 130(7):
+1627–1654, 2022. 3
+[8] Andrea Dittadi, Sebastian Dziadzio, Darren Cosker, Ben
+Lundell, Thomas J Cashman, and Jamie Shotton. Full-
+body motion from a single head-mounted device: Generat-
+ing smpl poses from partial observations. In Proceedings
+of the IEEE/CVF International Conference on Computer Vi-
+sion, pages 11687–11697, 2021. 3
+[9] Yuming Du, Robin Kips, Albert Pumarola, Sebastian Starke,
+Ali Thabet, and Artsiom Sanakoyeu. Avatars grow legs:
+Generating smooth human motion from sparse tracking in-
+puts with diffusion model. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 481–490, 2023. 1, 3, 6, 7
+[10] Zhen Fan, Peng Dai, Zhuo Su, Xu Gao, Zheng Lv, Jiarui
+Zhang, Tianyuan Du, Guidong Wang, and Yang Zhang.
+Emhi: A multimodal egocentric human motion dataset with
+hmd and body-worn imus. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, pages 2879–2887, 2025. 2
+[11] Han Feng, Wenchao Ma, Quankai Gao, Xianwei Zheng, Nan
+Xue, and Huijuan Xu. Stratified avatar generation from
+sparse observations. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition, pages
+153–163, 2024. 1, 3, 6, 7
+[12] Saeed Ghorbani, K Mahdaviani, Anne Thaler, K Kording, DJ
+Cook, G Blohm, and NF Troje. Movi: A large multipurpose
+motion and video dataset. arxiv 2020. CoRR, 9, 2020. 6
+[13] Igor Gilitschenski, Roshni Sahoo, Wilko Schwarting,
+Alexander Amini, Sertac Karaman, and Daniela Rus. Deep
+orientation uncertainty learning based on a bingham loss. In
+International conference on learning representations, 2019.
+3
+[14] Jia Gong, Lin Geng Foo, Zhipeng Fan, Qiuhong Ke, Hos-
+sein Rahmani, and Jun Liu. Diffpose: Toward more reliable
+3d pose estimation. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition, pages
+13041–13051, 2023. 3
+[15] Yinghao Huang, Manuel Kaufmann, Emre Aksan, Michael J
+Black, Otmar Hilliges, and Gerard Pons-Moll. Deep inertial
+poser: learning to reconstruct human pose from sparse iner-
+tial measurements in real time. ACM Trans. Graph. (TOG),
+37(6):1–15, 2018. 1, 2
+[16] Biao Jiang, Xin Chen, Wen Liu, Jingyi Yu, Gang Yu, and
+Tao Chen. Motiongpt: Human motion as a foreign lan-
+guage. Advances in Neural Information Processing Systems,
+36:20067–20079, 2023. 6
+[17] Jiaxi Jiang, Paul Streli, Huajian Qiu, Andreas Fender, Larissa
+Laich, Patrick Snape, and Christian Holz. Avatarposer: Ar-
+ticulated full-body pose tracking from sparse motion sens-
+ing. In European conference on computer vision, pages 443–
+460. Springer, 2022. 1, 2, 6, 7
+[18] Jiaxi Jiang, Paul Streli, Manuel Meier, and Christian Holz.
+Egoposer: Robust real-time egocentric pose estimation from
+sparse and intermittent observations everywhere. In Eu-
+ropean Conference on Computer Vision, pages 277–294.
+Springer, 2025. 2
+[19] Yifeng Jiang, Yuting Ye, Deepak Gopinath, Jungdam Won,
+Alexander W Winkler, and C Karen Liu. Transformer inertial
+poser: Real-time human motion reconstruction from sparse
+imus with simultaneous terrain generation. In SIGGRAPH
+Asia 2022 Conference Papers(SA’ 22), pages 1–9, 2022. 2
+[20] Manuel Kaufmann, Yi Zhao, Chengcheng Tang, Lingling
+Tao, Christopher Twigg, Jie Song, Robert Wang, and Otmar
+Hilliges. Em-pose: 3d human pose estimation from sparse
+electromagnetic trackers. In Proceedings of the IEEE/CVF
+international conference on computer vision(ICCV), pages
+11510–11520, 2021. 1
+[21] Alex Kendall and Yarin Gal. What uncertainties do we need
+in bayesian deep learning for computer vision? Advances in
+neural information processing systems, 30, 2017. 3
+[22] Min Kim, Younho Jeon, and Sungho Jo. Probabilistic iner-
+tial poser (probip): Uncertainty-aware human motion mod-
+eling from sparse inertial sensors. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision,
+pages 25893–25902, 2025. 3, 4
+[23] Sunmin Lee, Sebastian Starke, Yuting Ye, Jungdam Won,
+and Alexander Winkler. Questenvsim: Environment-aware
+simulated motion tracking from sparse sensors. In ACM SIG-
+28421
+GRAPH 2023 Conference Proceedings, pages 1–9, 2023. 2,
+3
+[24] Chen Li and Gim Hee Lee. Generating multiple hypotheses
+for 3d human pose estimation with mixture density network.
+In Proceedings of the IEEE/CVF conference on computer vi-
+sion and pattern recognition, pages 9887–9895, 2019. 3
+[25] Han Li, Bowen Shi, Wenrui Dai, Hongwei Zheng, Botao
+Wang, Yu Sun, Min Guo, Chenglin Li, Junni Zou, and
+Hongkai Xiong. Pose-oriented transformer with uncertainty-
+guided refinement for 2d-to-3d human pose estimation. In
+Proceedings of the AAAI Conference on Artificial Intelli-
+gence, pages 1296–1304, 2023. 3
+[26] Wenhao Li, Hong Liu, Hao Tang, Pichao Wang, and Luc
+Van Gool. Mhformer: Multi-hypothesis transformer for 3d
+human pose estimation. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 13147–13156, 2022. 3
+[27] Matthew Loper, Naureen Mahmood, and Michael J Black.
+Mosh: motion and shape capture from sparse markers. ACM
+Trans. Graph., 33(6):220–1, 2014. 6
+[28] Eyes JAPAN Co. Ltd. Eyes japan mocap dataset. 6
+[29] Naureen Mahmood, Nima Ghorbani, Nikolaus F Troje, Ger-
+ard Pons-Moll, and Michael J Black. Amass: Archive
+of motion capture as surface shapes. In Proceedings of
+the IEEE/CVF international conference on computer vision,
+pages 5442–5451, 2019. 6
+[30] Viktor Makoviychuk, Lukasz Wawrzyniak, Yunrong Guo,
+Michelle Lu, Kier Storey, Miles Macklin, David Hoeller,
+Nikita Rudin, Arthur Allshire, Ankur Handa, et al. Isaac
+gym: High performance gpu-based physics simulation for
+robot learning. arXiv preprint arXiv:2108.10470, 2021. 3
+[31] Christian Mandery, Ömer Terlemez, Martin Do, Nikolaus
+Vahrenkamp, and Tamim Asfour. The kit whole-body hu-
+man motion database. In 2015 International Conference on
+Advanced Robotics (ICAR), pages 329–336. IEEE, 2015. 6
+[32] David Mohlin, Josephine Sullivan, and Gérald Bianchi.
+Probabilistic orientation estimation with matrix fisher distri-
+butions. Advances in Neural Information Processing Sys-
+tems, 33:4884–4893, 2020. 3
+[33] Meinard Müller, Tido Röder, Michael Clausen, Bernhard
+Eberhardt, Björn Krüger, and Andreas Weber. Mocap
+database hdm05. Institut für Informatik II, Universität Bonn,
+2(7), 2007. 6
+[34] Kieran Murphy, Carlos Esteves, Varun Jampani, Srikumar
+Ramalingam, and Ameesh Makadia. Implicit-pdf: Non-
+parametric representation of probability distributions on the
+rotation manifold. Proc. Int. Conf. Mach. Learn., page
+7882–7893, 2021. 3
+[35] Jose Luis Ponton, Haoran Yun, Andreas Aristidou, Carlos
+Andujar, and Nuria Pelechano. Sparseposer: Real-time full-
+body motion reconstruction from sparse data. ACM Trans-
+actions on Graphics, 43(1):1–14, 2023. 2, 3
+[36] Jose Luis Ponton, Eduard Pujol, Andreas Aristidou, Car-
+los Andujar, and Nuria Pelechano. Dragposer: Motion re-
+construction from variable sparse tracking signals via latent
+space optimization. arXiv preprint arXiv:2406.14567, 2024.
+2, 3
+[37] Akash Sengupta, Ignas Budvytis, and Roberto Cipolla. Hi-
+erarchical kinematic probability distributions for 3d human
+shape and pose estimation from images in the wild. In Pro-
+ceedings of the IEEE/CVF international conference on com-
+puter vision, pages 11219–11229, 2021. 2
+[38] Wenkang Shan, Zhenhua Liu, Xinfeng Zhang, Zhao Wang,
+Kai Han, Shanshe Wang, Siwei Ma, and Wen Gao.
+Diffusion-based 3d human pose estimation with multi-
+hypothesis aggregation. In Proceedings of the IEEE/CVF
+International Conference on Computer Vision, pages 14761–
+14771, 2023. 3
+[39] Leonid Sigal, Alexandru O Balan, and Michael J Black. Hu-
+maneva: Synchronized video and motion capture dataset and
+baseline algorithm for evaluation of articulated human mo-
+tion. International journal of computer vision, 87(1):4–27,
+2010. 6
+[40] Jiangnan Tang, Jingya Wang, Kaiyang Ji, Lan Xu, Jingyi Yu,
+and Ye Shi. A unified diffusion framework for scene-aware
+human motion estimation from sparse signals. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, pages 21251–21262, 2024. 3
+[41] Guy Tevet, Sigal Raab, Brian Gordon, Yonatan Shafir,
+Daniel Cohen-Or, and Amit H Bermano. Human motion dif-
+fusion model. International Conference on Learning Repre-
+sentations (ICLR), 2023. 6
+[42] Nikolaus F Troje. Decomposing biological motion: A frame-
+work for analysis and synthesis of human gait patterns. Jour-
+nal of vision, 2(5):2–2, 2002. 6
+[43] Matthew Trumble, Andrew Gilbert, Charles Malleson,
+Adrian Hilton, and John Collomosse. Total capture: 3d
+human pose estimation fusing video and inertial sensors.
+In Proceedings of 28th British Machine Vision Conference,
+pages 1–13, 2017.
+[44] Carnegie Mellon University. Cmu mocap dataset. 6
+[45] Simon Fraser University and National University of Singa-
+pore. Sfu motion capture database. 6
+[46] Tom Van Wouwe, Seunghwan Lee, Antoine Falisse, Scott
+Delp, and C Karen Liu. Diffusionposer: Real-time human
+motion reconstruction from arbitrary sparse sensors using
+autoregressive diffusion. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 2513–2523, 2024. 2
+[47] Jian Wang, Rishabh Dabral, Diogo Luvizon, Zhe Cao,
+Lingjie Liu, Thabo Beeler, and Christian Theobalt. Ego4o:
+Egocentric human motion capture and understanding from
+multi-modal input. In Proceedings of the Computer Vision
+and Pattern Recognition Conference, pages 22668–22679,
+2025. 1
+[48] Tom Wehrbein, Marco Rudolph, Bodo Rosenhahn, and Bas-
+tian Wandt. Probabilistic monocular 3d human pose es-
+timation with normalizing flows. In Proceedings of the
+IEEE/CVF international conference on computer vision,
+pages 11199–11208, 2021. 3
+[49] Alexander Winkler, Jungdam Won, and Yuting Ye. Quest-
+sim: Human motion tracking from sparse sensors with simu-
+lated avatars. In SIGGRAPH Asia 2022 Conference Papers,
+pages 1–8, 2022. 2, 3
+28422
+[50] Yinghao Wu, chaoran wang, Lu Yin, Shihui Guo, and Yipeng
+Qin. Accurate and steady inertial pose estimation through
+sequence structure learning and modulation. In The Thirty-
+eighth Annual Conference on Neural Information Processing
+Systems, 2024. 2
+[51] Songpengcheng Xia, Yu Zhang, Zhuo Su, Xiaozheng Zheng,
+Zheng Lv, Guidong Wang, Yongjie Zhang, Qi Wu, Lei Chu,
+and Ling Pei. Envposer: Environment-aware realistic human
+motion estimation from sparse observations with uncertainty
+modeling. In Proceedings of the Computer Vision and Pat-
+tern Recognition Conference, pages 1839–1849, 2025. 1, 6
+[52] Yuan Xu, Xiaoxuan Ma, Jiajun Su, Wentao Zhu, Yu Qiao,
+and Yizhou Wang. Scorehypo: Probabilistic human mesh
+estimation with hypothesis scoring. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 979–989, 2024. 3
+[53] Xueyuan Yang, Chao Yao, and Xiaojuan Ban. Spatial-related
+sensors matters: 3d human motion reconstruction assisted
+with textual semantics. In Proceedings of the AAAI Confer-
+ence on Artificial Intelligence, pages 10225–10233, 2024. 3
+[54] Xinyu Yi, Yuxiao Zhou, and Feng Xu. Transpose: Real-time
+3d human translation and pose estimation with six inertial
+sensors. ACM Transactions On Graphics (TOG), 40(4):1–
+13, 2021. 2
+[55] Xinyu Yi, Yuxiao Zhou, Marc Habermann, Soshi Shimada,
+Vladislav Golyanik, Christian Theobalt, and Feng Xu. Phys-
+ical inertial poser (pip): Physics-aware real-time human mo-
+tion tracking from sparse inertial sensors. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition(CVPR), pages 13167–13178, 2022. 1
+[56] Zhengdi Yu, Simone Foti, Linguang Zhang, Amy Zhao,
+Cem Keskin, Stefanos Zafeiriou, and Tolga Birdal. Geomet-
+ric neural distance fields for learning human motion priors.
+arXiv preprint arXiv:2509.09667, 2025. 3
+[57] Yanjie Ze, Siheng Zhao, Weizhuo Wang, Angjoo Kanazawa,
+Rocky Duan, Pieter Abbeel, Guanya Shi, Jiajun Wu, and
+C Karen Liu. Twist2: Scalable, portable, and holis-
+tic humanoid data collection system. arXiv preprint
+arXiv:2511.02832, 2025. 1
+[58] Yufei Zhang, Hanjing Wang, Jeffrey O Kephart, and Qiang
+Ji. Body knowledge and uncertainty modeling for monoc-
+ular 3d human body reconstruction. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision,
+pages 9020–9032, 2023. 3
+[59] Yu Zhang, Songpengcheng Xia, Lei Chu, Jiarui Yang, Qi
+Wu, and Ling Pei. Dynamic inertial poser (dynaip): Part-
+based motion dynamics learning for enhanced human pose
+estimation with sparse inertial sensors. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 1889–1899, 2024. 2, 3
+[60] Shuting Zhao, Linxin Bai, Liangjing Shao, Ye Zhang, and
+Xinrong Chen. Ssd-poser: Avatar pose estimation with state
+space duality from sparse observations. In Proceedings of
+the 2025 International Conference on Multimedia Retrieval,
+pages 1849–1857, 2025. 3
+[61] Shuting Zhao, Zeyu Xiao, and Xinrong Chen. Kinest: A
+kinematics-guided spatiotemporal state space model for hu-
+man motion tracking from sparse signals. Proceedings of the
+AAAI Conference on Artificial Intelligence, 2025. 1, 3
+[62] Xiaozheng Zheng, Zhuo Su, Chao Wen, Zhou Xue, and
+Xiaojie Jin. Realistic full-body tracking from sparse ob-
+servations via joint-level modeling. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision,
+pages 14678–14688, 2023. 1, 2, 3, 6, 7
+28423
+

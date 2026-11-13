@@ -1,0 +1,998 @@
+Enhancing Long Video Understanding via Hierarchical Event-Based Memory
+Dingxin Cheng1,2*, Mingda Li1, †
+, Jingyu Liu1
+, Yongxin Guo3
+,
+Bin Jiang2, †
+, Qingbin Liu1
+, Xi Chen1
+, Bo Zhao1
+1
+Tencent PCG 2
+Shandong University
+3
+School of Science and Engineering, The Chinese University of Hong Kong (Shenzhen)
+Abstract
+Recently, integrating visual foundation models into large lan-
+guage models (LLMs) to form video understanding systems
+has attracted widespread attention. Most of the existing mod-
+els compress diverse semantic information within the whole
+video and feed it into LLMs for content comprehension.
+While this method excels in short video understanding, it may
+result in a blend of multiple event information in long videos
+due to coarse compression, which causes information redun-
+dancy. Consequently, the semantics of key events might be
+obscured within the vast information that hinders the model’s
+understanding capabilities. To address this issue, we propose
+a Hierarchical Event-based Memory-enhanced LLM (HEM-
+LLM) for better understanding of long videos. Firstly, we de-
+sign a novel adaptive sequence segmentation scheme to di-
+vide multiple events within long videos. In this way, we can
+perform individual memory modeling for each event to es-
+tablish intra-event contextual connections, thereby reducing
+information redundancy. Secondly, while modeling current
+event, we compress and inject the information of the previ-
+ous event to enhance the long-term inter-event dependencies
+in videos. Finally, we perform extensive experiments on var-
+ious video understanding tasks and the results show that our
+model achieves state-of-the-art performances.
+Introduction
+The emergence of Large Language Models (LLMs) (Tou-
+vron et al. 2023; Chiang et al. 2023) has brought about
+revolutionary changes in the field of NLP, with their ex-
+ceptional understanding and reasoning abilities enabling the
+generation of high-quality language texts across various do-
+mains. Nonetheless, to genuinely realize the universality of
+the model, it needs to be capable of integrating and under-
+standing data stemming from multiple modalities, includ-
+ing images, videos, and audio. In response to this require-
+ment, some researchers aim to harness the potent capabilities
+of LLMs to concurrently integrate information from multi-
+ple modalities, thereby addressing a variety of multimodal
+tasks (Xu et al. 2023; Ye et al. 2024). For instance, video
+understanding (Islam and Bertasius 2022; Islam et al. 2023)
+serves as a prime example of those multimodal tasks.
+To address video understanding tasks, most existing mod-
+els primarily employ visual foundation models (Fang et al.
+*Work done during internship at Tencent, †
+Corresponding Au-
+thor.
+2023) to extract visual tokens, which are then directly fed
+into LLMs to generate inferential outcomes. However, this
+can be problematic in that some methods (Lin et al. 2023;
+Li et al. 2023b) only input a smaller number of frames
+into LLMs for video comprehension due to the limitations
+of the LLMs context input length and computational re-
+sources. While this practice yields satisfactory results for
+short videos, it may lead to information loss for longer
+videos, proving detrimental to the temporal modeling of the
+video content. To cope with this, some methods (He et al.
+2024; Song et al. 2024a,b) employ token compression to si-
+multaneously process a larger number of frames in order to
+compensate for information loss. However, in longer videos,
+such coarse compression may lead to the amalgamation of
+various event information, resulting in information redun-
+dancy. Consequently, the semantics of key events may be ob-
+scured by the overwhelming amount of information, thereby
+affecting the model’s comprehension capabilities.
+To address the aforementioned challenges, we propose a
+Hierarchical Event-based Memory-enhanced LLM (HEM-
+LLM) for better understanding of long videos. Considering
+the diverse event information contained in long videos, it is
+crucial that the model processes each event individually to
+prevent information redundancy. Specifically, we first devise
+a novel adaptive sequence segmentation scheme to partition
+multiple events in long videos. In this way, our model can
+treat each event individually, thereby reducing information
+clutter. Secondly, we introduce event-based local memory to
+model individual events, storing information from histori-
+cal frames within an event to establish intra-event contextual
+connections. Thirdly, while modeling the current event, we
+employ global video memory to compress and inject infor-
+mation from the previous event, so enhancing the long-term
+inter-event dependencies in long videos. Finally, we conduct
+extensive experiments on various video understanding tasks,
+such as video question answering, video captioning, and
+long video activity classification. The results on nine bench-
+mark datasets demonstrate the effectiveness of our model.
+Related Work
+Multi-modal Large Language Models
+Large language models (LLMs) (Chiang et al. 2023; Brown
+2020; Achiam et al. 2023) have exhibited remarkable ca-
+arXiv:2409.06299v1
+[cs.CV]
+10
+Sep
+2024
+pabilities in language comprehension and reasoning re-
+cently, enabling them to generate superior natural lan-
+guage text across various domains. Hence, several re-
+searchers have attempted to exploit the potential of LLMs
+to tackle multimodal tasks by integrating foundational mod-
+els from other modalities with LLMs, thereby construct-
+ing MLLMs (Cheng et al. 2024; Li, Wang, and Jia 2023;
+Li et al. 2024a; Guo et al. 2024) and endowing them with
+multimodal comprehension capabilities. In the image field,
+Flamingo (Alayrac et al. 2022) integrates perceiver resam-
+pler and gated cross-attention layers to establish a con-
+nection between the frozen image encoder and the LLMs.
+BLIP-2 (Li et al. 2023a) introduces a versatile and efficient
+pre-training approach, which initiates vision-language pre-
+training by leveraging a frozen image foundation encoder
+and a frozen large language model. LLaVA (Liu et al. 2024)
+utilizes a straightforward linear layer to map image fea-
+tures into the text embedding space and effectively finetunes
+LLMs using extensive data to enhance performance. In the
+video field, VideoChat (Li et al. 2023b) expands the image
+encoder and empowers LLMs to understand the visual con-
+tent within videos via joint training. Video-ChatGPT (Maaz
+et al. 2023) employs a simple method of average pool-
+ing the frame-level tokens across both spatial and tempo-
+ral dimensions to obtain a video-level tokens. Similarly,
+PLLaVA (Xu et al. 2024) trains a projection layer and uti-
+lizes an adaptive pooling layer to process frame-level to-
+kens into video-level tokens. Following the BLIP-2 strat-
+egy, Video-LLaMA (Zhang, Li, and Bing 2023) further em-
+ploys pre-trained models such as ViT (Fang et al. 2023), Im-
+ageBind (Girdhar et al. 2023), and LLaMA (Touvron et al.
+2023), executing cross-modal bootstrap training within the
+video&audio domain. Video-LLaVA (Lin et al. 2023) uti-
+lizes a pre-aligned encoder to achieve shared projections that
+can adapt to images and videos, consequently promoting
+synergistic training across image and video data. However,
+while the aforementioned models demonstrate excellent per-
+formance in short video understanding, their capabilities for
+comprehending long videos appear to be somewhat limited.
+Long Video Understanding Models
+As the number of long videos in the internet continues to
+grow, the demand for long video understanding models be-
+comes increasingly pressing. Compared to short videos, long
+videos have a longer duration and contain diverse informa-
+tion, making long video understanding a challenging task.
+MIST (Gao et al. 2023a) introduces cascading segment and
+region selection modules, aiming to understand long video
+content while enhancing computational efficiency. In an ef-
+fort to reduce the number of input frames for long videos,
+some researches (Wu et al. 2019; Korbar, Tran, and Torre-
+sani 2019) design various sparse video sampling techniques,
+retaining only the highlighted video frame content. Addi-
+tionally, some works like MovieChat (Song et al. 2024a) and
+MA-LMM (He et al. 2024) integrate the global semantics of
+videos by devising memory bank mechanisms with token
+compression to store long term content information. How-
+ever, as the number of frames in long videos continues to
+increase, their methods constantly compress tokens, which
+can result in various types of information being blended
+together, leading to information redundancy in the mem-
+ory bank. To address the aforementioned issues, we pro-
+pose an adaptive segmentation strategy for video sequences,
+employing local memory banks to store distinct events and
+temporally modeling each event through a global memory
+bank. This strategy aids in mitigating the information redun-
+dancy caused by coarse compression, ultimately augmenting
+the MLLM’s capacity to comprehend the semantics of long-
+term videos.
+Proposed methodology
+We propose a Hierarchical Event-based Memory-enhanced
+LLM for better understanding of long videos. We no longer
+compress the entire long video directly. Instead, we devise
+a novel adaptive sequence segmentation scheme to parti-
+tion multiple events within the long video. Subsequently,
+local memory is utilized to establish intra-event contex-
+tual connections for each event separately. Then, to enhance
+the long-term inter-event dependencies, we introduce global
+memory to compress and inject historical event information,
+promoting the memory modeling of the current event. Fi-
+nally, the well-modeled video tokens are inputted into the
+LLMs for video comprehension. The overall framework of
+the model is shown in Figure 1.
+Adaptive Sequence Segmentation
+Essentially, video sequences consist of consecutive frames.
+Therefore, our model processes the videos in a sequen-
+tial manner to facilitate temporal modeling of videos more
+conveniently. Meanwhile, compared to short videos, long
+videos encompass a more diverse array of scenes and event
+transitions. Capturing these transitions enables the accurate
+segmentation of different scenes and events within the video.
+The transition points between various scenes and events in a
+video are usually accompanied by significant changes in ele-
+ments such as characters, backgrounds, activities, and shots.
+As a result, our model is designed to accurately and effi-
+ciently capture these significant changes.
+Specifically, for a given video sequence V = {vi}
+T
+i=1 ∈
+R3×T ×H×W
+of T frames, we employ token-level cosine
+similarity to capture significant changes between events and
+determine segmentation points. We first perform average
+pooling on the spatial dimensions of the T original frames
+containing RGB channels to integrate the global informa-
+tion of each frame. Next, we calculate the token-level cosine
+similarity Score between pairwise pooled frames to deter-
+mine the magnitude of change between them. Finally, we
+apply TopK filtering to the similarity sequence, selecting
+the top K-1 frames as the segmentation points sj between
+events in the video. Consequently, the video sequence V is
+adaptively partitioned into an event sequence E = {ei}
+K
+i=1,
+where each event consists of a series of frames. The compu-
+tation process is described below:
+V̂ = AdaptiveAvgPool(V ) ∈ R3×T
+(1)
+where AdaptiveAvgPool represents AdaptiveAvgPool2d
+to perform average pooling of spatial dimensional informa-
+Figure 1: (a) Overview of the HEM-LLM. We first sequentially sample video frames and perform adaptive sequence segmenta-
+tion to divide them into individual events. Then, we introduce local memory and global memory to model the temporal context
+for both intra-event and inter-event scenarios. In this way, the HEM-LLM can progressively mine video semantic information
+at multiple granularities to enhance multimodal understanding capabilities. Finally, we employ Q-Former to integrate and com-
+press the visual tokens of each event, concatenate them, and form event-based visual tokens to be fed into the LLMs for text
+generation. (b) Adaptive Sequence Segmentation. To effectively and efficiently perform event-based adaptive segmentation, we
+proceed in three steps: (i) we establish pairwise adjacent frame pairs; (ii) we compute their token-level cosine similarities and
+select the minimum K-1 points as segmentation points; (iii) We split the video at the segmentation points to form K events.
+tion, namely (H, W) → (1, 1).
+Scorei = cos(v̂i, v̂i+1), i ∈ [1, T − 1] (2)
+where cos denotes token-level cosine similarity calculation.
+sj = TopKmin(Score), j ∈ [1, K − 1] (3)
+where TopKmin indicates taking the minimum K−1 points
+in the sequence. We treat sj as the segmentation point of the
+video V , whereby V is divided into K events E.
+Intra-event Local Memory Modeling
+For the event sequence E = {ei}
+K
+i=1 obtained from the
+above computation, we perform independent local memory
+modeling for each event. We utilize a pre-trained visual en-
+coder to perform token extraction for each frame in the event
+ek, yielding ek = {fi}
+n
+i=1 ∈ Rd×n×p
+, p is the number of
+visual tokens per frame. To emphasize the temporal infor-
+mation between frames within an event, we assign frame-
+level positional encoding to each event respectively, thereby
+incorporating timestamp information into each frame. The
+main process can be written as:
+ek = {f1}
+n
+i=1 ∈ Rd×n×p
+, fi = V E(vi) (4)
+where ek means the k-th event, V E represents the pre-
+trained visual encoder and p is the number of visual tokens
+per frame.
+We perform positional encoding of fi to add timestamp
+information as:
+fi = fi + PE(ti) (5)
+where PE denotes the frame-level positional encoding and
+ti indicates the timestamp information of each frame fi.
+Simultaneously, in order to effectively and efficiently
+bridge the semantic gap between video and text, we incor-
+porate local memory into the Q-Former architecture pro-
+posed by BLIP-2, which uses a finite set of query tokens
+Q = {qi}
+32
+i=1 ∈ Rd×32
+to facilitate multimodal representa-
+tion learning. In this, we efficiently store the historical frame
+information in local memory in a concatenated manner to
+form a memory sequence LM = Concat [f1, f2, ..., fn] ∈
+Rd×np
+, which enables query tokens to fully learn the con-
+textual information of the event. The Q-Former comprises
+two components: the self-attention among query tokens and
+the cross-attention between visual tokens and query tokens.
+The calculation process for the self-attention component
+among query tokens is as follows:
+O = SelfAttn(Qq, Q̂k, Q̂v) (6)
+where O ∈ Rd×32
+represents the output of the self-attention
+computation between query tokens. Inspired by (He et al.
+2024), we follow the LM operation to collect the query to-
+kens Q̂ = Concat [Q1, Q2, ..., Qn] ∈ Rd×32n
+at each time
+step for complementing the temporal information between
+the frames of the video sequence.
+The cross-attention component with local memory is de-
+scribed as follows:
+Oc = CrossAttn(Oq, LMk, LMv) (7)
+where Oc ∈ Rd×32
+denotes the final output of the Q-Former.
+We incorporate the Oc of each event as visual tokens into
+LLMs.
+Inter-event Global Memory Modeling
+Since long videos contain more than one event and there
+are temporal relationships between consecutive events, it is
+essential to capture the inter-event long-term dependencies
+for a comprehensive understanding of video semantics. In
+view of this, after completing the local memory modeling
+within each event, we incorporate the events into the global
+memory to better learn the global information of the video.
+This process is shown below:
+GM = Concat
+h
+Q̂1, Q̂2, ..., Q̂N
+i
+(8)
+where GM represents the global memory sequence, N de-
+notes the number of events processed by the model up to
+the current event. Considering the limitations of computa-
+tional resources, we employ token compression from (He
+et al. 2024) to control the number of tokens in GM.
+At the same time, to explore the progressive relationship
+between events, we inject information from the previous
+event while modeling the local memory of the current event.
+Specifically, we adopt GM to replace Q̂ in Equation (6) to
+incorporate historical events into the modeling of the current
+event. Thus, Equation (6) can be reformulated as:
+O = SelfAttn(Qq, GMk, GMv) (9)
+where O ∈ Rd×32
+denotes the output of the self-attention
+among query tokens.
+Text Tokens Generation
+Based on the calculated visual tokens Oc for each event, we
+concatenate them together as the visual tokens Zv for the
+entire long video and integrate them into the LLMs through
+a projection layer. Subsequently, the LLMs perform auto-
+regressive reasoning on the basis of instruction prompts,
+ultimately generating high-quality text tokens Zt. Conse-
+quently, our model can achieve efficient video understand-
+ing with a smaller number of tokens, without being con-
+strained by the LLM’s context input and computational re-
+source limitations. Furthermore, we apply cross entropy loss
+to the reasoning-generated tokens for Self-Supervised Fine-
+Tuning (SFT). The supervision process is as follows:
+Zv = Concat [Oc1, Oc2, ..., OcK] ∈ Rd×32K
+(10)
+where K indicates the number of events in the video.
+Zt = LLM(∆(Zv, Prompts)) (11)
+where ∆ represents the projection layer.
+L = CrossEntropy(Zt, Target) (12)
+where CrossEntropy denotes the cross entropy loss func-
+tion and Target means the target tokens.
+Table 1: Quantitative evaluation for VQA task. The * rep-
+resents the results reproduced in our environment. The best
+performance values are highlighted by bold.
+Method MSRVTT-QA MSVD-QA ActivityNet-QA
+Exact matching : Top-1 Top-5 Top-1 Top-5 Top-1 Top-5
+Flamingo-80B 17.4 - 35.6 - - -
+BLIP-2 9.2 - 18.3 - - -
+FrozenBiLM 16.8 - 32.2 - - -
+mPLUG-2 48.0 - 58.1 - - -
+UMT-L 47.1 - 55.2 - 47.9 -
+mPLUG-Owl2 23.6 - 42.4 - - -
+InstructBLIP 22.1 - 41.8 - - -
+Video-LLaMA 46.5 - 58.3 - 45.5 -
+MA-LMM* 48.3 75.4 60.5 84.0 48.8 69.5
+Ours 49.8 77.0 61.5 85.8 50.6 71.1
+GPT3.5-assisted : Acc. Score Acc. Score Acc. Score
+Video-LLaMA 29.6 1.8 51.6 2.5 12.4 1.1
+VideoChat 45.0 2.5 56.3 2.8 26.5 2.2
+Video-ChatGPT 49.3 2.8 64.9 3.3 35.2 2.7
+Video-LLaVA 59.2 3.5 70.7 3.9 45.3 3.3
+mPLUG-Owl2 46.7 2.9 65.4 3.5 - -
+LLaMA-Adapter 43.8 2.7 54.9 3.1 - -
+Video-LLaMA2 - - 70.9 3.8 50.2 3.3
+LLaMA-VID 57.7 3.2 69.7 3.7 47.4 3.3
+VideoChat2 54.1 3.3 70.0 3.9 49.1 3.3
+VISTA-LLaMA 60.5 3.3 65.3 3.6 48.3 3.3
+LLaVA-NeXT - - 67.8 3.5 53.5 3.2
+Ours 57.7 3.3 71.7 4.0 56.6 3.6
+Experiments
+Datasets and Evaluation
+To comprehensively validate the effectiveness of our pro-
+posed model, we conduct numerous experiments on video
+understanding downstream tasks such as video question an-
+swering, video captioning, and long video activity classifica-
+tion. Additionally, we employ multiple datasets with varying
+video lengths to verify the universality and generalization
+capabilities of our model.
+Video Question Answering. In this task, we conduct ex-
+periments using four datasets of varying lengths. MSVD-
+QA (Xu et al. 2017) and MSRVTT-QA (Xu et al. 2017) are
+two diverse datasets that encompass a wide range of every-
+day life. Their videos have an average duration of 10-15
+seconds. ActivityNet-QA (Yu et al. 2019) is a large-scale
+dataset focused on human activities, with its videos hav-
+ing an average duration of 3 minutes. MovieChat-1K (Song
+et al. 2024a) is a movie-related video understanding dataset,
+with an average duration of approximately 8 minutes. For
+the VQA task, we employ two evaluation methods to re-
+port experimental performance: (1) Exact matching, com-
+monly used for assessing traditional VQA tasks. (2) GPT-
+assisted evaluation, which leverages the powerful capabili-
+ties of LLMs to measure the accuracy of model predictions
+and provides a relative score on a scale of 1-5.
+Video Captioning. We evaluate our experiments using three
+publicly available datasets: MSVD (Chen and Dolan 2011),
+MSRVTT (Xu et al. 2016), and Youcook2 (Zhou, Xu, and
+Corso 2018). Among them, Youcook2 is a large-scale cook-
+ing tutorial dataset with an average video duration of 5.26
+Table 2: Performance comparisons on MovieChat-1K
+Global Mode. The # Frames denotes the number of video
+frames extracted by the model. The best performance values
+are highlighted by bold.
+Method Text Decoder # Frames Accuracy Score
+GIT non-LLM based 6 28.8 1.83
+mPLUG-2 non-LLM based 8 31.7 2.13
+VideoChat LLM based 32 57.8 3.00
+Video-LLaMA LLM based 32 51.7 2.67
+Video-ChatGPT LLM based 100 47.6 2.55
+MovieChat LLM based 2048 62.3 3.23
+MovieChat+ LLM based 2048 71.2 3.51
+Ours LLM based 100 90.6 4.46
+Table 3: Performance comparisons. The M indicates ME-
+TEOR metric and C represents CIDEr metric. The * repre-
+sents the results reproduced in our environment. The best
+performance values are highlighted by bold.
+Method
+MSRVTT MSVD YouCook2
+M C M C M C
+UniVL 28.2 49.9 29.3 52.8 - 127.0
+SwinBERT 29.9 53.8 41.3 120.6 15.6 109.0
+GIT 32.9 73.9 51.1 180.2 17.3 129.8
+VideoCoca - 73.2 - - - 128.0
+Video-LLaMA 32.9 71.6 49.8 175.3 16.5 123.7
+MA-LMM* 32.2 73.8 49.7 178.7 16.8 127.3
+Ours 33.0 76.5 49.8 181.8 17.7 137.2
+minutes. For this task, we report the METEOR (Banerjee
+and Lavie 2005) and CIDEr (Vedantam, Lawrence Zitnick,
+and Parikh 2015) evaluation metrics.
+Long Video Activity Classification. In this downstream
+task, we conduct experiments using two popular datasets,
+namely, Breakfast (Kuehne, Arslan, and Serre 2014) and
+COIN (Tang et al. 2019). Specifically, Breakfast contains
+a series of videos related to breakfast preparation, with an
+average length of 2.7 minutes. COIN is a large-scale video
+analysis dataset focusing on human activities. It collects
+videos from YouTube, covering 12 domains of everyday life,
+with an average video length of 2.36 minutes. For the clas-
+sification task, we report the Top-1 and Top-5 accuracy.
+Implementation Details
+In terms of the visual backbone model, we adopt ViT-
+G/14 (Dosovitskiy et al. 2021) from EVA-CLIP (Fang et al.
+2023) to extract visual tokens, and we utilize Qformer from
+InstructBLIP (Dai et al. 2023) to integrate and compress
+visual tokens. In the language model aspect, we employ
+Vicuna-7B (Chiang et al. 2023) for text reasoning. All ex-
+periments are conducted on 8 ATN 910B NPUs.
+Experimental Results
+Video Question Answering. To conduct a comprehensive
+comparison with existing models, we perform extensive ex-
+periments on four open-ended datasets employing two eval-
+Table 4: Performance comparisons. The * represents the re-
+sults reproduced in our environment. We report the Top-1
+and Top-5 accuracy. The best performance values are high-
+lighted by bold.
+Method
+Breakfast COIN
+Top-1 Top-5 Top-1 Top-5
+TSN - - 73.4 -
+VideoGraph 69.5 - - -
+Timeception 71.3 - - -
+GHRM 75.5 - - -
+D-Sprv 89.9 - 90.0 -
+ViS4mer 88.2 - 88.4 -
+TranS4mer 90.3 - 89.3 -
+S5 90.7 - 90.8 -
+MA-LMM* 91.8 99.4 92.6 96.6
+Ours 95.8 99.2 94.4 98.3
+uation ways. The results are shown in Table 1 and Ta-
+ble 2. On the MSRVTT-QA, MSVD-QA, and ActivityNet-
+QA datasets, our model demonstrates superior performance
+compared to existing models (Yang et al. 2022; Li et al.
+2023c; Gao et al. 2023b) under both evaluation methods.
+For instance, our model achieves gains of 3.6%, 1.7%,
+and 7.5% on the three datasets, respectively, compared to
+VideoChat2 (Li et al. 2024b). This indicates that our model
+can more accurately extract the semantic information from
+videos to enhance its understanding capabilities. On the
+MovieChat-1K, our model achieves a 19.4% improvement
+over MovieChat+ (Song et al. 2024b) when only sam-
+pling 100 frames, further validating the effectiveness of our
+model.
+Remarkably, as the video duration increases, the gains
+achieved by our model also become more substantial, in-
+dicating that our model has good generalization for a wide
+range of video lengths. At the same time, this also validates
+that our model can accurately segment the individual events
+in long videos and effectively establish the intra-event and
+inter-event temporal context relationships.
+Video Captioning. To further validate the text generation
+capabilities of our model, we perform extensive experiments
+on three classic video captioning datasets, namely MSVD,
+MSRVTT, and YouCook2. The experimental results can be
+found in Table 3. Our model outperforms existing mod-
+els (Wang et al. 2022; Yan et al. 2022; Lin et al. 2022a;
+Luo et al. 2020) on both the METEOR and CIDEr eval-
+uation metrics. Moreover, compared to the recent VideoL-
+LaMA (Zhang, Li, and Bing 2023) and MA-LMM (He et al.
+2024), which also adopt LLMs as their language reasoning
+models, our model significantly surpasses them on all evalu-
+ation metrics. These results demonstrate that our model pos-
+sesses strong video understanding abilities and can generate
+high-quality captions.
+Long Video Activity Classification. For classification
+tasks, instead of having the model predict scores within a
+Table 5: The results of the ablation study on Breakfast. The
+best performance values are highlighted by bold.
+Model Local Global ASS Top-1
+1 % % % 74.6
+2 ! % % 91.0
+3 ! ! % 94.1
+4 ! ! ! 95.8
+Table 6: Results of calculating cosine similarity using dif-
+ferent forms of tokens. The top-2 performance values are
+highlighted by bold and underline, respectively.
+Method
+Breakfast MSVD-QA
+Top-1 Top-1
+ViT Tokens+Avgpool 92.4 61.2
+ViT CLS Token 91.3 61.3
+Original Image+Avgpool 95.8 61.5
+Linear+Sigmoid 94.7 60.9
+closed set of class labels, we make the model generate open-
+ended labels, which closely aligns with the practical re-
+quirements of real-world applications. We conduct numer-
+ous experiments on Breakfast and COIN datasets, and the
+results are presented in Table 4. The results show that our
+model achieves a 4% and 1.8% improvement in the Top-1
+accuracy metric compared to the existing the state-of-the-art
+model on the two datasets, respectively. Compared to other
+models (Wang et al. 2023; Hussein, Gavves, and Smeulders
+2019a; Lin et al. 2022b; Zhou et al. 2021; Wang et al. 2018;
+Hussein, Gavves, and Smeulders 2019b), our model also has
+significant advantages. This not only fully validates the ef-
+fectiveness of our model but also highlights the importance
+of segmenting multiple events in long videos and establish-
+ing their long-term dependency relationships.
+Ablation Studies
+In this section, we conduct a comprehensive ablation anal-
+ysis of the various components of HEM-LLM to ensure the
+completeness of the experiments. We perform extensive ex-
+periments on the Breakfast and MSVD-QA datasets and re-
+port Top-1 and Top-5 accuracy as research metrics.
+Analysis of the validity of individual components. We
+perform an ablation analysis of the individual components
+proposed in this paper. The experimental results are shown
+in Table 5, where Local represents Intra-event Local Mem-
+ory Modeling, Global denotes Inter-event Global Memory
+Modeling, and ASS means Adaptive Sequence Segmenta-
+tion. The results demonstrate that as different components
+are successively incorporated, the Top-1 accuracy metric
+continuously improves, showing a positive correlation with
+the addition of different components. This validates the
+Figure 2: The study on the number of event segments. The
+Mean represents the average of Top-1 and Top-5 accuracy.
+effectiveness of the proposed components and highlights
+the value and necessity of event segmentation and multi-
+granular memory modeling for long videos.
+Investigation of calculating cosine similarity using differ-
+ent forms of tokens. During the adaptive sequence segmen-
+tation process in the model, we investigate the form of to-
+kens used to calculate cosine similarity. We adopt the Top-1
+and Top-5 accuracy on the Breakfast as reference metrics.
+The experiment results are shown in Table 6. In table 6,
+Original Image+Avgpool represents visual tokens formed by
+applying average pooling on the spatial dimensions of the
+original image with RGB channels. ViT Tokens+Avgpool
+implies that the original image is first pre-processed with
+ViT for token extraction and then average pooling is applied.
+ViT CLS Token denotes the CLS Token encoded by the ViT
+model. As mentioned above, cosine similarity is used to ob-
+tain segmentation points. Furthermore, we also explore a
+method for the model to autonomously predict segmenta-
+tion points, i.e., using a Linear+Sigmoid structure to predict
+segmentation points in the video sequence. The experimen-
+tal results indicate that employing Original Image+Avgpool
+to form visual tokens and subsequently calculating segmen-
+tation points yields the best performance.
+Study on the number of event segments. To investigate the
+impact of different event segmentation quantities on exper-
+imental performance, we conduct a quantitative study with
+the number of events ranging from 2 to 6, with a step size
+of 1. We perform experiments on the Breakfast, and the re-
+sults are shown in Figure 2. We report three performance
+metrics, namely Top-1, Top-5, and their average. The results
+show that the performance is optimal when the number of
+event segments is 4. Therefore, we set the number of event
+segments on the Breakfast dataset to 4.
+Visualization and Analysis
+To more intuitively validate the accuracy of our proposed
+adaptive sequence segmentation, we perform the case visu-
+alization analysis on the Breakfast. The visualization results
+are shown in Figure 3. In (a), we determined three segmen-
+tation points based on the cosine similarity calculations be-
+tween adjacent frame pairs. According to these points, the
+Figure 3: Two cases of event segmentation on the Breakfast.
+Figure 4: Qualitative analysis of video question answering on MovieChat-1K.
+video can be divided into four event scenes: (i) fill the cup
+with milk, (ii) add coffee powder to the cup, (iii)stir with a
+spoon, and (iv) pour in the milk again. This demonstrates
+that our adaptive sequence segmentation can accurately seg-
+ment videos to assist the model in mining video seman-
+tics at multiple granularities for better understanding of long
+videos. Similarly, (b) of Figure 3 also validates this, demon-
+strating that our method is valuable for long video modeling,
+as it reduces the likelihood of multiple events being mixed
+together. Moreover, we also conduct a qualitative analysis
+of the model on the video question answering task to more
+comprehensively analyze its performance. We adopt MA-
+LMM as a comparison model and perform visualization ex-
+periments on the MovieChat-1K dataset. As shown in Fig-
+ure 4, the results demonstrate that our model exhibits advan-
+tages in time and location-related questions, thus proving its
+effectiveness. Compared to MA-LMM, which compresses
+the entire video, our model first segments events and then
+performs hierarchical memory modeling for intra-event and
+inter-event scenarios. This method reduces the impact of in-
+formation redundancy and enhances the semantics of key in-
+formation, thereby improving the understanding capabilities
+for long videos.
+Conclusion
+In this paper, we propose a Hierarchical Event-based
+Memory-enhanced Large Language Model (HEM-LLM) for
+better understanding of long videos. To learn the seman-
+tics of individual events in long videos more precisely, we
+no longer directly compress the visual tokens of the entire
+long video. Instead, we design a novel adaptive sequence
+segmentation scheme to segment multiple events in long
+videos. This allows our model to handle each event respec-
+tively, thus reducing information confusion. Subsequently,
+we conduct multi-granular memory modeling for intra-event
+and inter-event scenarios to establish long-term dependen-
+cies in long video sequences, thereby enhancing the video
+understanding capabilities of the model. Finally, we carry
+out extensive experiments on various benchmarks of multi-
+ple video understanding tasks, demonstrating the effective-
+ness and universality of our proposed model.
+References
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.;
+Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.;
+Anadkat, S.; et al. 2023. Gpt-4 technical report. arXiv
+preprint arXiv:2303.08774.
+Alayrac, J.-B.; Donahue, J.; Luc, P.; Miech, A.; Barr, I.; Has-
+son, Y.; Lenc, K.; Mensch, A.; Millican, K.; Reynolds, M.;
+et al. 2022. Flamingo: a visual language model for few-shot
+learning. Advances in Neural Information Processing Sys-
+tems (NeurIPS), 35: 23716–23736.
+Banerjee, S.; and Lavie, A. 2005. METEOR: An automatic
+metric for MT evaluation with improved correlation with hu-
+man judgments. In Proceedings of the acl workshop on in-
+trinsic and extrinsic evaluation measures for machine trans-
+lation and/or summarization, 65–72.
+Brown, T. B. 2020. Language models are few-shot learners.
+arXiv preprint ArXiv:2005.14165.
+Chen, D.; and Dolan, W. B. 2011. Collecting highly par-
+allel data for paraphrase evaluation. In Proceedings of the
+49th annual meeting of the Association for Computational
+Linguistics (ACL), 190–200.
+Cheng, Z.; Leng, S.; Zhang, H.; Xin, Y.; Li, X.; Chen,
+G.; Zhu, Y.; Zhang, W.; Luo, Z.; Zhao, D.; et al. 2024.
+VideoLLaMA 2: Advancing Spatial-Temporal Modeling
+and Audio Understanding in Video-LLMs. arXiv preprint
+arXiv:2406.07476.
+Chiang, W.-L.; Li, Z.; Lin, Z.; Sheng, Y.; Wu, Z.; Zhang, H.;
+Zheng, L.; Zhuang, S.; Zhuang, Y.; Gonzalez, J. E.; et al.
+2023. Vicuna: An open-source chatbot impressing gpt-4
+with 90%* chatgpt quality. See https://vicuna. lmsys. org
+(accessed 14 April 2023), 2(3): 6.
+Dai, W.; Li, J.; Li, D.; Tiong, A. M. H.; Zhao, J.; Wang,
+W.; Li, B.; Fung, P.; and Hoi, S. C. H. 2023. InstructBLIP:
+Towards General-purpose Vision-Language Models with In-
+struction Tuning. In Oh, A.; Naumann, T.; Globerson, A.;
+Saenko, K.; Hardt, M.; and Levine, S., eds., Advances in
+Neural Information Processing Systems (NeurIPS).
+Dosovitskiy, A.; Beyer, L.; Kolesnikov, A.; Weissenborn,
+D.; Zhai, X.; Unterthiner, T.; Dehghani, M.; Minderer, M.;
+Heigold, G.; Gelly, S.; Uszkoreit, J.; and Houlsby, N. 2021.
+An Image is Worth 16x16 Words: Transformers for Image
+Recognition at Scale. In Proceedings of the International
+Conference on Learning Representations (ICLR).
+Fang, Y.; Wang, W.; Xie, B.; Sun, Q.; Wu, L.; Wang, X.;
+Huang, T.; Wang, X.; and Cao, Y. 2023. Eva: Exploring
+the limits of masked visual representation learning at scale.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR), 19358–19369.
+Gao, D.; Zhou, L.; Ji, L.; Zhu, L.; Yang, Y.; and Shou, M. Z.
+2023a. Mist: Multi-modal iterative spatial-temporal trans-
+former for long-form video question answering. In Proceed-
+ings of the IEEE/CVF conference on Computer Vision and
+Pattern Recognition (CVPR), 14773–14783.
+Gao, P.; Han, J.; Zhang, R.; Lin, Z.; Geng, S.; Zhou, A.;
+Zhang, W.; Lu, P.; He, C.; Yue, X.; et al. 2023b. Llama-
+adapter v2: Parameter-efficient visual instruction model.
+arXiv preprint arXiv:2304.15010.
+Girdhar, R.; El-Nouby, A.; Liu, Z.; Singh, M.; Alwala, K. V.;
+Joulin, A.; and Misra, I. 2023. Imagebind: One embedding
+space to bind them all. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 15180–15190.
+Guo, Y.; Liu, J.; Li, M.; Tang, X.; Chen, X.; and Zhao,
+B. 2024. VTG-LLM: Integrating Timestamp Knowledge
+into Video LLMs for Enhanced Video Temporal Grounding.
+arXiv preprint arXiv:2405.13382.
+He, B.; Li, H.; Jang, Y. K.; Jia, M.; Cao, X.; Shah, A.;
+Shrivastava, A.; and Lim, S.-N. 2024. Ma-lmm: Memory-
+augmented large multimodal model for long-term video
+understanding. In Proceedings of the IEEE/CVF Confer-
+ence on Computer Vision and Pattern Recognition (CVPR),
+13504–13514.
+Hussein, N.; Gavves, E.; and Smeulders, A. W. 2019a. Time-
+ception for complex action recognition. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, 254–263.
+Hussein, N.; Gavves, E.; and Smeulders, A. W. 2019b.
+Videograph: Recognizing minutes-long human activities in
+videos. arXiv preprint arXiv:1905.05143.
+Islam, M. M.; and Bertasius, G. 2022. Long movie clip clas-
+sification with state-space video models. In European Con-
+ference on Computer Vision, 87–104. Springer.
+Islam, M. M.; Hasan, M.; Athrey, K. S.; Braskich, T.; and
+Bertasius, G. 2023. Efficient movie scene detection using
+state-space transformers. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 18749–18758.
+Korbar, B.; Tran, D.; and Torresani, L. 2019. Scsampler:
+Sampling salient clips from video for efficient action recog-
+nition. In Proceedings of the IEEE/CVF International Con-
+ference on Computer Vision (ICCV), 6232–6242.
+Kuehne, H.; Arslan, A.; and Serre, T. 2014. The lan-
+guage of actions: Recovering the syntax and semantics of
+goal-directed human activities. In Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 780–787.
+Li, F.; Zhang, R.; Zhang, H.; Zhang, Y.; Li, B.; Li, W.; Ma,
+Z.; and Li, C. 2024a. LLaVA-NeXT-Interleave: Tackling
+Multi-image, Video, and 3D in Large Multimodal Models.
+arXiv preprint arXiv:2407.07895.
+Li, J.; Li, D.; Savarese, S.; and Hoi, S. 2023a. Blip-2:
+Bootstrapping language-image pre-training with frozen im-
+age encoders and large language models. In International
+Conference on Machine Learning (ICML), 19730–19742.
+PMLR.
+Li, K.; He, Y.; Wang, Y.; Li, Y.; Wang, W.; Luo, P.; Wang,
+Y.; Wang, L.; and Qiao, Y. 2023b. Videochat: Chat-centric
+video understanding. arXiv preprint arXiv:2305.06355.
+Li, K.; Wang, Y.; He, Y.; Li, Y.; Wang, Y.; Liu, Y.; Wang, Z.;
+Xu, J.; Chen, G.; Luo, P.; et al. 2024b. Mvbench: A com-
+prehensive multi-modal video understanding benchmark. In
+Proceedings of the IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition (CVPR), 22195–22206.
+Li, K.; Wang, Y.; Li, Y.; Wang, Y.; He, Y.; Wang, L.;
+and Qiao, Y. 2023c. Unmasked teacher: Towards training-
+efficient video foundation models. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision
+(ICCV), 19948–19960.
+Li, Y.; Wang, C.; and Jia, J. 2023. Llama-vid: An image
+is worth 2 tokens in large language models. arXiv preprint
+arXiv:2311.17043.
+Lin, B.; Zhu, B.; Ye, Y.; Ning, M.; Jin, P.; and Yuan, L. 2023.
+Video-llava: Learning united visual representation by align-
+ment before projection. arXiv preprint arXiv:2311.10122.
+Lin, K.; Li, L.; Lin, C.-C.; Ahmed, F.; Gan, Z.; Liu, Z.; Lu,
+Y.; and Wang, L. 2022a. Swinbert: End-to-end transformers
+with sparse attention for video captioning. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 17949–17958.
+Lin, X.; Petroni, F.; Bertasius, G.; Rohrbach, M.; Chang, S.-
+F.; and Torresani, L. 2022b. Learning to recognize proce-
+dural activities with distant supervision. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, 13853–13863.
+Liu, H.; Li, C.; Wu, Q.; and Lee, Y. J. 2024. Visual in-
+struction tuning. Advances in Neural Information Process-
+ing Systems (NeurIPS), 36.
+Luo, H.; Ji, L.; Shi, B.; Huang, H.; Duan, N.; Li, T.; Li, J.;
+Bharti, T.; and Zhou, M. 2020. Univl: A unified video and
+language pre-training model for multimodal understanding
+and generation. arXiv preprint arXiv:2002.06353.
+Maaz, M.; Rasheed, H.; Khan, S.; and Khan, F. S.
+2023. Video-chatgpt: Towards detailed video understand-
+ing via large vision and language models. arXiv preprint
+arXiv:2306.05424.
+Song, E.; Chai, W.; Wang, G.; Zhang, Y.; Zhou, H.; Wu, F.;
+Chi, H.; Guo, X.; Ye, T.; Zhang, Y.; et al. 2024a. Moviechat:
+From dense token to sparse memory for long video under-
+standing. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition (CVPR), 18221–
+18232.
+Song, E.; Chai, W.; Ye, T.; Hwang, J.-N.; Li, X.; and Wang,
+G. 2024b. MovieChat+: Question-aware Sparse Mem-
+ory for Long Video Question Answering. arXiv preprint
+arXiv:2404.17176.
+Tang, Y.; Ding, D.; Rao, Y.; Zheng, Y.; Zhang, D.; Zhao, L.;
+Lu, J.; and Zhou, J. 2019. Coin: A large-scale dataset for
+comprehensive instructional video analysis. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition (CVPR), 1207–1216.
+Touvron, H.; Lavril, T.; Izacard, G.; Martinet, X.; Lachaux,
+M.-A.; Lacroix, T.; Rozière, B.; Goyal, N.; Hambro, E.;
+Azhar, F.; et al. 2023. Llama: Open and efficient founda-
+tion language models. arXiv preprint arXiv:2302.13971.
+Vedantam, R.; Lawrence Zitnick, C.; and Parikh, D. 2015.
+Cider: Consensus-based image description evaluation. In
+Proceedings of the IEEE Conference on Computer Vision
+and Pattern Recognition (CVPR), 4566–4575.
+Wang, J.; Yang, Z.; Hu, X.; Li, L.; Lin, K.; Gan, Z.; Liu,
+Z.; Liu, C.; and Wang, L. 2022. Git: A generative image-
+to-text transformer for vision and language. arXiv preprint
+arXiv:2205.14100.
+Wang, J.; Zhu, W.; Wang, P.; Yu, X.; Liu, L.; Omar, M.; and
+Hamid, R. 2023. Selective structured state-spaces for long-
+form video understanding. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 6387–6397.
+Wang, L.; Xiong, Y.; Wang, Z.; Qiao, Y.; Lin, D.; Tang, X.;
+and Van Gool, L. 2018. Temporal segment networks for
+action recognition in videos. IEEE Transactions on Pattern
+Analysis and Machine Intelligence, 41(11): 2740–2755.
+Wu, Z.; Xiong, C.; Ma, C.-Y.; Socher, R.; and Davis, L. S.
+2019. Adaframe: Adaptive frame selection for fast video
+recognition. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition (CVPR), 1278–
+1287.
+Xu, D.; Zhao, Z.; Xiao, J.; Wu, F.; Zhang, H.; He, X.; and
+Zhuang, Y. 2017. Video question answering via gradually
+refined attention over appearance and motion. In Proceed-
+ings of the 25th ACM international conference on Multime-
+dia (ACM MM), 1645–1653.
+Xu, H.; Ye, Q.; Yan, M.; Shi, Y.; Ye, J.; Xu, Y.; Li, C.; Bi,
+B.; Qian, Q.; Wang, W.; et al. 2023. mplug-2: A modularized
+multi-modal foundation model across text, image and video.
+In International Conference on Machine Learning (ICML),
+38728–38748. PMLR.
+Xu, J.; Mei, T.; Yao, T.; and Rui, Y. 2016. Msr-vtt: A large
+video description dataset for bridging video and language.
+In Proceedings of the IEEE conference on Computer Vision
+and Pattern Recognition (CVPR), 5288–5296.
+Xu, L.; Zhao, Y.; Zhou, D.; Lin, Z.; Ng, S. K.; and Feng,
+J. 2024. Pllava: Parameter-free llava extension from im-
+ages to videos for video dense captioning. arXiv preprint
+arXiv:2404.16994.
+Yan, S.; Zhu, T.; Wang, Z.; Cao, Y.; Zhang, M.; Ghosh, S.;
+Wu, Y.; and Yu, J. 2022. VideoCoCa: Video-text modeling
+with zero-shot transfer from contrastive captioners. arXiv
+preprint arXiv:2212.04979.
+Yang, A.; Miech, A.; Sivic, J.; Laptev, I.; and Schmid, C.
+2022. Zero-shot video question answering via frozen bidi-
+rectional language models. Advances in Neural Information
+Processing Systems, 35: 124–141.
+Ye, Q.; Xu, H.; Ye, J.; Yan, M.; Hu, A.; Liu, H.; Qian, Q.;
+Zhang, J.; and Huang, F. 2024. mplug-owl2: Revolution-
+izing multi-modal large language model with modality col-
+laboration. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, 13040–13051.
+Yu, Z.; Xu, D.; Yu, J.; Yu, T.; Zhao, Z.; Zhuang, Y.; and Tao,
+D. 2019. Activitynet-qa: A dataset for understanding com-
+plex web videos via question answering. In Proceedings of
+the AAAI Conference on Artificial Intelligence, volume 33,
+9127–9134.
+Zhang, H.; Li, X.; and Bing, L. 2023. Video-LLaMA: An
+Instruction-tuned Audio-Visual Language Model for Video
+Understanding. In Proceedings of the Conference on Em-
+pirical Methods in Natural Language Processing (EMNLP),
+543–553.
+Zhou, J.; Lin, K.-Y.; Li, H.; and Zheng, W.-S. 2021. Graph-
+based high-order relation modeling for long-term action
+recognition. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, 8984–8993.
+Zhou, L.; Xu, C.; and Corso, J. 2018. Towards automatic
+learning of procedures from web instructional videos. In
+Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 32.
+Appendix
+Investigation of the number of event segments.
+study the impact of different event segmentation quantities
+on experimental performance, we also perform experiments
+on the COIN, and the results are shown in Figure 5. We also
+conduct a quantitative study with the number of events rang-
+ing from 2 to 6, with a step size of 1. We report three perfor-
+mance metrics, namely Top-1, Top-5, and their average. The
+results show that the performance is optimal when the num-
+ber of event segments is 3. Therefore, we set the number of
+event segments on the COIN dataset to 3. Furthermore, for
+the VQA, we set the number of event segments to 2 across
+all datasets. For the video captioning, we set the number of
+event segments to 3 across all datasets.
+Figure 5: The study on the number of event segments. The
+Mean represents the average of Top-1 and Top-5 accuracy.
+Study of different sizes of LLM.
+We conduct experiments on YouCook2 using Vicuna with
+various parameters, as shown in Table 7. The results demon-
+strate that our method outperforms existing models across
+different scales of LLM, which further validates the effec-
+tiveness and versatility of our proposed method. Remark-
+ably, our method outperforms the previous methods which
+utilize 7B LLM when using a parameter count of only 3.7B
+LLM, further demonstrating the superiority of our method.
+Table 7: Results of different sizes of LLM. The F denotes
+frozen parameters and S stands for LoRA fine-tuning.
+LLM Params F/S METEOR CIDEr
+Vicuna
+3.7B F 17.8 130.7
+3.7B S 17.2 131.4
+Vicuna
+5.5B F 17.4 132.9
+5.5B S 17.1 133.2
+Vicuna
+7B F 17.2 133.4
+7B S 17.7 137.2
+Training Strategy
+During the Adaptive Sequence Segmentation process, the
+segmentation points for each video are distinct. Further-
+more, a batch size greater than one leads to improved perfor-
+mance during training. Therefore, we devise two sampling
+schemes to enable a batch size larger than one during the
+training phase. The schemes are shown in Algorithm 1 and
+Algorithm 2, where uniform sampling([0, i], S) denotes
+sampling S frames uniformly over the range [0, i].
+Algorithm 1: Sampling Frames Scheme
+1: Let K = 2, K denotes the number of events. # [1]
+2: Perform segmentation point P calculations. # [B]
+3: S1 = max(P) # [B]
+4: S2 = max(T − P), T denotes the sum of frames. # [B]
+5: for i in len(S1) do
+6: list1 = uniform sampling([0, P[i]], S1i)
+7: image list1.append(list1)
+8: end for
+9: image list.append(image list1)
+10: for j in len(S2) do
+11: list2 = uniform sampling([P[j], T], S2j)
+12: image list2.append(list2)
+13: end for
+14: image list.append(image list2)
+15: return image list
+Algorithm 2: Sampling Frames Scheme
+1: Let K = 2, K denotes the number of events. # [1]
+2: Perform segmentation point P calculations. # [B]
+3: AF = Avg(P)
+4: S1 = AF # [B]
+5: S2 = T − AF, T denotes the sum of frames. # [B]
+6: for i in len(S1) do
+7: list1 = uniform sampling([0, P[i]], AF)
+8: image list1.append(list1)
+9: end for
+10: image list.append(image list1)
+11: for j in len(S2) do
+12: list2 = uniform sampling([P[j], T], AF)
+13: image list2.append(list2)
+14: end for
+15: image list.append(image list2)
+16: return image list
+We perform experiments on several datasets with the
+above two schemes and the results are shown in Table 8. We
+report the Top-1 accuracy for each dataset. Considering the
+overall results, we adopt Algorithm 1 for uniform sampling.
+Table 8: Performance comparisons. The top-2 performance
+values are highlighted by bold and underline, respectively.
+Method Scheme Breakfast COIN
+HEM-LLM
+1 95.8 94.4
+2 94.4 93.3
+Method Scheme MSVD MSRVTT
+HEM-LLM
+1 61.5 49.8
+2 61.6 49.8
+Method Scheme ActivityNet
+HEM-LLM
+1 50.6
+2 50.8
+More Visualization Cases
+To further analyze the model’s performance, we conduct
+more qualitative analyses on the video question answering
+task, as illustrated in Figures 6, 7, and 8. The qualitative ex-
+perimental results provide an intuitive demonstration of the
+advantages of our model compared to other model (He et al.
+2024). The visualization results also corroborate the effec-
+tiveness and versatility of our model.
+Future works
+In the future, we will also extend our model to more datasets
+for video comprehension tasks. We will also explore other
+methods related to memory modeling, including token stor-
+age methods within the memory space, among others, to
+achieve more effective mining of context relationships.
+Figure 6: The case of VQA on the MovieChat-1K.
+Figure 7: The case of VQA on the MovieChat-1K.
+Figure 8: The case of VQA on the MovieChat-1K.
+

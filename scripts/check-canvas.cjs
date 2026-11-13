@@ -1,0 +1,16 @@
+const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
+const out=ts.transpileModule(fs.readFileSync('lib/mindmap-scene.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,exportsObject={};new Function('exports',out)(exportsObject);
+const {validateScene,cleanScene,sceneFingerprint}=exportsObject;
+assert.equal(validateScene({elements:[],files:{}}),'');
+assert(validateScene({elements:[{id:'a',x:NaN,y:0,type:'rectangle'}]}));
+assert(validateScene({elements:[{id:'a',x:1,y:0,type:'rectangle'},{id:'a',x:2,y:0,type:'text'}]}));
+assert(validateScene({elements:'invalid'}));
+const clean=cleanScene([{id:'a',x:0,y:0,type:'rectangle',version:1}],{collaborators:new Map(),viewBackgroundColor:'#fff',selectedElementIds:{a:true}},{});
+assert(!JSON.stringify(clean).includes('collaborators'));assert(!JSON.stringify(clean).includes('selectedElementIds'));
+assert.notEqual(sceneFingerprint(clean),sceneFingerprint({...clean,elements:[{...clean.elements[0],version:2}]}));
+assert.notEqual(sceneFingerprint(clean),sceneFingerprint({...clean,elements:[{...clean.elements[0],x:40}]}));
+const oversized = { files: {}, elements: Array.from({ length: 10001 }, (_, i) => ({ id: String(i), x: 0, y: 0, type: 'rectangle' })) };
+assert.match(validateScene(oversized), /10000/);
+assert.equal(exportsObject.readMindmapDraft({ scene: oversized, title: '保留草稿', revision: 'qa' }, '').scene.elements.length, 10001);
+assert.equal(exportsObject.readMindmapDraft('invalid', ''), undefined);
+console.log('Canvas scene validation and durable serialization checks passed.');

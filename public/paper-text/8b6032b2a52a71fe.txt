@@ -1,0 +1,1798 @@
+MuPose: Breaking the Scalability Barrier of mmWave
+Multi-User Pose Estimation in the Wild
+Duo Zhang†
+, Zhehui Yin†
+, Xusheng Zhang†
+, Junzhe Wang†
+, Hongliu Yang†
+, Zhiyun Yao†
+, Zizhou
+Fan†
+, Wenwei Li†
+, Daqing Zhang†,‡
+†
+Peking University ‡
+Institut Polytechnique de Paris
+{zhangduo,zhangxusheng,yinzhehui,wjz020606,Hongliu_yang,zhiyunyao,zzfan25,lwenwei}@stu.pku.edu.cn,
+dqzhang@sei.pku.edu.cn
+Abstract
+Millimeter-wave (mmWave) radar has emerged as a compelling
+modality for privacy-preserving Human Pose Estimation (HPE).
+However, a fundamental disconnect persists: while real-world do-
+mestic environments are inherently multi-user and cluttered, exist-
+ing multi-user systems remain predicated on idealized, open spaces.
+Through a rigorous empirical study, we expose a critical vulner-
+ability in multi-person scenarios: state-of-the-art methods suffer
+catastrophic degradation, with the Mean Per Joint Position Error
+(MPJPE) spiking to 17.4 cm. Given that this magnitude approaches
+the length of a human forearm, such errors inevitably lead to se-
+vere skeletal distortion and limb misalignment, rendering the esti-
+mated poses structurally incoherent. This scalability barrier stems
+from three fundamental physical conflicts: inter-person resolution
+bin collisions, severe multipath ghosting, and complex occlusions.
+To break this barrier, we present MuPose, the first mmWave sys-
+tem tailored for robust multi-person HPE in the wild. By integrat-
+ing advanced signal processing with a deep learning backend, Mu-
+Pose introduces a hybrid architecture tackling signal chaos via three
+innovations: signal-level Null Steering to resolve bin collisions at
+the source, AoA-AoD reciprocity to purge multipath ghosts, and
+a masked Spatio-Temporal Transformer to infer occluded joints.
+Extensive evaluations with 23 subjects across 7 complex environ-
+ments demonstrate that MuPose achieves an MPJPE of 6.7 cm, sig-
+nificantly outperforming SOTA baselines (an MPJPE of 17.4 cm)
+and enabling precise, ubiquitous sensing in domestic settings.
+CCS Concepts
+• Human-centered computing → Ubiquitous and mobile com-
+puting.
+Keywords
+mmWave Sensing, Pose Estimation, Multi-User Scalability
+ACM Reference Format:
+Duo Zhang, Zhehui Yin, Xusheng Zhang, Junzhe Wang, Hongliu Yang,
+Zhiyun Yao, Zizhou Fan, Wenwei Li, and Daqing Zhang. 2026. MuPose:
+Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation
+in the Wild. In The 24th Annual International Conference on Mobile Sys-
+tems, Applications and Services (MobiSys ’26), June 21–25, 2026, Cambridge,
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+MobiSys ’26, Cambridge, United Kingdom
+© 2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2027-7/2026/06
+https://doi.org/10.1145/3745756.3809227
+mmWave
+Radar
+Standard
+Point Cloud
+Sparse & Multipath
+MuPose(Ours)
+MuPose
+(Ours)
+×
+Dense & Clean √ Multi-User 3D Human Pose
+Figure 1: Illustration of MuPose. Demo video at: YouTube
+United Kingdom. ACM, New York, NY, USA, 15 pages. https://doi.org/10.
+1145/3745756.3809227
+1 Introduction
+Human Pose Estimation (HPE) is a cornerstone for a wide range
+of applications, spanning activity recognition [58, 66], rehabilita-
+tion [22, 34], and virtual reality [18, 107]. To enable these applica-
+tions, the researchers have explored multiple sensing modalities,
+primarily including vision [42, 64], wearables [35, 108], and wire-
+less signals [17, 51, 87, 103–105]. However, vision-based systems
+face severe privacy concerns, especially in private spaces, while
+wearables are often cumbersome due to their reliance on strict
+wearing compliance. Consequently, wireless sensing has emerged
+as a compelling alternative, prized for its device-free nature and
+inherent privacy preservation [25, 50, 87]. In the realm of wireless
+sensing, mmWave radar outperforms alternatives such as WiFi by
+leveraging its ultra-wide bandwidth to achieve higher spatial reso-
+lution [88, 93], which has catalyzed a wave of mmWave-based HPE
+systems [17, 25, 28, 29, 72, 85, 87, 99].
+However, a fundamental disconnect remains: while most sys-
+tems are optimized for a single subject, real-world domestic en-
+vironments are inherently multi-person. Although recent pioneer-
+ing works—such as 𝑚3𝑇𝑟𝑎𝑐𝑘 [25], 𝑀4𝑀𝑒𝑠ℎ [85], and 𝑂𝑐𝑐𝑀𝑒𝑠ℎ [6]—
+have attempted to address multi-person pose estimation, they largely
+assume open, furniture-free spaces, overlooking the harsh constraints
+of real homes. As a result, they often break down in complex indoor
+settings, where confined layouts and clutter induce inter-person
+1
+622
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+signal entanglement, severe multipath interference, and frequent
+occlusions. To empirically assess state-of-the-art (SOTA) multi-user
+systems in the wild, we conducted a pilot field study with 23 sub-
+jects across 7 real environments. The results are telling: existing
+systems struggle substantially, yielding an MPJPE of 17.4 cm. Even
+in moderately complex three-person scenarios, the error remains
+high at 15.7 cm. Given that this magnitude approaches the length
+of a human forearm, such errors cause severe skeletal distortion,
+rendering applications—from fitness coaching to rehabilitation—
+infeasible. Thus, building a robust multi-person system remains an
+urgent priority.
+To achieve mmWave-based multi-person HPE in real-world do-
+mestic settings, we must overcome three key challenges:
+(i) Inter-person Signal Entanglement: In indoor multi-person
+scenarios, signal distinguishability becomes a critical bottleneck.
+Current methods typically assume that different users are separa-
+ble on the Range-Doppler map or within the point clouds, and sub-
+sequently employ algorithms such as clustering based on spatial
+locations to separate distinct human bodies [6, 25, 85]. This assump-
+tion often fails in confined spaces. Due to the poor angular reso-
+lution of commercial radars, existing point generation pipelines
+are universally based on distinguishing targets within the Range-
+Doppler profile [6, 85, 88]. A common failure mode is Range-Doppler
+collision: when two targets (e.g., two torsos) share the same range
+and radial velocity, they fall into the same RD bin and become indis-
+tinguishable. Crucially, such collisions drastically reduce the den-
+sity of the generated point clouds. As reflection peaks merge or
+cancel out, valid anatomical cues are lost, producing sparse and
+fragmented representations, as shown in Fig. 1. Such collisions
+are frequent in real-world settings, causing catastrophic failures
+in conventional pipelines.
+(ii) Multipath Interference: Indoor environments introduce an-
+other formidable hurdle: multipath interference due to cascading
+reflections. While static clutter can be removed relatively easily,
+dynamic multipath persists. We identify two dominant categories:
+(1) inter-person multipath, where signals propagate along a Radar-
+Person1-Person2-Radar path; and (2) person-environment multi-
+path, where signals travel along a Radar-Person-Object-Radar path
+(e.g., furniture). Critically, these dynamic reflections exhibit Doppler
+signatures similar to those of moving subjects, making them diffi-
+cult to filter. The result is severe ghosting and false targets (Fig. 1).
+Most existing multipath suppression techniques rely on static en-
+vironmental priors [11, 38], which limits portability across diverse
+homes.
+(iii) Occlusion: A final challenge arises from occlusion, which
+presents a dual threat in real homes: static blockage caused by fur-
+niture layouts and dynamic mutual occlusion during multi-person
+interactions. Consequently, the radar often captures only partial
+human bodies, resulting in inincomplete point clouds. This loss of
+spatial information makes reconstructing full skeletal poses highly
+ambiguous. While OccMesh leverages human topological priors to
+address occlusion [6], it is primarily validated in open spaces and
+can struggle in realistic indoor scenes with heavy obstruction.
+To address these challenges, we present MuPose, the first mmWave
+system designed to break the scalability barrier of multi-user HPE
+Nulling
+Area
+Main Lobe
+Radar
+(a) Null Steering.
+Wall
+𝜽
+𝝓
+𝜽
+𝝓
+LOS（𝜽 = 𝝓） Multipath（ 𝜽 ≠ 𝝓 ）
+𝑨𝒐𝑨: 𝜽
+𝑨𝑶𝑫: 𝝓
+(b) AoA/AoD Ghost Suppression.
+Figure 2: Key Insights. (a) Null Steering spatially isolates tar-
+gets by directing nulls toward interferers. (b) AoA-AoD Reci-
+procity distinguishes true paths from multipath ghosts.
+in the wild. At its core, MuPose integrates three key technical con-
+tributions:
+(i) Null Steering Disentanglement: In contrast to prior works
+that separate users on shared RD maps or point clouds, we are the
+first to re-architect the point cloud generation pipeline itself by
+integrating a null steering mechanism, enabling the construction
+of subject-specific RD maps for each individual. As illustrated in
+Fig. 2(a), reshaping the beam pattern allows us to maximize gain
+at the target angle (main lobe) while enforcing zero gain at inter-
+ference angles (nulls), thereby spatially isolating signals from dif-
+ferent users. To operationalize this in dynamic settings, we devise
+a customized coarse-to-fine workflow. Initially, we extract coarse
+point clouds to obtain preliminary user angles, bootstrapping the
+system despite collision-induced sparsity. These rough estimates
+then guide a precision Null Steering operation on the post-FFT
+Range-Doppler spectrum. This process effectively isolates the sig-
+nal of interest, yielding subject-exclusive RD maps that enable the
+generation of high-fidelity point clouds.
+(ii) AoA-AoD Ghost Suppression: To eliminate multipath inter-
+ference, we leverage the geometric reciprocity between Angle of
+Departure (AoD) and Angle of Arrival (AoA) [24, 62]. Our approach
+is grounded in a fundamental symmetry: direct Line-of-Sight re-
+flections satisfy the condition 𝐴𝑜𝐴 ≈ 𝐴𝑜𝐷, whereas multipath
+reflections—distorted by environmental bounces—break this con-
+straint, as illustrated in Fig. 2(b). However, directly applying this
+geometric metric to dense, multi-person point clouds is prone to se-
+vere match ambiguity. To overcome this, we introduce an Inverse
+Synthetic Aperture Radar (ISAR) decomposition step to resolve the
+human body into discrete scattering centers. This enables us to
+strictly evaluate AoA-AoD consistency at the individual scatterer
+level, effectively filtering out artifacts to reconstruct multipath-
+free human representations.
+(iii) Masked Occlusion Recovery: Finally, we tackle occlusion
+via a Masked Spatio-Temporal Transformer. Our core insight is
+that human motion follows strict topological and kinematic con-
+straints, allowing us to hallucinate missing body parts from partial
+observations. We employ a Point-Transformer to capture these spa-
+tial priors, inferring the complete skeleton from visible segments.
+To further resolve persistent blockages, we integrate a temporal
+Transformer that exploits motion continuity, recognizing that body
+2
+623
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+parts rarely remain occluded indefinitely. To robustly train this ca-
+pability, we devise a masking-based augmentation strategy: by ran-
+domly masking point clouds during training to simulate severe oc-
+clusion, we force the model to map sparse, fragmented data directly
+to complete skeletal ground truth, ensuring robustness against real-
+world data loss.
+Adopting a signal processing-to-AI architecture, we orchestrate
+these three technical contributions into a unified pipeline. In the
+physics-driven frontend, we re-architect the standard point cloud
+workflow to integrate Null Steering and AoA-AoD checks, enabling
+the synthesis of multipath-free, high-density point clouds. Then,
+our AI-driven backend, a Masked Spatio-Temporal Transformer,
+accurately maps the spatial point clouds to multi-person skeletal
+kinematics.
+We implement MuPose on commercial mmWave radar platforms.
+For a comprehensive evaluation, we conducted a large-scale data
+collection campaign involving 23 subjects across 7 diverse real-
+world environments, totaling over 17.9 hours of data. Experimen-
+tal results show that MuPose achieves 6.7 cm MPJPE in confined,
+multipath-rich scenarios (supporting up to 6 subjects), significantly
+outperforming SOTA baselines (an MPJPE of 17.4 cm). Our contri-
+butions are summarized as follows:
+• We propose MuPose, an mmWave system that significantly ad-
+vances robust, high-fidelity multi-person pose estimation in real-
+istic, multipath-rich domestic environments.
+• We present the first framework to achieve dense, multipath-free
+multi-person point cloud generation. By redesigning the extrac-
+tion workflow, we leverage null steering to disentangle user sig-
+nals and AoA-AoD reciprocity to eliminate complex indoor mul-
+tipath artifacts.
+• We introduce a masked spatio-temporal transformer designed to
+tackle severe occlusion, achieving robust and precise pose esti-
+mation for multiple subjects.
+• We implement MuPose on COTS radar and validate it via a large-
+scale field study across 7 complex environments. Results demon-
+strate an MPJPE of 6.7 cm, significantly outperforming existing
+SOTA baselines.
+2 Background and Motivation
+This section reviews existing approaches to multi-user HPE, ana-
+lyzes their fundamental limitations in real-world indoor environ-
+ments, and motivates our system by empirical study.
+2.1 Existing Work on Multi-User HPE
+Research on mmWave-based human pose estimation has surged,
+yet mostly targets single user [17, 28, 29, 31, 52, 72, 80, 87, 92]. Re-
+cent efforts—such as 𝑚3Track [25], 𝑀4Mesh [85], and OccMesh
+[6]—have begun pushing toward multi-person sensing. However,
+these systems are predominantly evaluated in pristine, open envi-
+ronments and largely overlook the harsh constraints of real homes.
+Specifically, 𝑚3Track separates users based on Range–Doppler and
+Range–Angle profiles, but it does not address the severe occlusion
+and multipath interference that are pervasive in indoor settings.
+𝑀4Mesh segments multi-user point clouds through spatial parti-
+tioning before pose regression, yet it remains vulnerable to point
+cloud sparsity induced by RD-bin collisions, corruption from multi-
+path ghosts, and strong occlusion. OccMesh also operates on point
+clouds and leverages human topological priors to mitigate occlu-
+sion; while highly effective in open spaces, it struggles under re-
+alistic indoor conditions characterized by RD collisions, multipath
+reflections, and heavy environmental obstruction.
+Table 1: Summary of related work of MuPose. ‘�’: support, ‘�’:
+support, ‘×’: not supported, ‘–’: not applicable. Single-person
+approaches are represented by mmMesh [87].
+Method
+Real
+Home?
+Multipath
+Free?
+Occlusion
+Resilient?
+Signal-Level
+Separation?
+Multi
+User?
+mmMesh [87] 7 7 7 — 7
+𝑚3Track [25] 7 7 7 7 3
+𝑀4Mesh [85] 7 7 7 7 3
+OccMesh [6] 7 7 3 7 3
+MuPose 3 3 3 3 3
+Table 1 summarizes the related works. Collectively, existing ap-
+proaches lack thorough validation in authentic domestic environ-
+ments and fall short of holistically addressing the three fundamen-
+tal challenges: resolution-bin collisions, multipath interference, and
+severe occlusion.
+2.2 Empirical Study and Motivation
+To empirically benchmark current approaches in the wild, we con-
+ducted an extensive field study involving 23 subjects. The study
+spanned 7 diverse environments, comprising a living room, a bed-
+room, a pantry, a kitchen, a meeting room, an office, and an open
+lounge. In total, we collected 17.9 hours of data, with groundtruth
+recorded by Orbbec Femto Bolt depth cameras. We then imple-
+mented three baselines—𝑚3Track [25], 𝑀4Mesh [85], and OccMesh
+[6]—on this dataset for comparison. We adopt the Mean Per Joint
+Position Error (MPJPE) as our primary evaluation metric. To ac-
+count for phantom skeletons caused by multipath ghosts, we adopt
+a Generalized MPJPE. Unmatched predictions are penalized with a
+fixed error 𝜌 (set to 0.5m).
+1 2 3 4 5 6
+Number of Subjects
+10
+20
+30
+MPJPE
+(cm)
+m3
+Track
+M4
+Mesh
+OccMesh
+Figure 3: MPJPE vs. Sub-
+jects for baselines.
+Multipath
+Point Cloud
+Human 1
+Human 2
+Lower-limb
+occlusion
+Figure 4: Wall-induced ghosts
+and desk-induced occlusion.
+Fig. 3 reveals a sharp performance degradation across all base-
+lines as subject count increases. Notably, even the top-performing
+OccMesh yields a 9.8 cm error in single-person scenarios, signif-
+icantly lagging behind its reported lab performance (5.67 cm [6])
+due to environmental multipath and occlusion. In three-person set-
+tings, the error surges to 15.7 cm—approaching the length of a
+3
+624
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+hello
+Data Preprocessing
+Range and Doppler FFT
+Radar IF Signal
+RGBD
+AoD-AoA Filtering
+ETCM CFAR
+Angle Estimation
+Point Extraction Core
+DBSCAN Clustering
+Coarse Point Cloud for Angles Finer Multi-User Point Cloud
+Point Extraction Core
+Null Steering Disentanglement
+RD Maps & User’s Angle
+Multi-User Pose Estimation
+Spatio-Temporal Transformer
+Masking Training Strategy
+Figure 5: System Overview of MuPose. The pipeline follows a coarse-to-fine paradigm. (a) Preprocessing yields Range-Doppler
+(RD) maps. (b) Coarse Generation estimates the preliminary angles of multiple users, incorporating AoA-AoD filtering to mit-
+igate multipath. (c) Fine Generation leverages Null Steering to spatially disentangle signals, synthesizing high-fidelity point
+clouds for each individual. (d) Pose Estimation employs a Masked Spatio-Temporal Transformer to infer complete skeletons
+from partial observations.
+human forearm—rendering precision tasks like rehabilitation and
+HCI unfeasible. With six subjects, errors exceed 20 cm, indicating
+a complete loss of skeletal fidelity where outputs effectively de-
+generate into coarse localization. Fig. 4 visualizes the impact of
+multipath and occlusion. On the left, wall proximity generates dis-
+tinct, high-density ghosts easily mistaken for valid targets. On the
+right, desk occlusion causes lower-limb data loss. Reconstructing
+full skeletons from such sparse, single-frame observations is ardu-
+ous without strong temporal or topological priors.
+These failures clearly expose the inability of current methods
+to cope with the complexities of real-world homes. Previous sys-
+tems fail to withstand the combined stress of inter-person signal
+entanglement, rich multipath, and heavy occlusion, thereby leaving
+fundamental vulnerabilities in high-stakes sensing tasks.This un-
+derscores an urgent need for a more effective solution that tackles
+these real-world challenges. Our work is designed to bridge this ex-
+act gap: we aim to resolve these challenges holistically to deliver a
+system that ensures robust multi-person estimation in the wild.
+3 MuPose Design
+Before we delve deeper into MuPose, we present the design prin-
+ciples that underpin our system. Our framework is positioned as a
+synergistic signal processing and AI system.
+3.1 Design Outline.
+(i) Physically-Informed Signal Processing. We first leverage
+advanced signal processing to reconstruct high density, low in-
+terference point clouds, followed by deep learning models to es-
+timate multi-person poses. The rationale lies in the distinct nature
+of these two tasks. The transformation from raw radar signals to
+point clouds is governed by explicit mathematical derivations and
+wave propagation laws; it is a deterministic process best handled
+by rigorous signal processing algorithms to ensure precision and
+interpretability. Accordingly, we address both inter-person signal
+entanglement and multipath interference via explicit signal pro-
+cessing formulations.
+(ii) Data-Driven Pose Estimation. Conversely, estimating poses
+from point clouds is an ill-posed inverse problem: it requires in-
+ferring complete, structured skeletal kinematics from sparse, un-
+structured, and noisy observations. This task necessitates the use
+of implicit topological priors, which are more effectively modeled
+by data-driven deep learning. Accordingly, our solution for occlu-
+sion relies on a Spatio Temporal Transformer, designed specifically
+to capture these implicit spatial and kinematic constraints.
+(iii) Point Cloud over Heatmap. MmWave HPE methods can be
+roughly divided by their network input into heatmap-based and
+point-cloud-based designs. While heatmaps capture all raw reflec-
+tions, they are plagued by noise and multipath, resulting in a low
+SNR. Point clouds, conversely, distill high-value information into a
+compact format, albeit with the risk of missing weaker signals. We
+adopt a point-cloud-based formulation for two key reasons. First,
+point clouds are intuitive and human-interpretable: one can visu-
+ally inspect a point cloud and immediately gauge its quality and
+whether it is sufficient for pose estimation, which is far less fea-
+sible with heatmaps. Second, we build on our prior ETCM-CFAR
+design [88], which effectively recovers weak reflections that stan-
+dard methods might miss.
+Figure 5 illustrates the architecture of MuPose, which transforms
+raw mmWave signals into high-fidelity multi-person 3D skeletons.
+MuPose consists of four key modules:
+Data Collection and Preprocessing. The pipeline begins by cap-
+turing raw signals from the mmWave radar. We apply a 2D FFT
+to transform these signals into the Range-Doppler (RD) domain.
+This step outputs mixed RD Maps, where reflections from multiple
+users are entangled.
+Coarse Point Cloud Generation. To bootstrap disentanglement,
+this module first derives preliminary user locations. It processes
+4
+625
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+mixed RD maps using a Point Extraction Core—ETCM-CFAR for re-
+liable peak detection and AoA–AoD filtering for multipath suppres-
+sion. The resulting coarse points are then grouped by DBSCAN,
+producing a rough AoA estimate for each subject.
+Fine Point Cloud Generation. As the core signal disentangle-
+ment module, this stage leverages coarse user angles to apply Null
+Steering on the RD spectrum, suppressing spatial interference. This
+yields clean, subject-exclusive RD maps. By re-applying the Point
+Extraction Core (ETCM-CFAR and AoA-AoD filtering) to these maps,
+we synthesize a dense, ghost-free multi-user point cloud.
+Multi-User Pose Estimation. The disentangled point clouds are
+fed into a deep learning network for pose inference. We employ
+a Point Transformer for spatial feature extraction and a Spatio-
+Temporal Transformer to model temporal dynamics. To ensure ro-
+bustness, we adopt a Masking Training Strategy, compelling the
+model to infer and recover complete 3D skeletons from partial, oc-
+cluded observations.
+3.2 Data Preprocessing and RD Mapping
+We capture raw IF signals using a COTS mmWave radar, synchro-
+nized with RGBD cameras for skeletal ground truth.
+3.2.1 Overcoming the Angular Resolution Limit. Commercial radars
+suffer from coarse angular resolution (typically ∼ 15∘), making it
+impossible to spatially resolve adjacent body parts, as shown in
+Fig. 6. To circumvent this, we adopt an ISAR-inspired approach,
+mapping spatial angular differences to the Doppler domain. For a
+rigid body part moving at velocity 𝑣, its radial velocity 𝑣𝑟 relative
+to the radar is 𝑣𝑟 = 𝑣 cos 𝜃, where 𝜃 is the spatial angle relative to
+the radar LoS. Differentiating this yields the relationship between
+angular resolution Δ𝜃 and Doppler resolution Δ𝑣𝑟 :
+Δ𝜃 ≈
+Δ𝑣𝑟
+𝑣 sin 𝜃
+(1)
+Concrete Benefit: Consider a typical walking speed of 𝑣 = 1𝑚/𝑠
+and a standard radar Doppler resolution of Δ𝑣𝑟 = 0.05𝑚/𝑠. At a
+viewing angle of 𝜃 = 45∘, the equivalent angular resolution be-
+comes:
+Δ𝜃 ≈
+0.05
+1 ⋅ 0.707
+≈ 0.07 rad ≈ 4.0∘ (2)
+This offers a 3.75× improvement over the hardware’s native 15∘ res-
+olution. Furthermore, the micro-Doppler effect amplifies this res-
+olution. As an articulated structure, different body segments (e.g.,
+limbs vs. torso) exhibit distinct radial velocities. This kinematic di-
+versity creates rich signatures in the RD spectrum, enabling the
+separation of fine-grained body parts that remain indistinguish-
+able in the spatial domain.
+3.2.2 RD Map Generation. Leveraging this, we perform 2D-FFT to
+transform raw signals into the Range-Doppler domain. Crucially,
+to preserve spatial diversity for subsequent Null Steering, we gen-
+erate independent Range-Doppler (RD) Maps for each receiver an-
+tenna channel.
+This step also serves as a critical prerequisite for our multipath
+mitigation. By isolating distinct scatterers in the RD domain, we
+convert the challenge of matching dense body reflections into a
+sparse point matching problem, making rigorous AoA-AoD con-
+sistency checks feasible.
+Radar
+∆𝜽 ≈ 𝟓° < 𝜽𝒓𝒆𝒔 ≈ 𝟏𝟓°
+2
+3
+1
+Range
+Doppler(Angle)
+𝑨𝑶𝑨 ≠ 𝑨𝑶𝑫
+Discard
+1
+3
+2
+∆𝒗 ≈ 𝟏𝒎/𝒔
+𝒗𝒓𝒆𝒔 ≈ 𝟎. 𝟎𝟓𝒎/𝒔
+𝒗𝟏 = 𝟏𝒎/𝒔
+𝒗𝟐 = 𝟐𝒎/𝒔
+∆𝒗 ≫ 𝒗𝒓𝒆𝒔
+ISAR
+𝑨𝑶𝑨 = 𝑨𝑶𝑫
+Reserve
+Figure 6: ISAR-based Resolution Enhancement. By exploit-
+ing superior Doppler resolution to resolve spatially merged
+targets (path 1 & 2) , ISAR transforms the intractable dense
+matching problem into a tractable sparse task. This facili-
+tates robust AoA-AoD multipath pruning (discarding ghost
+path 3).
+3.3 Multipath-Free Coarse Point Extraction
+This module aims to extract valid reflection points from the gener-
+ated RD maps while rigorously filtering out environmental ghosts.
+However, due to inherent signal overlaps in the Range-Doppler do-
+main, the output of this stage remains ”coarse,” serving primarily
+as the angular bootstrap for the subsequent fine-grained genera-
+tion.
+3.3.1 Combating Energy Masking via ETCM-CFAR. Conventional
+spatial-based CFAR treats targets as points. However, humans act
+as extended targets in short-range sensing, causing reference cells
+to overlap with the body. This triggers energy masking—an over-
+estimation of noise that suppresses valid detections. We solve this
+via ETCM-CFAR [88]. By shifting noise estimation to the tempo-
+ral domain, it circumvents spatial masking, effectively recovering
+dense anatomical reflections that are otherwise discarded.
+3.3.2 Ghost Elimination via AoA-AoD Reciprocity. A critical chal-
+lenge in indoor sensing is dynamic multipath interference. To purge
+these artifacts, we exploit the geometric reciprocity of the Line-of-
+Sight (LoS) path: for a true target, the AoA must equal the AoD.
+Azimuth-Only Matching. Our decision to perform matching solely
+in the azimuth domain is dictated by the antenna array geometry.
+AoA estimation exploits the phase difference between receiver an-
+tennas (e.g., a 1-Tx/2-Rx configuration), whereas AoD estimation
+leverages the phase difference between transmitter antennas (e.g.,
+a 2-Tx/1-Rx configuration). Since the receiver antennas in standard
+commercial mmWave radars are typically arranged linearly in the
+horizontal plane, they enable AoD estimation exclusively in the az-
+imuth dimension. Accordingly, we restrict our reciprocity check to
+the azimuth plane.
+Digital Beamforming (DBF) Estimation. To estimate the angular
+spectrum efficiently, we employ Digital Beamforming (DBF). Since
+the antenna array approximates a Uniform Linear Array (ULA),
+this operation is mathematically equivalent to a Spatial FFT, ensur-
+ing low computational latency. AoA Spectrum (1 × 𝑁𝑅𝑥): We com-
+pute the Azimuth AoA spectrum 𝑃𝐴𝑜𝐴(𝜃) by performing a Spatial
+FFT across the receiver antennas, equivalent to steering a beam
+vector w𝑟𝑥(𝜃):
+𝑃𝐴𝑜𝐴(𝜃) = |w𝐻
+𝑟𝑥(𝜃) ⋅ x𝑟𝑥|
+2
+≡ |FFT(x𝑟𝑥)|
+2
+(3)
+5
+626
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+-50 0 50
+Azimuth Angle (°)
+0
+0.2
+0.4
+0.6
+0.8
+1
+Normalized
+Amplitude
+AoA Spectrum
+AoD Spectrum
+(a) Direct path.
+-50 0 50
+Azimuth Angle (°)
+0
+0.2
+0.4
+0.6
+0.8
+1
+Normalized
+Amplitude
+AoA Spectrum
+AoD Spectrum
+(b) Multi-bounce path.
+Figure 7: AoD–AoA consistency check. (a) Direct path: AoD
+aligns with AoA. (b) Multi-bounce path: AoD diverges from
+AoA.
+where x𝑟𝑥 is the signal vector across receiver antennas.
+AoD Spectrum (𝑁𝑇𝑥 × 1): Symmetrically, we estimate the Az-
+imuth AoD spectrum 𝑃𝐴𝑜𝐷(𝜙) by applying DBF on the virtual trans-
+mitter array formed by TDM-MIMO:
+𝑃𝐴𝑜𝐷(𝜙) = |w𝐻
+𝑡𝑥(𝜙) ⋅ x𝑡𝑥|
+2
+≡ |FFT(x𝑡𝑥)|
+2
+(4)
+To systematically eliminate multipath ghosts, we strictly enforce
+a spatial reciprocity constraint: a detected point is retained as a
+valid Line-of-Sight (LoS) target only if | ̂
+𝜃𝐴𝑜𝐴 − ̂
+𝜙𝐴𝑜𝐷| < 𝜖. We
+set the tolerance 𝜖 = 2∘ to accommodate hardware phase calibra-
+tion errors and the finite physical baseline between TX and RX
+arrays. Unlike multi-bounce multipath reflections, LoS paths are
+physically reversible and thus inherently satisfy this 𝐴𝑜𝐴 ≈ 𝐴𝑜𝐷
+alignment (Fig. 7).
+However, a practical hardware challenge arises from the sparse
+TX antenna spacing (e.g., 2𝜆), which violates the spatial Nyquist
+criterion and induces periodic grating lobes in the AoD spectrum.
+To robustly handle this spatial aliasing, we retain a candidate if
+any of its ambiguous AoD peaks aligns with the unambiguous
+AoA. While this relaxation introduces a slight risk of coincidental
+grating-lobe matches, such geometric anomalies lack spatiotempo-
+ral consistency. Consequently, they manifest as highly sparse, iso-
+lated outliers in 3D space and are effortlessly purged by our subse-
+quent DBSCAN clustering.
+Radar
+𝑹𝒎 ≈ 𝑹𝒘
+𝑽𝒎 ≈ 𝑽𝒘
+(a) Collision scene.
+Man
+Women
+(b) Cfar when collision. (c) Coarse point cloud.
+Figure 8: Sparsity from RD Collision. (a) Targets with sim-
+ilar range and velocity collapse into the same RD bin. (b)
+Signals become entangled within the bin. (c) The resulting
+sparse point cloud.
+3.3.3 4D Coarse Point Construction. Upon filtering out ghosts, we
+lift the surviving bins into 4D Cartesian space 𝒫 = {𝑥, 𝑦, 𝑧, 𝑣}. This
+requires resolving the target’s range 𝑟, velocity 𝑣, azimuth 𝜃𝑎𝑧, and
+elevation 𝜃𝑒𝑙.
+Azimuth Reuse. The azimuth angle 𝜃𝑎𝑧 corresponds to the peak
+index of the DBF spectrum calculated in Eq. 3. To minimize com-
+putational overhead, we reuse this value directly.
+Elevation Estimation. We compute the missing elevation angle
+𝜃𝑒𝑙 by applying Digital Beamforming across the vertical antenna
+dimension.
+Finally, we map the spherical coordinates to the Cartesian frame
+to generate the coarse point cloud. We term the output of this
+stage ”coarse” because detection is performed on a per-bin basis.
+In multi-person scenarios, a frequent phenomenon is RD Bin Col-
+lision. When two subjects exhibit similar ranges and velocities, as
+shown in Fig. 8, their signals superimpose within a single RD bin.
+Conventional estimators extract only a single dominant peak or a
+corrupted average, resulting in sparse and missing points for the
+colliding subjects, as shown in Fig. 8(c). These surviving points pro-
+vide the critical angular seeds required to initialize the Null Steer-
+ing module in the next stage.
+3.4 Fine-Grained Points via Null Steering
+To fundamentally resolve Inter-person Signal Entanglement, we in-
+troduce a software-defined Null Steering mechanism. Our objec-
+tive is to spatially filter the signal on the Range-Doppler (RD) spec-
+trum, steering the main lobe toward the target subject while plac-
+ing deep nulls in the directions of interference. We systematize this
+process into four key stages.
+3.4.1 Angular Prior Extraction. The first challenge is to determine
+the angular parameters for targets and interference. We leverage
+the ”coarse point clouds” generated in the previous stage as spa-
+tial priors. Given the hardware limitation of vertical antennas in
+commercial radars, we focus exclusively on the azimuth dimen-
+sion. Since a human body acts as an extended target, we perform
+clustering on the coarse points to decompose each subject into 𝐾
+(1 ≤ 𝐾 ≤ 3) distinct scattering centers (e.g., torso, limbs). These
+centers serve as the anchor points for our beamforming vectors.
+3.4.2 Adaptive Activation Strategy. To optimize computational ef-
+ficiency and preserve array degrees of freedom (DoFs), we do not
+apply Null Steering blindly. We observe that entanglement only
+occurs when subjects share similar radial distances (i.e., Range-
+Doppler collisions). Accordingly, we devise a range-based check:
+(i) Collision Zone: If the range difference between a target center
+and any interference center is within a collision threshold, we ac-
+tivate Null Steering to suppress the interference. (ii) Safe Zone: If
+targets are well-separated in range, we revert to standard Beam-
+forming to maximize the Signal-to-Noise Ratio (SNR) and conserve
+resources.
+3.4.3 Wide-Null Beamforming. Since a theoretical null is infinites-
+imally narrow, it often fails to suppress spatially extended human
+interference. To ensure robust rejection, we synthesize a Wide Null
+by enforcing constraints across a broader angular span. Building
+on our prior work mmNull [97], we formulate this as an optimiza-
+tion problem: finding the weight vector w that maximizes target
+6
+627
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+Velocity(m/s)
+Range(m)
+Nulling Vector: 𝒘
+∙
+Dot
+Subject-Exclusive
+RD Map
+Figure 9: Null Steering on Per-Antenna RD Maps. By apply-
+ing null steering across antenna channels, we eliminate in-
+terference signatures to synthesize a new, subject-exclusive
+RD map, effectively resolving inter-person signal entangle-
+ment.
+gain while enforcing zero response across the interference cluster:
+maximize
+w
+|w𝐻 a(𝜃𝑡𝑔𝑡)|
+2
+subject to w𝐻 a(𝜙) = 0,
+∀𝜙 ∈ {𝜃𝑖𝑛𝑡 − 𝛿, 𝜃𝑖𝑛𝑡, 𝜃𝑖𝑛𝑡 + 𝛿}
+(5)
+where a(⋅) denotes the steering vector and 𝛿 is a small angular off-
+set for broadening. We empirically set the angular offset 𝛿 = 2∘
+to effectively cover the typical angular width of a human body at
+practical indoor distances. Although this wide-null constraint con-
+sumes two DoFs per interferer, our commercial radar array (pro-
+viding e.g., 8 virtual azimuth antennas) possesses sufficient DoFs
+to suppress multiple interacting users simultaneously. Following
+the strategy in [97], this continuous optimization is transformed
+into a discrete formulation, and the optimal weights w are derived
+in closed-form via eigenvalue decomposition (EVD). This creates a
+deep ”suppression trench” that effectively nullifies the interfering
+body parts.
+(a) Coarse points. (b) Noisy finer points. (c) Clean finer points.
+Figure 10: Impact of Null Steering and AoA-AoD Check. (a)
+AoA-AoD Only: Yields a sparse point cloud. (b) Null Steer-
+ing Only: Generates dense points but suffers from multipath
+ghosts. (c) Ours (Combined): Achieves a dense, multipath-
+free point cloud.
+3.4.4 Iterative Subject-Exclusive Synthesis. Crucially, for RD bins
+exhibiting multi-user collisions, we derive a unique null steering
+weight vector w𝑖 for each entangled subject 𝑖. By applying this
+specific w𝑖 to the mixed RD spectrum, we synthesize a Subject-
+Exclusive RD Map for that user, effectively ”erasing” spatial inter-
+ference from others (as shown in Fig. 9). To further ensure effi-
+ciency, we implement an incremental generation scheme: (i) History-
+Aware CFAR: After running ETCM-CFAR on the new map, we com-
+pare the results with the coarse point cloud history. We specifi-
+cally target newly emerged peaks that were previously masked.
+(ii) Constrained Angle Search: When calculating angles for these
+new peaks, we restrict the search space to a window of 𝜃𝑡𝑔𝑡 ± 10∘,
+explicitly ignoring interference directions. (iii) Multipath Pruning:
+Finally, we apply the aforementioned AoA-AoD reciprocity check
+to ensure the generated dense points are ghost-free.
+This pipeline effectively recovers weak, previously entangled
+signals, synthesizing high-density point clouds for each individual,
+as shown in Fig. 10(c).
+3.5 Spatio-Temporal Pose Estimation
+The final stage of MuPose transforms the disentangled, high-density
+point clouds into continuous skeletal kinematics. While the physics-
+driven modules in the previous stages ensure that the point clouds
+are subject-exclusive and free of multipath artifacts, inferring a
+full-body skeleton from surface reflections remains an inherently
+ill-posed inverse problem. Millimeter-wave point clouds, even when
+enhanced, only capture partial human contours and are highly sus-
+ceptible to occlusion by furniture or self-blocking. To address this
+pervasive challenge, we design a Masked Spatio-Temporal Trans-
+former, as illustrated in Fig. 11. This architecture is engineered
+to ”hallucinate” missing body parts by explicitly capturing two
+fundamental priors: structural anatomical constraints and tempo-
+ral motion continuity. Furthermore, we employ a masked training
+strategy to enforce the network’s robustness against severe signal
+dropouts.
+3.5.1 Spatial Recovery via Spatial Transformer. To extract geomet-
+ric features from unstructured point sets, we employ a Point Trans-
+former encoder [101] for each frame. The network initially maps
+the raw physical features (e.g., 3D coordinates and Doppler veloc-
+ity) into a compact 32-dimensional latent space. We purposefully
+keep this initial point-level dimension lightweight to prevent over-
+fitting to the extremely sparse and noisy radar inputs, while mini-
+mizing computational overhead.
+A critical design choice in this module is the feature aggregation
+mechanism. Traditional point cloud networks often rely on global
+max-pooling, which indiscriminately collapses local geometric de-
+tails. To overcome this, we introduce Frame-wise Attention Pool-
+ing parameterized by 𝑄 = 4 learnable queries. We empirically set
+𝑄 = 4 to strike a balance between efficiency and semantic granu-
+larity, allowing the queries to implicitly attend to major anatomical
+regions (e.g., torso, head, upper limbs, and lower limbs). Guided by
+the skeletal ground truth, this attention mechanism dynamically
+aggregates the dense 32-dimensional point features into semantic
+tokens. Crucially, to accommodate the complex reasoning required
+in subsequent stages, these tokens are then linearly projected into
+a highly expressive 256-dimensional space. Consequently, the spa-
+tial module outputs four 256-dimensional tokens per frame, suc-
+cessfully encoding spatial anatomical priors and inferring implicit
+body structures from fragmented observations.
+7
+628
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+……
+Spatial
+Transformer
+……
+𝑋1
+𝑋2
+Spatial
+Transformer
+𝑋𝑇
+Spatial
+Transformer
+𝑌1
+𝑌2
+𝑌𝑇
+……
+……
+4 × 256 4 × 256
+DETR
+Decoder
+DETR
+Decoder
+DETR
+Decoder
+……
+Temporal
+Transformer
+……
+Figure 11: Overall architecture of spatio-temporal trans-
+former.
+3.5.2 Temporal Kinematic Modeling. In realistic indoor environ-
+ments, spatial information in a single frame is often insufficient to
+resolve ambiguities caused by transient occlusions or signal fading.
+To mitigate this, we integrate a Temporal Transformer designed to
+capture long-range motion dynamics across frames.
+Taking the sequence of 256-dimensional spatial tokens as in-
+put, the temporal model is configured with a hidden dimension
+of 𝑑𝑚𝑜𝑑𝑒𝑙 = 256 and a stack of 𝐿 = 4 encoder layers. This spe-
+cific depth is optimized to provide sufficient reasoning capacity for
+non-linear human motions without introducing exorbitant latency.
+Each layer features Multi-Head Self-Attention (𝐻 = 4, dropout=0.1)
+to capture inter-frame correlations. To explicitly preserve the se-
+quential order of movement—a fundamental property of kinematics—
+we inject sinusoidal positional encodings into the feature stream.
+By aggregating contextual cues across a sliding time window, the
+Temporal Transformer effectively learns biomechanical kinematic
+priors (e.g., velocity smoothness and inertia). This ensures that the
+estimated pose sequences bridge the gaps caused by temporary sig-
+nal loss and adhere to physical laws, effectively eliminating unre-
+alistic skeletal jitter.
+3.5.3 Query-based Keypoint Decoding. To decode explicit skele-
+tal coordinates from the high-dimensional spatiotemporal mem-
+ory, we depart from traditional heatmap-based estimation, which
+suffers from quantization errors and high computational overhead.
+Instead, we employ a DETR-style Transformer Decoder [7, 30] for
+direct, continuous coordinate regression.
+We introduce 𝐾 = 17 learnable joint queries, each semantically
+initialized to target a specific anatomical keypoint (e.g., left wrist,
+right knee). These queries act as intelligent agents, utilizing cross-
+attention mechanisms to dynamically search and aggregate joint-
+specific contexts from the global spatiotemporal tokens. This query-
+based design is particularly robust against occlusion: even if the
+local point cloud for a specific limb is entirely missing, the corre-
+sponding joint query can still ”hallucinate” its position by attend-
+ing to the movement of connected joints and historical frames. Fi-
+nally, a shared Multi-Layer Perceptron (MLP) head projects each
+updated query directly to its 3D coordinate (𝑥, 𝑦, 𝑧), achieving an
+elegant, end-to-end pose estimation pipeline.
+3.5.4 Physics-Informed Loss Function. To enforce anatomical plau-
+sibility, we design a composite loss function that explicitly incor-
+porates geometric and kinematic constraints:
+𝐿𝑡𝑜𝑡𝑎𝑙 = 𝐿𝑝𝑜𝑠 + 𝜆1𝐿𝑏𝑜𝑛𝑒 + 𝜆2𝐿𝑡𝑒𝑚𝑝 (6)
+Here, 𝐿𝑝𝑜𝑠 minimizes the MPJPE, 𝐿𝑏𝑜𝑛𝑒 penalizes deviations from
+fixed bone lengths to prevent unnatural skeletal stretching, 𝐿𝑡𝑒𝑚𝑝
+enforces motion smoothness between adjacent frames to mitigate
+high-frequency jitter [12, 47, 59]. This approach ensures that the
+inferred poses are not just statistically likely, but biologically plau-
+sible.
+3.5.5 Robust Data Augmentation Strategy. To ensure generaliza-
+tion to complex indoor environments, we implement a comprehen-
+sive Data Augmentation Strategy. We randomly mask a significant
+percentage of input points during training. This adversarial-style
+training compels the model to master global structural reasoning
+rather than relying on local features. To enforce view and scale
+invariance, we apply random rotations (around the vertical axis)
+and scaling/translation to the input point clouds. This prevents
+the model from overfitting to specific sensor placements or sub-
+ject sizes.
+3.5.6 Lightweight Design. To enable real-time edge inference, we
+eliminate spatiotemporal redundancy. Spatially, we adopt Grouped
+Local Vector Attention, reducing complexity from quadratic 𝑂(𝑁2)
+to linear 𝑂(𝑁 ×𝑘). Temporally, we implement a FIFO Feature Buffer
+to bypass redundant sliding-window computations. By executing
+the Spatial Transformer only on the incoming frame and retriev-
+ing cached history, we decouple spatial extraction from temporal
+modeling. This reduces per-frame cost by a factor of the window
+size 𝑇.
+4 Implementation
+Hardware. We prototyped MuPose on the CAL60S244-IB (60 GHz,
+4 GHz BW) [63] from Calterah, utilizing a 2-Tx/4-Rx MIMO config-
+uration to synthesize an 8-element azimuth aperture. This geome-
+try is critical, enabling both the AoA-AoD consistency checks and
+null-steering disentanglement. We configure radar with a 4 GHz
+bandwidth and 128 chirps per frame, achieving a range resolution
+of 3.75 cm and a velocity resolution of 5 cm/s. The system oper-
+ates at 15 FPS. Synchronized Orbbec Femto Bolt depth cameras
+were employed to capture skeletal ground truth. To verify cross-
+platform portability, we further validated the pipeline on 77 GHz
+commercial radars from TI and Calterah.
+1.2cm
+Radar Chip
+Elevation
+Azimuth
+Figure 12: CAL60S244-IB radar and its antenna array.
+Software. We performed data analysis and algorithm prototyping
+using MATLAB and Python. For the real-time system, we adopted
+8
+629
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+a hybrid architecture: the performance-critical point cloud genera-
+tion module is implemented in C, while the deep learning models
+are developed and deployed using PyTorch. All experiments were
+executed on a laptop equipped with an NVIDIA RTX 5090 GPU.
+To capture temporal dynamics, we structure the input as 5-second
+sliding windows of point cloud sequences. The model is optimized
+using the AdamW optimizer with an initial learning rate of 2×10−4
+and a weight decay of 1 × 10−4. We employ a ReduceLROnPlateau
+scheduler to halve the learning rate upon loss stagnation. To pre-
+vent overfitting, we implement an early stopping mechanism with
+a patience of 6 epochs. Empirically, the model converges within
+approximately 80 epochs, with each epoch requiring 30 minutes.
+5 Evaluation
+In this section, we conduct a comprehensive evaluation of MuPose
+in real-world indoor environments.
+5.1 Evaluation Setup
+Dataset. We conducted an extensive data collection across 7 di-
+verse indoor environments, spanning a living room, a bedroom, a
+pantry, a kitchen, a meeting room, an office, and an open lounge
+area. The resulting dataset comprises 17.9 hours of recording, to-
+taling 967,143 frames. We recruited 23 volunteers to participate in
+the study, with all procedures approved by the Institutional Review
+Board of the First Hospital of Peking University (IRB No. 2021297-
+002). Participants were instructed to perform unconstrained ac-
+tions in these realistic settings, covering three categories: (1) Daily
+Activities (e.g., walking, jogging, falling, and lying down); (2) Fit-
+ness Exercises (e.g., jumping jacks, and boxing); and (3) Hand Ges-
+tures. To ensure the system generalizes beyond specific training
+distributions, we enforced a leave-one-group-out strategy. Specif-
+ically, we held out one complete environment and 3 volunteers to
+serve as an unseen test set for generalization analysis. The remain-
+ing data was split into training, validation, and testing sets (8:1:1),
+ensuring that the model is evaluated on both familiar and novel
+scenarios.
+Radar
+RGBD
+Camera
+(a) Evaluation scene. (b) Distinct experimental rooms.
+Figure 13: Seven real-world indoor data collection scenarios.
+Ground Truth. The experimental setup is shown in Fig. 13(a).
+The radar was temporally synchronized with Orbbec Femto Bolt
+depth cameras, which captured skeletal Ground Truth (GT). No-
+tably, for crowded scenarios involving more than three subjects,
+we deployed a multi-camera network to minimize occlusion and
+ensure robust GT generation.
+Evaluation Metrics. To comprehensively assess system perfor-
+mance across reliability, accuracy, and stability, we employ the
+following metrics:
+• g-MPJPE (Generalized MPJPE): Our primary reliability met-
+ric. It strictly penalizes detection failures (ghosts and misses)
+with a fixed error of 𝜌 = 50 cm, ensuring phantom artifacts
+are accounted for.
+• PA-MPJPE (Procrustes Aligned MPJPE): Computed on matched
+subjects after rigid alignment. This isolates structural fidelity
+from localization errors, focusing purely on anatomical pose
+reconstruction.
+• PCK@8cm: The percentage of joints predicted within 8 cm
+(approx. palm width). We adopt this strict threshold to demon-
+strate the system’s suitability for high-precision interaction,
+contrasting it with coarser baselines.
+Baselines. To benchmark our system, we compare MuPose against
+three leading baselines: 𝑀4𝑀𝑒𝑠ℎ [85], 𝑚3𝑇𝑟𝑎𝑐𝑘 [25], and OccMesh
+[6]. These works constitute the current SOTA for mmWave radar-
+based multi-person HPE.
+5.2 Overall Performance
+Quantitative Comparison. We first evaluate the overall accu-
+racy of MuPose against three SOTA baselines across the entire test
+set, which covers all subjects, environments, and activities. Figure
+15(a) presents the Cumulative Distribution Function (CDF) of the
+estimation errors. MuPose significantly outperforms all baselines,
+achieving a remarkably low g-MPJPE of 6.7 cm. In contrast, the
+best-performing baseline, OccMesh, suffers from an error of 17.4
+cm. By resolving signal entanglement and ghosts at the signal pro-
+cessing stage, MuPose effectively prevents error propagation to the
+subsequent pose estimation backend.
+Reliability Analysis. Figure 15(b) reveals a critical discrepancy
+in baselines: 𝑂𝑐𝑐𝑀𝑒𝑠ℎ shows a g-MPJPE of 17.4 cm versus a PA-
+MPJPE of 10.5 cm. This massive gap highlights failures dominated
+by detection errors (ghosts) and localization drift. Even with rigid
+alignment, the high structural error (>10 cm) confirms that sparse
+point clouds cause severe skeletal deformities. Conversely, MuPose
+maintains high consistency (6.7 cm vs. 5.2 cm), proving it elim-
+inates artifacts while reconstructing anatomically faithful skele-
+tons.
+Usability (PCK). In terms of usability, MuPose achieves a PCK@8cm
+of 83.5%, meaning that the vast majority of joints are localized
+within the width of a human palm. Baselines, however, struggle to
+surpass 40% under this strict threshold. This result underscores that
+MuPose is the only candidate capable of supporting fine-grained
+human-computer interaction in realistic, clutter-rich environments.
+Qualitative Results. Figure 14 visualizes the estimation results in
+challenging scenarios (e.g., wall proximity and occlusion). While
+baselines frequently infer ghosts from wall reflections or fail to re-
+cover limbs blocked by furniture, MuPose robustly generates clean
+point cloud and complete skeletons, aligning well with the ground
+truth.
+9
+630
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+Video Frame Skeleton by MuPose
+Point Cloud Video Frame Point Cloud Skeleton by MuPose
+Figure 14: Qualitative performance visualization of MuPose.
+0 10 20 30 40 50
+MPJPE(cm)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+CDF
+MuPose
+OccMesh
+M4
+Mesh
+m3
+Track
+(a) CDF of MPJPE.
+g-MPJPE(cm) ↓PA-MPJPE(cm) ↓PCK@8cm(%) ↑
+0
+20
+40
+60
+80
+100
+Error
+(cm)
+/
+Accuracy
+(%)
+6.7 5.2
+81.9
+17.4
+10.5
+36.3
+21.7
+13.4
+25.1
+27.2
+16.5 14.1
+MuPose (Ours)
+OccMesh
+M4
+Mesh
+m3
+Track
+(b) Three metrics over baselines.
+Figure 15: Overall performance of MuPose.
+5.3 Robustness Analysis
+We evaluate robustness by analyzing impact factors such as subject
+density, environment, and hardware.
+5.3.1 Scalability to Crowd Density. Breaking the scalability bar-
+rier in crowded scenarios is the core mission of MuPose. We eval-
+uate the system’s performance as the number of concurrent sub-
+jects increases from 1 to 6. As shown in Fig. 16, the performance
+gap between MuPose and the SOTA baseline (OccMesh) widens
+significantly with crowd density.
+Specifically, OccMesh exhibits a steep performance decline. Its
+g-MPJPE starts at 9.8 cm for a single subject but deteriorates rapidly
+to 15.7 cm with three subjects. In the most challenging 6-person
+scenario, the error skyrockets to 24.0 cm, rendering the pose esti-
+mation practically unusable.
+In contrast, MuPose demonstrates graceful degradation. It main-
+tains high precision in less crowded settings (5.8 cm for 1 person,
+7.7 cm for 3 persons). Even under the extreme stress of 6 concur-
+rent subjects, MuPose constrains the error to 12.5 cm—nearly 50%
+lower than OccMesh. This resilience validates the synergy of our
+full pipeline: Null Steering resolves direct resolution bin collisions,
+the AoA-AoD check purges the surge in inter-person multipath
+ghosts, and the Masked Spatio-Temporal Transformer robustly in-
+fers body parts severely occluded by the dense crowd.
+1 2 3 4 5 6
+Number of Subjects
+0
+10
+20
+30
+40
+g-MPJPE
+(cm)
+MuPose (Ours)
+OccMesh
+Figure 16: Impact of number
+of subjects.
+1 2 3 4 5 6 Pantry
+(Unseen)
+0
+2
+4
+6
+8
+g-MPJPE
+(cm)
+6.4 6.3
+6.8 6.9 6.6 6.5
+7.2
+Figure 17: Impact of differ-
+ent Rooms.
+5.3.2 Generalization to Unseen Environments. To validate cross-
+domain robustness, we evaluate MuPose on a zero-shot generaliza-
+tion set comprising one unseen room, strictly excluded from train-
+ing. As illustrated in Fig. 17, our evaluation spans diverse settings:
+Rooms 1–6 (Living Room, Bedroom, Kitchen, Meeting Room, Of-
+fice, Lounge) and the unseen test environment (Room 7: Pantry).
+The results reveal a g-MPJPE of 6.6 cm in seen environments com-
+pared to 7.2 cm in the unseen one. This negligible gap (0.6 cm)
+demonstrates that the model learns robust physical priors rather
+than merely memorizing background artifacts.
+5.3.3 Impact of Target Diversity. To verify that MuPose general-
+izes across diverse anthropometric characteristics, our study in-
+cludes 23 volunteers (15 males, 8 females) spanning a wide demo-
+graphic range: ages 21–52 and weights 47–89 kg. We evaluate the
+system on the zero-shot generalization set comprising 3 subjects
+strictly excluded from training. Fig. 18 reveals that while the 20
+10
+631
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+seen subjects achieve an average g-MPJPE of 6.6 cm, the three
+unseen subjects remain robust at 6.8, 7.2, and 7.4 cm. This mar-
+ginal degradation confirms that our model does not merely mem-
+orize specific body shapes. Instead, it learns an identity-agnostic
+mapping, capturing the intrinsic geometric relationship between
+sparse radar reflections and skeletal kinematics.
+Seen Subjects
+(Avg. of 20)
+Unseen
+Subj. A
+Unseen
+Subj. B
+Unseen
+Subj. C
+0
+2
+4
+6
+8
+g-MPJPE
+(cm)
+6.6 6.8
+7.2 7.4
+Figure 18: Impact of differ-
+ent subjects.
+1 2 3 4 5 6 7
+Distance from Radar (m)
+4
+6
+8
+10
+12
+14
+16
+g-MPJPE
+(cm)
+9.1 cm
+(Usable)
+12.7 cm
+(Coarse)
+MuPose
+High Precision Zone (<10cm)
+Figure 19: Impact of differ-
+ent human-radar distances.
+5.3.4 Impact of Human-Radar Distance. Radar signal strength de-
+cays according to the inverse-square law, inevitably leading to re-
+duced Signal-to-Noise Ratio (SNR) and sparser point clouds at longer
+ranges. To quantify this physical limitation, we evaluate MuPose at
+discrete distances of 1, 2, 3, 5, and 7 meters (measured from the sub-
+ject’s centroid). As shown in Fig. 19, MuPose maintains high preci-
+sion (< 7 cm) at 1–3 m. At 5 m, the error (9.1 cm) remains within
+the 10 cm usability threshold, effectively covering the footprint of
+standard living rooms. However, at 7 m, severe point sparsity de-
+grades accuracy to 12.7 cm. This marks the effective operational
+boundary for fine-grained pose estimation, although the system
+remains capable of coarse localization and activity recognition at
+this range.
+Calterah 77G
+Calterah 60G
+Ti 2944
+77G
+(a) Different radars.
+Calterah
+60GHz
+Calterah
+77GHz
+TI IWR1843
+(77GHz)
+0
+2
+4
+6
+8
+10
+Error
+(cm)
+6.7 6.5
+7.3
+5.2 5.1
+5.9
+g-MPJPE PA-MPJPE
+(b) G-MPJPE and PA-MPJPE among different
+radars.
+Figure 20: Impact of different radars.
+5.3.5 Cross-Platform Interoperability. To verify algorithmic gen-
+erality, we deployed MuPose on three commercial platforms (Fig.
+20(a)): the primary Calterah 60 GHz, a Calterah 77 GHz, and a TI 77
+GHz radar. As shown in Fig. 20(b), performance remains consistent,
+with g-MPJPE fluctuating marginally between 6.7 cm (Primary), 6.5
+cm (Calterah 77G), and 7.3 cm (TI 77G). This negligible variation
+confirms MuPose’s strong hardware agnosticism and high-fidelity
+estimation across diverse mmWave chipsets.
+5.4 Ablation Study
+To quantify the accuracy gained individually by our core techniques,
+we conduct a targeted ablation study on the standard test set. Specif-
+ically, we evaluate the system by either disabling a module (AoA-
+AoD check) or reverting to standard baselines (replacing null steer-
+ing with standard beamforming, and replacing the Spatio-Temporal
+Transformer with a PointNet + Bi-LSTM architecture). The perfor-
+mance gains are summarized in Table 2.
+Table 2: Ablation study of key components in MuPose.
+Model Variant Key Function g-MPJPE (cm) PCK@8cm (%)
+MuPose (Full Pipeline) All Enabled 6.7 81.9
+w/ Standard Beamforming
+(vs. Null Steering)
+Disentanglement 11.8 (+5.1) 34.2
+w/o AoA-AoD Check Ghost Removal 12.5 (+5.8) 29.9
+w/ PointNet+Bi-LSTM
+(vs. Transformer)
+Occlusion Recovery 8.9 (+2.2) 72.1
+5.4.1 Accuracy Gained by Null Steering. When replacing our signal-
+level null steering with standard beamforming, the g-MPJPE spikes
+from 6.7 cm to 11.8 cm. This demonstrates a crucial accuracy gain
+of 5.1 cm directly attributable to null steering. While standard beam-
+forming struggles with inter-person interference, null steering ef-
+fectively resolves range-Doppler collisions at the source, confirm-
+ing its necessity for multi-user scalability.
+5.4.2 Accuracy Gained by the AoA-AoD Check. Completely dis-
+abling the AoA-AoD check increases the error to 12.5 cm, repre-
+senting a massive accuracy gain of 5.8 cm when this geometric sig-
+nal filter is active. Without it, the system is unable to purge multi-
+path reflections, causing environmental ghosts to be misidentified
+as valid human targets, which severely compromises overall relia-
+bility.
+5.4.3 Accuracy Gained by the Spatio-Temporal Transformer. To eval-
+uate our neural backend, we replace the transformer with a conven-
+tional PointNet + Bi-LSTM architecture. This substitution degrades
+the error to 8.9 cm, highlighting an accuracy gain of 2.2 cm pro-
+vided by our transformer design. Compared to the Bi-LSTM base-
+line, our transformer more effectively models complex spatial cor-
+relations and temporal dynamics, successfully inferring occluded
+joints from fragmented radar point clouds.
+5.5 System Latency and Efficiency
+To validate real-time feasibility, we evaluated MuPose on a laptop
+with an NVIDIA RTX 5090 GPU, achieving a total end-to-end la-
+tency of 58.4 ms per frame (≈17 FPS). This high efficiency stems
+from three synergistic optimizations. First, regarding algorithmic
+acceleration, we replace traditional spatial-window CFAR with our
+temporal-based ETCM-CFAR [88]. This reduces the time complex-
+ity of point extraction by nearly 100×, effectively eliminating the
+primary bottleneck in the signal processing frontend. Second, we
+implement redundancy elimination in the Null Steering module
+via an Iterative Refinement strategy(Sec. 3.4). By processing only
+newly emerged peaks rather than recalculating the entire spec-
+trum, we avoid redundant beamforming operations. Finally, we
+11
+632
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+achieve model efficiency via input quality. The superior fidelity of
+our point clouds—enabled by Null Steering and AoA-AoD checks—
+significantly alleviates the inference burden. This allows our light-
+weight Transformer to achieve SOTA performance with a compact
+parameter size, avoiding the latency costs typically associated with
+over-parameterized backbones.
+6 Related Work
+Wireless Sensing. Driven by the intrinsic privacy-preserving na-
+ture of RF signals, the community has witnessed a surge in re-
+search across diverse sensing modalities, including mmWave radar
+[8, 9, 15, 39, 79, 106], Wi-Fi [32, 33, 41, 68, 70, 71, 89–91], LoRa
+[49, 81, 82], RFID [2, 3, 53, 54, 60, 61, 83], acoustic sensing [16, 40],
+and UWB [36, 37, 73]. These technologies have unlocked a myriad
+of ubiquitous applications, spanning from fine-grained vital sign
+monitoring [1, 19, 102], activity and gesture recognition [23, 69, 98],
+and human tracking [43, 46, 77], to broader environmental percep-
+tion tasks such as imaging [4, 5, 14, 26, 55, 75, 76], drone sensing
+[21, 27, 67], vibration analysis [44, 84], and even soil monitoring
+[13].
+MmWave Sensing. Originally rooted in autonomous driving [56,
+57, 65], mmWave radar has been democratized by semiconductor
+advances. With single-chip costs dropping to $2, large-scale house-
+hold deployment is now viable. This accessibility has catalyzed
+human sensing research, spanning micro-motion tasks like vital
+signs [10, 95], to macro-motion applications such as tracking [25,
+78], gesture recognition [20, 45], pose estimation [17, 72, 86, 87],
+and activity recognition [48, 74, 93, 94, 96]. The latter fundamen-
+tally relies on high-quality point clouds, which provide a light-
+weight yet expressive representation of dynamic postures [85, 87,
+88, 100]. However, acquiring clean indoor point clouds is severely
+bottlenecked by multipath interference. While prior efforts utilize
+AoA-AoD reciprocity for multipath filtering [24, 62], extending
+this to refine dense mmWave point clouds in multi-user scenarios
+remains largely unexplored.
+7 Discussion
+Range Constraints. Our evaluation identifies an operational bound-
+ary at approximately 5 meters, beyond which skeletal reconstruc-
+tion fidelity declines. This is an inevitable consequence of the inverse-
+square law, where radar echo power diminishes rapidly with dis-
+tance, leading to sparse point clouds and low SNR. Despite this,
+the current 5m range adequately satisfies the spatial requirements
+for most indoor human sensing tasks. To scale MuPose to expan-
+sive environments, we envision a multi-node deployment strategy,
+where handed-over tracking between distributed radars can ex-
+tend the effective sensing envelope indefinitely.
+Maximum Subject Support. Our evaluation demonstrates that
+MuPose robustly supports up to 5 individuals while maintaining
+sub-10cm accuracy. This capacity is well-aligned with the demo-
+graphics of standard households, effectively covering daily fam-
+ily activities. As the crowd size increases to 6 subjects, the sys-
+tem encounters a performance inflection point (g-MPJPE ≈ 12.5
+cm). While this accuracy is sufficient for basic presence detection,
+it marks the limit for fine-grained skeletal reconstruction with a
+single device. Future work will explore distributed radar arrays to
+resolve such hyper-dense scenarios.
+Towards End-to-End Multi-Person Estimation. Our current
+pipeline handles multi-person scenarios by separating users via
+rule-based spatial clustering prior to individual pose regression.
+While effective in standard settings, this purely spatial heuristic
+can occasionally introduce errors when users are in close proxim-
+ity or actively interacting. In such dense environments, the cluster-
+ing algorithm may sometimes struggle to distinguish overlapping
+reflections, erroneously merging distinct users or fragmenting a
+single individual’s point cloud. These segmentation inaccuracies
+can inadvertently propagate irreversible geometric errors to the
+downstream pose estimator, leading to potential identity switches
+or degraded kinematic accuracy. To fundamentally address these
+limitations, our future work aims to transition towards a fully end-
+to-end multi-person pose estimation framework. By replacing the
+heuristic clustering step with a unified neural architecture, the
+system can directly leverage global spatiotemporal context and
+anatomical priors to jointly resolve user identities and kinematics,
+achieving highly robust perception even in crowded indoor spaces.
+Beyond Pose Estimation: Towards Applications and Interac-
+tive Agents. While MuPose achieves robust multi-person pose es-
+timation, we view this as a foundational building block rather than
+the end goal. Building upon these high-fidelity skeletal sequences,
+our immediate future work focuses on fine-grained activity recog-
+nition and clinical gait analysis to non-intrusively monitor motor-
+related conditions, such as Parkinson’s disease. Ultimately, we plan
+to bridge the gap between physical sensing and semantic under-
+standing by integrating MuPose with Large Language Models (LLMs)
+to construct an interactive mmWave Agent. By grounding LLM
+reasoning in continuous spatial kinematics, this multimodal agent
+will not only comprehend complex human behaviors and perform
+high-level semantic reasoning, but also engage in natural, context-
+aware interactions with users, unlocking a new frontier for privacy-
+preserving human-computer interaction in smart environments.
+8 Conclusion
+We present MuPose, the first mmWave Human Pose Estimation
+system to overcome the multi-user scalability barrier in complex
+environments. By integrating physics-driven signal disentangle-
+ment (Null Steering and AoA-AoD reciprocity) with an AI-driven
+Masked Spatio-Temporal Transformer, MuPose fundamentally re-
+solves severe multipath and occlusion challenges. Evaluations show
+MuPose achieves a robust MPJPE of 6.7 cm, outperforming current
+baselines (17.4 cm) by over 60% and enabling practical, privacy-
+preserving multi-person sensing.
+Acknowledgments
+We would like to express our sincere gratitude to all the volun-
+teers who participated in our data collection; their time and effort
+were instrumental in building the dataset for this research. We also
+extend our special thanks to the Peking University New Yanyuan
+Campus for generously providing the venues and facilities that
+made our extensive real-world experiments possible.
+12
+633
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+References
+[1] Fadel Adib, Hongzi Mao, Zachary Kabelac, Dina Katabi, and Robert C Miller.
+2015. Smart homes that monitor breathing and heart rate. In Proceedings of the
+33rd annual ACM conference on human factors in computing systems. 837–846.
+[2] Tara Boroushaki, Maisy Lam, Weitung Chen, Laura Dodds, Aline Eid, and Fadel
+Adib. 2023. Exploiting synergies between augmented reality and rfids for item
+localization and retrieval. In 2023 IEEE International Conference on RFID (RFID).
+IEEE, 30–35.
+[3] Tara Boroushaki, Maisy Lam, Weitung Chen, Laura Dodds, Aline Eid, and Fadel
+Adib. 2023. Real-time X-Ray Vision via Augmented Reality with RF Sensing. In
+Proceedings of the ACM SIGCOMM 2023 Conference. 1185–1187.
+[4] Tara Boroushaki, Junshan Leng, Ian Clester, Alberto Rodriguez, and Fadel Adib.
+2021. Robotic grasping of fully-occluded objects using rf perception. In 2021
+IEEE International Conference on Robotics and Automation (ICRA). IEEE, 923–
+929.
+[5] Tara Boroushaki, Isaac Perper, Mergen Nachin, Alberto Rodriguez, and Fadel
+Adib. 2021. Rfusion: Robotic grasping via rf-visual sensing and learning. In
+Proceedings of the 19th ACM conference on embedded networked sensor systems.
+192–205.
+[6] Haoran Cao, Jiadi Yu, Hao Kong, Yi-Chao Chen, Yanmin Zhu, Linghe Kong, and
+Feilong Tang. 2025. OccMesh: Occlusion-aware Multi-user 3D Human Mesh
+Reconstruction Using mmWave Signals. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies 9, 3 (2025), 1–22.
+[7] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexan-
+der Kirillov, and Sergey Zagoruyko. 2020. End-to-End Object Detection with
+Transformers. In European conference on computer vision. Springer, 213–229.
+[8] Yoon Chae, Zhenzhe Lin, Kang Min Bae, Song Min Kim, and Parth Pathak. 2024.
+{mmComb}: High-speed {mmWave} Commodity {WiFi} Backscatter. In 21st
+USENIX Symposium on Networked Systems Design and Implementation (NSDI
+24). 1713–1729.
+[9] Zhaoxin Chang, Fusang Zhang, Xujun Ma, Pei Wang, Weiyan Chen, Duo
+Zhang, Badii Jouaber, and Daqing Zhang. 2024. Mmecare: Enabling fine-
+grained vital sign monitoring for emergency care with handheld mmwave
+radars. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 8, 4 (2024), 1–24.
+[10] Zhaoxin Chang, Fusang Zhang, Jie Xiong, Weiyan Chen, and Daqing Zhang.
+2024. MSense: Boosting wireless sensing capability under motion interference.
+In Proceedings of the 30th Annual International Conference on Mobile Computing
+and Networking. 108–123.
+[11] Weiyan Chen, Hongliu Yang, Xiaoyang Bi, Rong Zheng, Fusang Zhang, Peng
+Bao, Zhaoxin Chang, Xujun Ma, and Daqing Zhang. 2023. Environment-aware
+multi-person tracking in indoor environments with mmwave radars. Proceed-
+ings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 7,
+3 (2023), 1–29.
+[12] Rishabh Dabral, Anurag Mundhada, Uday Kusupati, Safeer Afaque, Abhishek
+Sharma, and Arjun Jain. 2018. Learning 3d human pose from structure and
+motion. In Proceedings of the European conference on computer vision (ECCV).
+668–683.
+[13] Jian Ding, Ranveer Chandra, Rattan Lal, and Leandros Tassiulas. 2024. Cost-
+effective soil carbon sensing with wi-fi and optical signals. In Proceedings of
+the 30th Annual International Conference on Mobile Computing and Networking.
+1015–1029.
+[14] Laura Dodds, Tara Boroushaki, Kaichen Zhou, and Fadel Adib. 2025. Non-Line-
+of-Sight 3D Object Reconstruction via mmWave Surface Normal Estimation.
+(2025).
+[15] Laura Dodds, Hailan Shanbhag, Junfeng Guan, Saurabh Gupta, and Haitham
+Hassanieh. 2024. Around the corner mmWave imaging in practical environ-
+ments. In Proceedings of the 30th Annual International Conference on Mobile
+Computing and Networking. 953–967.
+[16] Di Duan, Yongliang Chen, Weitao Xu, and Tianxing Li. 2024. Earse: Bringing
+robust speech enhancement to cots headphones. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 7, 4 (2024), 1–33.
+[17] Di Duan, Shengzhe Lyu, Mu Yuan, Hongfei Xue, Tianxing Li, Weitao Xu,
+Kaishun Wu, and Guoliang Xing. 2025. Argus: Multi-view egocentric human
+mesh reconstruction based on stripped-down wearable mmwave add-on. In Pro-
+ceedings of the 23rd ACM Conference on Embedded Networked Sensor Systems.
+1–14.
+[18] Qiang Fu, Xingui Zhang, Jinxiu Xu, and Haimin Zhang. 2020. Capture of 3D
+human motion pose in virtual reality based on video recognition. Complexity
+2020, 1 (2020), 8857748.
+[19] Unsoo Ha, Salah Assana, and Fadel Adib. 2020. Contactless seismocardiogra-
+phy via deep learning radars. In Proceedings of the 26th annual international
+conference on mobile computing and networking. 1–14.
+[20] Mingda Han, Huanqi Yang, Tao Ni, Di Duan, Mengzhe Ruan, Yongliang Chen,
+Jia Zhang, and Weitao Xu. 2024. mmSign: mmWave-based few-shot online
+handwritten signature verification. ACM Transactions on Sensor Networks 20, 4
+(2024), 1–31.
+[21] Skanda Harisha, Jimmy GD Hester, and Aline Eid. 2025. Dragonfly: Single
+mmwave radar 3d localization of highly dynamic tags in gps-denied environ-
+ments. In Proceedings of the 31st Annual International Conference on Mobile Com-
+puting and Networking. 1136–1150.
+[22] Óscar G Hernández, Vicente Morell, José L Ramon, and Carlos A Jara. 2021. Hu-
+man pose detection for robotic-assisted and rehabilitation environments. Ap-
+plied Sciences 11, 9 (2021), 4183.
+[23] Chen-Yu Hsu, Rumen Hristov, Guang-He Lee, Mingmin Zhao, and Dina Katabi.
+2019. Enabling identification and behavioral sensing in homes using radio re-
+flections. In Proceedings of the 2019 CHI Conference on Human Factors in Com-
+puting Systems. 1–13.
+[24] Jihye Kim, Jaehoon Jung, Sohee Lim, and Seong-Cheol Kim. 2024. Multipath
+Suppression Using 2D Angle Analysis Based on the MIMO FMCW Radar. IEEE
+Transactions on Instrumentation and Measurement (2024).
+[25] Hao Kong, Xiangyu Xu, Jiadi Yu, Qilin Chen, Chenguang Ma, Yingying Chen,
+Yi-Chao Chen, and Linghe Kong. 2022. m3track: mmwave-based multi-user 3d
+posture tracking. In Proceedings of the 20th Annual International Conference on
+Mobile Systems, Applications and Services. 491–503.
+[26] Haowen Lai, Gaoxiang Luo, Yifei Liu, and Mingmin Zhao. 2024. Enabling visual
+recognition at radio frequency. In Proceedings of the 30th Annual International
+Conference on Mobile Computing and Networking. 388–403.
+[27] Maisy Lam, Laura Dodds, Aline Eid, Jimmy Hester, and Fadel Adib. 2025. 6D
+Self-Localization of Drones Using a Single Millimeter-Wave Backscatter An-
+chor. In IEEE INFOCOM 2025-IEEE Conference on Computer Communications.
+IEEE, 1–10.
+[28] Shih-Po Lee, Niraj Prakash Kini, Wen-Hsiao Peng, Ching-Wen Ma, and Jenq-
+Neng Hwang. 2023. Hupr: A benchmark for human pose estimation using
+millimeter wave radar. In Proceedings of the IEEE/CVF Winter Conference on
+Applications of Computer Vision. 5715–5724.
+[29] Guangzheng Li, Ze Zhang, Hanmei Yang, Jin Pan, Dayin Chen, and Jin Zhang.
+2020. Capturing human pose using mmWave radar. In 2020 IEEE International
+Conference on Pervasive Computing and Communications Workshops (PerCom
+Workshops). IEEE, 1–6.
+[30] Ke Li, Shijie Wang, Xiang Zhang, Yifan Xu, Weijian Xu, and Zhuowen Tu. 2021.
+Pose recognition with cascade transformers. In Proceedings of the IEEE/CVF con-
+ference on computer vision and pattern recognition. 1944–1953.
+[31] Wenwei Li, Ruofeng Liu, Shuai Wang, Dongjiang Cao, and Wenchao Jiang. 2023.
+Egocentric human pose estimation using head-mounted mmwave radar. In Pro-
+ceedings of the 21st ACM Conference on Embedded Networked Sensor Systems.
+431–444.
+[32] Wenwei Li, Jiarun Zhou, Jie Xiong, Yuhui Xie, Leye Wang, Duo Zhang, and
+Daqing Zhang. 2025. Rethinking WiFi-based Angle Estimation for Robust Pas-
+sive Indoor Localization. Proceedings of the ACM on Interactive, Mobile, Wear-
+able and Ubiquitous Technologies 9, 4 (2025), 1–28.
+[33] Xiang Li, Daqing Zhang, Qin Lv, Jie Xiong, Shengjie Li, Yue Zhang, and Hong
+Mei. 2017. IndoTrack: Device-free indoor human tracking with commodity
+Wi-Fi. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 1, 3 (2017), 1–22.
+[34] Ying Li, Chenxi Wang, Yu Cao, Benyuan Liu, Joanna Tan, and Yan Luo. 2020.
+Human pose estimation based in-home lower body rehabilitation system. In
+2020 International Joint Conference on Neural Networks (IJCNN). Ieee, 1–8.
+[35] Yadong Li, Shuning Wang, Yongjian Fu, Justin Chen, Xingyu Chen, Ju Ren,
+Xinyu Zhang, Akshay Gadre, and Ke Sun. 2025. UltraPoser: Pushing the Lim-
+its of IMU-based Full-Body Pose Estimation with Ultrasound Sensing on Con-
+sumer Wearables. In Proceedings of the 38th Annual ACM Symposium on User
+Interface Software and Technology. 1–15.
+[36] Chi Lin, Jianan Lin, Jie Xiong, Qiwei Wang, Lei Wang, Guowei Wu, Xin Fan, and
+Zhongxuan Luo. 2024. Uwbeacon: Lighting up centimeter-level underwater
+positioning. In Proceedings of the 30th Annual International Conference on Mobile
+Computing and Networking. 1222–1236.
+[37] Chi Lin, Zhaohe Wang, Jie Xiong, Fengqi Li, and Guowei Wu. 2024. Fine-
+grained textile moisture sensing with commodity uwb. In Proceedings of the
+30th Annual International Conference on Mobile Computing and Networking.
+1074–1088.
+[38] Jiangang Liu, Lingjiang Kong, Xiaobo Yang, and Qing Huo Liu. 2016. First-
+order multipath ghosts’ characteristics and suppression in MIMO through-wall
+imaging. IEEE Geoscience and Remote Sensing Letters 13, 9 (2016), 1315–1319.
+[39] Yimeng Liu, Maolin Gan, Huaili Zeng, Li Liu, Younsuk Dong, and Zhichao Cao.
+2024. Hydra: Accurate multi-modal leaf wetness sensing with mm-wave and
+camera fusion. In Proceedings of the 30th Annual International Conference on
+Mobile Computing and Networking. 800–814.
+[40] Sheng Lyu, Ruiming Huang, Yuemin Yu, and Chenshu Wu. 2024. Statistical
+Acoustic Sensing For Real-Time Respiration Monitoring and Presence Detec-
+tion. In Proceedings of the 22nd Annual International Conference on Mobile Sys-
+tems, Applications and Services. 618–619.
+[41] Sohrab Madani, Suraj Jog, Jesus O Lacruz, Joerg Widmer, and Haitham Has-
+sanieh. 2021. Practical null steering in millimeter wave networks. In 18th
+13
+634
+MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom Zhang et al.
+USENIX Symposium on Networked Systems Design and Implementation (NSDI
+21). 903–921.
+[42] Julieta Martinez, Rayat Hossain, Javier Romero, and James J Little. 2017. A
+simple yet effective baseline for 3d human pose estimation. In Proceedings of
+the IEEE international conference on computer vision. 2640–2649.
+[43] Nishant Mehrotra, Divyanshu Pandey, Akarsh Prabhakara, Yawen Liu, Swarun
+Kumar, and Ashutosh Sabharwal. 2024. Hydra: Exploiting multi-bounce scatter-
+ing for beyond-field-of-view mmwave radar. In Proceedings of the 30th Annual
+International Conference on Mobile Computing and Networking. 1545–1559.
+[44] Poorya Mollahosseini, Sayed Saad Afzal, Fadel Adib, and Yasaman Ghasempour.
+2024. SURF: Eavesdropping on Underwater Communications from the Air. In
+Proceedings of the 30th Annual International Conference on Mobile Computing
+and Networking. 815–829.
+[45] Isura Nirmal, Wen Hu, Mahbub Hassan, Abdelwahed Khamis, and Elias
+Aboutanios. 2025. Improving mmWave based Hand Hygiene Monitoring
+through Beam Steering and Combining Techniques. In Proceedings of the 23rd
+ACM Conference on Embedded Networked Sensor Systems. 58–70.
+[46] Anurag Pallaprolu, Phillip Peng, Shaan Sandhu, Winston Hurst, and Yasamin
+Mostofi. 2024. Crowd Analytics with a Single mmWave Radar. In Proceedings of
+the 30th Annual International Conference on Mobile Computing and Networking.
+830–844.
+[47] Dario Pavllo, Christoph Feichtenhofer, David Grangier, and Michael Auli. 2019.
+3d human pose estimation in video with temporal convolutions and semi-
+supervised training. In Proceedings of the IEEE/CVF conference on computer vi-
+sion and pattern recognition. 7753–7762.
+[48] Akarsh Prabhakara, Tao Jin, Arnav Das, Gantavya Bhatt, Lilly Kumari, Elahe
+Soltanaghaei, Jeff Bilmes, Swarun Kumar, and Anthony Rowe. 2022. High reso-
+lution point clouds from mmwave radar. arXiv preprint arXiv:2206.09273 (2022).
+[49] Yidong Ren, Wei Sun, Jialuo Du, Huaili Zeng, Younsuk Dong, Mi Zhang, Shi-
+gang Chen, Yunhao Liu, Tianxing Li, and Zhichao Cao. 2024. Demeter: Reliable
+cross-soil lpwan with low-cost signal polarization alignment. In Proceedings of
+the 30th Annual International Conference on Mobile Computing and Networking.
+230–245.
+[50] Yili Ren, Zi Wang, Sheng Tan, Yingying Chen, and Jie Yang. 2021. Winect: 3d
+human pose tracking for free-form activity using commodity wifi. Proceedings
+of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 5, 4
+(2021), 1–29.
+[51] Yili Ren, Zi Wang, Yichao Wang, Sheng Tan, Yingying Chen, and Jie Yang. 2021.
+3D human pose estimation using WiFi signals. In Proceedings of the 19th ACM
+Conference on Embedded Networked Sensor Systems. 363–364.
+[52] Arindam Sengupta, Feng Jin, Renyuan Zhang, and Siyang Cao. 2020. mm-Pose:
+Real-time human skeletal posture estimation using mmWave radars and CNNs.
+IEEE sensors journal 20, 17 (2020), 10032–10044.
+[53] Longfei Shangguan, Zimu Zhou, and Kyle Jamieson. 2017. Enabling gesture-
+based interactions with objects. In Proceedings of the 15th Annual International
+Conference on Mobile Systems, Applications, and Services. 239–251.
+[54] Longfei Shangguan, Zimu Zhou, Xiaolong Zheng, Lei Yang, Yunhao Liu, and
+Jinsong Han. 2015. ShopMiner: Mining customer shopping behavior in phys-
+ical clothing stores with COTS RFID devices. In Proceedings of the 13th ACM
+conference on embedded networked sensor systems. 113–125.
+[55] Emerson Sie, Xinyu Wu, Heyu Guo, and Deepak Vasisht. 2024. Radarize: En-
+hancing radar slam with generalizable doppler-based odometry. In Proceedings
+of the 22nd Annual International Conference on Mobile Systems, Applications and
+Services. 331–344.
+[56] Elahe Soltanaghaei, Akarsh Prabhakara, Artur Balanuta, Matthew Anderson,
+Jan M Rabaey, Swarun Kumar, and Anthony Rowe. 2021. Millimetro: mmWave
+retro-reflective tags for accurate, long range localization. In Proceedings of the
+27th Annual International Conference on Mobile Computing and Networking. 69–
+82.
+[57] Jinyue Song, Hansol Ku, Jayneel Van, Nelson Lee, Ahmad Kamari, Prasant Mo-
+hapalra, and Parth Palhak. 2025. CoVeRaP: Cooperative Vehicular Perception
+through mmWave FMCW Radars. In 2025 34th International Conference on Com-
+puter Communications and Networks (ICCCN). IEEE, 1–9.
+[58] Liangchen Song, Gang Yu, Junsong Yuan, and Zicheng Liu. 2021. Human pose
+estimation and its application to action recognition: A survey. Journal of Visual
+Communication and Image Representation 76 (2021), 103055.
+[59] Xiao Sun, Bin Xiao, Fangyin Wei, Shuang Liang, and Yichen Wei. 2018. Integral
+human pose regression. In Proceedings of the European conference on computer
+vision (ECCV). 529–545.
+[60] Xue Sun, Jie Xiong, Chao Feng, Xiaohui Li, Jiayi Zhang, Binghao Li, Dingyi
+Fang, and Xiaojiang Chen. 2024. Gastag: A gas sensing paradigm using
+graphene-based tags. In Proceedings of the 30th Annual International Conference
+on Mobile Computing and Networking. 342–356.
+[61] Zehua Sun, Tao Ni, Yongliang Chen, Di Duan, Kai Liu, and Weitao Xu. 2024. Rf-
+egg: An rf solution for fine-grained multi-target and multi-task egg incubation
+sensing. In Proceedings of the 30th Annual International Conference on Mobile
+Computing and Networking. 528–542.
+[62] Ryuhei Takahashi and Pu Wang. 2025. GREST: Ghost targets removal algo-
+rithm using multipath angle estimation. In ICASSP 2025-2025 IEEE International
+Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 1–5.
+[63] Calterh Semiconductor Technology. 2024. Calterh Official Website. https://
+www.calterah.com/ Accessed 25 Aug 2025.
+[64] Alexander Toshev and Christian Szegedy. 2014. Deeppose: Human pose estima-
+tion via deep neural networks. In Proceedings of the IEEE conference on computer
+vision and pattern recognition. 1653–1660.
+[65] Vrishak Vemuri, Evin Mathen, Isabel Joseph, Rezoan Ahmed Nazib, Ahmad
+Kamari, and Parth Pathak. 2024. Utilizing mmWave Radars for Autonomous
+Navigation of UGVs in Degraded Visual Environments. In 2024 IEEE MIT Un-
+dergraduate Research Technology Conference (URTC). IEEE, 1–5.
+[66] Chunyu Wang, Yizhou Wang, and Alan L Yuille. 2013. An approach to pose-
+based action recognition. In Proceedings of the IEEE conference on computer vi-
+sion and pattern recognition. 915–922.
+[67] Haoyang Wang, Jingao Xu, Xinyu Luo, Xuecheng Chen, Ting Zhang, Ruiyang
+Duan, Yunhao Liu, and Xinlei Chen. 2025. Ultra-high-frequency harmony:
+mmwave radar and event camera orchestrate accurate drone landing. In Pro-
+ceedings of the 23rd ACM Conference on Embedded Networked Sensor Systems.
+15–29.
+[68] Hao Wang, Daqing Zhang, Junyi Ma, Yasha Wang, Yuxiang Wang, Dan Wu, Tao
+Gu, and Bing Xie. 2016. Human respiration detection with commodity WiFi
+devices: Do user location and body orientation matter?. In Proceedings of the
+2016 ACM international joint conference on pervasive and ubiquitous computing.
+25–36.
+[69] Hao Wang, Daqing Zhang, Yasha Wang, Junyi Ma, Yuxiang Wang, and Shengjie
+Li. 2016. RT-Fall: A real-time and contactless fall detection system with com-
+modity WiFi devices. IEEE Transactions on Mobile Computing 16, 2 (2016), 511–
+526.
+[70] Junzhe Wang, Wenwei Li, Jiarun Zhou, Jie Xiong, Xuanzhi Wang, Qiwei Wang,
+Zhiyun Yao, Xusheng Zhang, Duo Zhang, and Daqing Zhang. 2025. FreeBFI:
+Enabling Fine-grained BFI Sensing with an Arbitrary Number of Antennas. Pro-
+ceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technolo-
+gies 9, 4 (2025), 1–32.
+[71] Pei Wang, Anlan Yu, Xujun Ma, Rong Zheng, Jingfu Dong, Zhaoxin Chang,
+Duo Zhang, Djamal Zeghlache, and Daqing Zhang. 2025. Wicg: In-body car-
+diac motion sensing based on a mix-medium wi-fi Fresnel zone model. IEEE
+Transactions on Mobile Computing (2025).
+[72] Shuai Wang, Dongjiang Cao, Ruofeng Liu, Wenchao Jiang, Tianshun Yao, and
+Chris Xiaoxuan Lu. 2023. Human Parsing with Joint Learning for Dynamic
+mmWave Radar Point Cloud. Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies 7, 1 (2023), 1–22.
+[73] Shuai Wang, Yunze Zeng, Vivek Jain, and Parth Pathak. 2025. UMusic: In-car
+Occupancy Sensing via High-resolution UWB Power Delay Profile. In Proceed-
+ings of the 23rd ACM Conference on Embedded Networked Sensor Systems. 116–
+129.
+[74] Yuheng Wang, Haipeng Liu, Kening Cui, Anfu Zhou, Wensheng Li, and
+Huadong Ma. 2021. m-activity: Accurate and real-time human activity recog-
+nition via millimeter wave radar. In ICASSP 2021-2021 IEEE International Con-
+ference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 8298–8302.
+[75] Yida Wang, Yu Lu, Yuxuan Zhou, Yifei Shen, Lili Qiu, Zeyuan Lai, Yi-Chao
+Chen, Hao Pan, Juntao Zhou, Dian Ding, et al. 2025. High-resolution mmWave
+Imaging using Metasurface and Diffusion. (2025).
+[76] Yichao Wang, Yili Ren, Yingying Chen, and Jie Yang. 2022. Wi-mesh: A wifi
+vision-based approach for 3d human mesh construction. In Proceedings of the
+20th ACM Conference on Embedded Networked Sensor Systems. 362–376.
+[77] Chenshu Wu, Jingao Xu, Zheng Yang, Nicholas D Lane, and Zuwei Yin. 2017.
+Gain without pain: Accurate WiFi-based localization using fingerprint spatial
+gradient. Proceedings of the ACM on interactive, mobile, wearable and ubiquitous
+technologies 1, 2 (2017), 1–19.
+[78] Chenshu Wu, Feng Zhang, Beibei Wang, and KJ Ray Liu. 2020. mmTrack: Pas-
+sive multi-person localization using commodity millimeter wave radio. In IEEE
+INFOCOM 2020-IEEE Conference on Computer Communications. IEEE, 2400–
+2409.
+[79] Chenshu Wu, Feng Zhang, Beibei Wang, and KJ Ray Liu. 2020. mSense: To-
+wards mobile material sensing with a single millimeter-wave radio. Proceed-
+ings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 4,
+3 (2020), 1–20.
+[80] Yingxiao Wu, Zhongmin Jiang, Haocheng Ni, Changlin Mao, Zhiyuan Zhou,
+Wenxiang Wang, and Jianping Han. 2024. mmhpe: Robust multi-scale 3d hu-
+man pose estimation using a single mmwave radar. IEEE Internet of Things
+Journal (2024).
+[81] Binbin Xie, Minhao Cui, Deepak Ganesan, and Jie Xiong. 2025. Making LoRa
+Sensing Coexist with Communication. In Proceedings of the 31st Annual Inter-
+national Conference on Mobile Computing and Networking. 345–359.
+[82] Binbin Xie, Weizheng Wang, Deepak Ganesan, Lili Qiu, and Jie Xiong. 2025.
+Cross-Technology Sensing: Leveraging LoRa Signals to Empower WiFi Sensing.
+In Proceedings of the 31st Annual International Conference on Mobile Computing
+14
+635
+MuPose: Breaking the Scalability Barrier of mmWave Multi-User Pose Estimation in the Wild MobiSys ’26, June 21–25, 2026, Cambridge, United Kingdom
+and Networking. 894–908.
+[83] Binbin Xie, Jie Xiong, Xiaojiang Chen, Eugene Chai, Liyao Li, Zhanyong Tang,
+and Dingyi Fang. 2019. Tagtag: Material sensing with commodity RFID. In
+Proceedings of the 17th conference on embedded networked sensor systems. 338–
+350.
+[84] Binbin Xie, Jie Xiong, Xiaojiang Chen, and Dingyi Fang. 2020. Exploring com-
+modity rfid for contactless sub-millimeter vibration sensing. In Proceedings of
+the 18th Conference on Embedded Networked Sensor Systems. 15–27.
+[85] Hongfei Xue, Qiming Cao, Yan Ju, Haochen Hu, Haoyu Wang, Aidong Zhang,
+and Lu Su. 2022. M4esh: mmwave-based 3d human mesh construction for multi-
+ple subjects. In Proceedings of the 20th ACM Conference on Embedded Networked
+Sensor Systems. 391–406.
+[86] Hongfei Xue, Qiming Cao, Chenglin Miao, Yan Ju, Haochen Hu, Aidong Zhang,
+and Lu Su. 2023. Towards generalized mmwave-based human pose estimation
+through signal augmentation. In Proceedings of the 29th Annual International
+Conference on Mobile Computing and Networking. 1–15.
+[87] Hongfei Xue, Yan Ju, Chenglin Miao, Yijiang Wang, Shiyang Wang, Aidong
+Zhang, and Lu Su. 2021. mmMesh: Towards 3D real-time dynamic human mesh
+construction using millimeter-wave. In Proceedings of the 19th Annual Interna-
+tional Conference on Mobile Systems, Applications, and Services. 269–282.
+[88] Hongliu Yang, Duo Zhang, Xusheng Zhang, Jie Xiong, Zizhou Fan, Wanru Ning,
+Weiyan Chen, Fusang Zhang, Zijun Han, and Daqing Zhang. 2025. From Spatial
+Domain to Temporal Domain: Unleashing the Capability of CFAR for mmWave
+Point Cloud Generation. Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies 9, 2 (2025), 1–29.
+[89] Zhiyun Yao, Kai Niu, Xuanzhi Wang, Rong Zheng, Junzhe Wang, Duo Zhang,
+and Daqing Zhang. 2025. WiCaliper: Simultaneous Material and 3D Size Sens-
+ing for Everyday Objects Using WiFi. IEEE Journal on Selected Areas in Com-
+munications (2025).
+[90] Youwei Zeng, Dan Wu, Jie Xiong, Jinyi Liu, Zhaopeng Liu, and Daqing Zhang.
+2020. MultiSense: Enabling multi-person respiration sensing with commodity
+wifi. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 4, 3 (2020), 1–29.
+[91] Youwei Zeng, Dan Wu, Jie Xiong, Enze Yi, Ruiyang Gao, and Daqing Zhang.
+2019. FarSense: Pushing the range limit of WiFi-based respiration sensing with
+CSI ratio of two antennas. Proceedings of the ACM on Interactive, Mobile, Wear-
+able and Ubiquitous Technologies 3, 3 (2019), 1–26.
+[92] Bo Zhang, Zimeng Zhou, Boyu Jiang, and Rong Zheng. 2024. SUPER:
+Seated Upper Body Pose Estimation using mmWave Radars. arXiv preprint
+arXiv:2407.02455 (2024).
+[93] Duo Zhang, Xusheng Zhang, Shengjie Li, Yaxiong Xie, Yang Li, Xuanzhi Wang,
+and Daqing Zhang. 2023. Lt-fall: The design and implementation of a life-
+threatening fall detection and alarming system. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 7, 1 (2023), 1–24.
+[94] Duo Zhang, Xusheng Zhang, Yaxiong Xie, Fusang Zhang, Xuanzhi Wang, Yang
+Li, and Daqing Zhang. 2024. LoCal: An Automatic Location Attribute Cali-
+bration Approach for Large-Scale Deployment of mmWave-based Sensing Sys-
+tems. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 7, 4 (2024), 1–27.
+[95] Duo Zhang, Xusheng Zhang, Yaxiong Xie, Fusang Zhang, Hongliu Yang, and
+Daqing Zhang. 2024. From Single-Point to Multi-Point Reflection Modeling:
+Robust Vital Signs Monitoring via mmWave Sensing. IEEE Transactions on
+Mobile Computing (2024), 1–16. doi:10.1109/TMC.2024.3450318
+[96] Duo Zhang, Xusheng Zhang, Zhehui Yin, Yaxiong Xie, Hewen Wei, Zhaoxin
+Chang, Wenwei Li, and Daqing Zhang. 2025. mmRotation: Unlocking Versa-
+tility of a Single mmWave Radar via Azimuth Panning and Elevation Tilting.
+IEEE Transactions on Mobile Computing 24, 07 (2025), 6045–6061.
+[97] Duo Zhang, Xusheng Zhang, Zhehui Yin, Pengfei Zhou, Hongliu Yang, Pei
+Wang, Zhiyun Yao, Junzhe Wang, Fusang Zhang, and Daqing Zhang. 2025.
+Breaking the Resolution Barriers of mmWave Arrays via Null Steering for Sleep
+Monitoring in Multi-Person Scenarios. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies 9, 3 (2025), 1–29.
+[98] Xiaotong Zhang, Qingqiao Hu, Zhen Xiao, Tao Sun, Jiaxi Zhang, Jin Zhang, and
+Zhenjiang Li. 2024. Few-Shot Adaptation to Unseen Conditions for Wireless-
+Based Human Activity Recognition Without Fine-Tuning. IEEE Transactions
+on Mobile Computing (2024).
+[99] Xiaotong Zhang, Zhenjiang Li, and Jin Zhang. 2022. Synthesized millimeter-
+waves for human motion sensing. In Proceedings of the 20th ACM Conference
+on Embedded Networked Sensor Systems. 377–390.
+[100] Xusheng Zhang, Duo Zhang, Yaxiong Xie, Dan Wu, Yang Li, and Daqing Zhang.
+2024. Waffle: A Waterproof mmWave-based Human Sensing System inside
+Bathrooms with Running Water. Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies 7, 4 (2024), 1–29.
+[101] Hengshuang Zhao, Li Jiang, Jiaya Jia, Philip HS Torr, and Vladlen Koltun. 2021.
+Point transformer. In Proceedings of the IEEE/CVF international conference on
+computer vision. 16259–16268.
+[102] Mingmin Zhao, Fadel Adib, and Dina Katabi. 2016. Emotion recognition using
+wireless signals. In Proceedings of the 22nd annual international conference on
+mobile computing and networking. 95–108.
+[103] Mingmin Zhao, Tianhong Li, Mohammad Abu Alsheikh, Yonglong Tian, Hang
+Zhao, Antonio Torralba, and Dina Katabi. 2018. Through-wall human pose
+estimation using radio signals. In Proceedings of the IEEE conference on computer
+vision and pattern recognition. 7356–7365.
+[104] Mingmin Zhao, Yingcheng Liu, Aniruddh Raghu, Tianhong Li, Hang Zhao, An-
+tonio Torralba, and Dina Katabi. 2019. Through-wall human mesh recovery
+using radio signals. In Proceedings of the IEEE/CVF International Conference on
+Computer Vision. 10113–10122.
+[105] Mingmin Zhao, Yonglong Tian, Hang Zhao, Mohammad Abu Alsheikh, Tian-
+hong Li, Rumen Hristov, Zachary Kabelac, Dina Katabi, and Antonio Torralba.
+2018. RF-based 3D skeletons. In Proceedings of the 2018 Conference of the ACM
+Special Interest Group on Data Communication. 267–281.
+[106] Renjie Zhao, Timothy Woodford, Teng Wei, Kun Qian, and Xinyu Zhang. 2022.
+M-cube: an open-source millimeter-wave MIMO software radio for wireless
+communication and sensing. In Proceedings of the 20th Annual International
+Conference on Mobile Systems, Applications and Services. 613–614.
+[107] Ce Zheng, Wenhan Wu, Chen Chen, Taojiannan Yang, Sijie Zhu, Ju Shen,
+Nasser Kehtarnavaz, and Mubarak Shah. 2023. Deep learning-based human
+pose estimation: A survey. ACM computing surveys 56, 1 (2023), 1–37.
+[108] Haozhe Zhou, Riku Arakawa, Yuvraj Agarwal, and Mayank Goel. 2025. IMU-
+CoCo: Enabling Flexible On-Body IMU Placement for Human Pose Estimation
+and Activity Recognition. In Proceedings of the 38th Annual ACM Symposium
+on User Interface Software and Technology. 1–16.
+15
+636
+

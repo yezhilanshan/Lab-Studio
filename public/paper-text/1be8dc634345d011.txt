@@ -1,0 +1,971 @@
+mmWaveFlow: Unified Enhancement and Generation of mmWave Human Point
+Clouds
+Chang Su1,2
+Beihong Jin1,2,†
+Qiwen Shi1,2
+Zhi Wang1,2
+1
+Institute of Software, Chinese Academy of Sciences
+2
+University of Chinese Academy of Sciences
+{suchang21, jbh, shiqiwen24, wangzhi20}@otcaix.iscas.ac.cn
+Abstract
+Millimeter-wave (mmWave) point clouds have attracted in-
+creasing interest in human sensing due to their robustness,
+privacy preservation, and low cost. However, their practi-
+cal adoption is hindered by the inherent sparsity of data and
+the lack of large-scale annotated dataset. We revisit gener-
+ative modeling and propose a unified flow-matching frame-
+work mmWaveFlow that unifies enhancement and gener-
+ation of mmWave point clouds by learning an invertible
+transport between dense and sparse point clouds. We lever-
+age paired data and a Cross-modal Latent Alignment mod-
+ule to enforce semantic alignment and bridge the modal-
+ity gap. We find that condition-free flow matching is more
+vulnerable to latent path crossings, which impair trans-
+port. Therefore, we propose Origin-Aware Flow Match-
+ing (OA-Flow) by conditioning transport on the path ori-
+gin to mitigate ambiguity in bidirectional transport. Re-
+sults of experiments across multiple datasets demonstrate
+the effectiveness of mmWaveFlow for mmWave human point
+clouds generation and enhancement. We also observe con-
+sistent gains in downstream tasks, highlighting the promise
+of our framework for human sensing. Codes are available
+at https://github.com/suchang-99/mmWaveFlow.
+1. Introduction
+Human sensing is a core area in computer vision, cover-
+ing various tasks from pose estimation to action recognition.
+It supports diverse domains such as embodied AI, human-
+computer interaction, and character animation.
+Currently, contactless human sensing is evolving rapidly,
+freeing users from wearable sensors. Point clouds captured
+by mmWave devices stand out among sensing technologies
+due to their strong privacy preservation compared to cam-
+eras and lower cost than LiDAR, making them a promising
+direction for research [51]. However, it presents two pri-
+mary challenges: the point clouds are typically sparse and
+Figure 1. The comparison between key ideas of mmWaveFlow
+and conventional flow matching model.
+noisy, and large-scale annotated datasets remain limited.
+Recent advances in generative models have led to
+diffusion-based methods[33, 52] that aim to enhance
+mmWave point clouds to LiDAR-like quality. However,
+most methods target scene-level tasks like autonomous driv-
+ing, which are not well-suited for fine-grained human sens-
+ing tasks. Moreover, they typically sample from Gaussian
+noise and treat mmWave data as a conditioning signal, po-
+tentially overlooking its inherent structure information.
+To address data scarcity, other work[7, 9, 44] simu-
+lates mmWave data from human meshes via physics-based
+model. However, such approaches rely on high-fidelity 3D
+meshes, which limits their scalability and diversity.
+While generation and enhancement of mmWave point
+clouds are typically treated as separate tasks, we argue that
+they are inherently connected. We propose a unified per-
+spective: these two tasks are essentially a bidirectional map-
+ping between sparse and dense point clouds, as shown in
+Fig. 1. Our key insight stems from the observation that flow
+matching enables learning invertible transports, which natu-
+rally achieve bidirectional mapping between arbitrary distri-
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+31366
+butions. This unified invertible transport delivers two crit-
+ical capabilities: enhancing sparse mmWave point clouds
+to denser ones and generating realistic mmWave data from
+available dense point clouds.
+However, learning such a transport is challenging due to
+geometric asymmetry: mmWave data are sparse and noisy,
+while dense data provide detailed geometric information.
+These two modalities exhibit significantly different pat-
+terns, hindering the learning of a reliable transport. More-
+over, without proper conditioning, the constructed paths
+may cross, introducing inconsistent supervision that further
+degrades transport quality. Consequently, designing a flow
+matching framework tailored to such asymmetric tasks re-
+mains an open problem.
+To address these problems, we propose two key modules:
+(1) Cross-modal Latent Alignment: We employ a shared
+cross-attention module to project data from two modalities
+into a unified semantic space. These features are then opti-
+mized with an InfoNCE objective, enforcing robust seman-
+tic correspondence while suppressing spurious matches.
+(2) Origin-Aware Flow Matching: We augment flow
+matching by conditioning on the path origin, which miti-
+gates path crossing issues during cross-domain transport.
+Our contributions are summarized as follows:
+• To the best of our knowledge, we are the first to use flow
+matching to unify enhancement and generation of sparse
+mmWave point clouds for human sensing.
+• We propose an end-to-end flow framework for bidi-
+rectional mmWave-dense point cloud translation. Our
+framework uniquely integrates cross-modal latent align-
+ment and origin-aware flow matching, learning consistent
+representations without reliance on pretrained models or
+high-quality modality prerequisites.
+• We conduct extensive experiments on public datasets.
+Results show that mmWaveFlow achieves state-of-the-
+art performance in mmWave point cloud generation and
+enhancement, and suggest its potential for extension to
+scene-level tasks. It also improves downstream task per-
+formance, further demonstrating its effectiveness.
+2. Related Work
+Diffusion and Flow Matching. Over the past decade,
+diffusion models [20, 37–39] have shown strong perfor-
+mance across diverse generative tasks. Diffusion models
+progressively add noise to clean source data and train neu-
+ral networks to reverse this process. Flow matching mod-
+els [2, 24, 26] extend this paradigm by directly modeling
+the velocity fields that define flow paths between source
+and target distributions via an ordinary differential equa-
+tion (ODE). Flow matching theoretically allows for arbi-
+trary distributions as the source distribution, which can then
+be used for direct evolution. Several methods have been
+proposed in this field, such as InterFlow [2], BBDM[23],
+and Schrödinger Bridge [36, 40, 55]. They provide impor-
+tant theoretical support for bridging two arbitrary distribu-
+tions. Recently, CrossFlow[25] and FlowTok[19] extended
+this idea to more challenging cross-modal generation (e.g.,
+text-to-image and image-to-depth). However, most existing
+studies focus on images and text, leaving the transport be-
+tween point cloud distributions largely unexplored.
+Enhancement of mmWave Radar Point Clouds. Re-
+cent studies have explored enhancing mmWave radar point
+clouds using both classical signal processing methods and
+learning-based methods. On the signal processing side,
+methods such as mmEye [50] refine the standard Fast
+Fourier Transform processing pipeline. Integrating infor-
+mation from multiple frames has become a common strat-
+egy for enhancing mmWave point clouds [3, 11]. Learning-
+based methods primarily rely on cross-modal supervision
+provided by RGB images [46] or LiDAR data [8, 17, 18].
+Recent work applies diffusion models to mmWave enhance-
+ment by conditioning on mmWave signals and supervis-
+ing with LiDAR bird’s eye view (BEV) images [16, 27,
+33, 41, 47, 52]. Using BEV images as supervision sig-
+nals enables effective reuse of existing diffusion models
+for image generation, but projecting point clouds into BEV
+inevitably discards height and fine-grained geometric de-
+tails. Furthermore, most existing methods are developed for
+autonomous-driving scenarios, which focus on large-scale
+environments rather than the fine-grained pose and shape
+information required for human sensing.
+Generation of mmWave Signals. Compared with im-
+ages and text, mmWave data are considerably less intu-
+itive to interpret, resulting in limited large-scale labeled
+datasets. Conventional mmWave signal generation schemes
+are mainly based on modeling and simulation. A se-
+ries of recent methods [1, 12, 53] integrate vision-based
+human reconstruction techniques with signal propagation
+models to synthesize signals for human sensing. However,
+these pipelines struggle to accurately model complex en-
+vironments and material-dependent scattering (e.g., differ-
+ent clothing), which severely constrains their performance
+in real-world deployments. The mmGPE [44] attempts to
+mitigate this sim-to-real gap by leveraging an adversar-
+ial module to align simulated and real data distributions.
+Other studies [21, 56] design more expressive propagation
+and transmission models to generate more realistic signals.
+NeRF2
+[54] models the signal propagation space with a
+deep neural network and is subsequently used to synthe-
+size mmWave signals. RF-Diffusion [9] leverages diffusion
+models to learn the conditional distribution of mmWave sig-
+nals given specific scene configurations and human motion.
+Despite these advances, the generalization capability of cur-
+rent methods to unseen subjects, poses, and environments
+remains limited. Therefore, mmWave signal generation is
+still far from being solved and requires further investigation.
+31367
+Figure 2. Overview of mmWaveFlow. The model combines a cross-modal VAE backbone with a latent flow matching model. The VAE
+learns meaningful latent tokens and reconstructs dense and mmWave point clouds. While the latent flow matching model is the core of our
+unified enhancement and generation of mmWave human point clouds, learning an invertible transport between z0 and z1.
+3. Preliminaries
+We consider a generative model that defines a mapping be-
+tween samples z0 from a source distribution p0 to samples
+z1 of a target distribution p1 via the ODE on time t ∈ [0, 1]:
+dzt = vθ(zt, t)dt. Here, vθ is the velocity field parameter-
+ized by a neural network with weights θ. Flow matching
+defines a simple forward process by linearly interpolating:
+  z_t=tz_1+(1-t)z_0, \label {equ:interp}  (1)
+The vθ(zt, t) is trained by minimizing the mean squared er-
+ror (MSE) between its output and the ground truth ˆ
+vt:
+  \hat {v}_t=\frac {dz_t}{dt}=z_1-z_0.  (2)
+Once trained, the learned velocity field vθ defines an invert-
+ible, continuous flow between p0 and p1. It enables bidirec-
+tional transport through the same ODE:
+  \quad & z_1 = z_0 + \int _0^1 v_\theta (z_t,t)dt. (3)
+Integrating forward in time from z0 ∼ p0 transports p0 to
+p1, while integrating backward in time from z1 ∼ p1 trans-
+ports p1 back to p0. In practice, the integral is evaluated
+numerically by discretizing time into K steps with step size
+∆t = 1/K (e.g., Euler updates zt+∆t = zt + ∆t vθ(zt, t)).
+In principle, flow matching allows an arbitrary choice of
+source distribution p0. However, prior work [13, 32, 35]
+typically starts from Gaussian noise z0 ∼ N(0, 1). To
+enable conditional generation, the velocity field is condi-
+tioned on additional information c via cross-attention mech-
+anisms [13, 35], i.e., the model learns vθ(zt, t, c) instead of
+an unconditional vθ(zt, t).
+4. Methodology
+4.1. Overview
+Problem Formulation. Let (X0, X1) be a pair of point
+clouds, where each is an unordered 3D point set, represent-
+ing partial observations of the same human subject captured
+at approximately the same time. Here, X0 denotes a dense
+point cloud (e.g., from an RGB-D sensor), and X1 denotes a
+sparse point cloud (e.g., from an mmWave radar). Our goal
+is to learn an invertible transport inducing a bidirectional
+mapping ϕ to make ϕ(X0, ∅) ≈ X1 and ϕ(∅, X1) ≈ X0
+where ∅ is a placeholder indicating the mapping direction.
+mmWaveFlow. The overall pipeline of mmWaveFlow is
+shown in Fig. 2. The encoders E0 and E1 map data from dif-
+ferent modalities into latent representations with the same
+dimensionality. To encourage interaction and alignment
+between modalities, we introduce shared learnable queries
+that perform cross-attention on the modality-specific latent
+representations, promoting a coherent and aligned latent
+space while enhancing feature robustness. Then decoders
+D0 and D1 decode the latent representations back to the
+data space. Together with their corresponding encoders,
+they form two codecs that serve as the feature extraction
+backbone. Beyond this backbone, we further employ a flow
+matching module to learn the transport between the latent
+distributions of the two modalities, where an origin-aware
+flow matching module is incorporated to alleviate potential
+path crossings during training.
+4.2. Cross-modal Latent Alignment
+The alignment is performed at two levels: dimensional
+alignment and semantic alignment.
+Dimensional Alignment. Flow matching typically requires
+31368
+Figure 3. Flow along misalignment patch pairs leads to semanti-
+cally inconsistent paths.
+the source and target distributions to have the same dimen-
+sionality, and the source distribution in flow matching is
+Gaussian noise whose dimensionality can be freely spec-
+ified. However, in our setting, the source is a real data
+distribution whose dimensionality is not under our control.
+Therefore, we introduce a Variational Autoencoder (VAE)
+to transfer the entire generation process to the latent space.
+This not only improves computational efficiency [35], but
+also increases the flexibility of mmWaveflow with respect
+to the input size, as sparse and dense point clouds often
+contain different numbers of points. In addition, recent
+token-based 3D generative models [10, 49] have demon-
+strated strong performance. Motivated by this, we represent
+each point cloud as a set of N latent tokens of dimension
+D. Given paired inputs X0 and X1, we use two encoders
+with identical architecture but separate parameters to ob-
+tain latent tokens f0 = E0(X0) and f1 = E1(X1), where
+f0, f1 ∈ RN×D
+.
+Semantic Alignment. Using a non-Gaussian source distri-
+bution in flow matching may pose a risk of semantic mis-
+alignment. Currently, most point cloud encoders operate at
+the point or patch level and produce a set of latent tokens.
+Since point clouds are unordered, these tokens do not fol-
+low a canonical ordering across different point clouds. As
+illustrated in Fig. 3, tokens at the same position may corre-
+spond to different body parts for different inputs, leading
+to semantic misalignment. However, flow matching per-
+forms element-wise linear interpolation between the source
+and target latent representations, implicitly assuming token-
+wise alignment. When this assumption is violated, the in-
+terpolation may mix unrelated local features, thereby cor-
+rupting the supervision signals for the velocity field.
+Therefore, semantic alignment of latent representations
+across modalities is essential for constructing meaning-
+ful interpolation paths and enabling coherent cross-modal
+translation. Existing work [19, 25] often operates in a dif-
+ferent setting, where one modality (e.g., RGB or language)
+is equipped with a powerful pretrained encoder and serves
+as a semantic anchor. The other modality is then aligned
+Training
+Pairings
+Learned
+ODE
+4 Steps 2 Steps 1 Step
+Inference
+Condition-Free Flow Matching
+Origin-Aware Flow Matching (OA-Flow)
+Training
+𝔼[
+𝔼[
+Figure 4. Condition-free flow matching vs. OA-Flow. Training
+pairings are formed by simply matching samples from two distri-
+butions. Top: paths from different pairs cross, making the direc-
+tion vt toward the correct target ambiguous given only zt. Bottom:
+conditioning the velocity field on the path origin disambiguates
+these crossings and yields a correct, consistent velocity field.
+to this fixed feature space using contrastive or distillation
+losses. In our setting, neither modality benefits from such
+a pretrained feature space due to limited data and the lack
+of large-scale pretraining. As a result, we must jointly in-
+duce a well-structured shared latent space from scratch for
+both modalities, without a privileged anchor, which makes
+cross-modal alignment substantially more challenging.
+To this end, we propose a latent alignment method based
+on shared learnable queries. A shared query q ∈ RM×D
+at-
+tends to both f0 and f1 via cross-attention, projecting them
+into a unified feature space. The resulting tokens are then
+refined by a shared three-layer self-attention module, yield-
+ing aligned latent representations z0, z1 ∈ RM×D
+.
+Apart from cross-attention, which provides an initial
+alignment, we find that a lightweight token-level contrastive
+loss further stabilizes training. Specifically, we apply an In-
+foNCE [29] loss only to corresponding tokens (zk
+0,i, zk
+1,i)
+within each paired sample, and treat tokens at the same po-
+sition k from other samples in the batch as negatives:
+  \mathcal {L}_{\text {align}} =\!-\frac {1}{BM} \sum _{i=1}^{B} \sum _{k=1}^{M} \log \frac { \exp \big ( s(z_{0,i}^{k}, z_{1,i}^{k}) / \tau \big ) }{ \sum _{j=1}^{B}\exp \big ( s(z_{0,i}^{k}, z_{1,j}^{k}) / \tau \big ) }. \label {eq:infonce_token} 
+(4)
+Here, s(·, ·) denotes the cosine similarity, τ is the temper-
+ature, and B and M are the batch size and the number of
+tokens per sample, respectively.
+4.3. Origin-Aware Flow Matching
+Previous studies [19, 25] argue that once the Gaussian
+source p0(z) is replaced by a conditional source p0(z | c),
+the condition c can be absorbed into the source distribu-
+31369
+tion. In this view, conditional generation simply samples
+z0 ∼ p0(z | c) and then evolves it with an unconditional ve-
+locity field v(zt, t) instead of v(zt, t, c), thus reducing the
+space–time complexity. However, we observe latent path
+crossings in this condition-free setting. Recall that flow
+matching constructs paths between the source and target
+distributions by linear interpolation, as in Eq. (1). In high-
+dimensional spaces, linear trajectories of different paired
+samples may pass through the same intermediate state zt.
+At such crossings, an unconditional velocity field receives
+incompatible supervision and tends to progress toward an
+averaged direction, resulting in biased velocity estimation.
+As illustrated in the top of Fig. 4, condition-free flow suffers
+from latent path crossings: different training paired sam-
+ples induce trajectories that cross in latent space, causing
+the model to learn an incorrect velocity field around these
+crossings. This leads to severe degradation or even failure
+in multi-step integration. In the single-step case, however,
+the update is dominated by the displacement encoded at the
+origin, so the transport can still reach the correct target, even
+though the underlying velocity field is imperfect.
+To mitigate this problem, we propose origin-aware flow
+matching, which conditions the velocity field on the path
+origin. Preserving origin information allows the model to
+disambiguate crossing paths and learn more accurate veloc-
+ity fields. As illustrated in the bottom of Fig. 4, it greatly
+reduces path crossings and produces smoother flows.
+During training, we randomly select z0 or z1 as the ori-
+gin condition with equal probability. This symmetric con-
+ditioning strategy enables the model to handle both forward
+and backward flows while maintaining origin awareness.
+The flow-matching loss is given by:
+  \mathcal {L}_{\text {Flow}}=MSE(v_\theta (z_t,t,z_k),\hat {v}_t), k \sim \operatorname {Bernoulli}(0.5)  (5)
+This approach mitigates the path crossing problem with
+minimal added complexity. Conditioning on the origin pro-
+vides unambiguous guidance at intersection points, leading
+to more stable training and higher-quality generated results.
+4.4. Training mmWaveFlow
+Training objective. We train the VAE with a combina-
+tion of Chamfer Distance (CD) and Earth Mover’s Distance
+(EMD), together with a standard KL regularization term.
+The overall VAE loss is defined as:
+  \begin {aligned} \mathcal {L}_{\text {VAE}}&=\sum _{i=0}^{1} [ CD(\mathcal {D}_i(z_i), X_i) + EMD(\mathcal {D}_i(z_i), X_i)\\ &+ \lambda _{\text {KL}} KL\left (\mathcal {N}(\mu _{z_i}, \sigma _{z_i}^2) \parallel \mathcal {N}(0, 1)\right )], \end {aligned} 
+(6)
+where D is the decoder, zi is the latent representation for
+the modality i, and λ is the weight of the KL regularization
+term. The overall training objective is defined as:
+  \begin {aligned} \mathcal {L}= \lambda _{\text {VAE}}\mathcal {L}_{\text {VAE}}+\lambda _{\text {Flow}}\mathcal {L}_{\text {Flow}}+\lambda _{\text {align}}\mathcal {L}_{\text {align}} \label {equ:overallloss} \end {aligned}  (7)
+Training strategy. Following prior work [25], we first
+jointly train the VAE and the OA-Flow module using the
+combined objective L. We stop updating the VAE once it
+approximately converges (e.g., after 10 consecutive epochs
+with no decrease in reconstruction loss), then freeze it and
+continue training only the OA-Flow module. Furthermore,
+this joint optimization can be viewed as a multi-task learn-
+ing problem, and therefore we employ gradient surgery [48]
+to improve convergence stability and overall performance.
+5. Experiments
+5.1. Experimental Setup
+5.1.1. Datasets
+Three common and low-cost sources of dense human point
+clouds are depth cameras, LiDAR, and simulation from
+parametric human models (e.g., SMPL-X [30]). Accord-
+ingly, we select three public datasets for evaluation, each
+containing mmWave point clouds with dense point clouds
+derived from these three sources, respectively.
+mmBody [6]. The dataset includes over 100 motions from
+20 subjects. The test set includes scenarios captured un-
+der challenging conditions such as rain and poor lighting,
+which can be used to evaluate the robustness of our method.
+We exclude smoke and occlusion scenes as the dense point
+clouds are severely degraded or missing. This results in
+39,892 training samples and 20,207 testing samples.
+MM-Fi [45]. The dataset comprises recordings from 40 hu-
+man subjects, covering 27 categories of daily and rehabili-
+tation activities. To mitigate the sparse nature of mmWave
+point clouds, we accumulate the point clouds of every four
+consecutive frames into a single composite frame and dis-
+card any composite containing fewer than 50 points, i.e.,
+an average of fewer than 10 points per raw frame, which
+we consider too sparse. After this filtering, the dataset com-
+prises 207,610 training samples and 69,271 testing samples.
+mRI [4]. The dataset focuses on simple rehabilitation ex-
+ercises performed by 20 subjects in home-monitoring con-
+ditions. Ground-truth 3D joint labels are captured by two
+Kinect cameras. After alignment and preprocessing, we ob-
+tain 102,817 training samples and 25,649 testing samples.
+The mmWave point clouds in mmBody are captured by
+an Arbe Robotics sensor, while those in MM-Fi and mRI
+are collected from the Texas Instruments IWR6843AOP
+and IWR1443Boost mmWave radars, respectively. Among
+these, the IWR6843AOP is one of the most common and
+cheapest commercial mmWave devices.
+5.1.2. Evaluation Metrics
+We evaluate mmWaveFlow on two tasks: mmWave-to-
+dense (M2D) for enhancement from sparse mmWave input,
+and dense-to-mmWave (D2M) for generation from dense
+input. For both tasks, we report L2 Chamfer Distance (CD)
+31370
+Table 1. Quantitative results on different datasets.
+Model
+mmBody MM-Fi mRI
+MR
+D2M M2D D2M M2D D2M M2D
+CD EMD CD EMD CD EMD CD EMD CD EMD CD EMD
+mmPoint [42] 1.45 7.79 1.09 9.28 3.27 12.73 0.81 4.49 3.14 13.81 0.89 6.93 3.22
+RadarHD [33] 3.95 13.53 1.59 14.89 4.57 16.46 1.55 6.04 4.27 16.96 1.24 7.81 5.44
+RadarDiff [52] 1.61 8.12 1.09 7.11 3.52 12.79 0.84 4.73 3.15 13.62 0.98 7.14 3.89
+LiDiff [28] 6.47 24.39 1.16 12.27 9.12 33.94 0.66
+0.66
+0.66 5.50 9.03 33.17 0.84 6.63 5.11
+Tiger [34] 1.32 6.57 1.02 5.82 2.90 11.12 0.77 3.85 2.35 12.74 0.81 4.92 2.11
+mmWaveFlow 1.17
+1.17
+1.17 4.83
+4.83
+4.83 0.95
+0.95
+0.95 4.76
+4.76
+4.76 2.69
+2.69
+2.69 8.49
+8.49
+8.49 0.75 3.69
+3.69
+3.69 2.12
+2.12
+2.12 9.22
+9.22
+9.22 0.72
+0.72
+0.72 2.69
+2.69
+2.69 1.11
+and Earth Mover’s Distance (EMD) in centimeters to eval-
+uate output point cloud quality.
+We also introduce Mean Rank (MR), to assess the over-
+all performance of multi-task models. MR is defined as
+MR = 1
+Mt
+PMt
+i=1 ri, where Mt is the number of metrics,
+ri represents the rank of the model on the i-th metric. The
+lower MR indicates better performance.
+5.1.3. Implementation Details
+Our mmWaveFlow is implemented in PyTorch. We use
+VecSet [49] as the VAE to encode point clouds into latent
+tokens and decode them back. Each input point cloud is
+subsampled or zero-padding to at most 512 points. The la-
+tent comprises N = 32 tokens and the shared query set
+consists of M = 16 tokens. All tokens have dimension-
+ality D = 128. The flow network is a 30-layer DiT [31].
+Training is performed on a single NVIDIA RTX 3090 for
+200 epochs with 128 as the batch size and 1 × 10−4
+as the
+learning rate. λKL = 1 × 10−5
+and λVAE, λFlow, and λalign in
+Eq. (7) are 50, 1 and 0.1, respectively.
+5.2. Main Results
+To our knowledge, there is no existing work employs a
+single model for both enhancing and generating mmWave
+human point cloud. Therefore, we select five methods
+with open-source code from different fields as baselines.
+Specifically, we compare mmPoint [42] (aimed at dense
+human point cloud generation using mmWave signals),
+RadarHD [33], RadarDiff [52] (both designed for high-
+resolution point cloud generation), LiDiff [28] (focused on
+3D LiDAR point cloud completion), and Tiger [34] (target-
+ing 3D point cloud generation).
+Due to the large size of mmWave raw signals, many
+datasets such as MM-Fi do not provide the raw signals.
+Moreover, LiDAR BEV images may lose information. For a
+fair comparison, we replace the mmWave spectrograms and
+LiDAR BEV images involved in the comparison methods
+with point clouds. For all models affected by this change,
+such as UNet in RadarDiff, are replaced with DiT, which
+is the same as mmWaveFlow. The inference steps for the
+baseline diffusion and flow matching models are set to 50.
+The main results are listed in Tab. 1. All baselines
+need to be trained twice for M2D and D2M tasks, respec-
+tively, while mmWaveFlow only needs to be trained once.
+RadarHD ranks the lowest in performance, while mmPoint
+and RadarDiff perform moderately. This may be due to the
+limited expressive power of the cascaded refinement net-
+work used by mmPoint may be inferior to the current dif-
+fusion/flow matching model, which limits its performance.
+RadarHD and RadarDiff are designed for outdoor scenarios
+in autonomous driving settings and have limitations in the
+handling of human point clouds. In addition, although LiD-
+iff achieves the best result in one evaluation metric (Cham-
+fer Distance in the M2D task) on the MM-Fi dataset, its
+overall performance ranks second to last. This can be at-
+tributed to the fact that LiDiff is designed for the comple-
+tion of LiDAR point clouds. It performs well on LiDAR
+data provided by MM-Fi, but performs poorly in generating
+mmWave-like point clouds. Furthermore, Tiger, as a uni-
+versal 3D generative model, may still lack some targeted
+designs to handle mmWave point cloud generation and en-
+hancement tasks. In contrast, the point clouds produced by
+mmWaveFlow consistently retain high quality across both
+tasks, demonstrating its strong and stable performance.
+We also visualize several examples of generated and en-
+hanced mmWave point clouds in Fig. 5.
+5.3. Downstream Task Evaluation
+We further evaluate the potential of point clouds generated
+and enhanced by mmWaveFlow on two downstream tasks:
+human mesh recovery and action recognition. This evalua-
+tion aims to demonstrate that mmWaveFlow, trained on eas-
+ily collected paired dense-mmWave point clouds, can serve
+as a versatile data enhancer and generator. As a result, it
+effectively improves the performance of various models in
+downstream tasks.
+Enhancement of mmWave point clouds. We conduct ex-
+periments on the mmBody dataset, splitting the original
+training set into two disjoint subsets: SF T (Flow-Train) and
+SDT (Downstream-Train). Only paired dense and sparse
+samples in SF T are used to train mmWaveFlow. Then,
+31371
+GT
+Ours
+mmBody MM-Fi mRI
+Tiger
+(1-1) (1-2) (2-1) (2-2) (3-1) (3-2) (4-1) (4-2) (5-1) (5-2) (6-1) (6-2)
+Figure 5. Visualization of generated and enhanced mmWave human point clouds on different datasets. In row GT, six paired samples
+are shown, each containing two ground-truth (GT) point clouds corresponding to the same subject at the same time. All other rows are
+prediction results. For example, the 1st and 2nd dense point clouds in column (1-1) are predictions by Tiger and our model, respectively,
+both taking the 3rd in (1-2) as input while the 3rd in (1-1) serves as GT.
+Table 2. Human mesh recovery on mmBody dataset.
+Method
+Raw Enhanced
+MPJPE PVE MPJPE PVE
+mmMesh [43] 15.32 11.44 14.41 (-0.91) 10.61 (-0.83)
+P4Transformer [14] 13.65 9.64 12.59 (-1.06) 9.01 (-0.63)
+mmDiff [15] 7.97 - 7.25 (-0.72) -
+the mmWave samples from SDT and test set Stest are
+fed into the pre-trained mmWaveFlow to produce enhanced
+mmWave datasets, denoted as ŜDT and Ŝtest, respectively.
+We choose three human mesh recovery models:
+mmMesh [43] , P4Transformer [14], and mmDiff [15].
+Each model is trained on SDT and evaluated on Stest, and
+likewise trained on ŜDT and evaluated on Ŝtest. Perfor-
+mance is measured by MPJPE (Mean Per Joint Position Er-
+ror) and PVE (Per Vertex Error).
+As shown in Tab. 2, all three methods benefit from
+mmWaveFlow-enhanced mmWave point clouds. For the
+state-of-the-art model mmDiff, MPJPE decreases from
+7.97 cm to 7.25 cm, a reduction of approximately 9.03%.
+Generation of mmWave point clouds. We perform the
+action recognition task on the MM-Fi dataset, which in-
+volves classifying 27 categories of daily human activities.
+The dataset is also split into two disjoint subsets: SF T
+(Flow-Train) and SDT (Downstream-Train). We first train
+3DInAction [5] solely on SF T and evaluate it on Stest as
+a baseline. We then feed the original dense point clouds
+Table 3. Action recognition on MM-Fi dataset.
+Method Training Set Training Epoch Accuracy
+3DInAction [5]
+D̂DT 20 0.156
+SF T 20 0.661
+SF T +ŜDT 10 0.790
+SF T +SDT 10 0.813
+from SDT into mmWaveFlow to generate the correspond-
+ing synthetic mmWave data, denoted as ŜDT . Using the
+same pipeline, we train 3DInAction on the combination of
+SF T and ŜDT and re-evaluate the model on the Stest. 3DI-
+nAction achieves 0.813 accuracy on the full MM-Fi dataset,
+and 0.790 using half the real annotated data augmented with
+an equal amount of synthetic data. Thus, mmWaveFlow en-
+ables downstream models to match full-data performance
+using only 50% of the real mmWave training data.
+As shown in Tab. 3, the generated dataset can serve as an
+effective supplement to the real dataset, further improving
+the performance of the model.
+5.4. Ablation Study
+We construct three variants to evaluate the impact of key
+modules in mmWaveFlow on performance. Variant v1
+ablates cross-modal latent alignment by duplicating the
+shared alignment module into two identical copies, one
+per modality, without parameter sharing. This keeps the
+network depth and structure fixed, isolating the effect of
+31372
+Table 4. Ablation study
+Model
+mmBody MM-Fi mRI
+D2M M2D D2M M2D D2M M2D
+CD EMD CD EMD CD EMD CD EMD CD EMD CD EMD
+mmWaveFlow 1.17 4.83 0.95 4.76 2.69 8.49 0.75 3.69 2.12 9.22 0.72 2.69
+w/o Latent Alignment (v1) 1.23 4.98 1.03 5.26 2.81 10.07 0.80 3.81 2.25 9.24 0.77 2.78
+w/o OA-Flow (v2) 1.21 4.95 1.05 5.18 2.73 9.14 0.79 3.77 2.28 9.79 0.76 2.84
+w/o Latent Alignment & OA-Flow (v3) 1.34 5.37 1.14 5.72 2.86 13.48 0.84 4.09 2.31 9.45 0.80 2.87
+cross-modal coupling, and also retains the token-level In-
+foNCE loss Lalign. Notably, it has more trainable pa-
+rameters due to structure duplication. Variant v2 re-
+moves the OA-Flow by replacing the origin-aware loss
+\protect \mathcal  {L}_{\text {Flow}} = \text {MSE}(v_\theta (z_t,t,z_k), \hat {v}_t) with the condition-free loss
+\protect \text  {MSE}(v_\theta (z_t,t), \hat {v}_t), eliminating the path origin condition-
+ing. Here, z_k refers to either z_0 or z_1. This isolates the ef-
+fect of using an unconditional velocity field while keeping
+the network depth and layer structure fixed. Omitting the
+origin information leads to a less constrained velocity field
+and introduces more ambiguity in the learned flow. Variant
+v3 ablates both latent alignment and OA-Flow modules.
+Ablation results are listed in Tab. 4. As shown in Tab. 4,
+compared to the original mmWaveFlow, all tailored ver-
+sions show different degrees of performance degradation
+in all metrics. This results demonstrate the effectiveness
+of our designed cross-modal latent alignment and OA-Flow
+modules. Moreover, variant v3 performs the worst. Its met-
+ric deterioration is significantly greater than when only one
+module is removed, indicating a pronounced synergistic op-
+timization effect between the two modules.
+5.5. Empirical Analysis of Potential Path Crossings
+We randomly sample 1,000 pairs of samples from
+three datasets and obtain the corresponding latent tokens
+{(z0,i, z1,i)}1000
+i=1 . For each pair, we linearly interpolate
+from t = 0 to t = 1 to construct intermediate latent to-
+kens zt,i. The corresponding real velocity field is denoted
+as ẑi. We then compute the cosine similarity between all to-
+ken vectors in zt,i and ẑi, and average over tokens to obtain
+the sample-level similarities si,j and ŝi,j. when si,j > 0.95
+and ŝi,j < 0.7, we consider it as a potential path crossing
+and count one occurrence. Fig. 6 shows how the number of
+potential path crossings varies over time t across the three
+datasets. At t = 0, we have zt = z0, i.e., the latent to-
+kens of the dense point cloud. Because three datasets have
+high data quality and the learned feature space is relatively
+compact, similar samples naturally exist. In contrast, the
+feature space of z1 is noticeably looser. It is worth not-
+ing that for all three datasets, the number of potential path
+crossings first increases and then decreases, which clearly
+indicates that the path crossing problem still exists even in
+high-dimensional spaces. Note that we only counted 1,000
+samples. Across the entire dataset, the number of such path
+Figure 6. All three datasets exhibit potential path crossings to
+varying degrees.
+crossings is obviously much larger.
+5.6. Extensibility
+The mmWaveFlow can be extended to more general settings
+easily. The mmWaveFlow is further evaluated on the Col-
+oRadar dataset [22] under the Arpg Lab scenario, adjust-
+ing only the input and output dimensions of the VAE. It
+achieves a CD of 0.85 m (M2D) and 1.64 m (D2M), com-
+pared to 0.96 m of RadarDiff and 1.73 m of RadarHD, as
+reported in [33] for the M2D task.
+6. Conclusion
+In this paper, we present mmWaveFlow, a unified frame-
+work for enhancement and generation of mmWave human
+point clouds. By leveraging shared queries and cross at-
+tention, we project latent representations from different do-
+mains into the same feature space to achieve cross-modal
+latent alignment. Furthermore, we show that condition-free
+training is vulnerable to potential path crossings which was
+overlooked in previous work. More importantly, we pro-
+pose the origin-aware flow matching to mitigate this prob-
+lem by conditioning the velocity field on the path origin. Ul-
+timately, mmWaveFlow demonstrates excellent generation
+performance on dense point clouds from different sources
+(RGB-D, LiDAR, and simulation) and datasets from various
+mmWave devices. Extensibility experiments further sug-
+gest that mmWaveFlow can be readily extended to scene-
+level point cloud generation and enhancement. The evalua-
+tion results on downstream tasks also highlight the potential
+of mmWaveFlow as a unified framework for human sensing.
+31373
+Acknowledgment
+This research is supported by the National Natural Sci-
+ence Foundation of China (No.62172394, No.62072450).
+References
+[1] Karan Ahuja, Yue Jiang, Mayank Goel, and Chris Harrison.
+Vid2doppler: Synthesizing doppler radar data from videos
+for training privacy-preserving activity recognition. In Pro-
+ceedings of the 2021 CHI Conference on Human Factors in
+Computing Systems, pages 1–10, 2021. 2
+[2] Michael Samuel Albergo and Eric Vanden-Eijnden. Build-
+ing normalizing flows with stochastic interpolants. In The
+Eleventh International Conference on Learning Representa-
+tions (ICLR), 2023. 2
+[3] Sizhe An and Umit Y Ogras. Mars: mmwave-based assis-
+tive rehabilitation system for smart healthcare. ACM Trans-
+actions on Embedded Computing Systems (TECS), 20(5s):
+1–22, 2021. 2
+[4] Sizhe An, Yin Li, and Umit Ogras. mri: Multi-modal 3d
+human pose estimation dataset using mmwave, rgb-d, and
+inertial sensors. Advances in Neural Information Processing
+Systems, 35:27414–27426, 2022. 5
+[5] Yizhak Ben-Shabat, Oren Shrout, and Stephen Gould. 3di-
+naction: Understanding human actions in 3d point clouds.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, pages 19978–19987, 2024.
+7
+[6] Anjun Chen, Xiangyu Wang, Shaohao Zhu, Yanxu Li, Jim-
+ing Chen, and Qi Ye. mmbody benchmark: 3d body recon-
+struction dataset and analysis for millimeter wave radar. In
+Proceedings of the 30th ACM International Conference on
+Multimedia, pages 3501–3510, 2022. 5
+[7] Xingyu Chen and Xinyu Zhang. Rf genesis: Zero-shot
+generalization of mmwave sensing through simulation-based
+data synthesis and generative diffusion models. In Proceed-
+ings of the 21st ACM Conference on Embedded Networked
+Sensor Systems, pages 28–42, 2023. 1
+[8] Yuwei Cheng, Jingran Su, Mengxin Jiang, and Yimin Liu.
+A novel radar point cloud generation method for robot envi-
+ronment perception. IEEE Transactions on Robotics, 38(6):
+3754–3773, 2022. 2
+[9] Guoxuan Chi, Zheng Yang, Chenshu Wu, Jingao Xu, Yu-
+chong Gao, Yunhao Liu, and Tony Xiao Han. Rf-diffusion:
+Radio signal generation via time-frequency diffusion. In
+Proceedings of the 30th Annual International Conference on
+Mobile Computing and Networking, pages 77–92, 2024. 1, 2
+[10] In Cho, Youngbeom Yoo, Subin Jeon, and Seon Joo Kim.
+Representing 3d shapes with 64 latent vectors for 3d diffu-
+sion models. In Proceedings of the IEEE/CVF International
+Conference on Computer Vision, 2025. 4
+[11] Han Cui, Shu Zhong, Jiacheng Wu, Zichao Shen, Naim Dah-
+noun, and Yiren Zhao. Milipoint: A point cloud dataset for
+mmwave radar. Advances in Neural Information Processing
+Systems, 36:62713–62726, 2023. 2
+[12] Kaikai Deng, Dong Zhao, Qiaoyue Han, Zihan Zhang,
+Shuyue Wang, Anfu Zhou, and Huadong Ma. Midas: Gener-
+ating mmwave radar data from videos for training pervasive
+and privacy-preserving human sensing tasks. Proceedings of
+the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies, 7(1):1–26, 2023. 2
+[13] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim
+Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik
+Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling recti-
+fied flow transformers for high-resolution image synthesis.
+In Forty-first International Conference on Machine Learn-
+ing, 2024. 3
+[14] Hehe Fan, Yi Yang, and Mohan Kankanhalli. Point 4d
+transformer networks for spatio-temporal modeling in point
+cloud videos. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, pages 14204–
+14213, 2021. 7
+[15] Junqiao Fan, Jianfei Yang, Yuecong Xu, and Lihua Xie. Dif-
+fusion model is a good pose estimator from 3d rf-vision.
+In European Conference on Computer Vision, pages 1–18.
+Springer, 2024. 7
+[16] Hong Gao, Xiangkai Xu, Tianqi Zhu, Xiugang Dong,
+Yiming Bao, and Min-Ling Zhang. Radar-mamba: 4d
+millimeter-wave point cloud enhancement via state space
+models. In Proceedings of the 33rd ACM International Con-
+ference on Multimedia, page 1774–1782, New York, NY,
+USA, 2025. Association for Computing Machinery. 2
+[17] Ruixu Geng, Yadong Li, Dongheng Zhang, Jincheng Wu,
+Yating Gao, Yang Hu, and Yan Chen. Dream-pcd: Deep
+reconstruction and enhancement of mmwave radar point-
+cloud. IEEE Transactions on Image Processing, 33:6774–
+6789, 2024. 2
+[18] Kareeb Hasan, Beng Oh, Nithurshan Nadarajah, and
+Mehmet Rasit Yuce. mm-casgan: A cascaded adversarial
+neural framework for mmwave radar point cloud enhance-
+ment. Information Fusion, 108:102388, 2024. 2
+[19] Ju He, Qihang Yu, Qihao Liu, and Liang-Chieh Chen. Flow-
+tok: Flowing seamlessly across text and image tokens. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, pages 16629–16640, 2025. 2, 4
+[20] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffu-
+sion probabilistic models. Advances in Neural Information
+Processing Systems, 33:6840–6851, 2020. 2
+[21] Teng Huang, Han Ding, Wenxin Sun, Cui Zhao, Ge Wang,
+Fei Wang, Kun Zhao, Zhi Wang, and Wei Xi. One snapshot
+is all you need: A generalized method for mmwave signal
+generation. In IEEE INFOCOM 2025 - IEEE Conference on
+Computer Communications, pages 1–10, 2025. 2
+[22] Andrew Kramer, Kyle Harlow, Christopher Williams, and
+Christoffer Heckman. Coloradar: The direct 3d millimeter
+wave radar dataset. The International Journal of Robotics
+Research, 41(4):351–360, 2022. 8
+[23] Bo Li, Kaitao Xue, Bin Liu, and Yu-Kun Lai. Bbdm: Image-
+to-image translation with brownian bridge diffusion models.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, pages 1952–1961, 2023. 2
+[24] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maxim-
+ilian Nickel, and Matthew Le. Flow matching for genera-
+31374
+tive modeling. In The Eleventh International Conference on
+Learning Representations, 2023. 2
+[25] Qihao Liu, Xi Yin, Alan Yuille, Andrew Brown, and Man-
+nat Singh. Flowing from words to pixels: A noise-free
+framework for cross-modality evolution. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 2755–2765, 2025. 2, 4, 5
+[26] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow
+straight and fast: Learning to generate and transfer data with
+rectified flow. In The Eleventh International Conference on
+Learning Representations (ICLR), 2023. 2
+[27] Kai Luan, Chenghao Shi, Neng Wang, Yuwei Cheng,
+Huimin Lu, and Xieyuanli Chen. Diffusion-based point
+cloud super-resolution for mmwave radar data. In 2024
+IEEE International Conference on Robotics and Automation
+(ICRA), pages 11171–11177. IEEE, 2024. 2
+[28] Lucas Nunes, Rodrigo Marcuzzi, Benedikt Mersch, Jens
+Behley, and Cyrill Stachniss. Scaling diffusion models to
+real-world 3d lidar scene completion. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 14770–14780, 2024. 6
+[29] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. Repre-
+sentation learning with contrastive predictive coding. arXiv
+preprint arXiv:1807.03748, 2018. 4
+[30] Georgios Pavlakos, Vasileios Choutas, Nima Ghorbani,
+Timo Bolkart, Ahmed AA Osman, Dimitrios Tzionas, and
+Michael J Black. Expressive body capture: 3d hands,
+face, and body from a single image. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 10975–10985, 2019. 5
+[31] William Peebles and Saining Xie. Scalable diffusion models
+with transformers. In Proceedings of the IEEE/CVF Inter-
+national Conference on Computer Vision, pages 4195–4205,
+2023. 6
+[32] Adam Polyak, Amit Zohar, Andrew Brown, Andros Tjandra,
+Animesh Sinha, Ann Lee, Apoorv Vyas, Bowen Shi, Chih-
+Yao Ma, Ching-Yao Chuang, et al. Movie gen: A cast of
+media foundation models. arXiv preprint arXiv:2410.13720,
+2024. 3
+[33] Akarsh Prabhakara, Tao Jin, Arnav Das, Gantavya Bhatt,
+Lilly Kumari, Elahe Soltanaghai, Jeff Bilmes, Swarun Ku-
+mar, and Anthony Rowe. High resolution point clouds from
+mmwave radar. In 2023 IEEE International Conference on
+Robotics and Automation (ICRA), pages 4135–4142. IEEE,
+2023. 1, 2, 6, 8
+[34] Zhiyuan Ren, Minchul Kim, Feng Liu, and Xiaoming Liu.
+Tiger: Time-varying denoising model for 3d point cloud
+generation with diffusion process. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 9462–9471, 2024. 6
+[35] Robin Rombach, Andreas Blattmann, Dominik Lorenz,
+Patrick Esser, and Björn Ommer. High-resolution image
+synthesis with latent diffusion models. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 10684–10695, 2022. 3, 4
+[36] Yuyang Shi, Valentin De Bortoli, Andrew Campbell, and
+Arnaud Doucet. Diffusion schrödinger bridge matching.
+Advances in Neural Information Processing Systems, 36:
+62183–62223, 2023. 2
+[37] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan,
+and Surya Ganguli. Deep unsupervised learning using
+nonequilibrium thermodynamics. In International Confer-
+ence on Machine Learning, pages 2256–2265. pmlr, 2015.
+2
+[38] Yang Song and Stefano Ermon. Generative modeling by esti-
+mating gradients of the data distribution. Advances in Neural
+Information Processing Systems, 32, 2019.
+[39] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Ab-
+hishek Kumar, Stefano Ermon, and Ben Poole. Score-based
+generative modeling through stochastic differential equa-
+tions. In International Conference on Learning Represen-
+tations, 2021. 2
+[40] Alexander Tong, Nikolay Malkin, Kilian Fatras, Lazar
+Atanackovic, Yanlei Zhang, Guillaume Huguet, Guy Wolf,
+and Yoshua Bengio. Simulation-free Schrödinger bridges via
+score and flow matching. In Proceedings of The 27th Inter-
+national Conference on Artificial Intelligence and Statistics,
+pages 1279–1287. PMLR, 2024. 2
+[41] Jincheng Wu, Ruixu Geng, Yadong Li, Dongheng Zhang,
+Zhi Lu, Yang Hu, and Yan Chen. Diffradar: high-
+quality mmwave radar perception with diffusion probabilis-
+tic model. In ICASSP 2024-2024 IEEE International Confer-
+ence on Acoustics, Speech and Signal Processing (ICASSP),
+pages 8291–8295. IEEE, 2024. 2
+[42] Qian Xie, Qianyi Deng, Ta-Ying Cheng, Peijun Zhao, Amir
+Patel, Niki Trigoni, and Andrew Markham. mmpoint: Dense
+human point cloud generation from mmwave. In 34th British
+Machine Vision Conference 2023, BMVC 2023, Aberdeen,
+UK, November 20-24, 2023. BMVA, 2023. 6
+[43] Hongfei Xue, Yan Ju, Chenglin Miao, Yijiang Wang,
+Shiyang Wang, Aidong Zhang, and Lu Su. mmmesh: to-
+wards 3d real-time dynamic human mesh construction using
+millimeter-wave. In Proceedings of the 19th Annual Inter-
+national Conference on Mobile Systems, Applications, and
+Services, pages 269–282, 2021. 7
+[44] Hongfei Xue, Qiming Cao, Chenglin Miao, Yan Ju, Haochen
+Hu, Aidong Zhang, and Lu Su. Towards generalized
+mmwave-based human pose estimation through signal aug-
+mentation. In Proceedings of the 29th Annual International
+Conference on Mobile Computing and Networking, pages 1–
+15, 2023. 1, 2
+[45] Jianfei Yang, He Huang, Yunjiao Zhou, Xinyan Chen, Yue-
+cong Xu, Shenghai Yuan, Han Zou, Chris Xiaoxuan Lu, and
+Lihua Xie. Mm-fi: Multi-modal non-intrusive 4d human
+dataset for versatile wireless sensing. Advances in Neural
+Information Processing Systems, 36:18756–18768, 2023. 5
+[46] Jiarui Yang, Songpengcheng Xia, Zengyuan Lai, Lan Sun,
+Qi Wu, Wenxian Yu, and Ling Pei. mmdear: mmwave
+point cloud density enhancement for accurate human body
+reconstruction. In 2025 IEEE International Conference
+on Robotics and Automation (ICRA), pages 11227–11233.
+IEEE, 2025. 2
+[47] Yanlong Yang, Jianan Liu, Guanxiong Luo, Hao Li, Eui-
+joon Ahn, Mostafa Rahimi Azghadi, and Tao Huang. Un-
+31375
+supervised radar point cloud enhancement via arbitrary li-
+dar guided diffusion prior. arXiv preprint arXiv:2505.09887,
+2025. 2
+[48] Tianhe Yu, Saurabh Kumar, Abhishek Gupta, Sergey Levine,
+Karol Hausman, and Chelsea Finn. Gradient surgery for
+multi-task learning. Advances in Neural Information Pro-
+cessing Systems, 33:5824–5836, 2020. 5
+[49] Biao Zhang, Jiapeng Tang, Matthias Niessner, and Peter
+Wonka. 3dshape2vecset: A 3d shape representation for neu-
+ral fields and generative diffusion models. ACM Transactions
+On Graphics (TOG), 42(4):1–16, 2023. 4, 6
+[50] Feng Zhang, Chenshu Wu, Beibei Wang, and KJ Ray Liu.
+mmeye: Super-resolution millimeter wave imaging. IEEE
+Internet of Things Journal, 8(8):6995–7008, 2021. 2
+[51] Jia Zhang, Rui Xi, Yuan He, Yimiao Sun, Xiuzhen Guo,
+Weiguo Wang, Xin Na, Yunhao Liu, Zhenguo Shi, and Tao
+Gu. A survey of mmwave-based human sensing: Technol-
+ogy, platforms and applications. IEEE Communications Sur-
+veys Tutorials, 25(4):2052–2087, 2023. 1
+[52] Ruibin Zhang, Donglai Xue, Yuhan Wang, Ruixu Geng, and
+Fei Gao. Towards dense and accurate radar perception via
+efficient cross-modal diffusion model. IEEE Robotics and
+Automation Letters, 9(9):7429–7436, 2024. 1, 2, 6
+[53] Xiaotong Zhang, Zhenjiang Li, and Jin Zhang. Synthesized
+millimeter-waves for human motion sensing. In Proceed-
+ings of the 20th ACM Conference on Embedded Networked
+Sensor Systems, page 377–390, New York, NY, USA, 2023.
+Association for Computing Machinery. 2
+[54] Xiaopeng Zhao, Zhenlin An, Qingrui Pan, and Lei Yang.
+Nerf2: Neural radio-frequency radiance fields. In Proceed-
+ings of the 29th Annual International Conference on Mobile
+Computing and Networking, pages 1–15, 2023. 2
+[55] Linqi Zhou, Aaron Lou, Samar Khanna, and Stefano Er-
+mon. Denoising diffusion bridge models. arXiv preprint
+arXiv:2309.16948, 2023. 2
+[56] Yi Zhu, Chenglin Miao, Hongfei Xue, Zhengxiong Li, Yun-
+nan Yu, Wenyao Xu, Lu Su, and Chunming Qiao. Tilemask:
+A passive-reflection-based attack against mmwave radar ob-
+ject detection in autonomous driving. In Proceedings of the
+2023 ACM SIGSAC Conference on Computer and Commu-
+nications Security, pages 1317–1331, 2023. 2
+31376
+

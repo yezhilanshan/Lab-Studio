@@ -1,0 +1,1574 @@
+ConsisFormer: Compute-Efﬁcient Transformer
+for Wireless Foundation Models Based on
+Channel Consistency
+Yuwei Wang, Member, IEEE, Li Sun∗, Senior Member, IEEE, Tingting Yang, Senior Member, IEEE,
+Liwen Jing, Yuxuan Shi, Maged Elkashlan, Senior Member, IEEE, Mérouane Debbah, Fellow, IEEE
+Abstract—Wireless foundation models (WFMs) have recently
+emerged as a promising paradigm for AI-native 6G networks,
+enabling universal channel representations adaptable to diverse
+communication and sensing tasks. Existing WFMs are predom-
+inantly built upon the Transformer architecture, which delivers
+superior performance but incurs computational complexity pro-
+portional to the square of the input sequence length, posing a
+signiﬁcant barrier to their deployment under stringent inference
+latency constraints. To address this issue, in this paper, we
+propose ConsisFormer, a compute-efﬁcient Transformer design
+based on short-term consistency of wireless channels, as a WFM
+backbone. By utilizing the observation that adjacent time or
+frequency instances share similar clusters of scatterers and thus
+exhibit similar channel characteristics, we develop an adaptive
+token aggregation (ATA) module to dynamically merge neighbor-
+ing channel state information (CSI) tokens, thereby reducing the
+length of the token sequence involved in self-attention calculations
+to lower the computational cost. Furthermore, we propose a fea-
+ture sequence interpolation (FSI) method to recover the full CSI
+representation based on the sparse feature sequence outputted
+from the Transformer blocks, thus keeping the performance
+unaffected while ensuring low complexity. Moreover, we propose
+an aggregated auto-encoder (AAE) pre-training paradigm for
+WFMs, enabling robust channel representation learning from
+sparsiﬁed CSI tokens via compression and recovery. Simulation
+results show that the proposed design reduces the computational
+complexity of WFM by over 83% with negligible performance
+loss on various tasks including channel prediction, LoS/NLOS
+classiﬁcation, beam prediction, and localization.
+Index Terms—Wireless foundation models, Transformer, self-
+attention, channel consistency, token aggregation, interpolation.
+I. INTRODUCTION
+In its IMT-2030 (6G) vision published in 2023, ITU-R
+clearly identiﬁed the integration of AI and communications
+as one of the six pillars for 6G [1]. AI models deployed at
+the physical layer (PHY) of radio access networks (RAN) can
+be utilized to better support channel modeling and prediction,
+enable efﬁcient time-frequency resource scheduling, improve
+Yuwei Wang, Li Sun, Tingting Yang, Liwen Jing, and Yuxuan Shi are
+with the Department of Broadband Communication, Pengcheng Laboratory,
+Shenzhen, 518000, China (e-mail: wangyw03@pcl.ac.cn; sunl03@pcl.ac.cn;
+yangtt@pcl.ac.cn, jinglw@pcl.ac.cn, shiyx01@pcl.ac.cn, Corresponding Au-
+thor: Li Sun).
+Maged Elkashlan is with the School of Electronic Engineering and Com-
+puter Science, Queen Mary University of London, E1 4NS London, U.K.
+(e-mail: maged.elkashlan@qmul.ac.uk).
+Mérouane Debbah is with the Department of Computer and Information
+Engineering, Khalifa University of Science and Technology, Abu Dhabi,
+127788, UAE (e-mail: merouane.debbah@ku.ac.ae).
+spectral efﬁciency, and empower advanced transceiver design,
+among other things [2]- [5].
+The integration of AI and communications has gone through
+the 1.0 era and is now entering the 2.0 era. The “AI +
+communications” 1.0 era was primarily based on using task-
+customized small AI models to perform modular optimization
+or end-to-end reconstruction of communication links. In this
+era, task-speciﬁc Transformer-based models have been widely
+adopted for various physical layer tasks such as channel
+prediction, beamforming, signal detection, and power opti-
+mization [6]- [10], but generally suffer from limited gener-
+alization capability and high retraining overhead across di-
+verse tasks and scenarios. Since the birth of ChatGPT at the
+end of 2022, Large Language Models (LLMs) have already
+demonstrated astonishing capabilities in areas such as content
+generation, sequence modeling, and conversational interaction.
+Correspondingly, researchers in the communications ﬁeld have
+shown increasing interests in building wireless foundation
+models (WFMs), thus propelling “AI + communications” into
+the 2.0 era. In the “AI + communications” 2.0 paradigm, a
+task-agnostic foundation model is ﬁrst pre-trained on large-
+scale datasets to learn universal feature representations of the
+wireless channels. Then, techniques such as ﬁne-tuning are
+used to adapt the uniﬁed representations to downstream task
+models or algorithms, thereby achieving generalization across
+tasks and scenarios. There are two major technical paths for
+building the WFMs.
+The ﬁrst path is based on ﬁne-tuning the open-source LLMs
+or multi-modal large models. In particular, [11] proposed a
+channel predictor LLM4CP, where the Add-and-Norm and
+output layers of GPT-2 were ﬁne-tuned to predict downlink
+channels based on historical uplink channels. In [12], the
+wireless time series data was reprogrammed into a natural
+language representation and aligned with the pre-training input
+format of LLMs, such that the ability of LLMs in sequence
+modeling can be exploited to realize beam prediction. Instead
+of using LLMs, [13] addressed the beam prediction problem
+by ﬁne-tuning the multi-modal large model DeepSeek, where
+positions of the scatters and multi-view images were utilized to
+extract environmental embeddings and facilitate the generation
+of optimal beam index.
+The second path is developing wireless native foundation
+models by training from scratch. In [14], a masked auto-
+encoder (MAE) based network structure was devised to build
+a WFM for channel prediction in both time domain and
+arXiv:2606.19953v1
+[eess.SP]
+18
+Jun
+2026
+frequency domain, where extensive CSI datasets with diver-
+siﬁed conﬁgurations were utilized for pre-training. In [15], a
+decoder-only architecture was proposed to further enhance the
+performance of channel prediction, where both next channel
+prediction (NCP) loss and masked channel reconstruction
+(MCR) loss were used such that the model better captures
+the underlying characteristics of wireless channels. While the
+advantages of building WFMs over small models have been
+demonstrated in [11]-[15], these works only focus on a single
+type of task. In contrast, [16] developed a task-agnostic model
+called Large Wireless Model (LWM) to generate universal
+channel embeddings that can be used across a wide range of
+downstream communication tasks. Following this paradigm,
+subsequent works have further enhanced the generality of
+WFMs from different perspectives. For example, [17] incorpo-
+rated cross-domain embeddings into the Transformer architec-
+ture, enabling a uniﬁed model to support both communication
+and sensing tasks. Similarly, [18] proposed a self-supervised
+pre-trained WFM that can be applied to CSI feedback and
+human activity recognition. In [19], a granularity encoding is
+introduced to distinguish different types of tasks, enabling the
+model to adaptively extract the most relevant channel features
+corresponding to various tasks. To enhance cross-scenario
+generalization, CSI-CLIP [20] employs contrastive learning
+on paired CSI and CIR data to learn more robust wireless
+representations. Furthermore, MUSE-FM [21] introduces a
+prompt-guided encoder-decoder and environmental contexts to
+handle heterogeneous tasks and cross-scenarios adaptation.
+Despite the differences in model details and pre-training
+approaches, all of the WFMs proposed so far such as [11]- [19]
+use the Transformer architecture as their backbones, which
+is able to capture both local and global features of the CSI
+sequence to produce uniﬁed channel representations. In the
+context of physical layer communications, the Transformer-
+based neural networks typically accept a sequence of CSI
+samples (tokens) as inputs, which are processed by multiple
+Transformer blocks stacked together with each containing
+self-attention layers and fully-connected layers. Note that the
+computational complexity of self-attention is proportional to
+the square of the input sequence length [22]. This property
+is not favorable for many wireless applications where long
+sequences consisting of multiple CSI samples as tokens have
+to be processed. Thus, the application of Transformers in prac-
+tical systems is challenging due to the stringent constraints on
+inference latency, especially for time-sensitive scenarios (e.g.,
+channel estimation, signal detection, and channel prediction).
+To deal with this issue, in this paper, we propose Cons-
+isFormer, a channel-consistency driven Transformer struc-
+ture, to realize compute-efﬁcient self-attention calculation and
+channel feature extraction. Channel consistency1
+is an im-
+portant property of wireless channels whereby adjacent time
+instances share similar propagation environments and thus
+1The channel consistency can be interpreted from the time, frequency,
+and space domains. The frequency domain consistency indicates that closely
+spaced subcarriers are often highly correlated, while the space domain consis-
+tency refers to the phenomenon that adjacent antenna elements sharing similar
+positions have many identical scatterers/clusters. For ease of presentation, the
+proposed method is described based on temporal channel consistency, while
+the same principle is applicable to the frequency and space domains as well.
+exhibit similar channel characteristics. Based on this property,
+not all CSI tokens2
+are necessary for attention calculation,
+and it sufﬁces to retain only representative tokens to capture
+the intrinsic features of the wireless channels. Keeping this
+in mind, we propose an adaptive token aggregation (ATA)
+method to progressively merge neighboring CSI tokens by
+utilizing their similarity, signiﬁcantly reducing the number of
+tokens involved in self-attention calculations. Although token
+sparsiﬁcation offers a compute-efﬁcient solution, it may incur
+performance degradation due to the loss of information in the
+discarded tokens. To overcome this, we further develop a fea-
+ture sequence interpolation (FSI) module, which is deployed
+after the Transformer blocks. This module produces a full-
+length feature sequence based on the sparse feature vectors
+outputted by the Transformer blocks, thereby compensating for
+the loss in representation capability. Together, the ATA and FSI
+modules form a principled aggregation–extraction–recovery
+design paradigm, where channel information is ﬁrst com-
+pressed, then extracted by the Transformer blocks, and ﬁnally
+recovered for downstream task inference.
+Building upon this paradigm, we further propose a novel
+pre-training strategy, termed as aggregated auto-encoder
+(AAE), to train ConsisFormer as a WFM backbone. Ex-
+isting MAE-based pre-training randomly masks CSI tokens,
+which may discard critical channel components and leave
+the remaining observations insufﬁcient to characterize the
+underlying propagation structure. In contrast, AAE replaces
+random masking with channel-consistency-based structured
+aggregation, where the removed information mainly corre-
+sponds to redundant or highly correlated CSI components. As
+a result, the model is encouraged to recover complete CSI
+representations from compressed yet physically meaningful
+observations, leading to more robust and effective pre-training.
+Combined with AAE, ConsisFormer achieves signiﬁcant com-
+putational complexity reduction while preserving strong task
+performance, making it a high-performance and compute-
+efﬁcient backbone for WFMs.
+While existing efforts toward efﬁcient Transformers in
+wireless communications have explored model compression
+techniques such as pruning, quantization, and knowledge dis-
+tillation [23]- [25], and token reduction methods have also
+been studied in other ﬁelds such as computer vision [26]-
+[29], these approaches are either parameter-level optimizations
+or domain-agnostic designs that do not leverage the physical
+properties of wireless channels. In contrast, ConsisFormer is,
+to the best of our knowledge, the ﬁrst to exploit channel
+consistency for token-level sparsiﬁcation in Transformer-based
+models, with the aggregation–extraction–recovery paradigm
+offering a novel and domain-speciﬁc path toward compute-
+efﬁcient Transformer design. The major contributions of this
+paper are summarized as follows.
+• First, we propose a channel-consistency inspired adaptive
+aggregation method to dynamically merge neighboring
+CSI tokens with intrinsic similarities. Via multi-round
+iterations, the aggregation algorithm is able to produce
+a shorter CSI token sequence, which is processed by a
+2Each CSI token corresponds to a short segment of CSI samples.
+series of Transformer blocks with each containing self-
+attention and FFN layers, thus signiﬁcantly reducing the
+computational complexity of the Transformer.
+• Second, we develop a correlation-based interpolation
+module to compensate for the possible performance
+degradation incurred by the compute-efﬁcient design. In
+particular, CSI features produced by the ﬁnal Transformer
+block are ﬁrst encoded into a correlation representation.
+Given the correlation representation, the original CSI
+tokens, and the indices of tokens, a query vector is
+generated, which is used to interpolate the available
+CSI features to form a ﬁne-grained representation of the
+wireless channels.
+• Third, based on the proposed ConsisFormer structure,
+we introduce a novel pre-training paradigm, termed as
+aggregated auto-encoder (AAE), for building WFMs. The
+AAE incorporates information compression and recovery
+into the pre-training objective, encouraging the model to
+learn informative and robust channel representations from
+sparsiﬁed token sequences.
+The rest of the paper is organized as follows. The system
+model and existing structure are shown in Section II. Then
+the ConsisFormer design is presented in Section III, where
+the adaptive aggregation algorithm and the correlation-based
+interpolation approach are described in turn. Afterwards, the
+aggregated auto-Encoder pre-training method is presented in
+Section IV. Simulation results with performance comparisons
+are given in Section V. Finally, we conclude this paper in
+Section VI.
+II. SYSTEM MODEL AND EXISTING STRUCTURE
+A. System Model
+In this paper, we consider a MIMO-OFDM communications
+system with N transmit antennas and M receive antennas.
+Each slot consists of T OFDM symbols in the time domain
+and K subcarriers in the frequency domain. Within a slot, the
+whole channel matrix over all REs is H ∈ CT ×K×S
+, where
+S = M · N is the number of spatial channels. The wireless
+channel can be characterized by a multipath propagation
+model. Speciﬁcally, the frequency-domain MIMO channel at
+the t-th OFDM symbol and k-th sub-carrier can be expressed
+as
+H[t, k] =
+NL
+X
+ℓ=1
+αℓ[t]ar(θℓ)aH
+t (φℓ)e−j2πfkτℓ[t]
+, (1)
+where NL is the number of paths, αℓ[t] and τℓ[t] denote the
+complex gain and delay of the ℓ-th path, respectively, θℓ and
+φℓ represent the angle-of-arrival (AoA) and angle-of-departure
+(AoD), and ar(·) and at(·) are the array response vectors [30].
+This model reveals that the channel response is jointly
+determined by a set of slowly-varying physical path pa-
+rameters, as αℓ[t] and τℓ[t] vary slowly over time while
+e−j2πfkτℓ[t]
+changes smoothly across sub-carriers [31]. As
+a result, adjacent resource elements tend to share similar
+channel characteristics, and the corresponding CSI tokens
+contain redundant information.
+×Ne
+Tokenizer
+...
+Linear Projection &
+Positional Encoding
+...
+Transformer Encoder
+Multi-head
+Attention
+LayerNorm
+LayerNorm
++
++
+Feed-Forward
+...
+Task Head
+Channel
+Feature
+Extractor
+Output
+t1 t2 t3 t4 t5 tL
+e1 e2 e3 e4 e5 eL
+v1 v2 v3 v4 v5 vL
+Input CSI
+Fig. 1: The existing classic Transformer-based model for WFMs.
+The input CSI matrix is segmented into L tokens by the tokenizer,
+projected into embeddings with positional encoding, and then pro-
+cessed by Ne Transformer encoder blocks. The output features are
+passed to task heads for downstream tasks.
+B. Existing Transformer-Based Structure
+The existing structure of Transformer-based WFMs is illus-
+trated in Fig. 1. As is exhibited in Fig. 1, the channel matrix
+ﬁrst goes through a tokenizer, which reshapes and segments
+the input into a sequence of tokens t1, t2, ..., tL, where the
+length of the token sequence is L. Each token tl(1 ⩽ l ⩽ L)
+is then fed into a linear projection and positional encoding
+module to produce a sequence of d-dimensional embedding
+vectors as
+el = Wprojtl + P(l), (2)
+where Wproj is linear projection matrix, and P(·) denotes
+the positional encoding function. Each embedding el(1 ⩽
+l ⩽ L) is a vector of dimension d that jointly captures
+the channel characteristics and their positional information.
+Subsequently, the embedding sequence is passed through a
+series of Transformer encoder blocks, which acts as a channel
+feature extractor and outputs a sequence of feature vectors
+vl(1 ⩽ l ⩽ L). These feature vectors are further processed
+by a task head to generate the desired outputs. For instance,
+an extrapolation head, a regression head, and a classiﬁcation
+head are employed for channel prediction, localization, and
+beam prediction tasks, respectively. Note that the architecture
+in Fig. 1 represents a typical existing design, which serves as
+the baseline for subsequent analysis.
+Tokenizer
+Adaptive Token Aggregation (ATA) Module
+Linear Projection
+Equivalent
+Position
+Channel Feature Extractor
+(Transformer Encoder Blocks with RoPE)
+... ...
+... ...
+Feature Sequence Interpolation (FSI) Module
+... ...
+... ...
+Task Head
+Unchanged
+Modules
+Modified
+Modules
+Newly Proposed
+Modules
+Input CSI
+Fig. 2: The structure of the proposed ConsisFormer. The original token sequence T is ﬁrst aggregated into a shorter sequence T̃ of length
+Lτ by the ATA module, along with equivalent positions p. The aggregated tokens are then fed into the Transformer encoder blocks with
+RoPE to extract sparse channel features Ṽ . Finally, the FSI module recovers the full-length feature sequence V for task heads.
+C. Computational Complexity Analysis
+In the aforementioned architecture, the dominant compu-
+tational cost arises from the Transformer encoder blocks.
+Speciﬁcally, for each block, the input embedding vectors are
+ﬁrst transformed to query, key, and value vectors, and the
+matrix representation of this process is
+Qatt
+= WqX, Katt
+= WkX, V att
+= WvX, (3)
+where X ∈ Rd×L
+denotes the input of the current Transformer
+block, and Wq ∈ Rd×d
+, Wk ∈ Rd×d
+, and Wv ∈ Rd×d
+are
+projection matrices of the current Transformer block. Since
+the dimensions of query, key, and value vectors are equal
+to that of the input embedding vector, the computational
+complexity of linear transform is O(Ld2
+). Afterwards, the
+multi-head attention layer computes the correlations between
+query vectors and key vectors, based on which the weighted
+sum of value vectors is obtained as
+Oatt
+= V att
+σ(
+(Qatt
+)T
+Katt
+√
+d
+) ∈ Rd×L
+. (4)
+In (4), σ(·) is the column-wise softmax function, and (·)T
+is
+the transpose operation. According to (4), the computational
+complexity of multi-head attention layer is O(L2
+d), which
+scales quadratically with the token sequence length L.
+After a residual connection and a layer normalization, each
+vector ol ∈ Rd×1
+(1 ⩽ l ⩽ L) in Oatt
+is fed into a feed-
+forward network (FFN). FNN consists of a linear dimension
+expansion layer with expand coefﬁcient α and a linear dimen-
+sion reduction layer that scales the output dimension back to
+d as
+FFN(ol) = W2σ(W1ol), (5)
+where W1 ∈ Rαd×d
+and W2 ∈ Rd×αd
+are the parameter
+matrices. Therefore, the computational complexity of FFN is
+O(αLd2
+).
+Assuming the number of Transformer encoder blocks as Ne,
+the overall computational complexity of the channel feature
+extractor is O(NeαLd2
++ NeL2
+d), which is highly sensitive
+to the token sequence length L. In next-generation commu-
+nications systems, the use of wider bandwidths and larger
+antenna arrays signiﬁcantly increases the dimension of the
+channel matrix H and thus enlarge the token sequence length
+L. Consequently, the computational cost of Transformer-based
+channel representation grows rapidly, posing a major challenge
+for real-time physical layer deployment, especially for low-
+latency scenarios.
+III. COMPUTE-EFFICIENT TRANSFORMER DESIGN
+As discussed in Section II, the computational complex-
+ity of Transformer-based channel representations increases
+rapidly with the length of the token sequence L. However,
+in practical wireless propagation environments, CSI exhibits
+strong consistency and redundancy across time and frequency
+domains, as adjacent OFDM symbols or subcarriers often carry
+highly correlated channel characteristics representing the simi-
+lar underlying physical environment. This inherent redundancy
+implies that feeding all tokens into the Transformer encoder
+is unnecessary and computationally inefﬁcient. Motivated by
+this observation, we propose a compute-efﬁcient Transformer
+architecture termed as ConsisFormer, as illustrated in Fig. 2.
+A. Overall Structure of ConsisFormer
+Compared with the structure in Fig. 1, the proposed Con-
+sisFormer architecture consists of three unchanged modules,
+one modiﬁcation of existing modules, and two newly proposed
+modules, which are represented by blue, green, and orange
+blocks, respectively.
+In our proposed architecture, the channel matrix is ﬁrst pro-
+cessed by a tokenizer, which reshapes and partitions the input
+channel into a sequence of tokens along the time, frequency,
+or space dimension. For clarity of presentation, the proposed
+methods are described assuming a time-domain tokenization
+in this section. Nevertheless, the same design principles and
+processing procedures are directly applicable to frequency-
+domain and space-domain tokenization. In the tokenizer, the
+channel matrix H ∈ CT ×K×S
+is ﬂattened along frequency
+and spatial dimensions, and then segmented to a sequence of
+tokens T = [t1, t2, ..., tL], where tl ∈ CKS×1
+(1 ⩽ l ⩽ L).
+Afterwards, the full token sequence is fed into an adaptive
+token aggregation (ATA) module to generate an aggregated
+token sequence by exploiting channel consistency, which elim-
+inates redundant information while preserving the essential
+correlation and structural characteristics of the CSI. The design
+of this module will be detailed in Section III-B. With T as the
+input, the ATA module produces an aggregated token sequence
+with length Lτ (Lτ ⩽ L) and the corresponding equivalent
+positions as
+(T̃ , p) = A(T ), (6)
+where A(·) represents the aggregation module, T̃ =
+[t̃1, t̃2, ..., t̃Lτ ] is the aggregated token sequence, and p =
+[p1, p2, ..., pLτ ] is the vector consisting of equivalent positions.
+In the ATA module, the tokens are merged dynamically,
+which results in a non-uniform aggregation across the original
+sequence. Consequently, the aggregated tokens do not have
+uniformly sampled positions any longer, and their indices
+cannot accurately represent the relative positional relationships
+among tokens. To address this, equivalent positional informa-
+tion is jointly generated during token aggregation, enabling
+the Transformer encoder to correctly capture the structural
+dependencies among aggregated tokens.
+The aggregated complex tokens t̃l ∈ CKS×1
+(1 ⩽ l ⩽ Lτ )
+are reshaped and projected to real-valued embeddings with the
+dimensions of d, i.e., ẽl ∈ Rd×1
+(1 ⩽ l ⩽ Lτ ), which are fed
+into the channel feature extractor along with the equivalent
+positions to obtain a feature sequence
+Ṽ = E(T̃ , p), (7)
+with Ṽ = [ṽ1, ṽ2, ..., ṽLτ ] being a sequence of Lτ feature vec-
+tors. The channel feature extractor is composed of Transformer
+encoder blocks with rotary position embedding (RoPE), whose
+details are explained in Section III-C. Owing to the short-term
+consistency of wireless channel, in most practical scenarios
+(except for extremely high-mobility conditions), the length of
+aggregated token sequence Lτ is signiﬁcantly smaller than that
+of the original token sequence L. Consequently, the proposed
+token sparsiﬁcation method substantially reduces the overall
+computational cost.
+Afterwards, the feature sequence Ṽ , which is produced
+based on aggregated token sequence T̃ , goes through a feature
+sequence interpolation (FSI) module along with the equivalent
+positions and the original tokens tl(1 ⩽ l ⩽ L) to generate a
+full-length feature sequence
+V = I(Ṽ , p, T ), (8)
+where V = [v1, v2, ..., vL]. As will be illustrated in Section
+III-D, although the original tokens are utilized in the FSI
+module, they are processed independently without mutual
+interactions. In addition, the FSI module is applied only at
+the output of the ﬁnal layer of the channel feature extractor.
+As a result, the computational overhead introduced by the FSI
+module is negligible.
+The motivation for introducing the FSI module is twofold.
+First, during the ATA process, a certain degree of information
+loss is inevitable, and the proposed FSI module can be
+used to compensate for the resulting performance degradation
+by leveraging the extracted features and the original token
+information. Second, the length of sparse token sequence Lτ
+varies for different input CSI data, whereas the subsequent
+task head may not be able to accommodate variable-length
+inputs. Therefore, the feature sequence needs to be completed
+to the full length, ensuring compatibility and generalization
+capability with the task head. The design of FSI module is
+elaborated on in Section III-D.
+After the FSI module, the complete feature vectors vl(1 ⩽
+l ⩽ L) are processed by a task head to produce the ﬁnal result
+for the speciﬁc communications or sensing tasks.
+B. The Adaptive Token Aggregation (ATA) Module
+The objective of the token aggregation module is to merge
+the original tokens into a sparse yet informative token se-
+quence, while maintaining adaptive and computationally ef-
+ﬁcient processing. To fulﬁll these requirements, we propose a
+multi-round aggregation algorithm based on channel consis-
+tency, as illustrated in Fig. 3. The aggregation procedure is
+performed over τ rounds, during which redundant tokens are
+progressively merged according to their similarity.
+To provide a clear description, the tokens produced after
+the i-th round and their equivalent positions are denoted by
+ti
+l(1 ⩽ l ⩽ Li) and pi
+l(1 ⩽ l ⩽ Li), respectively, where Li is
+the number of tokens remaining after the i-th round. Following
+this notation, the initial tokens and their positions are deﬁned
+as
+t0
+l = tl, p0
+l = l, (1 ⩽ l ⩽ L), (9)
+which correspond to the original token sequence before ag-
+gregation.
+In each aggregation round, every two neighboring tokens are
+grouped and processed by a merge decision maker (MDM),
+which determines whether the two tokens should be merged
+based on their similarity. As is shown in Fig. 3, we take t0
+1 ∈
+CKS×1
+and t0
+2 ∈ CKS×1
+as the example. In the MDM, the
+similarity score of the two input tokens is ﬁrst calculated by
+a normalized complex inner product as
+s0
+(1, 2) = R
+
+(t0
+1)H
+t0
+2
+kt0
+1k2 kt0
+2k2
+
+, (10)
+where (·)H
+is the Hermitian transpose, k·k2 is the L2-norm of
+a vector, and R{·} is the real component of a complex number.
+... ...
+> θ ?
+Merge
+Yes
+Straight
+Through
+No
+MDM
+Merge
+Decision
+Maker MDM MDM MDM
+MDM MDM MDM
+... ...
+... ...
+... ...
+...
+...
+...
+MDM MDM
+... ...
+Fig. 3: The adaptive token aggregation (ATA) module. The aggregation is repeated over multiple rounds. In each round, adjacent token pairs
+are evaluated by a merge decision maker (MDM), which merges tokens with high similarity or passes them through unchanged.
+This similarity metric captures the alignment degree between
+two tokens, and thus serves as an effective indicator of channel
+consistency. The computed similarity score is then compared
+with a predeﬁned threshold3
+θ, resulting in two possible cases
+as follows.
+Case 1: If s0
+(1, 2) > θ, the two tokens are considered
+highly correlated and an element-wise aggregation is applied
+to produce a merged token t1
+1 = M(t0
+1, t0
+2). Speciﬁcally, each
+element of the merged token, denoted by t1
+1[n](1 ⩽ n ⩽ KS),
+is
+t1
+1[n] =
+q
+|t0
+1[n]||t0
+2[n]| exp
+
+j
+arg(t0
+1[n]) + arg(t0
+2[n])
+2
+
+,
+(11)
+where arg(·) denotes the phase of a complex number. As
+shown in (11), the proposed aggregation operation computes
+the geometric average between t0
+1 and t0
+2. This design pre-
+serves the dominant channel characteristics shared by the two
+input tokens while mitigating noise and small-scale varia-
+tions. Consequently, the merged token provides a compact yet
+informative representation that retains the essential channel
+information contained in t0
+1 and t0
+2. The equivalent position is
+merged as
+p1
+1 =
+1
+2
+(p0
+1 + p0
+2). (12)
+Performing equivalent positions merging is crucial because,
+after aggregation, the resulting token no longer corresponds
+to a single temporal or frequency sample. Without updating
+the positional information, the relative physical relationship
+between tokens would be lost, leading to degraded perfor-
+mance in the subsequent Transformer-based channel feature
+extraction. With the help of merged equivalent positions, the
+Transformer blocks are able to correctly model the correlation
+and structural dependencies among tokens.
+3The threshold θ controls the aggressiveness of token merging: a larger θ
+results in fewer merges and higher computational cost but better preserved
+channel information, while a smaller θ leads to more aggressive compression
+at the expense of potential performance degradation. In practice, θ can be
+selected based on the available computational budget.
+Case 2: If s0
+(1, 2) ⩽ θ, which means that the distance
+between these two tokens are sufﬁciently large, merging them
+would incur non-negligible information loss. In this case, the
+MDM directly outputs the input tokens without any modiﬁca-
+tions, i.e.,
+t1
+1 = t0
+1, t1
+2 = t0
+2, p1
+1 = p0
+1, p1
+2 = p0
+2. (13)
+The aforementioned decision and aggregation operations are
+implemented iteratively. After τ rounds, the output of the ATA
+module can be obtained as
+t̃l = tτ
+l , pl = pτ
+l , (1 ⩽ l ⩽ Lτ ). (14)
+It is worth noting that ATA is adaptive since the merge
+decisions and the resulting sequence length are determined by
+the input CSI. By merging redundant tokens in smooth channel
+regions while preserving informative tokens in rapidly varying
+regions, ATA achieves a favorable trade-off between compu-
+tational efﬁciency and channel information preservation.
+C. Channel Feature Extractor
+After the ATA module, the aggregated token sequence is
+fed into the channel feature extractor to produce the feature
+vectors. The channel feature extractor of ConsisFormer is
+similar to that of classical Transformer in Fig. 1. The only
+difference is that a rotary position embedding (RoPE) [32] is
+utilized in each self-attention head, which is illustrated in Fig.
+4. As is shown in Fig. 4, the query and key matrices (Qatt
+and
+Katt
+) are processed before calculating the attention score, by
+a RoPE module based on equivalent positions to yield
+Q̃att
+= [R(p1)q1, R(p2)q2, ..., R(pLτ )qLτ ] ∈ Rd×Lτ
+(15)
+and
+K̃att
+= [R(p1)k1, R(p2)k2, ..., R(pLτ )kLτ ] ∈ Rd×Lτ
+, (16)
+where ql and kl are the l-th column of Qatt
+and Katt
+,
+respectively.
+Transpose
+Scale
+Softmax
+Matrix Multiplication
+RoPE
+Matrix Multiplication
+V att
+Q att
+K att
+O att
+Fig. 4: A self-attention head with RoPE.
+In (15) and (16), each query or key vector is multiplied by
+a matrix
+R(pl) = diag(R1(pl), R2(pl), ..., Rd/2(pl)) ∈ Rd×d
+, (17)
+which denotes a block-diagonal matrix with the 2 × 2 rotation
+matrices Ri(pl) on the diagonal and zero matrices elsewhere.
+The rotation matrix Ri(pl) is constructed based on the equiv-
+alent position pl as
+Ri(pl) =
+
+cos(plθi) − sin(plθi)
+sin(plθi) cos(plθi)
+
+, (18)
+where θi = 10000−2(i−1)
+d . According to (17)-(18), the inner
+product of rotated l1-th query vector and l2-th key vector is
+[R(pl1 )ql1 ]T
+[R(pl2 )kl2 ] = qT
+l1
+R(pl2 − pl1 )kl2 . (19)
+As shown in Eq. (19), RoPE encodes relative positional
+differences, i.e., (pl2 − pl1 ), into the attention score, such
+that the attention between two tokens depends on their rel-
+ative position rather than absolute positions. This property
+is particularly beneﬁcial when combined with the proposed
+ATA module. Although equivalent positions are jointly merged
+during token aggregation, they represent approximations of the
+original indices rather than exact values, introducing positional
+ambiguity that makes absolute positional encoding unreliable
+[33]. Since the internal correlation structure of CSI is primarily
+governed by relative inter-token positions, RoPE is inherently
+robust to such approximation errors, ensuring that the aggre-
+gated tokens can still accurately capture the essential structural
+dependencies within each CSI sample.
+D. Feature Sequence Interpolation (FSI) Module
+The objective of the FSI module is to recover a full-length
+feature sequence from the sparse feature representation pro-
+duced by the channel feature extractor. The overall structure
+of the FSI module is illustrated in Fig. 5. The core idea of
+this module is to exploit the intrinsic correlations among the
+sparse feature vectors, together with the information provided
+by the original tokens, to perform feature interpolation through
+a multi-head attention mechanism. To this end, the query, key,
+and value matrices are carefully designed to serve distinct yet
+complementary roles in capturing the underlying correlation
+structure.
+Speciﬁcally, the sparse feature sequence Ṽ =
+[ṽ1, ṽ2, . . . , ṽLτ ] is ﬁrst fed into a correlation extractor
+to infer the global correlation characteristics among the
+sparse features, which are summarized by a correlation
+descriptor vector c. This descriptor provides a compact
+representation of the internal statistical dependencies within
+the CSI matrix.
+To recover features at all original token positions, query
+vectors are generated for the entire index set l = 1, 2, . . . , L.
+At this stage, the original tokens tl(1 ⩽ l ⩽ L) are introduced
+to provide local, position-speciﬁc contextual information that
+may be lost during token sparsiﬁcation. By incorporating the
+original tokens together with the correlation descriptor c and
+the token indices l(1 ⩽ l ⩽ L), the query generator is able to
+determine the query vector that needs to be reconstructed for
+each target position. Speciﬁcally, the query vector is generated
+as
+qFSI
+l = fθ1 (c, tl, l), (20)
+where fθ1 (·) denotes the query generation network. With l =
+1, 2, . . ., L, a total of L query vectors are obtained, forming
+the query matrix QFSI
+.
+Meanwhile, the correlation descriptor c and the equivalent
+position pl of each sparse feature vector are fed into a key
+generator to generate the key vector, as
+kFSI
+l = fθ2 (c, pl), (21)
+where fθ2 (·) denotes the key generation network. With l =
+1, 2, . . ., Lτ , the resulting key vectors form the key matrix
+KFSI
+. Then, the sparse feature sequence Ṽ itself is directly
+used as the value matrix V FSI
+. Finally, QFSI
+, KFSI
+, and V FSI
+Correlation
+Extractor
+Key
+Gener.
+Query
+Gener.
+Token index l
+Original token
+Multi-head
+Attention
+QFSI
+KFSI
+VFSI
+L
+c
+Fig. 5: The structure of the feature sequence interpolation (FSI)
+module. The module recovers a full-length feature sequence from
+a sparse one by exploiting the intrinsic correlations among sparse
+features and the local contextual information provided by the original
+tokens, through a carefully designed multi-head attention mechanism.
+are processed by a multi-head attention model to ﬁnish the
+interpolation as
+V = V FSI
+σ(
+(QFSI
+)T
+KFSI
+√
+d
+) ∈ Rd×L
+. (22)
+According to the attention mechanism, the scaled inner
+product between query and key vectors determines how the
+sparse feature vectors are weighted and aggregated. By lever-
+aging the correlation descriptor c and positional information,
+the generated queries and keys, the resulting attention weights
+are explicitly guided by the internal correlation structure of
+the sparse feature sequence. Consequently, the FSI module
+can effectively interpolate the sparse feature representation
+into a full-length sequence, while preserving the intrinsic
+dependencies within CSI matrix.
+Finally, it is worth noting that the original tokens are not
+involved in the construction of the value matrix. Since the
+value vectors directly provide the content used for interpola-
+tion, incorporating original tokens into value vectors would
+mix raw input representations with the high-level features
+extracted by the Transformer blocks, which may degrade
+the interpolation quality. By restricting the value vectors to
+the sparse feature sequence, the FSI module ensures that
+the reconstructed features are derived solely from reliable,
+correlation-aware representations, while the original tokens af-
+fect the reconstruction process only through the query vectors,
+serving as positional and contextual guidance.
+IV. AGGREGATED AUTO-ENCODER PRE-TRAINING FOR
+CONSISFORMER
+As a wireless foundation model (WFM) backbone, Consis-
+Former is expected to learn task-agnostic channel representa-
+tions from large-scale CSI data and transfer them to diverse
+downstream communication and sensing tasks. Therefore, its
+pre-training is conducted in a self-supervised manner without
+relying on task-speciﬁc labels. In existing WFMs [14]-[19],
+masked auto-encoder (MAE) based pre-training [34] is widely
+adopted, as illustrated in Fig. 6(a). In MAE, a subset of input
+CSI tokens is randomly replaced by constant mask tokens, and
+the model is trained to reconstruct the masked tokens from the
+remaining observations. Although this paradigm is effective
+for generic representation learning, it is not fully aligned
+with the proposed ConsisFormer architecture, since the ATA
+module already introduces a structured form of information
+reduction.
+To address this issue, we propose the AAE pre-training
+paradigm, as shown in Fig. 6(b). The key idea is to replace
+random token masking with channel consistency-driven token
+aggregation, such that the pre-training objective is naturally
+aligned with the inference behavior of the model. Specif-
+ically, the ATA module ﬁrst performs channel-consistency-
+based aggregation upon the original token sequence T =
+{t1, t2, . . . , tL}, producing a compressed token sequence T̃ =
+{t̃1, t̃2, . . . , t̃Lτ }, where Lτ < L. During pre-training, the
+aggregation round τ is randomly sampled from a discrete uni-
+form distribution over [1, τmax], which exposes the model to
+Token Masking
+Linear
+Projection
+Channel Feature
+Extractor
+Decoder
+Head
+Information
+Reduction
+Information
+Extraction
+&
+Recovery
+Information
+Projection
+ATA Module
+Linear
+Projection
+Channel Feature
+Extractor
+FSI
+Module
+Decoder
+Head
+Information
+Reduction
+Information
+Extraction
+Information
+Projection
+Information
+Recovery
+(a) MAE for Classic
+Transformer
+(b) AAE for
+ConsisFormer
+Channel Features
+Downstream
+Application
+Channel Features
+Downstream
+Application
+Pre-training & Inference Shared Modules
+Pre-training only Modules
+Fig. 6: Comparison between MAE and the proposed AAE
+pre-training paradigm.
+different token sparsiﬁcation levels and improves its robustness
+to varying computational budgets4
+.
+The compressed token sequence is then processed by the lin-
+ear projection and Transformer-based channel feature extractor
+to obtain sparse channel features. Afterwards, the FSI module
+recovers a full-length feature sequence V = {v1, v2, . . . , vL}
+based on the sparse feature sequence and the equivalent
+positional information. Finally, a naive decoder head, usually
+implemented as a one- or two-layer MLP, maps V back to the
+CSI token domain and reconstructs the original token sequence
+as T̂ . The network parameters are optimized by minimizing
+the normalized mean square error (NMSE) between the recon-
+structed and original tokens, i.e.,
+Lrecon = NMSE(T̂ , T ). (23)
+Both MAE and AAE follow the self-supervised principle of
+recovering complete CSI from partial observations. However,
+AAE provides two key advantages over MAE. First, MAE
+randomly masks tokens, risking the loss of critical channel
+information and introducing physically unrecoverable samples
+that hinder representation learning. AAE instead exploits chan-
+nel consistency to aggregate redundant neighboring tokens,
+ensuring that the retained tokens preserve the essential degrees
+of freedom of the channel. This leads to a more physically
+meaningful pre-training objective and more effective channel
+representations for downstream tasks. Second, MAE suffers
+from a mismatch between pre-training and inference: the input
+is randomly masked during pre-training but remains intact
+during inference. In contrast, AAE is naturally aligned with
+the inference pipeline, since the same aggregation-extraction-
+recovery process is applied in both stages. As a result, the
+4At inference time, τ serves as a ﬂexible hyper-parameter that enables
+a controllable trade-off between computational complexity and task perfor-
+mance, as will be demonstrated in Section V.
+model learns representations that are directly optimized for its
+actual operating conditions.
+After pre-training, the ConsisFormer backbone is frozen and
+transferred to downstream tasks by attaching a lightweight
+task head to the output of the FSI module. Speciﬁcally, a
+regression head is employed for tasks such as channel pre-
+diction and localization, while a classiﬁcation head is used for
+LoS/NLoS classiﬁcation and beam prediction. During down-
+stream adaptation, only the task-speciﬁc head is trained with
+the corresponding task loss, whereas the pre-trained backbone
+remains ﬁxed. This allows ConsisFormer to efﬁciently adapt
+to diverse communication and sensing tasks with minimal
+training overhead.
+V. SIMULATION RESULTS AND DISCUSSIONS
+A. Simulation Setups and Baseline Schemes
+In this section, the open-source wireless channel generator
+DeepMIMO [35] is employed to generate the CSI datasets.
+A total of 20 propagation scenarios are considered, among
+which 16 scenarios are used for pre-training and 4 scenarios
+are reserved for downstream evaluation. Speciﬁcally, the ASU
+Campus scenario and City0–City14 are used for pre-training,
+while City15–City17 and Outdoor1 are used for evaluation.
+For each scenario, CSI samples from 2000 users and 3 base
+stations are generated, resulting in 6000 samples per scenario.
+The detailed simulation settings and model conﬁgurations are
+summarized in Table I.
+The following methods are considered for comparison. For
+the main results, three methods are compared:
+1) Transformer: The classical Transformer architecture
+with standard positional encoding, pre-trained using MAE.
+2) RoPE: Transformer with rotary position embedding, pre-
+trained using MAE.
+3) ConsisFormer: The proposed ConsisFormer architecture
+pre-trained using the proposed AAE method.
+To further investigate the individual contributions of the
+proposed modules, ablation studies are conducted with the
+following additional methods:
+4) RoPE-Random: Built upon RoPE, tokens are randomly
+sampled with a sampling ratio of ps to reduce sequence length
+before Transformer blocks.
+5) RoPE-Uniform: Built upon RoPE, tokens are uniformly
+sampled at ﬁxed intervals with a sampling ratio of ps.
+6) RoPE-ATA: Built upon RoPE, the proposed ATA module
+is used without full-length feature recovery by FSI.
+The comparison among RoPE-Random, RoPE-Uniform,
+and RoPE-ATA validates the superiority of channel
+consistency-driven token aggregation over naive token
+reduction strategies, while the performance gap between
+RoPE-ATA and ConsisFormer demonstrates the contribution
+of the FSI module in recovering task-relevant information
+from the sparsiﬁed token sequence.
+During downstream evaluation, the task head is trained
+with 4500 · Rt samples and tested on a set of 1500 samples,
+where Rt denotes the training ratio. Four downstream tasks
+are considered, brieﬂy introduced as follows.
+1) LoS/NLoS classiﬁcation: In this task, the LoS/NLoS
+status of the environment is estimated based on the channel
+representation. The cross entropy is used as loss function
+for the downstream training, and F1-score is served as the
+evaluation metric. The F1-score balances precision and recall
+into a number between 0 and 1, where a higher value indicates
+better model performance.
+2) Frequency-domain channel prediction: This task in-
+volves predicting the CSI of 32 adjacent subcarriers based
+on the channel representations of the existing CSI over 128
+subcarriers. The Normalized Mean Squared Error (NMSE) is
+used both as the loss function and the evaluation metric.
+3) Beam prediction: This task utilizes the CSI features of
+Sub-6GHz (3.5GHz) channels to predict the optimal mmWave
+(28GHz) beam from a codebook of size 16. Cross-entropy is
+TABLE I: Simulation Settings and Model Conﬁgurations
+Wireless Foundation Model (WFM) Task-Speciﬁc Model
+(Time Domain Ch. Pred.)
+LoS/NLoS Class. Freq. Domain Ch. Pred. Beam Pred. Localization
+Simulation Settings
+Sub-carriers Number (K) 128 160 (128 predict 32) 128 128 16
+Sub-carrier Spacing 15 kHz 15 kHz 15 kHz 15 kHz 30 kHz
+Spatial Ch. Number (S) 32 32 32 32 16
+Number of OFDM Symbols (T) 1 1 1 1 64 (48 predict 16)
+Evaluation Scenarios Indianapolis San Francisco Seattle Outdoor1 Indianapolis
+Model Conﬁguration
+Tokenization Domain Frequency Frequency Frequency Frequency Time
+Token Sequence Length (L) 128 128 128 128 48
+Aggregation Threshold (θ) 0.85 0.85 0.85 0.85 0.95
+Number of Encoder Blocks (Ne) 16 16 16 16 4
+Number of Attention Heads 8 8 8 8 8
+Embedding Dimension 256 256 256 256 512
+Hidden / FFN Dimension 512 512 512 512 1024
+Number of Parameters 9.59M 9.59M 9.59M 9.59M 12.41M
+Performance Metric F1-score NMSE F1-score MEE NMSE
+Task-speciﬁc Head
+MLP
+(5 layers)
+Transformer Encoder
+(2 layers)
+MLP
+(5 layers)
+MLP
+(4 layers)
+Transformer Encoder
+(1 layer)
+0 1 2 3 4 5
+Number of Aggregation Rounds ( )
+0.012
+0.014
+0.016
+0.018
+0.02
+0.022
+0.024
+0.026
+0.028
+0.03
+NMSE
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+GFLOPs
+Trans.
+RoPE
+Trans.
+RoPE
+ConsisFormer (NMSE)
+ConsisFormer (GFLOPs)
+Fig. 7: The NMSE and GFLOPs results for channel prediction.
+used as the loss function, while the F1-score serves as the
+evaluation metric.
+4) Outdoor localization: In this task, the location of the
+UE is estimated based on the features of the CSI between the
+BS and the UE. In this task, the mean Euclidean error (MEE)
+between the estimated location and the real location is used
+as the loss function and evaluation metric.
+The computational cost of the NN models is measured in
+terms of ﬂoating-point operations (FLOPs), deﬁned as the
+number of ﬂoating-point operations required to process a sin-
+gle input sample. One giga ﬂoating-point operation (GFLOP)
+equals 109
+FLOPs. For the baseline methods, the compu-
+tational cost includes the linear projection and the channel
+feature extractor. For the proposed ConsisFormer, the costs of
+the ATA module, the FSI module, the linear projection, and
+the channel feature extractor are taken into account. Since the
+task heads are the same across all methods, their computational
+cost is omitted for comparison purpose.
+Further, although ConsisFormer is proposed in this work as
+the backbone for WFMs, the aggregation–extraction–recovery
+design is universal. It is not only applicable to WFMs but
+also to task-speciﬁc models. As long as a model is based
+on the Transformer architecture, the techniques proposed in
+this paper can be used to achieve efﬁcient computation. To
+validate this, an additional experiment is conducted where
+ConsisFormer is directly trained for a speciﬁc task: time-
+domain channel prediction. The task involves predicting the
+CSI of the subsequent 16 OFDM symbols from historical
+observations of 48 OFDM symbols, with NMSE as both the
+training loss and evaluation metric.
+B. Simulation Results and Discussions for WFMs
+Fig. 7 presents the NMSE performance and computational
+cost of the classical Transformer, RoPE-based Transformer,
+and ConsisFormer under different aggregation rounds τ for
+frequency-domain channel prediction. In Fig. 7, the blue lines
+represent the performances while the red lines correspond to
+the costs. When τ = 0, ConsisFormer achieves lower NMSE
+than both the classical Transformer and RoPE baselines.
+Since the token sequence is not aggregated in this case, this
+performance gain primarily stems from the proposed AAE pre-
+training strategy, which encourage the model to learn more
+10-3
+10-2
+10-1
+100
+Training Ratio
+0.75
+0.8
+0.85
+0.9
+0.95
+1
+F1-Score
+Transformer
+RoPE
+ConsisFormer ( = 0)
+ConsisFormer ( = 3)
+ConsisFormer ( = 5)
+Fig. 8: F1-score versus training ratio for Los/NLoS classiﬁcation.
+informative and physically meaningful channel representations
+than MAE-based pre-training. As τ increases, the compu-
+tational cost of ConsisFormer decreases rapidly, while the
+NMSE remains almost unchanged for τ ⩽ 3. Speciﬁcally,
+increasing τ from 0 to 3 reduces the GFLOPs by 84.6%, with
+only a 2.3% NMSE increase. This demonstrates that ATA
+can effectively remove redundant CSI tokens by exploiting
+channel consistency, and FSI helps preserve ﬁne-grained chan-
+nel representations. When τ = 3, ConsisFormer reduces the
+GFLOPs by about 83.5% compared with both baselines, while
+lowering the NMSE by 34.25% and 8.41% compared with the
+classical Transformer and RoPE, respectively. Even at τ = 5,
+ConsisFormer still maintains comparable accuracy to RoPE
+while reducing the computational cost by more than 90%,
+demonstrating a favorable accuracy-complexity trade-off.
+Fig. 8 shows the F1-score performance of the LoS/NLoS
+classiﬁcation task under different training ratios Rt, and the
+corresponding computational costs are summarized in Table II.
+As expected, the F1-score decreases with reduced training ra-
+tio, since limited training data increases the risk of over-ﬁtting.
+It can be observed that the proposed ConsisFormer consistently
+outperforms both baselines, especially for low training ratios.
+This performance gain demonstrates the advantage of the
+proposed AAE pre-training strategy, which enables the model
+to learn more robust channel representations by explicitly
+exploiting channel consistency, thereby reducing the risk of
+over-ﬁtting under the situation of data scarcity. Meanwhile,
+Table II shows that when τ = 5, the total computational cost
+is reduced from 1.318 GFLOPs (τ = 0) to 0.115 GFLOPs,
+corresponding to a reduction of 91.27%, while the F1-score
+remains almost unchanged compared with the case of τ = 0.
+This observation is consistent with the fact that LoS/NLoS
+classiﬁcation relies mainly on coarse channel characteristics
+and is therefore insensitive to aggressive token aggregation.
+Even with a large number of aggregation rounds, the essential
+discriminative features are well preserved, enabling signiﬁcant
+complexity reduction with negligible performance degradation.
+Fig. 9 exhibits the performance of two downstream tasks,
+TABLE II: Computational Cost Comparison (GFLOPs)
+Methods Total LP & CFE ATA FSI
+Transformer 1.223 1.223 - -
+RoPE 1.227 1.227 - -
+ConsisFormer (τ = 0) 1.318 1.227 0 0.091
+ConsisFormer (τ = 3) 0.202 0.148 2×10−5 0.055
+ConsisFormer (τ = 5) 0.115 0.063 2×10−5 0.051
+(a) Beam Prediction
+(b) Localization
+Fig. 9: Simulation results for beam prediction and localization.
+i.e., beam prediction and localization, together with their cor-
+responding computational costs. For both tasks, the proposed
+ConsisFormer achieves competitive or improved performance
+compared with the baseline models, while signiﬁcantly reduc-
+ing the computational cost when token aggregation is enabled.
+For the beam prediction task shown in Fig. 9(a), all models ex-
+hibit very close F1-scores, regardless of the model architecture
+or the aggregation round τ. This phenomenon can be attributed
+to the inherent challenges of cross-band beam prediction,
+speciﬁcally from 3.5GHz channels to 28GHz mmWave beams.
+Due to the limited overlap in scattering characteristics between
+these widely separated frequency bands, the achievable pre-
+diction accuracy is fundamentally constrained. In contrast, the
+localization task in Fig. 9(b) exhibits more pronounced per-
+formance variations across different models. Compared with
+the classical Transformer and RoPE, ConsisFormer achieves
+lower localization error, indicating that the learned channel
+representations preserve more ﬁne-grained spatial information.
+Even with aggressive aggregation (τ = 5), the localization
+performance degradation remains limited, suggesting that the
+proposed ATA and FSI mechanisms effectively retain the
+essential spatial information required for localization.
+C. Ablation Study
+Fig. 10 presents the NMSE versus GFLOPs trade-off curves
+for the ablation study on channel prediction, where the points
+closer to the lower-left corner are more favorable, indicating
+both lower computational cost and smaller prediction error.
+For the ATA-based methods, different points are obtained by
+varying the aggregation iteration number τ, while for random
+and uniform sampling, the curves are obtained by adjusting the
+sampling ratio ps. The random and uniform sampling methods
+reduce the computational cost by discarding tokens, but they
+suffer from signiﬁcant performance degradation as the sam-
+pling ratio decreases. In contrast, the proposed ATA method
+effectively alleviates this degradation by exploiting channel
+consistency for structured token aggregation. Furthermore,
+0 0.2 0.4 0.6 0.8 1 1.2
+GFLOPs
+0.014
+0.016
+0.018
+0.02
+0.022
+0.024
+0.026
+0.028
+NMSE
+RoPE
+=0
+=0
+=1
+=1
+=2
+=2
+=3
+=3
+=4
+=4
+=5
+=5
+ps
+=0.500
+ps
+=0.500
+ps
+=0.250
+ps
+=0.250
+ps
+=0.125
+ps
+=0.086
+ps
+=0.062
+RoPE
+RoPE-Random
+RoPE-Uniform
+RoPE-ATA
+ConsisFormer
+Fig. 10: The ablation study on channel prediction.
+ConsisFormer consistently outperforms RoPE-ATA across all
+computational costs by a signiﬁcant margin, validating the
+contribution of the FSI module in recovering task-relevant
+information from the sparsiﬁed token sequence.
+Fig. 11 shows the ablation results for LoS/NLoS classiﬁca-
+tion under different training ratios, with the left panel showing
+the F1-score and the right panel reporting the corresponding
+GFLOPs. Unlike channel prediction, this task highlights the
+generalization behavior under limited labeled data. Interest-
+ingly, when Rt = 0.001, token sparsiﬁcation methods outper-
+form the RoPE baseline, suggesting that removing redundant
+CSI details can reduce over-ﬁtting of the downstream classiﬁer.
+Among the sparsiﬁcation schemes, RoPE-ATA performs best
+by retaining structurally informative channel variations. Cons-
+isFormer achieves the highest F1-score overall, indicating that
+FSI further improves generalization ability of the task head.
+D. Visualization Results
+Fig. 12 visualizes the token aggregation results of ATA
+when τ = 5 for channel samples with different coherence
+bandwidths. The horizontal axis denotes the equivalent posi-
+tion of each retained token after aggregation, while the marker
+size represents the number of original tokens represented by
+that aggregated token. It can be observed that the aggre-
+gation patterns vary with the channel coherence bandwidth.
+As the coherence bandwidth increases, stronger frequency-
+domain channel consistency allows more neighboring tokens
+0.001
+0.01
+0.1
+1
+Training Ratio
+0.85
+0.9
+0.95
+1
+F1-Score
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+GFLOPs
+Fig. 11: The ablation study on Los/NLoS classiﬁcation.
+578.666
+kHz
+333.001
+kHz
+327.968
+kHz
+750.674
+kHz
+Fig. 12: The token aggregation results of different samples.
+to be merged, leading to fewer retained tokens and higher
+compression ratios. For example, the number of tokens after
+ATA decreases from 16 to 5 as the coherence bandwidth
+increases from 327.968 kHz to 750.674 kHz. Moreover, the
+retained tokens are not uniformly distributed, and different
+aggregated tokens represent different numbers of original
+tokens even within the same channel sample. This indicates
+that ATA does not perform a ﬁxed or uniform token reduction,
+but adapts its aggregation behavior to the local correlation
+structure of the channel. These results provide an intuitive
+illustration that the proposed ATA is driven by the propagation
+characteristics of wireless channels, rather than being a generic
+token sparsiﬁcation trick.
+We further examine whether ConsisFormer preserves infor-
+mative channel representations after token aggregation. To this
+end, the high-dimensional channel features produced by Con-
+sisFormer with different aggregation depths τ are projected
+onto a two-dimensional space using t-distributed stochastic
+´
+´ ´
+´ ´ ´
+(a)´= 1
+Features without token aggregation Features with aggregation round´
+Indianapolis San Francisco Seattle Denver Oklahoma
+(b)´= 2
+(c)´= 3 (d)´= 4
+×20 ×20
+×20 ×20
+Fig. 13: Channel feature visualization based on t-SNE.
+neighbor embedding (t-SNE) [36]. In Fig. 13, the circles repre-
+sent the channel features generated by ConsisFormer without
+token aggregation, while the triangles denote the features
+obtained with token aggregation under different values of τ.
+We observe that for all the CSI samples, the projected features
+before and after token aggregation almost completely overlap.
+To further examine subtle differences, we select several sam-
+ples with the largest separation and present a 20× zoom-in
+view in the inset. Even under this magniﬁed view, only minor
+displacements can be observed for τ = 3 and τ = 4, while the
+feature distributions remain highly consistent. These results
+suggest that the proposed ATA module effectively removes
+redundant information without altering the essential channel
+characteristics, and the FSI module successfully compensates
+for the information loss induced by aggregation.
+E. Simulation Results for Task-speciﬁc Models
+Fig. 14 illustrates the results of different Transformer-based
+structures when they are deployed as task-speciﬁc (time-
+domain channel prediction) models, evaluated under various
+user speeds ranging from 1 m/s to 32 m/s. The solid curves
+denote the NMSE and the dashed curves represent the corre-
+sponding GFLOPs. Compared with the classical Transformer
+and RoPE, the proposed ConsisFormer achieves signiﬁcantly
+lower computational cost while maintaining competitive pre-
+diction accuracy across different aggregation rounds τ, demon-
+strating the effectiveness of the proposed ConsisFormer as a
+task-speciﬁc model.
+As the user speed increases, the NMSE of all methods
+increases, for the reason that faster channel variations make
+channel prediction more challenging. It can also be observed
+that the performance gap between ConsisFormer and RoPE
+becomes larger in the high-mobility regime, especially when
+a larger aggregation round τ is used. This is reasonable and
+as expected, since high mobility weakens temporal channel
+consistency and makes ﬁne-grained temporal variations more
+important. In this case, aggressive token aggregation may
+inevitably remove part of the rapidly varying channel infor-
+mation. Nevertheless, ConsisFormer still provides a favorable
+trade-off between prediction accuracy and computational cost.
+1 2 4 8 16 32
+User Speed (m/s)
+10-3
+10-2
+NMSE
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+0.35
+0.4
+0.45
+GFLOPs
+Transformer
+RoPE
+ConsisFormer ( = 1)
+ConsisFormer ( = 2)
+ConsisFormer ( = 3)
+ConsisFormer ( = 4)
+Performance
+Cost
+Fig. 14: The simulation results under various user speeds.
+VI. CONCLUSIONS AND FUTURE WORKS
+In this paper, we have proposed ConsisFormer, a compute-
+efﬁcient Transformer architecture intrinsically motivated by
+channel consistency. By explicitly reducing redundant input
+tokens and recovering complete channel information through
+structured feature correlations, ConsisFormer is able to gener-
+ate compact yet informative channel features with signiﬁcantly
+reduced computational cost. Extensive simulation results have
+demonstrated that, compared with the existing structures,
+ConsisFormer consistently achieves superior performance with
+substantially lower complexity for diverse downstream tasks.
+For tasks that only require coarse channel features such as
+LoS/NLoS classiﬁcation and beam prediction, ConsisFormer
+reduces the computational cost by more than 91% without
+noticeable performance degradation. Even for tasks that need
+ﬁne-grained channel representations, including channel predic-
+tion, the proposed model still achieves over 83% reduction in
+GFLOPs while maintaining comparable prediction accuracy.
+Future work will explore the adaptive selection of aggre-
+gation hyper-parameters, including the aggregation round and
+threshold, by learning the mapping from channel conditions
+and computational budgets to their appropriate values. Another
+promising direction is to validate ConsisFormer in practical
+wireless systems and extend it to more dynamic propagation
+environments.
+REFERENCES
+[1] ITU-R M.2160-0, Framework and overall objectives of the future
+development of IMT for 2030 and beyond, ITU, Nov. 2023.
+[2] C. Wen, J. Tong, Y. Hu, Z. Lin, and J. Zhang, “Neural representation
+for wireless radiation ﬁeld reconstruction: A 3D Gaussian splatting
+approach,” IEEE Trans. Wireless Commun., early access, Nov. 2025.
+[3] H. Zhang, K. Huang, C. Yang, L. Liang, C. Guo, and H. Ye, “Fast
+adversarial training for graph neural network based resource allocation,”
+IEEE Wireless Commun. Lett., vol. 15, pp. 126-130, Oct. 2025.
+[4] Y. Yang, O. Alhussein, A. Arani, Z. Zhang, and M. Debbah, “Genera-
+tive diffusion receivers: Achieving pilot-efﬁcient MIMO-OFDM,” arXiv
+preprint arXiv:2506.18419, Jun. 2025.
+[5] L. Sun, Y. Wang, A. L. Swindlehurst, and X. Tang, “Generative-
+adversarial-network enabled signal detection for communication systems
+with unknown channel models,” IEEE J. Select. Areas Commun., vol.
+39, no. 1, pp. 47-60, Jan. 2021.
+[6] P. Wang, Z. Wang, and Z. Han, “Intelligent wireless interference identi-
+ﬁcation with lightweight Transformer network,” IEEE Trans. Commun.,
+vol. 73, no. 11, pp. 11355-11367, Nov. 2025.
+[7] S. Zhang, S. Zhang, W. Yuan, and T. Q. S. Quek, “Transformer-
+empowered predictive beamforming for rate-splitting multiple access in
+non-terrestrial networks,” IEEE Trans. Wireless Commun., vol. 23, no.
+12, pp. 19776-19788, Dec. 2024.
+[8] I. Chafaa, G. Bacci, and L. Sanguinetti, “Transformer-based power
+optimization for max-min fairness in cell-free massive MIMO,” IEEE
+Wireless Commun. Lett., vol. 14, no. 8, pp. 2316-2320, Aug. 2025.
+[9] T. Zhou, X. Liu, Z. Xiang, H. Zhang, B. Ai, and L. Liu, “Transformer
+network based channel prediction for CSI feedback enhancement in AI-
+native interface,” IEEE Trans. Wireless Commun., vol. 23, no. 9, pp.
+11154-11167, Sep. 2024.
+[10] L. Chen and L. Sun, “Self-attention-based real-time signal detector for
+communication systems with unknown channel models,” IEEE Commun.
+Lett., vol. 25, no. 8, pp. 2639-2643, Aug. 2021.
+[11] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, “LLM4CP: Adapting
+large language models for channel prediction,” J. Commun. Inf. Netw.,
+vol. 19, no. 2, pp.113-125, Jun. 2024.
+[12] Y. Sheng, K. Huang, L. Liang, P. Liu, S. Jin, and Y. Li, “Beam prediction
+based on large language models,” arXiv preprint arXiv:2408.08707, Feb.
+2025.
+[13] Y. Zhu, L. Yu, L. Shi, J. Zhang, and G. Liu, “Multi-modal large models
+based beam prediction: An example empowered by DeepSeek,” arXiv
+preprint arXiv:2506.0592, Jun. 2025.
+[14] B. Liu, S. Gao, X. Liu, X. Cheng, and L. Yang, “WiFo: Wireless
+foundation model for channel prediction,” Sci. China Inf. Sci., vol. 68,
+no. 6, Jun. 2025.
+[15] B. Lin, H. Zhang, Y. Jiang, Y. Wang, T. Zhang, S. Yan, H. Li, Y. Liu, and
+F. Gao, “A generative pre-trained language model for channel prediction
+in wireless communications systems,” in Proc. 2025 Conf. Empirical
+Methods Natural Language Process., Suzhou, China, Nov. 2025, pp.
+13417-13430.
+[16] S. Alikhani, G. Charan, and A. Alkhateeb, “Large wireless model
+(LWM): A foundation model for wireless channels,” arXiv preprint
+arXiv:2411.08872, Apr. 2025.
+[17] T. Yang, P. Zhang, M. Zheng, Y. Shi, L. Jing, J. Huang, and N. Li,
+“WirelessGPT: A generative pre-trained multi-task learning framework
+for wireless communication,” IEEE Net., vol. 39, no. 5, pp. 58-65, Sep.
+2025.
+[18] L. Jing, T. Yang, H. Zhang, Y. Shi, C. Zhang, and B. Zhang, “Sig-
+nal compression for wireless communication and sensing: A general
+approach utilizing pretrained wireless foundation models” IEEE Trans.
+Mob. Comput., early access, Mar. 2026.
+[19] Y. Sheng, J. Wang, X. Zhou, L. Liang, H. Ye, S. Jin, and Y. Li, “A
+wireless foundation model for multi-task prediction,” arXiv preprint
+arXiv:2507.05938, Jul. 2025.
+[20] J. Jiang, W. Yu, Y. Li, Y. Gao and S. Xu, “A MIMO wireless channel
+foundation model via CIR-CSI consistency,” in Proc. IEEE Int. Conf.
+Mach. Learn. Commun. Netw. (ICMLCN), Barcelona, Spain, May, 2025,
+pp. 1-6.
+[21] T. Zheng, J. Guo, L. Dai, S. Jin, and J. Zhang, “MUSE-FM: Multi-task
+environment-aware foundation model for wireless communications,”
+arXiv preprint arXiv:2509.01967, Sep. 2025.
+[22] A. Vaswani et al., “Attention is all you need,” in Proc. Int. Conf. Neural
+Inf. Process. Syst. (NIPS), Long Beach, CA, USA, Dec. 2017, vol. 30,
+pp. 5998–6008.
+[23] D. Hou, L. Li, W. Lin, J. Liang, and Z. Han, “ClST: A convolutional
+transformer framework for automatic modulation recognition by knowl-
+edge distillation,” IEEE Trans. Wireless Commun., vol. 23, no. 7, pp.
+8013–8028, Jul. 2024.
+[24] H. Zhang, S. Gao, and X. Cheng, “Tiny-WiFo: A lightweight wireless
+foundation model for channel prediction via multi-component adaptive
+knowledge distillation,” IEEE Wireless Commun. Lett., vol. 15, pp. 1846-
+1850, Feb. 2026.
+[25] Y. Byeon, D. Kim, Y. Cao, and W. Lim, “Pruned and quantized hybrid
+models for edge-based automatic modulation recognition,” IEEE Internet
+Things J., early access, Apr. 2026.
+[26] Y. Bolya, C. Fu, X. Dai, P. Zhang, C. Feichtenhofer, and J. Hoffman,
+“Token merging: Your ViT but faster,” in Proc. Int. Conf. Learn.
+Represent. (ICLR), Kigali, Rwanda, 2023.
+[27] C. Renggli, A. Pinto, N. Houlsby, B. Mustafa, J. Puigcerver, and C.
+Riquelme, “Learning to merge tokens in vision transformers,” arXiv
+preprint arXiv:2202.12015, Feb. 2022.
+[28] F. Zeng and D. Yu, “M2M-TAG: Training-free many-to-many token
+aggregation for vision transformer acceleration,” in Proc. Adv. Neural
+Inf. Process. Syst. (NeurIPS), Vancouver, BC, Canada, 2024.
+[29] J. Yun, M. Kim, and Y. Kim, “Focus on the core: Efﬁcient attention
+via pruned token compression for document classiﬁcation,” in Findings
+of the Assoc. Comput. Linguist. (EMNLP), Singapore, 2023, pp. 13617-
+13628.
+[30] P. Dong, H. Zhang, G. Y. Li, I. S. Gaspar, and N. NaderiAlizadeh, “Deep
+CNN-based channel estimation for mmWave massive MIMO systems,”
+IEEE J. of Sel. Topics in Signal Process., vol. 13, no. 5, pp. 989-1000,
+Sep. 2019.
+[31] P. Bello, “Characterization of randomly time-variant linear channels,”
+IEEE Trans. Commun., vol. 11, no. 4, pp. 360-393, Dec. 1963.
+[32] J. Su, Y. Lu, S. Pan, A. Murtadha, B. Wen, and Y. Liu, “RoFormer:
+Enhanced transformer with rotary position embedding,” arXiv preprint
+arXiv:2104.09864, Apr. 2021.
+[33] P. Shaw, J. Uszkoreit, A. Vaswani, “Self-Attention with relative position
+representations,” arXiv preprint arXiv:1803.02155, Mar. 2018.
+[34] K. He, X. Chen, S. Xie, Y. Li, P. Dollár, and R. Girshick, “Masked
+autoencoders are scalable vision learners,” in Proc. IEEE Conf. Comput.
+Vis. Pattern Recognit. (CVPR), New Orleans, LA, USA, 2022.
+[35] A. Alkhateeb, “DeeepMIMO: A generic deep learning dataset for
+millimeter wave and massive MIMO applications,” in Proc. IEEE Inf.
+Theory Appl. Workshop (ITA), San Diego, CA, USA, Feb. 2019, pp. 1-8.
+[36] L. Maaten and G. Hinton, “Visualizing high-dimensional data using t-
+SNE,” J. Mach. Learn. Res., vol. 9, no. 86, pp. 2579–2605, Nov. 2008.
+

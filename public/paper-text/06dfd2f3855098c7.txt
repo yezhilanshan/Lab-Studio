@@ -1,0 +1,2069 @@
+Open-ended Human Activity Understanding via LLM-assisted Motion
+Decomposition and Semantic Fusion
+QINGXIN WEI, Zhejiang University, China
+KAI HU, Zhejiang University, China
+JIAMING HUANG, Zhejiang University, China
+CHENG GUO, Zhejiang University, China
+YI GAO∗, Zhejiang University, China
+WEI DONG, Zhejiang University, China
+Human activity is a fundamental component of intelligent interactive systems. Existing human activity recognition (HAR) follows
+a closed-ended assumption—defining a fixed set of activity classes and classifying each sensor signal into one of them—yet
+real-world human behavior is complex and ever-changing and thus cannot be fully represented by any fixed set. We present a new
+paradigm for open-ended human activity understanding (HAU), shifting the goal from closed-set classification to understanding
+activities via their meta-motions. To achieve this, we design MOSAIC, a motion decomposition and semantic fusion framework
+that transforms raw sensor streams into structured meta-motion representations and subsequently generates fine-grained natural-
+language descriptions. Additionally, we propose an LLM-driven training strategy for sensor–language alignment, enabling effective
+cross-modal supervision in the absence of real-world training data. Finally, we leverage LLM-assisted reasoning to recognize
+complex high-level activities based on the understanding of underlying motions and their composition. Our model demonstrates
+strong generalization and performance across 18 public HAR datasets, outperforming the best baseline by up to 19.6% in unseen
+scenarios.
+CCS Concepts: • Human-centered computing → Ubiquitous and mobile computing; • Computing methodologies →
+Neural networks.
+Additional Key Words and Phrases: Human Activity Recognition, Large Language Models, Sensor-Language Alignment
+ACM Reference Format:
+Qingxin Wei, Kai Hu, Jiaming Huang, Cheng Guo, Yi Gao, and Wei Dong. 2026. Open-ended Human Activity Understanding via
+LLM-assisted Motion Decomposition and Semantic Fusion. Proc. ACM Interact. Mob. Wearable Ubiquitous Technol. 10, 3, Article 168
+(September 2026), 25 pages. https://doi.org/10.1145/3831643
+1 INTRODUCTION
+Nowadays, intelligent interactive systems have permeated nearly every aspect of human life, from health monitoring
+systems that track vital signs [24, 48, 58], to smart homes that adapt to our behaviors to enhance comfort [21, 25, 44],
+and even metaverse platforms that provide immersive experiences [55, 63]. These systems continuously observe and
+record human activity through wearable devices [23] that capture personalized sensor signals, including accelerometer,
+gyroscope, and magnetometer [43, 61]. Such sensor signals have primarily been used for Human Activity Recognition
+(HAR) [53], which classifies them into predefined activity categories such as "walking" or "sitting". However, human
+∗Corresponding author.
+Authors’ Contact Information: Qingxin Wei, Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou, Zhejiang,
+China, weiqingxin@zju.edu.cn; Kai Hu, Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou, Zhejiang, China,
+hk_zju@zju.edu.cn; Jiaming Huang, Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou, Zhejiang, China,
+huangjm@zju.edu.cn; Cheng Guo, Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou, Zhejiang, China,
+guo.cheng@zju.edu.cn; Yi Gao (corresponding author), Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou,
+Zhejiang, China, gaoyi@zju.edu.cn; Wei Dong, Zhejiang University, State Key Laboratory of Blockchain and Data Security, Hangzhou, Zhejiang,
+China, dongw@zju.edu.cn.
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+© 2026 Copyright held by the owner/author(s).
+ACM 2474-9567/2026/9-ART168
+https://doi.org/10.1145/3831643
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:2 • Wei et al.
+Stretching exercises
+Closed-ended Activity Classification Open-ended Activity Understanding
+imu data imu data
+Standing
+too coarse! more precise
+Fig. 1. An example illustrating this work’s motivation. Due to the limitation of the predefined label set, stretching exercises
+are classified under the coarse label “standing.” It shows that closed-ended classification fails to accurately recognize complex,
+continuous, and ever-changing human activities.
+behavior is inherently changeable and complex, and thus cannot be fully represented by coarse labels alone. Therefore,
+instead of endlessly expanding predefined label sets, sensing systems should shift the perspective from a pure
+classification problem to Human Activity Understanding (HAU). HAU offers more fine-grained and richer information
+about human activities, without the need for label sets. This capability is essential for broad downstream AI applications,
+where systems are expected not only to recognize activities, but also to reason about human behavior, infer user
+intentions, and support context-aware interaction [40].
+Traditionally, HAR follows the closed-ended assumption (CWA) [60]. This assumption defines a finite set of activity
+classes in advance, within which the model performs classification by mapping each sensor signal to one of them.
+Under this setting, various approaches have been developed. Initially, traditional machine learning approaches such as
+Support Vector Machines (SVM), Random Forests (RF), and Logistic Regression [8, 11, 13, 20, 75] were predominantly
+employed. In parallel, early sequence-to-sequence HAR studies further formulated activity recognition as a temporal
+sequence modeling problem, learning structured representations from sensor event streams for activities [15, 74]. As
+data volume and label diversity increased, deep learning methods demonstrated advantages. These include models
+based on convolutional neural networks combined with recurrent neural networks (CNN-RNN) [1, 68? ], Transformer
+architectures [12, 49, 72], and graph convolutional networks (GCN) [33, 36, 57]. In practice, real-world human activity
+is inherently open-ended [62]. Human activities are complex, continuous, and ever-changing, and thus cannot be fully
+represented by any fixed set of pre-defined categories. As shown in Fig. 1, when a person is performing a stretching
+exercise, the closed-ended HAR system often classifies it into a coarse and general category such as "standing", simply
+because only such a similar label exists in the predefined set. However, such a label provides limited support for
+AI applications. For example, in health monitoring or elderly care, knowing that a user is "standing" is less useful
+than knowing that "the user raises both arms above the head and bends the upper body backward", which allows the
+system to infer whether the user is stretching, losing balance, or preparing to sit down and then give feedback. Even if
+"stretching exercise" were explicitly included in the predefined label set, similar cases would still occur, as real-world
+activities cannot be exhaustively enumerated. Therefore, we argue that open-ended HAR should shift its perspective
+from activity classification to activity understanding— that is, to represent activities through fine-grained motion
+descriptions, and recognize activities based on the understanding of themselves. Recently, large language models
+(LLMs) [19, 31] have garnered significant attention as a powerful class of language generation systems. Trained on
+vast corpora of human language and world knowledge, LLMs possess strong capabilities in reasoning, abstraction,
+and generalization. Some studies [26, 64] have further demonstrated that LLMs can directly interpret raw physical
+signals. These make LLMs particularly promising for HAU. Existing approaches for LLMs to process sensor data can
+be broadly categorized into two paradigms. The first treats sensor signal sequences as textual inputs [26, 64], directly
+encoding them as prompts for LLMs. However, this often leads to poor results due to the fundamental differences
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:3
+(b) Open-ended HAR
+(a) Closed-ended HAR
+running cycling walking
+pre-determined activity classes
+Probability
+32% 50% 18%
+Conclusion: cycling
+...
+...
+smartwatch
+on the wrist
+smartphone
+on the thigh
+“Raise arms, swing them
+slowly backwards and
+then quickly forwards.”
+“Bend legs downward
+and then hold still.”
+“This person
+might be
+throwing
+something,
+or playing
+with a ball.”
+understanding complex, continuous, and ever-changing activities
+...
+MLP
+Head
+Fig. 2. Explanation of the closed-ended and open-ended HAR. In the closed-ended setting, HAR models are trained to classify
+sensor signals into a finite set of pre-defined activity classes. In contrast, open-ended HAR aims to compose fine-grained motion
+components to reason complex or ever-changing activities.
+between numerical signals [16, 27]—continuous, high-dimensional, and lacking inherent semantic structure—and
+natural language. The second paradigm seeks to transform sensor signals into representations within the embedding
+space of LLMs. Some approaches integrate sensing modalities into multimodal LLMs (MLLMs) [18, 37]. These typically
+align sensor signals with intermediate modalities—such as images, video, or speech—via contrastive learning, thereby
+enabling indirect projection into the semantic space of LLMs. Other approaches directly align sensor signals with
+textual descriptions about signals [30, 65], training models to translate numerical sequences into textual narratives
+that describe the physical signal dynamics. However, these alignment strategies are still suffer from several limitations.
+Direct modality alignment often leads to shallow representations, where much of the motion structure and contextual
+information embedded in sensor signals is lost during the alignment process. Moreover, most existing approaches are
+optimized toward classification-oriented objectives, causing the learned representations to be implicitly constrained
+by predefined activity label spaces. Such a rigid mapping limits their ability to generalize beyond fixed categories and
+support open-ended HAU.
+Therefore, we propose a new paradigm of HAR, termed open-ended human activity understanding (HAU). Specifi-
+cally, it involves two essential aspects, as illustrated in Fig. 2. (1) Understanding an activity. An activity is essentially
+a composition of multiple meta-motions performed by different body parts. Therefore, understanding an activity
+means identifying which meta-motions are being executed and uncovering how these motions are organized and
+coordinated to form a coherent behavior. (2) Recognizing an activity through such understanding. LLMs provide a
+powerful pathway. When an LLM is presented with a comprehensive motion description, it probably can recognize
+the most plausible activity being performed.
+To this end, we introduce a unified system that transforms low-level sensor signals into high-level activity
+understanding. Firstly, we design the Motion Decomposition and Semantic Fusion Framework (MOSAIC), which learns
+to capture the structured compositional features of meta-motions from sensor data and translate them into fine-grained
+textual descriptions. Built upon MOSAIC, we enable LLM-assisted activity reasoning, where a mobile application
+generates motion descriptions with MOSAIC and recognizes activities through an LLM.
+To achieve this, we need to address two key challenges:
+Challenge I. Modeling the Organization and Coordination of Meta-Motions from Sensor Data. As discussed
+earlier, understanding an activity essentially means recognizing how it organizes and coordinates a set of meta-
+motions. However, motions occurring across different body parts are often entangled and temporally overlapping,
+without clear temporal boundaries. Moreover, they also exhibit spatial correlations and functional dependencies
+among limbs; for example, a forearm swing may drive an upper-arm rotation, and a knee lift may induce a foot
+raise. Such complex relationships cannot be effectively captured through simple signal processing or handcrafted
+segmentation of sensor data. To address this challenge, we introduce the Motion Decomposition and Semantic Fusion
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:4 • Wei et al.
+Framework (MOSAIC), which models and describes coherent behaviors through a progressive two-level design: the
+physical level and the semantic level. At the physical level, MOSAIC employs a Spatiotemporal Graph Convolutional
+Network (ST-GCN) [66] to model the temporal dynamics and spatial dependencies of body motions. At the semantic
+level, MOSAIC employs a Semantic Fusion and Decoding Network to bridge the gap between physical motion
+representations and the semantic space of LLM. It first employs Multi-Head Self-Attention (MHSA) [56] to encode
+contextual information within motion representations. It then applies Multi-Head Cross-Attention (MHCA) [52, 56]
+to align representations with a vocabulary space compressed via PCA [6, 22] and derived from a pre-trained LLM.
+Finally, Transformer decoder blocks generate fine-grained textual descriptions of motions.
+Challenge II. Aligning Sensor-Language modality under the Absence of Real Paired Data. Existing HAR
+datasets are typically small-scale and limited to categorical annotations, providing pairs of IMU data and predefined
+activity labels (e.g., walking, sitting, running). However, MOSAIC requires large-scale IMU–text pairs, where each
+IMU sequence is aligned with a rich natural-language motion description rather than a discrete label. Such datasets
+do not exist in current HAR research [27], posing a major challenge for training MOSAIC. To address this limitation,
+we construct a large-scale synthetic corpus of IMU–text pairs. For locomotion-related activities, we leverage the
+HumanML3D [17] dataset—a large-scale motion-language corpus containing 3D human skeleton sequences paired
+with corresponding textual descriptions of actions and gestures. We synthesize IMU signals by deriving tri-axial
+acceleration and angular velocity from 3D human skeleton. To further enhance data diversity and coverage, we
+additionally generate a collection of static states. Specifically, we prompt an LLM to produce fine-grained textual
+descriptions conditioned on activity labels, convert these textual descriptions into 3D skeletal sequences through a
+motion generation model, and subsequently transform them into IMU signals. By constructing this large-scale dataset
+purely from virtual data, we enable MOSAIC to learn sensor–language alignment at scale, thereby enhancing the
+model’s generalization ability across diverse motion patterns.
+The major contributions of this work can be summarized as follows.
+• We are the first to redefine open-ended HAR as a task of activity understanding rather than activity classification.
+We establish a complete pipeline from sensor perception to motion description and ultimately to activity
+reasoning, offering a new perspective toward the real-world applicable and generalizable HAR.
+• We introduce MOSAIC, a unified framework for open-ended human activity understanding. Unlike conventional
+HAR models that rely on closed categorical labels, MOSAIC decomposes complex sensor signals into fine-grained
+meta-motions and semantically fuses them into natural-language motion descriptions.
+• We construct a large-scale synthetic sensor–language corpus to support cross-modal alignment. Trained on
+this dataset, our model achieves state-of-the-art (SOTA) performance, outperforming existing LLM-based HAR
+methods in both recognition accuracy and generalization ability.
+The remainder of this paper is organized as follows: Section 2 reviews related work and discusses the existing
+limitations. Section 3 provides an overview of this work. Section 4 presents the Motion Decomposition and Semantic
+Fusion Framework (MOSAIC), detailing its architecture and key components. Section 5 details the LLM-driven
+training strategy for sensor-language alignment, including the large-scale IMU–Text data generation strategies and
+loss formulations. Section 6 describes LLM-assisted activity understanding and reasoning. Section 7 describes various
+experiments conducted to evaluate our work. Finally, Section 8 provides the discussion on limitations and future
+work, and Section 9 concludes this work.
+2 RELATED WORK
+2.1 LLM-based HAR by Treating Sensor Signals as Text
+Despite the impressive capabilities of LLMs in natural language processing, directly applying them to time-series
+sensor data remains highly challenging. The most straightforward approach is to embed raw sensor data directly
+into prompts and carefully craft instructions to guide the LLM toward accurate activity interpretation. For example,
+Penetrative AI [64] explores how LLMs can be extended to interact with and reason about the physical world through
+sensors; HARGPT [26] demonstrates the feasibility of using LLMs for zero-shot HAR; ByMyEyes [69] introduces
+a visual prompting approach that transforms sensor data into waveforms, which are then used as prompts for
+multimodal LLMs. However, the tokenizers used in LLMs—designed for natural language—are not well-suited for
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:5
+MOSAIC: Motion Decomposition and Semantic Fusion Framework
+Spatiotemporal Graph
+Convolutional Network
+Semantic Fusion and Decoding Network
+waist
+wrist
+ankle
+time
+Multi-Head Self Attention
+Multi-Head Cross Attention
+K V
+LLM Embedding
+Database
+PCA
+Principal
+Embedding
+Q
+V
+Q
+K
+[Decoder]
+Transformer
+Block
+a
+girl
+raise
+s
+her
+...
+(Section 4.1)
+(Section 4.2)
+Fine-grained
+Motion
+Component
+Descriptions
+high-level
+human
+activities
+prompt
+reason
+(Section 6)
+Fig. 3. Overview of our workflow. IMU sequences collected from multiple body locations are first processed by the ST-GCN in
+MOSAIC, which transforms raw sensor signals into structured motion representations by capturing both temporal dynamics
+and spatial dependencies across body locations. These representations are then converted into fine-grained natural-language
+motion descriptions through the Semantic Fusion and Decoding Network in MOSAIC. Based on these descriptions, a large
+language model further performs compositional reasoning to infer the underlying high-level human activity (e.g., “a person is
+tying shoelaces”).
+encoding time-series data, as they operate on discrete, semantically meaningful units such as words or subwords.
+When applied to raw sensor signals, these tokenizers often introduce arbitrary segmentations and fail to preserve the
+temporal dependencies and physical semantics of the original signal.
+2.2 LLM-based HAR by Aligning Sensor Signals with Text
+Given that LLM tokenizers cannot directly interpret numerical sequences, a natural direction is to transform time-
+series signals into representations that LLMs can understand. This has led to a body of work aiming to establish
+effective alignment between sensor data and language representations. Some approaches integrate sensing modalities
+into MLLMs. For example, OneLLM [18] and Anymal [38] both adopt tailored alignment strategies to train multimodal
+encoders and projection layers that map diverse modalities—including sensor signals—into the semantic space of
+LLMs. IMU2CLIP [37] aligns inertial measurement unit streams with text and video in a joint representation space.
+Other approaches design mechanisms to directly align time series with textual representations. SensorLLM [30]
+introduces an alignment module that converts sensor inputs into text about signal trend descriptions. TEST [50]
+innovatively introduces a text-prototype-aligned contrast mechanism. Time-LLM [27] proposes a reprogramming
+framework that reprograms time-series data using textual prototypes. LLM4TS [9] introduces a two-stage fine-tuning
+framework that aligns LLMs with time-series data through multi-scale temporal aggregation. However, current
+approaches for aligning sensor signals to language often suffer from coarse and rigid mappings. Such mappings
+confine the learning process to shallow pattern matching. As a result, they cause substantial feature loss—particularly
+in temporal dynamics, spatial dependencies, and latent semantics—which ultimately limits the model’s generalization
+ability and robustness.
+3 OVERVIEW
+We introduce a new paradigm for open-ended human activity understanding-which establishes a complete pipeline
+from sensor perception to motion description and ultimately to activity reasoning-and further design a unified system
+to implement it. As illustrated in Fig. 3, the proposed system consists of three key components:
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:6 • Wei et al.
+MOSAIC Framework for Structured Representation of Meta-Motion Coordination (Section 4). First, we
+introduce MOSAIC, a Motion Decomposition and Semantic Fusion Framework for open-ended human activity under-
+standing. Given multi-location IMU signals as input, MOSAIC generates fine-grained natural-language descriptions. It
+consists of two major components: a Spatiotemporal Graph Convolutional Network (ST-GCN) and a Semantic Fusion
+and Decoding Network. Specifically, the ST-GCN models multi-location IMU streams as a spatiotemporal graph and
+extracts structured motion representations by capturing both temporal dynamics and spatial dependencies among
+body parts. The Semantic Fusion and Decoding Network further bridges these physical motion representations with
+the language space, enabling the model to decode sensor embeddings into fine-grained motion descriptions. These
+descriptions serve as the basis for subsequent LLM-assisted reasoning.
+LLM-Driven Training Strategy for Sensor-Language Alignment (Section 5). Second, we clarify how MOSAIC is
+trained. To address the absence of training data, we construct a large-scale synthetic IMU–text corpus covering diverse
+locomotion and static activities. Specifically, HumanML3D-based simulation converts 3D human motion sequences
+into synthetic IMU signals, while text-based simulation uses LLM-generated motion descriptions to synthesize
+3D skeleton sequences and then derive the corresponding IMU signals. Based on this corpus, MOSAIC is trained
+through a carefully designed two-stage procedure. The first stage performs contrastive pretraining to align sensor
+representations with textual motion semantics. The second stage conducts autoregressive fine-tuning to enable the
+model to generate natural-language motion descriptions from IMU signals.
+LLM-Assisted Activity Understanding and Reasoning (Section 6). Third, we explain the inference process built
+upon MOSAIC. After MOSAIC generates fine-grained descriptions of body movements, these descriptions are fed
+into LLMs for high-level activity understanding. In this way, the system recognizes complex human activities based
+on an understanding of their motion composition. We further develop a mobile application prototype to demonstrate
+the practical feasibility of this sensing–description–reasoning pipeline.
+4 MOSAIC: MOTION DECOMPOSITION AND SEMANTIC FUSION FRAMEWORK
+This section presents the design of the MOSAIC framework. We first describe the Spatiotemporal Graph Convolutional
+Network that models (section 4.1) the temporal dynamics and spatial dependencies of body motions, then introduce the
+Semantic Fusion and Decoding Network (section 4.2) that bridges sensor and language spaces. Before detailing each
+component, we first formalize the overall problem as learning a mapping from motion signals to textual descriptions.
+Given a multivariate IMU tensor X ∈ R𝐶×𝑇 ×𝑉 , where 𝑉 denotes the number of sensor nodes (e.g., limbs or body parts),
+𝑇 the temporal length and 𝐶 the number of sensor channels (e.g., 3-axis acceleration and 3-axis angular velocity per
+limb). Our objective is to learn a function F𝜃 that maps the IMU sequence into a textual description:
+Y = (𝑦1,𝑦2, . . . ,𝑦𝐿), F𝜃 : R𝐶×𝑇 ×𝑉
+→ V𝐿
+, (1)
+where V denotes the vocabulary space and 𝐿 is the length of the generated sentence.
+4.1 Spatiotemporal Graph Convolutional Network
+Unlike conventional activity classification tasks that treat each activity as a label, our goal in MOSAIC is activity
+understanding—to uncover how an activity is organized and coordinated through a series of basic actions. An activity
+can be viewed as a structured composition of multiple actions performed by different body parts toward a common goal.
+These actions exhibit temporal relationships (with possible overlaps and causal ordering) and spatial dependencies
+(reflecting the coordinated movement of limbs). Therefore, to truly understand an activity, the model must not only
+characterize the dynamics within each body part’s IMU signal but also capture the organizational structure that links
+these actions together in time and space. To achieve this, we adopt a Spatiotemporal Graph Convolutional Network
+(ST-GCN) within the MOSAIC framework. We formally define the spatiotemporal graph as:
+G = V = {x̂𝐽𝑖 }𝑉
+𝑖=1, E𝑠 = {(x̂𝐽𝑖 , x̂𝐽𝑙 ) | (𝐽𝑖, 𝐽𝑙 ) ∈ H}, E𝑡 = {(x̂𝑡−1
+𝐽𝑖
+, x̂𝑡
+𝐽𝑖
+)}𝑉,𝑇
+𝑖=1,𝑡=2
+
+. (2)
+Here, V is the node set, each node representing one body joint with motion signals X ∈ R𝐶×𝑇 ×𝑉 . C denotes the
+number of input channels (e.g., accelerations and angular velocities), T the sequence length, and 𝑉 the number
+of joints or IMU placements. The spatial edge set E𝑠 defines intra-frame anatomical adjacency according to the
+human-skeleton topology H, whereas E𝑡 links the same joint across consecutive frames to ensure temporal continuity.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:7
+This dual-edge formulation enables the network to encode both the local physical constraints and global temporal
+evolution of human movement.
+Given the input tensor X, the ST-GCN 𝑔𝜙 performs spatial graph convolution to aggregate information from
+anatomically neighboring joints:
+Xout =
+𝐾𝑠
+∑︁
+𝑘=1
+𝚽𝑘
+
+X Λ
+− 1
+2
+𝑘
+A𝑘Λ
+− 1
+2
+𝑘
+
+, (3)
+where K𝑠 is the spatial kernel size, A𝑖𝑙
+𝑘
+indicates whether node x𝐽𝑙 belongs to the sampling subset S𝑘
+𝐽𝑖
+centered at node
+x𝐽𝑖 . The normalization term Λ𝑖𝑖
+𝑘
+=
+Í
+𝑙 (A𝑖𝑙
+𝑘
+) + 𝛼 balances feature aggregation, while 𝚽𝑘 ∈ R𝐶′×𝐶×1×1 is the learnable
+1 × 1 convolution kernel projecting features from C to C′ channels. Subsequently, a temporal convolution with kernel
+K𝑡 × 1 is applied to capture motion dependencies along the time dimension:
+Xfinal = Conv𝐾𝑡 ×1
+temp (Xout). (4)
+This sequential spatial–temporal processing enables the model to extract multi-scale features that describe how actions
+unfold and interact over both dimensions. The output Xfinal comprises a set of limb-level motion embeddings that
+encode spatiotemporal features from the IMU signals. These embeddings form the structured motion representation
+at the physical level of MOSAIC.
+4.2 Semantic Fusion and Decoding Network
+After obtaining generalizable spatiotemporal representations from sensor signals, we introduce the Semantic Fusion
+and Decoding Network (SFDN) to bridge the modality gap between motion features and the text space of LLMs.
+Formally, given the final sensor representation Xfinal ∈ R𝑇 ×𝑑 extracted by the ST-GCN—where 𝑇 denotes the
+sequence length and 𝑑 is the feature dimension—the goal of this module is to produce a sequence of textual tokens
+Y = (𝑦1,𝑦2, . . . ,𝑦𝐿) that describe fine-grained coherent behaviors formed by meta-motions. To achieve this, SFDN
+performs three steps: (1) global contextualization through Multi-Head Self-Attention (MHSA); (2) cross-modal
+semantic alignment with a PCA-compressed LLM vocabulary embedding space to inject linguistic priors into motion
+embeddings; and (3) autoregressive decoding which generates natural-language descriptions from the semantically
+aligned motion representations.
+We first apply a linear projection layer to map the final sensor representation Xfinal ∈ R𝑇 ×𝑑 into the LLM embedding
+dimension:
+Hs = MHSA(Projector(Xfinal)) ∈ R𝑇 ×𝑑LLM
+, (5)
+where MHSA(·) denotes the Multi-Head Self-Attention mechanism [56], which models contextual relationships
+among motion components and introduces the linguistic-like logical structure within the motion embeddings. To
+reduce the computational burden of aligning with a large-scale vocabulary, we construct a compact set of semantic
+prototypes from the token embedding matrix Evocab ∈ R|V|×𝑑LLM of a pre-trained LLM (e.g., LLaMA-7B). Principal
+Component Analysis (PCA) [6, 22] is applied to extract 𝑑 principal semantic axes:
+Ê = PCA𝑑 (Evocab) ∈ R𝑑×𝑑LLM
+, (6)
+where 𝑑 ≪ |V|. Each row of Ê serves as a principal semantic prototype representing a cluster of semantically related
+tokens. Next, a Multi-Head Cross-Attention (MHCA) [52, 56] mechanism aligns sensor-derived features Hs with these
+semantic prototypes:
+Halign = Softmax
+
+𝑄𝐾⊤
+√
+𝑑𝑘
+
+𝑉, 𝑄 = Hs𝑊𝑞, 𝐾 = Ê𝑊𝑘, 𝑉 = Ê𝑊𝑣, (7)
+where 𝑊𝑞, 𝑊𝑘, and 𝑊𝑣 ∈ R𝑑LLM×𝑑𝑘 are projection matrices for the query, key, and value transformations, respectively.
+Through MHCA, semantic information is injected into the sensor embeddings. After obtaining the semantically aligned
+motion representations Halign, we employ a stacked Transformer decoder to generate natural-language descriptions
+of motion components in an autoregressive manner. Each decoder block consists of a masked self-attention layer, a
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:8 • Wei et al.
+Acceleration
+Gyroscope
+HumanML3D
+Dataset
+Locomotion
+Pattern
+Static State
+Prompt LLM
+generate
+description
+use T2M-GPT
+generate
+skeleton data
+3D
+human
+skeleton
+sequences
+Inverse
+kinematics
+IMUSim
+simulation
+Joint Rotation
+& Translation
+BVH
+Fig. 4. Overview of the LLM-guided dataset construction and motion-to-sensor simulation pipeline. Static and locomotion
+patterns are collected from the HumanML3D dataset and language-driven motion synthesis (IMUGPT). ChatGPT generates
+fine-grained textual descriptions, while T2M-GPT produces corresponding 3D human skeleton sequences. Each motion sequence is
+converted into physical IMU signals through inverse kinematics, joint rotation and translation (BVH format), and IMUSim-based
+acceleration and gyroscope simulation [70].
+cross-attention layer that conditions on Halign, and a feed-forward network (FFN). At time step 𝑡, the decoding process
+can be formulated as:
+Z𝑡 = MHSAdec(Y<𝑡 ),
+C𝑡 = MHCAdec(Z𝑡, Halign),
+𝑃(𝑦𝑡 | 𝑦<𝑡, Halign) = Softmax(𝑊𝑜 FFN(C𝑡 )),
+(8)
+where Y< 𝑡 denotes the embeddings of previously generated tokens, Z𝑡 captures intra-sentence dependencies through
+masked self-attention, and C𝑡 integrates aligned motion semantics via cross-attention with Halign. The output projection
+𝑊𝑜 maps the decoder’s hidden state back to the vocabulary distribution for next-token prediction. By iteratively
+sampling from 𝑃(𝑦𝑡 |𝑦< 𝑡, Halign), the model generates a sequence of fine-grained textual descriptions corresponding
+to the underlying motion components.
+5 LLM-DRIVEN TRAINING STRATEGY FOR SENSOR-LANGUAGE ALIGNMENT
+Although we have already proposed a unified framework called MOSAIC for open-ended human activity under-
+standing, training it requires large-scale paired data that describes activity behaviors in natural language. However,
+existing HAR datasets only provide categorical activity labels rather than descriptive text. To overcome this limitation,
+we firstly construct a large-scale synthetic IMU–text corpus (Section 5.1), enabling diverse and linguistically rich
+supervision for cross-modal learning. Then, based on this corpus, we develop a two-stage alignment training process
+(Section 5.2) that progressively aligns sensor representations with motion descriptions through contrastive learning
+and generative fine-tuning.
+5.1 LLM-guided Large-scale IMU–Text Synthetic Corpus
+To provide sufficient supervision for sensor–language alignment, we construct a large-scale IMU–text corpus by
+integrating both real and LLM-driven 3D skeleton data, as shown in Fig. 4. Specifically, we adopt two complementary
+generation pathways: (i) leveraging real-world human motion datasets with natural-language annotations, and (ii)
+generating virtual skeleton sequences via text-conditioned motion synthesis guided by LLMs. We first utilize the
+HumanML3D [17] dataset, a large-scale corpus of human motions annotated with natural language. Each sample
+consists of a temporal sequence of 3D joint coordinates {p𝑗
+𝑡 }𝑇
+𝑡=1 and its associated textual description 𝑦, where p𝑗
+𝑡 ∈ R3
+represents the position of joint 𝑗 at frame 𝑡. This dataset covers a wide range of daily activities and gestures, providing
+realistic motion–language pairs (p1:𝑇 ,𝑦) for training. However, HumanML3D provides relatively limited coverage of
+static and underrepresented states, such as sitting, standing, and lying down. We therefore complement the corpus
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:9
+with data generated using IMUGPT [29]. By starting from fine-grained descriptions generated by an LLM, IMUGPT
+synthesizes the corresponding 3D motions, from which IMU sequences can subsequently be derived. This process
+broadens the training corpus to cover both dynamic activities and static states, while also introducing LLM-derived
+semantic priors into sensor-language alignment. Specifically, we prompt ChatGPT with action names and structured
+motion templates to generate fine-grained textual descriptions 𝑦. These LLM-generated descriptions are then passed
+into T2M-GPT, a transformer-based text-to-motion model, which samples a 3D joint trajectory {p𝑗
+𝑡 }𝑇
+𝑡=1 from the
+conditional distribution:
+p1:𝑇 ∼ 𝑝(p1:𝑇 | 𝑦) =
+𝑇
+Ö
+𝑡=1
+𝑝(p𝑡 | p<𝑡,𝑦), (9)
+where p𝑡 = [ p1
+𝑡 , . . . , p𝐽
+𝑡 ] concatenates all 𝐽 joint positions at frame 𝑡. As a result, we obtain a unified skeleton-level
+corpus M = {(p(𝑖)
+1:𝑇 ,𝑦(𝑖))}𝑁𝑀
+𝑖=1 that integrates both real and LLM-generated motion–language pairs. Next, we convert
+all 3D skeleton trajectories into corresponding IMU sequences through a two-step simulation process:
+Step 1: From joint trajectories to BVH animation. Given a joint trajectory {p𝑗
+𝑡 }𝑇
+𝑡=1 under a predefined skeleton
+hierarchy S, we reconstruct body kinematics via inverse kinematics (IK). For each frame 𝑡, we estimate the joint
+rotation matrices R𝑗
+𝑡 ∈ SO(3) that minimize positional error under the kinematic constraints:
+R∗
+1:𝑇 = arg min
+R1:𝑇
+𝑇
+∑︁
+𝑡=1
+𝐽
+∑︁
+𝑗=1
+𝑓S (R𝑗
+𝑡 ) − p𝑗
+𝑡
+2
+2
+, (10)
+where 𝑓S (·) denotes forward kinematics under skeleton structure S. The resulting animation {R𝑗
+𝑡 }𝑇
+𝑡=1 is stored in the
+BVH (Biovision Hierarchy) format, encoding the full-body motion dynamics for subsequent IMU simulation.
+Step 2: From BVH animation to IMU signals. For each joint 𝑗, we simulate a virtual IMU consisting of a tri-axial
+accelerometer and gyroscope using the IMUSim [70] engine. At each frame 𝑡, the local acceleration a𝑗
+𝑡 and angular
+velocity 𝝎𝑗
+𝑡 are computed as:
+a𝑗
+𝑡 =
+𝑑2p𝑗
+𝑡
+𝑑𝑡2
++ R𝑗
+𝑡 g, (11)
+𝝎𝑗
+𝑡 = vec R𝑗⊤
+𝑡
+𝑑R𝑗
+𝑡
+𝑑𝑡
+!
+, (12)
+where g is the gravity vector in the world coordinate frame, and vec(·) converts the skew-symmetric angular velocity
+matrix into a 3D vector. The concatenated 6D IMU reading for each joint is denoted as:
+s𝑗
+𝑡 = [ a𝑗
+𝑡 | 𝝎𝑗
+𝑡 ] ∈ R6
+, (13)
+and the overall motion sequence forms a sensor tensor:
+S = {s𝑗
+𝑡 }𝑇,𝐽
+𝑡=1,𝑗=1 ∈ R𝑇 ×𝐽 ×6
+. (14)
+Finally, the final training dataset for sensor–language alignment can be formalized as:
+D = {(S𝑖,𝑦𝑖)}𝑁
+𝑖=1, (15)
+where each S𝑖 denotes a multi-joint IMU tensor and 𝑦𝑖 is its corresponding textual description.
+5.2 Two-stage Sensor–Language Alignment Training
+To optimize MOSAIC effectively, we adopt a two-stage training strategy that progressively aligns sensor represen-
+tations with language space. In the first stage, we train the ST-GCN in CLIP. Specifically, we replace CLIP’s image
+encoder with our ST-GCN while retaining its text encoder and loss formulation. ST-GCN is trained to maximize the
+similarity between paired IMU sequences and textual descriptions. In the second stage, we freeze the pretrained
+ST-GCN parameters and train the Semantic Fusion and Decoding Network (SFDN) for autoregressive text generation
+with token-level cross-entropy.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:10 • Wei et al.
+Stage I: CLIP-style contrastive learning for ST-GCN. In the first stage, we aim to train the ST-GCN only.
+Following the CLIP [39] paradigm, we replace its image encoder with our ST-GCN while retaining the contrastive
+learning objective and the text encoder. Given a minibatch of IMU sequences {S𝑖 }𝐵
+𝑖=1 and their corresponding textual
+descriptions {𝑦𝑖 }𝐵
+𝑖=1, the ST-GCN encoder G𝜃 (·) extracts spatiotemporal features, which are projected into the shared
+embedding space through a linear projection head ℎ𝜃 (·) and normalized as:
+z𝑠
+𝑖 =
+ℎ𝜃 (G𝜃 (S𝑖))
+∥ℎ𝜃 (G𝜃 (S𝑖))∥2
+, ∥z𝑠
+𝑖 ∥2 = 1. (16)
+Meanwhile, a frozen CLIP’s text encoder 𝑓𝜙 (·) transforms the paired text 𝑦𝑖 into its normalized representation:
+z𝑡
+𝑖 =
+𝑓𝜙 (𝑦𝑖)
+∥𝑓𝜙 (𝑦𝑖)∥2
+, ∥z𝑡
+𝑖 ∥2 = 1. (17)
+We then compute pairwise cosine similarities sim(z𝑠
+𝑖 , z𝑡
+𝑗 ) across the batch and apply a symmetric InfoNCE objective
+identical to CLIP:
+LCLIP = −
+1
+𝐵
+𝐵
+∑︁
+𝑖=1
+"
+log
+exp(sim(z𝑠
+𝑖 , z𝑡
+𝑖 )/𝜏)
+Í𝐵
+𝑗=1 exp(sim(z𝑠
+𝑖 , z𝑡
+𝑗 )/𝜏)
++ log
+exp(sim(z𝑡
+𝑖 , z𝑠
+𝑖 )/𝜏)
+Í𝐵
+𝑗=1 exp(sim(z𝑡
+𝑖 , z𝑠
+𝑗 )/𝜏)
+#
+, (18)
+where 𝜏 is a learnable temperature parameter. This contrastive objective explicitly maximizes the similarity between
+each IMU sequence and its paired textual description while pushing apart mismatched pairs, effectively aligning
+sensor representations with their corresponding linguistic semantics.
+Stage II: Autoregressive Semantic Decoding. After obtaining a pretrained ST-GCN from the contrastive pretraining
+stage, we freeze its parameters and train the Semantic Fusion and Decoding Network (SFDN) to generate natural-
+language motion descriptions from the sensor features. This stage adopts a token-level autoregressive cross-entropy
+loss, which is the standard objective in causal language modeling. Let Hmotion = G𝜃 (S) denote the motion representation
+extracted from the frozen encoder, which serves as the input for the SFDN. Following the common prefix-tuning
+formulation, we construct the input embedding sequence to the decoder block by concatenating the sensor-derived
+prefix embeddings and the token embeddings of the target text:
+Einput = [ Eprefix ; Etext ] ∈ R𝐵×(𝑇𝑝 +𝑇 )×𝑑
+, (19)
+where Eprefix corresponds to the projected motion features of length 𝑇𝑝, and Etext denotes the token embeddings of the
+target sequence 𝑦1:𝑇 . To ensure that only the textual portion contributes to the loss, we construct the label sequence
+by masking the prefix tokens with an ignore index:
+Ylabel = [ −100, . . . , −100
+| {z }
+𝑇𝑝
+, 𝑦1, 𝑦2, . . . , 𝑦𝑇 ] ∈ Z𝐵×(𝑇𝑝 +𝑇 )
+. (20)
+During training, the decoder autoregressively predicts the next token 𝑦𝑡 given all previous tokens 𝑦<𝑡 and the
+motion-conditioned prefix. Formally, the conditional likelihood is defined as:
+𝑃(𝑦𝑡 | 𝑦<𝑡, Eprefix;𝜃) = Softmax 𝑊dec 𝑓𝜃 (𝑦<𝑡, Eprefix)
+
+, (21)
+and the model is optimized using the token-level cross-entropy loss:
+LCE = −
+1
+𝐵
+𝐵
+∑︁
+𝑖=1
+𝑇
+∑︁
+𝑡=1
+log 𝑃(𝑦∗
+𝑖,𝑡 | 𝑦∗
+𝑖,<𝑡, Eprefix;𝜃), (22)
+where 𝜃 denotes the trainable parameters of the decoder (fine-tuned with LoRA in our implementation). This objective
+maximizes the likelihood of generating the correct next token conditioned on both the preceding tokens and the sensor-
+derived motion context. Through this autoregressive fine-tuning, the model learns to translate motion embeddings
+into coherent and semantically rich textual descriptions, thereby bridging low-level sensor signals and high-level
+linguistic understanding.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:11
+(a) Initial interface. (b) Data collection. (c) Description generation. (d) LLM Analysis.
+Fig. 5. Illustration of the application interface. (a) is the initial interaction interface; (b) the user uploads wearable sensor data; (c)
+the data are transformed into motion descriptions through the MOSAIC framework; and (d) the motion descriptions are fed into
+Deepseek, which performs chain-of-thought (CoT) reasoning to recognize the most probable activity.
+Table 1. Example of compositional reasoning guided by the CoT template.
+Prompt (three-stage CoT template) DeepSeek-generated reasoning trace
+You are an expert in human behavior analysis, highly skilled
+at inferring human activities from body movements. Given the
+motion description, reason step-by-step: (1) Analyze how each
+joint moves; (2) Examine how these joints coordinate; (3) Infer
+the overall activity.
+Motion description: "The subject lifts both arms above the
+head, arches the upper body backward, holds briefly, then
+returns to standing posture."
+Step 1: The shoulder joints move upward as both arms are
+lifted, and the torso bends backward.
+Step 2: The upper-body extension and arm-raising occur
+simultaneously, forming a coordinated full-body stretch.
+Step 3: The overall motion corresponds to a stretching or
+warm-up activity.
+Final Answer: The person is performing a stretching exercise.
+6 LLM-ASSISTED ACTIVITY UNDERSTANDING AND REASONING
+Given the fine-grained motion descriptions generated by MOSAIC (Section 4), we further perform high-level activity
+reasoning with the assistance of LLMs. Figure 5 illustrates the end-to-end sensing–description–reasoning–interaction
+loop: multi-location IMU sensing → MOSAIC-based motion description generation → LLM-assisted activity reasoning
+→ user-facing interaction. In this pipeline, the mobile application serves as an interactive front-end for collecting
+sensing data, presenting generated motion descriptions, and displaying the inferred activity results, while the motion
+interpretation and LLM-assisted reasoning are conducted on the server side. Specifically, given a motion description
+𝑑, the reasoning trace is represented as a sequence of intermediate textual steps:
+Reason(𝑑) = {𝑟1,𝑟2, . . . ,𝑟𝑇 },
+where each 𝑟𝑡 represents an intermediate reasoning step focusing on different structural levels of motion. Specifically,
+the reasoning progresses through three stages: (1) analyzing the movements of individual joints or limbs, (2) examining
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:12 • Wei et al.
+the temporal and spatial coordination among multiple body parts, and (3) integrating these motion patterns to infer
+the overall high-level activity. This hierarchical reasoning enables the LLM to capture both local dynamics and global
+body coordination. An example of the prompt and reasoning output is shown in Table 1.
+Because LLM-assisted reasoning may occasionally over-interpret incomplete or ambiguous descriptions, we add a
+lightweight prompt-level constraint during inference to encourage conservative reasoning. Specifically, the prompt
+includes the following instruction:
+"If the motion description is ambiguous or you cannot confidently determine the activity, output ’Activity: unknown’."
+7 EXPERIMENT
+7.1 Dataset
+7.1.1 3D Skeleton Corpus for Training Dataset. Our training corpus is constructed from two complementary sources:
+real motion data from the HumanML3D dataset and synthetic skeleton sequences generated by T2M-GPT.
+HumanML3D is a large-scale benchmark for human motion understanding, containing 14,616 motion skeleton
+sequences covering a total duration of 28.59 hours. Each sequence is approximately 7.1 seconds long on average and
+is paired with at least three precise and diverse textual descriptions, resulting in a total of 44,970 natural language
+captions. T2M-GPT is a generative framework that synthesizes human motion from text. Given a natural language
+description, T2M-GPT produces a sequence of 3D human skeletons that semantically correspond to the described
+activity. These virtual motion-text pairs enrich the corpus with underrepresented or rare activities that are not
+frequently observed in real-world datasets. In total, our 3D skeleton corpus comprises 49,873 Sequence–Text pairs,
+which together support effective training of the sensor-language alignment.
+7.1.2 Downstream Evaluation Datasets. We conduct experiments on the most extensive wearable HAR benchmark.
+This benchmark comprises 18 real-world datasets, each capturing diverse activities under varying sensing conditions.
+These datasets were collected from a wide range of body locations, including the head, chest, back, arms, wrists, waist,
+hips, legs, knees, and ankles. The activities span both coarse-grained actions such as stand, walk, and run, as well as
+fine-grained and complex daily behaviors such as tennis right-hand forehand swing, vacuum cleaning, or computer
+typing. The 18 datasets used in our evaluation are: Opportunity [42], UCI-HAR [3], MotionSense [35], w-HAR [5],
+Shoaib [45], HAR70+ [54], RealWorld [51], TNDA-HAR [67], PAMAP2 [41], USC-HAD [71], Mhealth [4], Harth [34],
+UT-Complex [46], Wharf [7], WISDM [59], DSADS [2], UTD-MHAD [10], MMAct [28].
+7.2 Experimental Setup
+7.2.1 Implementation Details. We implement our framework using PyTorch and train all models on four NVIDIA
+A800 GPUs, each equipped with 80GB of memory. The semantic fusion and decoding network (Section 4.2) is initialized
+with the publicly available pre-trained weights of LLaMA-7B, serving as the stacked Transformer decoder backbone.
+During training, we set the batch size to 16 and adopt the AdamW optimizer with a learning rate of 1 × 10−5 and
+a weight decay of 0.01. The model is trained for 10 epochs, with gradient clipping (maximum norm of 1.0) applied
+to stabilize the optimization process. Mixed-precision training with FP16 is employed to improve computational
+efficiency and reduce memory consumption. For the LLM-Assisted Activity Understanding and Reasoning module
+(Section 6), we adopt DeepSeek-v3 to perform compositional reasoning over textual motion descriptions generated by
+MOSAIC (Section 4). We evaluate performance using both accuracy and F1 score, and all results are averaged over
+five independent runs to ensure statistical robustness.
+7.2.2 Hyperparameter Settings. For the MOSAIC, we set the input channel dimension according to the IMU feature
+size. The model comprises 10 spatiotemporal graph convolutional (ST-GCN) (Section 4.1) blocks, with intermediate
+output channel dimensions of 64, 128, 256, and 512. The temporal kernel size is set to 9, and the spatial kernel size is
+automatically determined by the adjacency matrix of the underlying human skeleton graph. Batch normalization
+is applied to the input data before feeding it into the graph convolution layers. The semantic fusion and decoding
+network (Section 4.2) operates on 512-dimensional input embeddings, and the hidden dimension is set to 4096.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:13
+Table 2. Zero-shot performance on 18 diverse unseen scenarios. The best results are highlighted in bold, and the second-best
+results are underlined. The last column reports the average performance across all 18 datasets.
+Dataset
+M
+e
+tr
+ic
+s
+O
+p
+p
+o
+r
+tu
+n
+it
+y
+U
+C
+I-
+H
+A
+R
+M
+o
+ti
+o
+n
+S
+e
+n
+s
+e
+w
+-H
+A
+R
+S
+h
+o
+a
+ib
+H
+A
+R
+7
+0
++
+R
+e
+a
+lW
+o
+r
+ld
+T
+N
+D
+A
+-H
+A
+R
+P
+A
+M
+A
+P
+2
+U
+S
+C
+-H
+A
+D
+M
+h
+e
+a
+lt
+h
+H
+a
+r
+th
+U
+T
+-C
+o
+m
+p
+le
+x
+W
+h
+a
+r
+f
+W
+IS
+D
+M
+D
+S
+A
+D
+S
+U
+T
+D
+-M
+H
+A
+D
+M
+M
+A
+c
+t
+A
+v
+e
+r
+a
+g
+e
+Number of Classes 4 6 6 7 7 7 8 8 12 12 12 12 13 14 18 19 27 35
+DeepConvLSTM [47]
+Acc 27.3 16.5 24.5 11.5 16.7 11.0 11.6 10.7 6.8 12.2 6.1 16.4 5.4 16.8 10.7 8.5 3.3 4.8 12.3
+F1 18.6 5.8 14.8 7.3 12.7 5.9 8.1 9.9 4.0 3.7 5.2 6.7 3.9 4.2 3.0 2.0 0.2 1.2 6.5
+IF-ConvTransformer [72]
+Acc 26.4 35.0 13.1 39.3 19.1 14.5 9.2 11.9 9.6 15.0 14.0 15.7 8.2 19.1 3.1 9.3 4.7 2.1 15.0
+F1 17.2 26.4 10.7 13.7 14.6 9.0 7.0 8.5 2.3 7.6 6.8 4.6 5.7 3.3 0.8 3.7 2.1 1.3 8.1
+OneLLM [18]
+Acc 25.2 15.0 13.3 1.5 21.9 1.7 8.5 15.0 9.2 7.7 7.9 2.1 5.2 7.3 8.6 4.6 4.2 5.5 9.1
+F1 12.7 5.6 9.8 1.1 16.7 1.2 5.8 9.6 1.7 1.2 1.2 1.4 3.7 1.1 5.5 1.9 0.6 2.3 4.6
+IMU2CLIP [37]
+Acc 25.9 17.8 15.5 6.6 16.7 5.6 6.1 8.5 1.9 12.8 7.9 2.5 7.3 1.4 4.3 4.6 3.7 6.4 8.6
+F1 10.3 11.4 8.6 3.3 9.2 1.8 4.5 4.2 1.1 9.3 1.3 1.1 3.4 0.7 2.7 1.1 2.1 1.6 4.3
+SensorLLM [30]
+Acc 3.9 18.2 21.6 1.6 4.8 13.9 16.7 9.6 8.3 10.3 38.3 4.6 7.5 1.8 6.6 2.5 8.4 19.7 11.0
+F1 0.1 9.2 5.9 0.7 1.2 9.2 3.6 2.6 3.8 2.8 52.9 0.2 1.1 0.4 6.5 0.6 1.3 3.7 5.9
+GPT4TS [73]
+Acc 9.8 0.0 6.7 11.0 11.6 6.1 10.4 6.7 7.3 9.7 7.9 9.1 8.5 9.1 8.5 6.1 9.1 3.7 7.9
+F1 1.5 0.0 2.8 7.8 5.7 1.2 2.8 3.4 2.8 2.5 1.4 3.8 2.4 2.7 2.4 3.3 3.2 20.2 3.9
+TimeLLM [27]
+Acc 23.8 11.4 10.6 7.3 19.8 28.6 12.7 13.7 19.1 8.9 17.4 11.3 9.5 7.9 5.3 6.2 4.3 5.1 12.4
+F1 15.6 10.4 9.1 7.1 12.4 13.8 7.8 4.9 8.5 6.2 3.2 5.8 7.1 3.6 3.2 5.5 3.6 2.3 7.2
+UNITS [14]
+Acc 15.7 15.6 31.3 22.9 20.7 13.1 14.6 6.9 6.4 7.4 26.1 5.9 8.4 10.0 5.1 3.2 2.3 2.4 12.1
+F1 16.5 7.0 15.9 14.3 16.0 13.2 10.2 5.6 4.1 1.9 20.2 4.4 6.8 4.9 3.1 1.5 1.3 1.0 8.2
+CALF [32]
+Acc 29.0 11.2 23.7 8.2 28.7 12.4 14.2 16.6 12.4 2.5 10.4 6.3 9.2 8.2 4.7 6.4 2.8 5.0 11.8
+F1 22.7 8.8 15.1 4.6 22.9 5.9 13.3 13.8 5.8 2.0 6.1 6.4 4.2 5.5 3.7 5.5 1.9 2.5 8.4
+HARGPT [26]
+Acc 18.5 25.0 16.0 3.6 33.0 22.7 12.0 23.0 7.4 14.5 6.7 34.7 9.5 7.6 11.2 6.4 6.8 4.6 14.6
+F1 12.0 17.0 3.2 1.3 13.0 12.7 7.4 9.3 4.0 6.1 4.3 31.0 3.8 1.2 4.6 5.4 3.5 1.4 7.8
+MOSAIC
+Acc 34.9 33.4 49.5 45.3 40.4 51.6 41.9 34.2 35.7 42.8 42.7 43.1 26.6 25.5 29.2 16.8 13.5 15.2 34.6
+F1 33.8 32.6 34.0 42.8 33.7 28.4 33.7 31.8 30.7 32.6 36.4 25.4 19.7 24.3 25.5 19.6 11.1 11.8 28.2
+7.3 Baselines
+We compare MOSAIC against a comprehensive set of baselines, which fall into four representative categories based
+on how they integrate sensor signals with language models. (1) HAR Deep Architectures: DeepConvLSTM [47] and
+IF-ConvTransformer [72]. (2) Prompt-based LLMs: HARGPT [26]. (3) Time-Series LLMs: CALF [32], TimeLLM [27],
+GPT4TS [73], SensorLLM [30], UNITS [14]. (4) MLLMs with Sensor Signals: oneLLM [18], IMU2CLIP [37]. The baseline
+details are as follows:
+DeepConvLSTM. This method is a classical end-to-end deep architecture for wearable-sensor-based HAR. It first
+applies convolutional layers to extract local temporal patterns and then employs LSTM layers to model sequential
+dependencies over time. For a fair comparison, we keep its backbone architecture and train it on our large-scale
+sensor-language corpus using contrastive learning. During inference, we compute the similarity between the learned
+sensor embeddings and candidate label embeddings to obtain the final classification results on all 18 HAR test sets.
+IF-ConvTransformer. This method is a Transformer-based HAR architecture. It uses convolutional modules to
+enhance inertial feature extraction and Transformer self-attention to capture global temporal dependencies across
+the sensor sequence.
+OneLLM. This method maps eight different modalities—including IMU signals—into a unified representation space.
+We adopt its released pretrained weights and evaluate them on our test sets. Note that oneLLM is not originally trained
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:14 • Wei et al.
+for classification on the IMU modality; instead, it adopts a question-answering task. To ensure a fair comparison, we
+apply the same evaluation protocol used for our model to compute classification performance.
+IMU2CLIP. This method maps IMU time-series data into the CLIP embedding space by training a cross-modal
+encoder, enabling zero-shot activity recognition via similarity matching with text embeddings. Since it is not trained
+for classification, we follow the same evaluation protocol as our model to compute classification performance.
+SensorLLM. This method aligns sensor signals with textual descriptions of their temporal trends, enabling LLMs to
+understand time series. Since the pretrained weights are not publicly available, we follow the official training pipeline
+and training dataset settings to reproduce SensorLLM, and then evaluate it on our test sets.
+GPT4TS. This method refrains from altering the self-attention and feedforward layers of the residual blocks in a
+pretrained language or vision model, and instead fine-tunes the model on a range of representative time-series tasks.
+Following their training protocol, we fine-tune the model using the training set of the Mhealth dataset, and evaluate
+its generalization performance on the test sets of the 18 real-world HAR datasets.
+TimeLLM. It is a reprogramming framework designed to repurpose LLMs for general time series forecasting with the
+backbone language models kept intact. Since it is not originally designed for classification, we adapt it to our setting
+by training on our large-scale sensor-language corpus using contrastive learning. During inference, we compute the
+similarity between the model’s output and all candidate label embeddings to obtain the final classification result. We
+evaluate the trained model on all 18 real-world HAR test sets.
+UNITS. It’s a unified multi-task time-series model that leverages task tokenization to integrate both predictive and
+generative tasks within a single framework. We trained the UNITS on our large-scale sensor-language corpus using
+contrastive learning, and computing similarity with label embeddings to obtain classification results on all 18 HAR
+test sets.
+CALF. This method reduces the distribution gap between text and time-series data via cross-modal fine-tuning,
+enabling large language models to better understand temporal signals. We trained the CALF on our large-scale sensor-
+language corpus using contrastive learning, and computing similarity with label embeddings to obtain classification
+results on all 18 HAR test sets.
+HARGPT. This method directly encodes the time-series signals into prompts for activity classification. Following
+the original paper, we adopt the provided prompt template and downsample all test data to 10Hz as specified for
+evaluation.
+7.4 Main Results
+7.4.1 Zero-shot Performance. We adopt a highly challenging evaluation protocol: testing the model on entirely
+unseen datasets without any fine-tuning. This setting, often referred to as the zero-shot evaluation, is particularly
+difficult due to the substantial distribution shifts between the training corpus and the test datasets. As shown in
+Table 2, most existing LLM-based HAR methods struggle in this zero-shot scenario. In contrast, our proposed MOSAIC
+achieves a remarkable average accuracy of 34.6% and F1 score of 28.2% across 18 diverse test datasets, significantly
+outperforming all prior baselines. Compared to the best baseline, MOSAIC achieves up to 19.6% improvement in
+accuracy and 19.8% in F1 score. The results clearly demonstrate that our model generalizes far better than all previous
+methods, showcasing its superior cross-domain adaptability.
+7.4.2 Few-shot Performance. In addition, we further conduct the few-shot setting to fine-tune MOSAIC through a
+few real samples. As illustrated in Table 3, we provide 10 real samples per activity to fine-tune the model on each
+unseen dataset and then evaluate its accuracy and F1 score. We observe a substantial performance improvement
+compared to the zero-shot setting: the average accuracy increases from 34.6% to 54.5%, while the average F1 score
+rises from 28.2% to 47.5%. Morever, our model achieves a 12.0% higher accuracy and a 13.1% higher F1 score compared
+to the best-performing baseline. This demonstrates our model’s ability to adapt to new environments with minimal
+supervision. It is particularly important in real-world applications where annotated data might be scarce or costly to
+obtain.
+7.4.3 Full-shot Performance. We also evaluate MOSAIC under the full-shot setting to examine its upper-bound
+performance when sufficient training data are available. Specifically, for each dataset, we randomly split 70% of the
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:15
+Table 3. Few-shot(k=10) performance are evaluated on 18 diverse real-world datasets. The best results are highlighted in bold.
+The last column reports the average performance across all 18 datasets.
+Dataset
+M
+e
+tr
+ic
+s
+O
+p
+p
+o
+r
+tu
+n
+it
+y
+U
+C
+I-
+H
+A
+R
+M
+o
+ti
+o
+n
+S
+e
+n
+s
+e
+w
+-
+H
+A
+R
+S
+h
+o
+a
+ib
+H
+A
+R
+7
+0
++
+R
+e
+a
+lW
+o
+r
+ld
+T
+N
+D
+A
+-
+H
+A
+R
+P
+A
+M
+A
+P
+2
+U
+S
+C
+-
+H
+A
+D
+M
+h
+e
+a
+lt
+h
+H
+a
+r
+th
+U
+T
+-
+C
+o
+m
+p
+le
+x
+W
+h
+a
+r
+f
+W
+IS
+D
+M
+D
+S
+A
+D
+S
+U
+T
+D
+-
+M
+H
+A
+D
+M
+M
+A
+c
+t
+A
+v
+e
+r
+a
+g
+e
+Number of Classes 4 6 6 7 7 7 8 8 12 12 12 12 13 14 18 19 27 35
+OneLLM [18]
+Acc 26.4 16.0 25.6 3.3 23.6 10.3 11.7 16.1 10.2 10.0 9.3 45.4 8.2 30.2 9.3 5.3 4.9 6.4 15.2
+F1 14.4 7.2 11.1 1.4 17.7 2.7 7.5 11.3 3.5 1.5 1.3 5.2 4.8 3.4 7.2 3.3 1.4 2.6 6.0
+IMU2CLIP [37]
+Acc 40.1 18.1 21.7 7.8 18.4 38.5 16.9 12.1 9.3 13.7 9.8 45.4 8.6 4.1 5.0 5.3 3.7 6.6 15.8
+F1 14.3 11.6 10.3 4.7 10.5 25.6 5.0 4.6 1.4 9.8 1.5 5.2 3.8 1.0 4.5 1.2 3.8 3.2 6.8
+SensorLLM [30]
+Acc 27.5 47.1 22.3 6.6 16.7 46.6 18.1 12.5 9.6 49.7 39.5 51.3 9.3 12.7 7.5 42.4 9.0 20.7 25.0
+F1 10.8 10.7 6.3 1.8 4.8 9.6 5.0 2.8 4.7 5.5 54.4 30.9 1.6 10.3 7.0 33.4 1.8 4.8 11.5
+GPT4TS [73]
+Acc 69.5 40.0 49.2 24.6 67.9 61.3 45.1 41.8 42.9 30.5 69.7 48.9 36.3 25.9 21.8 40.7 32.1 17.4 42.5
+F1 64.8 36.0 41.8 14.9 68.4 38.7 36.9 36.9 31.7 26.3 64.5 23.4 27.2 14.3 14.4 33.2 28.4 17.7 34.4
+TimeLLM [27]
+Acc 25.6 32.0 11.7 7.6 32.7 39.5 14.3 14.1 20.1 10.2 26.2 18.4 12.2 48.6 14.2 12.1 7.4 8.4 19.7
+F1 15.9 15.8 10.3 7.4 22.4 19.8 9.6 5.1 10.6 7.7 14.1 6.1 8.8 9.8 6.6 7.1 4.2 3.7 10.3
+UNITS [14]
+Acc 26.7 18.2 34.9 29.3 29.3 16.7 18.2 19.6 12.4 8.4 29.8 21.3 9.3 11.2 6.3 7.1 24.6 6.0 18.3
+F1 17.8 15.1 21.4 17.3 16.1 14.1 11.9 9.3 10.8 4.0 22.6 4.7 9.1 5.4 4.0 1.6 8.5 2.1 10.9
+CALF [32]
+Acc 40.1 18.1 25.2 29.5 30.5 33.1 16.3 17.5 13.3 21.3 11.7 52.9 10.3 17.7 5.6 10.3 3.7 9.0 20.3
+F1 23.2 9.7 16.8 6.5 23.2 7.1 15.1 15.5 7.1 2.9 6.9 20.7 5.7 13.2 4.0 6.9 2.9 3.6 10.6
+MOSAIC
+Acc 44.4 48.1 62.8 68.4 70.7 67.6 46.2 64.9 50.4 47.0 68.1 51.1 67.6 30.5 34.3 60.6 63.9 34.5 54.5
+F1 42.5 45.7 53.8 59.3 55.8 50.8 45.1 56.8 49.3 44.6 61.0 39.3 53.9 29.2 29.8 51.7 55.0 31.4 47.5
+samples for training and 30% for testing. As shown in Table 4, MOSAIC achieves an average accuracy of 68.1% and
+an average F1 score of 61.5%. Upon analyzing the full-shot results, we reached two conclusions: Firstly, our model
+outperforms the best existing SOTA by 12.1% in accuracy and 15.5% in F1 score. This demonstrates the superior
+performance of our model. Second, our model is able to fit all 18 datasets with strong and consistent performance.
+This indicates that our model generalizes well to diverse real-world datasets, as opposed to other methods that often
+perform well on only a subset of them, showing our model’s broad applicability and strong generalization ability.
+7.5 Description Generation Benchmark
+To further evaluate the model’s ability to generate fine-grained motion descriptions, we construct a description
+generation benchmark and conducted small-scale experiments to better assess the quality of the descriptions.
+Firstly, we categorized the 18 test datasets into three levels of complexity—simple, medium, and complex—based on
+the number of activity classes. We then randomly selected five datasets with varying complexity: RealWorld(simple),
+PAMAP2(medium), USC-HAD(medium), UTD-MHAD(complex), and MMAct(complex). For each dataset, we ran-
+domly sampled two instances per activity class, resulting in a total of 188 samples. For each sample, we generated
+corresponding 3D skeletal motion GIFs by first reconstructing the human pose sequences from IMU sensor data using
+the IMUSim engine and then rendering these sequences into GIF animations. A sample of these GIFs can be found in
+Figure 6. For each GIF animation, we performed human annotation by manually observing the motion and describing
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:16 • Wei et al.
+Table 4. Full-shot performance are evaluated on 18 diverse real-world datasets. The best results are highlighted in bold. The last
+column reports the average performance across all 18 datasets.
+Dataset
+M
+e
+tr
+ic
+s
+O
+p
+p
+o
+r
+tu
+n
+it
+y
+U
+C
+I-
+H
+A
+R
+M
+o
+ti
+o
+n
+S
+e
+n
+s
+e
+w
+-
+H
+A
+R
+S
+h
+o
+a
+ib
+H
+A
+R
+7
+0
++
+R
+e
+a
+lW
+o
+r
+ld
+T
+N
+D
+A
+-
+H
+A
+R
+P
+A
+M
+A
+P
+2
+U
+S
+C
+-
+H
+A
+D
+M
+h
+e
+a
+lt
+h
+H
+a
+r
+th
+U
+T
+-
+C
+o
+m
+p
+le
+x
+W
+h
+a
+r
+f
+W
+IS
+D
+M
+D
+S
+A
+D
+S
+U
+T
+D
+-
+M
+H
+A
+D
+M
+M
+A
+c
+t
+A
+v
+e
+r
+a
+g
+e
+Number of Classes 4 6 6 7 7 7 8 8 12 12 12 12 13 14 18 19 27 35
+OneLLM [18]
+Acc 40.1 16.8 27.4 26.2 23.9 46.6 13.2 17.8 10.3 11.2 10.4 46.2 9.3 31.6 10.9 5.8 6.4 8.0 20.1
+F1 15.7 7.6 12.2 5.9 19.0 9.1 7.7 12.0 5.0 3.4 2.7 6.8 5.4 3.7 9.2 3.7 1.5 2.8 7.4
+IMU2CLIP [37]
+Acc 57.5 54.4 38.1 8.4 19.1 81.0 37.1 32.3 51.6 15.3 11.0 47.8 29.7 16.4 81.0 37.1 21.0 6.6 35.9
+F1 44.4 50.0 20.5 6.6 13.9 30.4 23.1 29.3 41.4 11.6 3.1 31.8 24.1 13.3 30.4 23.1 13.6 3.9 23.0
+SensorLLM [30]
+Acc 28.9 81.7 26.4 77.0 40.1 54.3 51.8 35.6 35.6 81.7 51.3 54.4 46.5 13.3 54.3 51.8 25.3 21.8 46.2
+F1 17.6 49.4 25.4 32.3 34.2 28.0 45.6 32.4 32.4 49.4 17.5 32.4 33.8 10.7 28.0 45.6 18.7 11.0 30.2
+GPT4TS [73]
+Acc 81.5 58.2 57.2 34.4 68.8 87.8 56.8 57.4 73.7 33.1 69.2 73.0 55.2 51.4 39.4 54.1 33.1 23.2 56.0
+F1 84.4 53.7 50.5 20.6 70.2 46.8 45.3 52.7 65.4 26.5 66.2 38.2 49.7 23.1 34.7 49.6 29.3 21.4 46.0
+TimeLLM [27]
+Acc 40.1 32.7 13.5 26.2 32.9 47.8 16.9 15.9 20.7 14.3 27.3 19.3 13.1 49.9 14.8 13.1 8.9 10.1 23.2
+F1 18.1 17.6 11.0 8.6 22.8 26.6 10.1 6.6 11.5 8.5 15.4 7.6 10.2 10.2 7.8 8.5 4.5 5.4 11.7
+UNITS [14]
+Acc 44.0 46.9 45.3 32.3 32.3 46.2 31.4 57.2 30.9 42.2 31.4 61.0 47.3 22.7 64.0 54.8 58.2 17.7 42.5
+F1 37.3 47.2 44.0 19.1 32.2 14.2 28.6 57.3 21.5 40.5 31.5 16.6 47.0 8.1 63.9 54.4 52.2 12.9 34.9
+CALF [32]
+Acc 69.8 77.7 50.7 30.8 31.2 76.4 59.6 35.7 77.8 34.7 34.7 66.2 39.2 19.2 76.4 59.6 10.5 27.9 48.8
+F1 63.6 76.8 44.5 10.4 25.5 44.4 50.3 28.1 68.9 12.9 13.0 35.0 32.9 14.1 44.4 50.3 6.4 10.4 35.1
+MOSAIC
+Acc 70.1 75.3 76.4 85.1 87.4 80.2 64.1 78.0 71.8 62.5 78.4 66.8 77.3 38.2 46.3 68.5 64.0 35.2 68.1
+F1 70.5 75.1 73.9 59.8 87.2 53.9 57.2 76.9 73.0 51.8 79.1 39.5 66.9 34.6 46.2 67.1 60.8 33.8 61.5
+Fig. 6. An example GIF animation reconstructed from IMU sensor data, illustrating the action of "falling down".
+it. These descriptions served as the ground truth. The descriptions generated by our model were used as the predicted
+output. We then evaluated the similarity between the ground truth and predicted descriptions.
+To quantify description quality, we adopt three evaluation metrics:
+• ROUGE-1: This metric measures unigram-level lexical overlap between the generated and ground-truth descrip-
+tions, providing a basic assessment of textual similarity.
+• CIDEr: This metric evaluates n-gram similarity with TF-IDF weighting, which emphasizes informative and less
+frequent words while reducing the influence of common words.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:17
+Table 5. Evaluation of action descriptions generated by the models, including MOSAIC and the baselines. It compares the ground
+truth and the models’ estimated outputs using three metrics: CIDEr, ROUGE-1, and ASSE (Action-Semantic Similarity Evaluation),
+which we propose to assess the semantic alignment of action descriptions.
+Model Metrics Realworld PAMAP2 USC-HAD UTD-MHAD MMAct Average
+Kimi-K2.6
+ROUGE1 F1 0.347 0.383 0.418 0.325 0.232 0.341
+CIDEr 2.485 1.964 2.235 1.987 1.773 2.089
+ASSE 0.492 0.419 0.312 0.357 0.308 0.378
+Qwen3-Omni-30B
+ROUGE1 F1 0.419 0.345 0.329 0.217 0.194 0.301
+CIDEr 2.877 1.576 1.287 0.944 0.845 1.506
+ASSE 0.398 0.342 0.306 0.221 0.187 0.291
+MOSAIC
+ROUGE1 F1 0.673 0.736 0.677 0.581 0.565 0.646
+CIDEr 4.982 4.264 4.078 3.764 2.821 3.982
+ASSE 0.806 0.735 0.732 0.725 0.628 0.725
+• ASSE: In addition to generic text generation metrics, we propose Action-Semantic Similarity Evaluation (ASSE),
+a task-specific metric for activity description generation.
+Unlike generic text similarity metrics, ASSE explicitly evaluates whether a generated description captures the key
+semantic components of human motion. Specifically, we decompose each description into four semantic categories:
+1. Action: the type of motion, such as swipe, wave, clap, throw, swing, sit, or stand.
+2. Trajectory: the direction or movement pattern, such as right-to-left, forward, upward, downward, or clockwise.
+3. Side: the side of the body involved in the motion, such as left, right, both, or one side.
+4. Limb: the body part involved in the motion, such as hand, arm, fist, elbow, or foot.
+For each category, we compute the F1 score based on the overlap between the semantic elements extracted from the
+generated and ground-truth descriptions. The final ASSE score is computed as a weighted sum of the category-level
+F1 scores:
+ASSE = 𝑤1 × 𝐹1action + 𝑤2 × 𝐹1trajectory + 𝑤3 × 𝐹1side + 𝑤4 × 𝐹1limb. (23)
+The weights reflect the relative importance of different semantic components in assessing the quality of motion
+descriptions.
+In order to compare the generation capabilities of our model, we selected two recently released MLLMs: Kimi-K2.6
+and Qwen3-Omni-30B-A3B-Instruct. We evaluated these models along with our own on the three metrics: ROUGE-1,
+CIDEr, and ASSE. The results of the evaluation are presented in Table 5. This new benchmark allows us to more
+comprehensively evaluate the performance of the model in generating action descriptions.
+7.6 Ablation Studies
+7.6.1 Ablation on the Number of Principal Components. To investigate the effect of dimensionality reduction on
+model performance, we perform an ablation study on the number of principal components retained by PCA before
+projecting sensor representations into the LLM semantic space. As shown in Figure 7, we experiment with varying
+component counts (e.g., 500, 1000, 1500, 2000) and evaluate the downstream HAR performance. Results show that
+using too few components leads to substantial information loss, degrading recognition accuracy. On the other hand,
+increasing the number of components beyond a certain point yields diminishing returns while incurring additional
+computational costs. We find that retaining 1500 components provides the best trade-off between expressiveness and
+efficiency, and we use this setting in all other experiments.
+7.6.2 Ablation on the Composition of the Training Corpus. We examine how different combinations of training
+corpora affect the performance of MOSAIC. Specifically, we compare the performance when using: (1) only real
+sensor-text pairs (w/o virtual), and (2) the combined full corpus. As shown in Figure 8, this leads to a clear performance
+drop in accuracy, especially under the zero-shot setting. We attribute this degradation to the limited diversity of real
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:18 • Wei et al.
+data, which tends to lack rare, static, or complex activities. As a result, the model struggles to learn a sufficiently
+comprehensive and balanced representation of human motion. By contrast, incorporating synthetic samples enhances
+the diversity of motion patterns and complements the real data with well-controlled, fine-grained behaviors. This
+richer coverage enables MOSAIC to better generalize to unseen scenarios.
+7.6.3 Ablation on the Spatiotemporal Graph Convolutional Network. To evaluate the effectiveness of Section 4.1,
+we replace the ST-GCN backbone with LSTM. As shown in Figure 8, this replacement leads to a significant drop in
+accuracy. The performance degradation demonstrates the necessity of modeling not only the temporal dynamics but
+also the spatial structure of human motion signals.
+7.6.4 Ablation on the Semantic Fusion and Decoding Network. To evaluate the impact of the Section 4.2, we systemati-
+cally remove the multi-head cross-attention layer (w/o MHCA). As shown in Figure 8, this results in a noticeable
+performance drop, indicating that simple feature concatenation is insufficient for establishing meaningful semantic
+correspondences between sensor data and language. The MHCA module plays a crucial role in injecting language-
+relevant information into the sensor representations, enabling better alignment with the LLM’s embedding space and
+ultimately improving downstream reasoning and generation performance.
+10
+20
+30
+40
+50
+60
+O
+p
+p
+U
+C
+I
+-
+H
+A
+R
+M
+o
+t
+i
+o
+n
+S
+e
+n
+s
+e
+w
+-
+H
+A
+R
+S
+h
+o
+a
+i
+b
+H
+A
+R
+7
+0
++
+R
+e
+a
+l
+W
+o
+r
+l
+d
+T
+N
+D
+A
+-
+H
+A
+R
+P
+A
+M
+A
+P
+2
+U
+S
+C
+-
+H
+A
+D
+M
+h
+e
+a
+l
+t
+h
+H
+a
+r
+t
+h
+U
+T
+-
+C
+o
+m
+p
+l
+e
+x
+W
+h
+a
+r
+f
+W
+I
+S
+D
+M
+D
+S
+A
+D
+S
+U
+T
+D
+-
+M
+H
+A
+D
+M
+M
+A
+c
+t
+PCA500 PCA1000 PCA1500 PCA2000
+Accuracy
+(%)
+Fig. 7. Ablation on the number of principal components.
+10
+20
+30
+40
+50
+60
+O
+p
+p
+U
+C
+I
+-
+H
+A
+R
+M
+o
+t
+i
+o
+n
+S
+e
+n
+s
+e
+w
+-
+H
+A
+R
+S
+h
+o
+a
+i
+b
+H
+A
+R
+7
+0
++
+R
+e
+a
+l
+W
+o
+r
+l
+d
+T
+N
+D
+A
+-
+H
+A
+R
+P
+A
+M
+A
+P
+2
+U
+S
+C
+-
+H
+A
+D
+M
+h
+e
+a
+l
+t
+h
+H
+a
+r
+t
+h
+U
+T
+-
+C
+o
+m
+p
+l
+e
+x
+W
+h
+a
+r
+f
+W
+I
+S
+D
+M
+D
+S
+A
+D
+S
+U
+T
+D
+-
+M
+H
+A
+D
+M
+M
+A
+c
+t
+MOSAIC w/o virtual w/o MHCA w/o GCN
+Accuracy
+(%)
+Fig. 8. Ablation on the composition of the training corpus, spatiotemporal graph convolutional network and the semantic fusion
+and decoding network.
+8 DISCUSSION
+We acknowledge several limitations that we leave as future work: First, the current evaluation is still partially
+constrained by existing HAR benchmarks. Although our goal is open-ended activity understanding, most public
+wearable-sensing datasets provide only categorical activity labels rather than fine-grained descriptions of body-part
+motions, temporal coordination, or activity semantics. As a result, our large-scale evaluation across 18 datasets still
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:19
+relies on accuracy and F1 score as the primary quantitative metrics. Future work should build standardized HAU
+benchmarks with natural-language annotations, body-part-level motion descriptions, temporal decomposition and
+contextual information. Such benchmarks would allow the community to evaluate not only whether a model predicts
+the correct activity, but also whether it truly understands how the activity is performed.
+Second, our training strategy relies on a synthetic IMU–text corpus to overcome the absence of real-world paired
+sensor–language data. However, synthetic IMU signals may still differ from real wearable data due to sensor noise,
+device attachment variations, body-shape differences, and diverse personal motion styles. Future research should
+collect real-world IMU–language datasets in which sensor streams are paired with fine-grained motion descriptions.
+Such data would reduce the simulation-to-reality gap and provide stronger supervision for learning sensor-language
+alignment.
+Finally, we view MOSAIC as an initial step toward open-ended human activity understanding. Future work can
+extend this framework to long-term continuous sensing, multi-person activities, personalized behavior modeling, and
+interactive AI agents that reason about human intentions from sensor-grounded motion descriptions.
+9 CONCLUSION
+We present a new paradigm called open-ended human activity understanding, establishing a complete pipeline
+from sensor perception to motion description and activity reasoning. To realize it, we propose MOSAIC (Motion
+Decomposition and Semantic Fusion), a unified framework that captures structured meta-motion features from sensor
+data and translates them into fine-grained natural-language descriptions. Built upon MOSAIC, we further design
+an LLM-driven training strategy for sensor–language alignment, enabling effective cross-modal supervision even
+in the absence of real-world paired data. Finally, we integrate MOSAIC and LLM-assisted reasoning into a mobile
+application, forming an end-to-end sensing–reasoning–interaction process. Experiments on 18 public HAR datasets
+show that our approach achieves SOTA performance among existing LLM-based methods.
+Acknowledgments
+We thank all the reviewers for their valuable comments and helpful suggestions. This work is supported by the
+National Natural Science Foundation of China under Grant No. 92582114 and No. 62272407, and the Major Program
+of Zhejiang NSF under Grant No. LD26F020002. Yi Gao is the corresponding author.
+References
+[1] Alireza Abedin, Mahsa Ehsanpour, Qinfeng Shi, Hamid Rezatofighi, and Damith C Ranasinghe. 2021. Attend and discriminate: Beyond the
+state-of-the-art for human activity recognition using wearable sensors. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 5, 1 (2021), 1–22.
+[2] Kerem Altun, Billur Barshan, and Orkun Tunçel. 2010. Comparative study on classifying human activities with miniature inertial and
+magnetic sensors. Pattern Recognition 43, 10 (2010), 3605–3620.
+[3] Davide Anguita, Alessandro Ghio, Luca Oneto, Xavier Parra, Jorge Luis Reyes-Ortiz, et al. 2013. A public domain dataset for human activity
+recognition using smartphones.. In Esann, Vol. 3. 3.
+[4] Oresti Banos, Rafael Garcia, Juan A Holgado-Terriza, Miguel Damas, Hector Pomares, Ignacio Rojas, Alejandro Saez, and Claudia Villalonga.
+2014. mHealthDroid: a novel framework for agile development of mobile health applications. In Ambient Assisted Living and Daily Activities:
+6th International Work-Conference, IWAAL 2014, Belfast, UK, December 2-5, 2014. Proceedings 6. Springer, 91–98.
+[5] Ganapati Bhat, Nicholas Tran, Holly Shill, and Umit Y Ogras. 2020. w-HAR: An activity recognition dataset and framework using low-power
+wearable devices. Sensors 20, 18 (2020), 5356.
+[6] Christopher M Bishop and Nasser M Nasrabadi. 2006. Pattern recognition and machine learning. Vol. 4. Springer.
+[7] Barbara Bruno, Fulvio Mastrogiovanni, Antonio Sgorbissa, Tullio Vernazza, and Renato Zaccaria. 2013. Analysis of human behavior recognition
+algorithms based on acceleration data. In 2013 IEEE International Conference on Robotics and Automation. IEEE, 1602–1607.
+[8] Pierluigi Casale, Oriol Pujol, and Petia Radeva. 2011. Human activity recognition from accelerometer data using a wearable device. In Pattern
+Recognition and Image Analysis: 5th Iberian Conference, IbPRIA 2011, Las Palmas de Gran Canaria, Spain, June 8-10, 2011. Proceedings 5. Springer,
+289–296.
+[9] Ching Chang, Wen-Chih Peng, and Tien-Fu Chen. 2023. Llm4ts: Two-stage fine-tuning for time-series forecasting with pre-trained llms.
+CoRR (2023).
+[10] Chen Chen, Roozbeh Jafari, and Nasser Kehtarnavaz. 2015. UTD-MHAD: A multimodal dataset for human action recognition utilizing a
+depth camera and a wearable inertial sensor. In 2015 IEEE International conference on image processing (ICIP). IEEE, 168–172.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:20 • Wei et al.
+[11] Giuseppe De Leonardis, Samanta Rosati, Gabriella Balestra, Valentina Agostini, Elisa Panero, Laura Gastaldi, and Marco Knaflitz. 2018. Human
+Activity Recognition by Wearable Sensors: Comparison of different classifiers for real-time applications. In 2018 IEEE international symposium
+on medical measurements and applications (memea). IEEE, 1–6.
+[12] Iveta Dirgová Luptáková, Martin Kubovčík, and Jiří Pospíchal. 2022. Wearable sensor-based human activity recognition with transformer
+model. Sensors 22, 5 (2022), 1911.
+[13] Katherine Ellis, Jacqueline Kerr, Suneeta Godbole, Gert Lanckriet, David Wing, and Simon Marshall. 2014. A random forest classifier for the
+prediction of energy expenditure and type of physical activity from wrist and hip accelerometers. Physiological measurement 35, 11 (2014),
+2191.
+[14] Shanghua Gao, Teddy Koker, Owen Queen, Tom Hartvigsen, Theodoros Tsiligkaridis, and Marinka Zitnik. 2024. Units: A unified multi-task
+time series model. Advances in Neural Information Processing Systems 37 (2024), 140589–140631.
+[15] Alireza Ghods and Diane J Cook. 2019. Activity2vec: Learning adl embeddings from sensor data with a sequence-to-sequence model. arXiv
+preprint arXiv:1907.05597 (2019).
+[16] Rohit Girdhar, Alaaeldin El-Nouby, Zhuang Liu, Mannat Singh, Kalyan Vasudev Alwala, Armand Joulin, and Ishan Misra. 2023. Imagebind:
+One embedding space to bind them all. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. 15180–15190.
+[17] Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng. 2022. Generating diverse and natural 3d human motions
+from text. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. 5152–5161.
+[18] Jiaming Han, Kaixiong Gong, Yiyuan Zhang, Jiaqi Wang, Kaipeng Zhang, Dahua Lin, Yu Qiao, Peng Gao, and Xiangyu Yue. 2024. Onellm:
+One framework to align all modalities with language. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+26584–26595.
+[19] Xu Han, Zhengyan Zhang, Ning Ding, Yuxian Gu, Xiao Liu, Yuqi Huo, Jiezhong Qiu, Yuan Yao, Ao Zhang, Liang Zhang, et al. 2021. Pre-trained
+models: Past, present and future. Ai Open 2 (2021), 225–250.
+[20] Zhen-Yu He and Lian-Wen Jin. 2008. Activity recognition from acceleration data using AR model representation and SVM. In 2008 international
+conference on machine learning and cybernetics, Vol. 4. IEEE, 2245–2250.
+[21] Shruthi K Hiremath, Yasutaka Nishimura, Sonia Chernova, and Thomas Plötz. 2022. Bootstrapping human activity recognition systems for
+smart homes from scratch. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 3 (2022), 1–27.
+[22] Harold Hotelling. 1933. Analysis of a complex of statistical variables into principal components. Journal of educational psychology 24, 6
+(1933), 417.
+[23] IDC. 2025. IDC Worldwide Quarterly Wearable Device Tracker. https://www.idc.com/promo/wearablevendor/ Accessed: 2025-10-01.
+[24] Sozo Inoue, Paula Lago, Tahera Hossain, Tittaya Mairittha, and Nattaya Mairittha. 2019. Integrating activity recognition and nursing care
+records: The system, deployment, and a verification study. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies
+3, 3 (2019), 1–24.
+[25] Amina Jarraya. 2018. Distributed collaborative reasoning for HAR in smart homes. (2018).
+[26] Sijie Ji, Xinzhe Zheng, and Chenshu Wu. 2024. Hargpt: Are llms zero-shot human activity recognizers?. In 2024 IEEE International Workshop
+on Foundation Models for Cyber-Physical Systems & Internet of Things (FMSys). IEEE, 38–43.
+[27] Ming Jin, Shiyu Wang, Lintao Ma, Zhixuan Chu, James Y Zhang, Xiaoming Shi, Pin-Yu Chen, Yuxuan Liang, Yuan-Fang Li, Shirui Pan, et al.
+2023. Time-llm: Time series forecasting by reprogramming large language models. arXiv preprint arXiv:2310.01728 (2023).
+[28] Quan Kong, Ziming Wu, Ziwei Deng, Martin Klinkigt, Bin Tong, and Tomokazu Murakami. 2019. Mmact: A large-scale dataset for cross
+modal human action understanding. In Proceedings of the IEEE/CVF International Conference on Computer Vision. 8658–8667.
+[29] Zikang Leng, Hyeokhyen Kwon, and Thomas Plötz. 2023. Generating virtual on-body accelerometer data from virtual textual descriptions for
+human activity recognition. In Proceedings of the 2023 ACM International Symposium on Wearable Computers. 39–43.
+[30] Zechen Li, Shohreh Deldari, Linyao Chen, Hao Xue, and Flora D Salim. 2024. SensorLLM: Human-Intuitive Alignment of Multivariate Sensor
+Data with LLMs for Activity Recognition. arXiv preprint arXiv:2410.10624 (2024).
+[31] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual instruction tuning. Advances in neural information processing
+systems 36 (2023), 34892–34916.
+[32] Peiyuan Liu, Hang Guo, Tao Dai, Naiqi Li, Jigang Bao, Xudong Ren, Yong Jiang, and Shu-Tao Xia. 2025. Calf: Aligning llms for time series
+forecasting via cross-modal fine-tuning. In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 39. 18915–18923.
+[33] Shengzhong Liu, Shuochao Yao, Yifei Huang, Dongxin Liu, Huajie Shao, Yiran Zhao, Jinyang Li, Tianshi Wang, Ruijie Wang, Chaoqi Yang,
+et al. 2020. Handling missing sensors in topology-aware iot applications with gated graph neural network. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 4, 3 (2020), 1–31.
+[34] Aleksej Logacjov, Kerstin Bach, Atle Kongsvold, Hilde Bremseth Bårdstu, and Paul Jarle Mork. 2021. HARTH: a human activity recognition
+dataset for machine learning. Sensors 21, 23 (2021), 7853.
+[35] Mohammad Malekzadeh, Richard G Clegg, Andrea Cavallaro, and Hamed Haddadi. 2019. Mobile sensor data anonymization. In Proceedings of
+the international conference on internet of things design and implementation. 49–58.
+[36] Shenghuan Miao, Ling Chen, Rong Hu, and Yingsong Luo. 2022. Towards a dynamic inter-sensor correlations learning framework for
+multi-sensor-based wearable human activity recognition. Proceedings of the ACM on interactive, mobile, wearable and ubiquitous technologies
+6, 3 (2022), 1–25.
+[37] Seungwhan Moon, Andrea Madotto, Zhaojiang Lin, Alireza Dirafzoon, Aparajita Saraf, Amy Bearman, and Babak Damavandi. 2022. Imu2clip:
+Multimodal contrastive learning for imu motion sensors from egocentric videos and text. arXiv preprint arXiv:2210.14395 (2022).
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:21
+[38] Seungwhan Moon, Andrea Madotto, Zhaojiang Lin, Tushar Nagarajan, Matt Smith, Shashank Jain, Chun-Fu Yeh, Prakash Murugesan, Peyman
+Heidari, Yue Liu, et al. 2024. Anymal: An efficient and scalable any-modality augmented language model. In Proceedings of the 2024 Conference
+on Empirical Methods in Natural Language Processing: Industry Track. 1314–1332.
+[39] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin,
+Jack Clark, et al. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning.
+PmLR, 8748–8763.
+[40] Benjamin Reichman, Xiaofan Yu, Lanxiang Hu, Jack Truxal, Atishay Jain, Rushil Chandrupatla, Tajana S Rosing, and Larry Heck. 2025.
+Sensorqa: A question answering benchmark for daily-life monitoring. In Proceedings of the 23rd ACM Conference on Embedded Networked
+Sensor Systems. 282–289.
+[41] Attila Reiss and Didier Stricker. 2012. Introducing a new benchmarked dataset for activity monitoring. In 2012 16th international symposium
+on wearable computers. IEEE, 108–109.
+[42] Daniel Roggen, Alberto Calatroni, Mirco Rossi, Thomas Holleczek, Kilian Förster, Gerhard Tröster, Paul Lukowicz, David Bannach, Gerald Pirkl,
+Alois Ferscha, et al. 2010. Collecting complex activity datasets in highly rich networked sensor environments. In 2010 Seventh international
+conference on networked sensing systems (INSS). IEEE, 233–240.
+[43] Aparajita Saraf, Seungwhan Moon, and Andrea Madotto. 2023. A Survey of Datasets, Applications, and Models for IMU Sensor Signals. In 2023
+IEEE International Conference on Acoustics, Speech, and Signal Processing Workshops (ICASSPW). 1–5. doi:10.1109/ICASSPW59220.2023.10193365
+[44] Zahraa Khais Shahid, Saguna Saguna, and Christer Åhlund. 2023. Forecasting and Detecting Anomalies in ADLs in Single-Resident Elderly
+Smart Homes. In Proceedings of the 2023 International Conference on Research in Adaptive and Convergent Systems. 1–8.
+[45] Muhammad Shoaib, Stephan Bosch, Ozlem Durmaz Incel, Hans Scholten, and Paul JM Havinga. 2014. Fusion of smartphone motion sensors
+for physical activity recognition. Sensors 14, 6 (2014), 10146–10176.
+[46] Muhammad Shoaib, Stephan Bosch, Ozlem Durmaz Incel, Hans Scholten, and Paul JM Havinga. 2016. Complex human activity recognition
+using smartphone and wrist-worn motion sensors. Sensors 16, 4 (2016), 426.
+[47] Satya P Singh, Madan Kumar Sharma, Aimé Lay-Ekuakille, Deepak Gangwar, and Sukrit Gupta. 2020. Deep ConvLSTM with self-attention
+for human activity decoding using wearable sensors. IEEE Sensors Journal 21, 6 (2020), 8575–8582.
+[48] Abdulhamit Subasi, Kholoud Khateeb, Tayeb Brahimi, and Akila Sarirete. 2020. Human activity recognition using machine learning methods
+in a smart healthcare environment. In Innovation in health informatics. Elsevier, 123–144.
+[49] Sungho Suh, Vitor Fortes Rey, and Paul Lukowicz. 2023. Tasked: transformer-based adversarial learning for human activity recognition using
+wearable sensors via self-knowledge distillation. Knowledge-Based Systems 260 (2023), 110143.
+[50] Chenxi Sun, Hongyan Li, Yaliang Li, and Shenda Hong. 2023. Test: Text prototype aligned embedding to activate llm’s ability for time series.
+arXiv preprint arXiv:2308.08241 (2023).
+[51] Timo Sztyler and Heiner Stuckenschmidt. 2016. On-body localization of wearable devices: An investigation of position-aware activity
+recognition. In 2016 IEEE International Conference on Pervasive Computing and Communications (PerCom). IEEE, 1–9.
+[52] Hao Tan and Mohit Bansal. 2019. Lxmert: Learning cross-modality encoder representations from transformers. arXiv preprint arXiv:1908.07490
+(2019).
+[53] Md Zia Uddin and Ahmet Soylu. 2021. Human activity recognition using wearable sensors, discriminant analysis, and long short-term
+memory-based neural structured learning. Scientific Reports 11, 1 (2021), 16455.
+[54] Astrid Ustad, Aleksej Logacjov, Stine Øverengen Trollebø, Pernille Thingstad, Beatrix Vereijken, Kerstin Bach, and Nina Skjæret Maroni. 2023.
+Validation of an activity type recognition model classifying daily physical behavior in older adults: the HAR70+ model. Sensors 23, 5 (2023),
+2368.
+[55] Monireh Vahdati, Fedwa Laamarti, and Abdulmotaleb El Saddik. 2023. Meta-Review of Wearable Devices for Healthcare in the Metaverse.
+ACM Transactions on Multimedia Computing, Communications and Applications (2023).
+[56] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017.
+Attention is all you need. Advances in neural information processing systems 30 (2017).
+[57] Chongyang Wang, Yuan Gao, Akhil Mathur, Amanda C De C. Williams, Nicholas D Lane, and Nadia Bianchi-Berthouze. 2021. Leveraging
+activity recognition to enable protective behavior detection in continuous data. Proceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies 5, 2 (2021), 1–27.
+[58] Hanchen David Wang and Meiyi Ma. 2023. PhysiQ: Off-site Quality Assessment of Exercise in Physical Therapy. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 4 (2023), 1–25.
+[59] Gary M Weiss. 2019. Wisdm smartphone and smartwatch activity and biometrics dataset. UCI Machine Learning Repository: WISDM
+Smartphone and Smartwatch Activity and Biometrics Dataset Data Set 7 (2019), 133190–133202.
+[60] Wikipedia contributors. 2025. Closed-world assumption — Wikipedia, The Free Encyclopedia. https://en.wikipedia.org/wiki/Closed-world_
+assumption Accessed: 2025-10-01.
+[61] Wikipedia contributors. 2025. Inertial measurement unit — Wikipedia, The Free Encyclopedia. https://en.wikipedia.org/wiki/Inertial_
+measurement_unit Accessed: 2025-10-01.
+[62] Wikipedia contributors. 2025. Open-world assumption — Wikipedia, The Free Encyclopedia. https://en.wikipedia.org/wiki/Open_world
+Accessed: 2025-10-01.
+[63] Zhiyong Xiao, Yukun Chen, Xinlei Zhou, Mingwei He, Li Liu, Feng Yu, and Minghua Jiang. 2024. Human action recognition in immersive
+virtual reality based on multi-scale spatio-temporal attention network. Computer Animation and Virtual Worlds 35, 5 (2024), e2293.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:22 • Wei et al.
+[64] Huatao Xu, Liying Han, Qirui Yang, Mo Li, and Mani Srivastava. 2024. Penetrative ai: Making llms comprehend the physical world. In
+Proceedings of the 25th International Workshop on Mobile Computing Systems and Applications. 1–7.
+[65] Hua Yan, Heng Tan, Yi Ding, Pengfei Zhou, Vinod Namboodiri, and Yu Yang. 2024. Language-centered human activity recognition. arXiv
+preprint arXiv:2410.00003 (2024).
+[66] Sijie Yan, Yuanjun Xiong, and Dahua Lin. 2018. Spatial temporal graph convolutional networks for skeleton-based action recognition. In
+Proceedings of the AAAI conference on artificial intelligence, Vol. 32.
+[67] Yan Yan, Dali Chen, Yushi Liu, Jinjin Zhao, Bo Wang, Xuankun Wu, Xiaohao Jiao, Yuqian Chen, Huihui Li, and Xuchao Ren. 2021. TNDA-HAR.
+doi:10.21227/4epb-pg26
+[68] Shuochao Yao, Shaohan Hu, Yiran Zhao, Aston Zhang, and Tarek Abdelzaher. 2017. Deepsense: A unified deep learning framework for
+time-series mobile sensing data processing. In Proceedings of the 26th international conference on world wide web. 351–360.
+[69] Hyungjun Yoon, Biniyam Aschalew Tolera, Taesik Gong, Kimin Lee, and Sung-Ju Lee. 2024. By My Eyes: Grounding Multimodal Large
+Language Models with Sensor Data via Visual Prompting. arXiv preprint arXiv:2407.10385 (2024).
+[70] Alexander D Young, Martin J Ling, and Damal K Arvind. 2011. IMUSim: A simulation environment for inertial sensing algorithm design and
+evaluation. In Proceedings of the 10th ACM/IEEE International Conference on Information Processing in Sensor Networks. IEEE, 199–210.
+[71] Mi Zhang and Alexander A Sawchuk. 2012. USC-HAD: A daily activity dataset for ubiquitous activity recognition using wearable sensors. In
+Proceedings of the 2012 ACM conference on ubiquitous computing. 1036–1043.
+[72] Ye Zhang, Longguang Wang, Huiling Chen, Aosheng Tian, Shilin Zhou, and Yulan Guo. 2022. IF-ConvTransformer: A framework for
+human activity recognition using IMU fusion and ConvTransformer. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 6, 2 (2022), 1–26.
+[73] Tian Zhou, Peisong Niu, Liang Sun, Rong Jin, et al. 2023. One fits all: Power general time series analysis by pretrained lm. Advances in neural
+information processing systems 36 (2023), 43322–43355.
+[74] Hongyi Zhu, Hsinchun Chen, and Randall Brown. 2018. A sequence-to-sequence model-based deep learning approach for recognizing activity
+of daily living for senior care. Journal of biomedical informatics 84 (2018), 148–158.
+[75] Muhammad Zubair, Kibong Song, and Changwoo Yoon. 2016. Human activity recognition using wearable accelerometer sensors. In 2016 IEEE
+International Conference on Consumer Electronics-Asia (ICCE-Asia). IEEE, 1–5.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:23
+APPENDIX A
+A IN-THE-WILD EVALUATION
+Table 6. Detailed information about the dataset collected for our in-the-wild evaluation.
+Aspect Details
+Number of Participants 39 participants (ages 18 – 32)
+Activity Types intermittent running, cycling, strength training, daily activities
+Devices two smartphones, two smartwatches
+Data Types acc 50Hz, gyro 50Hz
+Scenarios gymnasium, campus
+Duration 1470min+
+Regarding the concern about the real-world applicability of our system, we have designed and conducted an
+in-the-wild evaluation. We collected data from 39 participants aged between 18 and 32 years. Each participant wore
+smartwatches on both wrists and placed smartphones in their left and right pockets, as shown in Figure 9. The dataset,
+detailed in Table 6, includes sensor data collected at a sampling rate of 50Hz, capturing both accelerometer and
+gyroscope data. We focused on four types of activities, each with distinct characteristics and challenges, to thoroughly
+assess our system’s robustness in real-world conditions:
+• Intermittent Sprint Running: To simulate a high-intensity, variable motion scenario, we chose an extreme training
+setting involving intermittent sprinting, as shown in Figure 10. Specifically, participants alternated between
+slow walking (≤ 6 km/h) and sprinting (≥ 13 km/h) in 21-minute sessions. A total of 18 sessions were recorded,
+with more than 300 minutes of data collected in this category. We conducted Leave-One-Subject-Out (LOSO)
+cross-validation, yielding an accuracy of 78.9% and an F1 score of 76.4%. This indicates that our model performs
+robustly, even in challenging scenarios involving rapid transitions and high-intensity sprinting.
+• Intermittent Sprint Cycling: We also evaluated the system under an extreme cycling scenario, where participants
+alternated between slow cycling and sprint cycling. Each session lasted 20 minutes, and a total of 12 sessions
+were recorded, amounting to over 250 minutes of data. We conducted LOSO cross-validation, yielding an
+accuracy of 60.2% and an F1 score of 58.1%. While the model performs reasonably well, the accuracy and F1
+score are lower compared to those for sprint running. We think this may be due to the absence of leg data.
+• Strength Training: The strength training scenario focused on various phases, including stretching, warm-up
+jogging, and dumbbell exercises. This session lasted between 20-25 minutes. We gathered data from 8 participants
+performing these activities. We conducted LOSO cross-validation, yielding an accuracy of 71.2% and an F1 score
+of 66.9%. These results demonstrate that the model’s ability to capture fine-grained behaviors helps it better
+identify more complex actions.
+• Daily Activities (Extended 12-Hour Session): Finally, we also recorded a 12-hour continuous data session that
+covered a variety of typical daily activities, such as walking, eating, working, and sleeping. We divided the
+12-hour continuous data into 12 sessions, each lasting 1 hour. Each session was further segmented into 10-minute
+windows, and the predominant activity within each window was used as the label. We applied Leave-One-
+Session-Out cross-validation, yielding an accuracy of 65.2% and an F1 score of 64.9%. These results show that
+our model effectively recognizes daily activities even in long-duration, continuous settings.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+168:24 • Wei et al.
+two different smartwatches two different smartphones
+Fig. 9. Devices for collecting data in real-world scenarios.
+smartwatch smartwatch
+smartphone smartphone
+Fig. 10. Illustration of activity data collection in real-world scenarios.
+APPENDIX B
+B SUPPLEMENTARY ABLATION EXPERIMENTS
+B.1 The Impact of the Number of IMU Sensors.
+we conducted an additional experiment on the RealWorld [51] dataset, which provides IMU data from seven body
+locations: head, chest, waist, upper-arm, forearm, thigh, and ankle. Specifically, we performed two complementary
+analyzes:
+• Leave-One-Location-Out Analysis. Starting with the full configuration that uses all seven sensor locations, we
+systematically removed one sensor location at a time to evaluate how the model’s performance changes when a
+particular body location is unavailable.
+• Node-Number Analysis. In this analysis, we evaluated MOSAIC under sparse sensing configurations by varying
+the number of available IMU sensors. Specifically, we examined settings with 1, 2, 3, and all 7 IMU sensors. This
+allowed us to assess how the model’s performance degrades as sensor coverage becomes increasingly limited.
+The results are shown in Table 7 and Figure 11. The Leave-One-Location-Out Analysis shows that removing a
+single sensor location has a relatively small impact on overall performance and does not drastically affect the model’s
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+Open-ended Human Activity Understanding via LLM-assisted Motion Decomposition and Semantic Fusion • 168:25
+20
+30
+40
+50
+60
+70
+80
+a
+l
+l
+w
+/
+o
+h
+e
+a
+d
+w
+/
+o
+c
+h
+e
+s
+t
+w
+/
+o
+w
+a
+i
+s
+t
+w
+/
+o
+u
+p
+a
+r
+m
+w
+/
+o
+f
+o
+r
+a
+r
+m
+w
+/
+o
+t
+h
+i
+g
+h
+w
+/
+o
+a
+n
+k
+l
+e
+3
+n
+o
+d
+e
+2
+n
+o
+d
+e
+1
+n
+o
+d
+e
+Acc F1
+Performance
+(%)
+Fig. 11. The bar chart illustrating the impact of IMU sensor locations and node numbers on performance.
+ability to recognize human activities. The Node-Number Analysis illustrates that reducing the number of available
+IMU nodes leads to a decline in performance. When only 1 sensor is available, the performance drastically decreases
+(Accuracy: 38.9%, F1: 34.3%). But the performance under 3 sensors (Accuracy: 45.9%, F1: 38.6%) shows that MOSAIC
+can still maintain reasonable performance even under limited sensor coverage.
+Table 7. Impact of IMU sensor locations and node numbers on performance.
+all
+w
+/
+o
+h
+e
+a
+d
+w
+/
+o
+c
+h
+e
+s
+t
+w
+/
+o
+w
+a
+i
+s
+t
+w
+/
+o
+u
+p
+a
+r
+m
+w
+/
+o
+f
+o
+r
+a
+r
+m
+w
+/
+o
+t
+h
+i
+g
+h
+w
+/
+o
+a
+n
+k
+l
+e
+3
+n
+o
+d
+e
+2
+n
+o
+d
+e
+1
+n
+o
+d
+e
+Acc 64.1± 0.62 64.2± 1.03 61.8± 0.88 59.8± 0.53 62.3± 0.91 60.9± 0.58 63.4± 0.73 60.1± 0.44 45.9± 0.46 40.6± 0.68 38.9± 1.12
+F1 57.2± 1.07 58.1± 0.87 55.4± 0.49 52.8± 0.55 56.4± 0.96 56.1± 0.48 53.7± 0.67 52.6± 0.87 38.6± 0.62 33.5± 1.16 34.3± 1.03
+B.2 The Impact of the DeepSeek Consistency Check.
+To quantify the effect of the conservative reasoning constraint, we compare DeepSeek inference with and without the
+instruction to output "unknown". All other inference settings are kept unchanged.
+As shown in Table 8, the constraint causes 6.5% of the test samples to be classified as unknown. The accuracy and F1
+score decrease slightly from 34.9% and 28.7% to 34.6% and 28.2%, respectively. These results indicate that the constraint
+does not substantially improve closed-set recognition performance. Instead, it mainly provides a conservative option
+that prevents the LLM from forcing unsupported predictions on ambiguous samples, with only a marginal impact on
+the overall recognition performance.
+Table 8. Effect of the conservative reasoning constraint across the 18 downstream datasets. Accuracy, F1 score, and unknown rate
+are averaged across all datasets. The unknown rate is defined as the proportion of test samples for which DeepSeek outputs
+"unknown". Unknown outputs are counted as incorrect when computing accuracy and F1 score.
+Setting Avg. Acc. Avg. F1 Avg. Unknown Rate
+w/o Constraint 34.9% 28.7% 0.0%
+w/ Constraint 34.6% 28.2% 6.5%
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 10, No. 3, Article 168. Publication date: September 2026.
+

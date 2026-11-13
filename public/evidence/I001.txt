@@ -1,0 +1,924 @@
+```
+                   Continuous mmWave
+                          │
+           ┌──────────────┴──────────────┐
+           ↓                             ↓
+     Range-Doppler                  Point Cloud
+           │                             │
+      RD Encoder                   Point Encoder
+           │                             │
+      r1 ... rT                     p1 ... pT
+           │                             │
+   Dilated Temporal TCN         Dilated Temporal TCN
+           │                             │
+          F_RD                          F_PC
+           │                             │
+           └──────────────┬──────────────┘
+                          ↓
+               Modality-aware Tokens
+             [R1,P1,R2,P2,...,RT,PT]
+                          │
+                          ↓
+                Event Query Decoder
+                 Transformer × 3
+                          │
+             Boundary Deep Supervision
+                          │
+                          ↓
+                   Event Queries
+                          │
+                  Event Projector
+                          │
+                          ↓
+                Radar Event Tokens
+                          │ K,V
+                          ↓
+Instruction → Tokenizer → LLM Cross-Attention
+                          │
+                          ↓
+                Natural-language Output
+```
+
+
+整体方法可以概括为：
+
+$$
+\boxed{
+\text{Dual Representation Encoding}
+\rightarrow
+\text{Continuous Event Discovery}
+\rightarrow
+\text{Instruction-conditioned Radar Understanding}
+}
+$$
+
+核心思想是：
+
+* **Range-Doppler 分支**学习毫米波频谱中的运动动态；
+* **Point Cloud 分支**学习人体空间结构与位置变化；
+* **Event Query Decoder**从连续雷达序列中自动发现动作事件；
+* **LLM Cross-Attention**让语言模型根据文本指令主动读取雷达事件表示，实现开放式动作描述。
+
+---
+
+# 1. Overall Framework
+
+给定连续毫米波雷达序列：
+
+$$
+X=\{x_1,x_2,...,x_T\}
+$$
+
+其中：
+
+* $T$：时间长度；
+* $x_t$：第 $t$ 帧雷达观测。
+
+系统首先将每一帧转换为两种互补表示：
+
+$$
+x_t
+\rightarrow
+(RD_t,PC_t)
+$$
+
+其中：
+
+$$
+RD_t\in R^{H\times W}
+$$
+
+表示 Range-Doppler 图；
+
+$$
+PC_t=
+\{p_1,p_2,...,p_N\}
+$$
+
+表示雷达点云：
+
+$$
+p_i=(x,y,z,v,I,SNR)
+$$
+
+随后分别进行空间编码和时间建模，得到连续事件发现所需的时序特征：
+
+$$
+F_{RD},F_{PC}
+$$
+
+最后利用 Event Query Decoder 从连续序列中提取事件级表示，并通过 LLM 生成自然语言描述。
+
+---
+
+# 2. Range-Doppler Branch
+
+## 2.1 Motivation
+
+Range-Doppler 表示保留了毫米波雷达最重要的运动信息：
+
+* 距离变化；
+* 径向速度；
+* Doppler 能量分布；
+* 微小运动变化。
+
+相比直接使用 RGB 或深度图，RD 图天然具有：
+
+$$
+\text{motion-centric representation}
+$$
+
+因此更加适合人体动作理解。
+
+---
+
+## 2.2 RD Encoder
+
+输入：
+
+$$
+RD_t\in R^{H\times W}
+$$
+
+首先通过二维卷积网络提取空间频谱模式：
+
+$$
+r_t^0=Encoder_{RD}(RD_t)
+$$
+
+其中 Encoder 主要学习：
+
+* 不同 Range 区域的人体反射；
+* Doppler 能量分布；
+* 局部运动模式。
+
+输出：
+
+$$
+r_t^0\in R^d
+$$
+
+例如：
+
+$$
+d=256
+$$
+
+因此整个序列：
+
+$$
+R=
+[r_1^0,r_2^0,...,r_T^0]
+$$
+
+表示：
+
+$$
+R\in R^{T\times d}
+$$
+
+---
+
+# 3. Point Cloud Branch
+
+## 3.1 Motivation
+
+虽然 RD 保留运动信息，但它缺少显式三维空间结构。
+
+因此引入点云分支。
+
+点云提供：
+
+* 人体空间位置；
+* 三维轨迹；
+* 位移变化；
+* 几何结构。
+
+输入：
+
+$$
+PC_t=
+\{(x_i,y_i,z_i,v_i,I_i)\}_{i=1}^{N_t}
+$$
+
+---
+
+## 3.2 Point Encoder
+
+由于点云具有：
+
+* 无序性；
+* 点数变化；
+* 稀疏性；
+
+因此采用 Point-based Encoder。
+
+首先对每个点进行特征映射：
+
+$$
+h_i=MLP(p_i)
+$$
+
+然后利用局部空间关系：
+
+$$
+h_i'=Attention(h_i,h_j)
+$$
+
+学习人体空间结构。
+
+最后通过 pooling 得到帧级点云表示：
+
+$$
+p_t=
+Pooling(\{h_i\})
+$$
+
+得到：
+
+$$
+p_t\in R^d
+$$
+
+整个序列：
+
+$$
+P=
+[p_1,p_2,...,p_T]
+$$
+
+---
+
+# 4. Dilated Temporal Convolution Encoder
+
+## 4.1 Motivation
+
+经过空间编码后：
+
+RD：
+
+$$
+r_1,r_2,...,r_T
+$$
+
+Point：
+
+$$
+p_1,p_2,...,p_T
+$$
+
+每个时间点只有当前帧信息。
+
+但是动作理解需要：
+
+* 前后上下文；
+* 动作变化趋势；
+* 动作阶段。
+
+因此加入 Temporal Encoder。
+
+---
+
+## 4.2 Dilated Temporal Convolution
+
+采用膨胀时间卷积：
+
+$$
+Conv1D(k,d)
+$$
+
+其中：
+
+* $k$：卷积核大小；
+* $d$：膨胀率。
+
+例如：
+
+$$
+d=\{1,2,4,8,16\}
+$$
+
+不同层获得不同时间尺度：
+
+```
+d=1:
+t-1,t,t+1
+
+d=4:
+t-4,t,t+4
+```
+
+因此网络同时捕获：
+
+* 短时间运动变化；
+* 长时间动作趋势。
+
+---
+
+## 4.3 Two Independent Temporal Encoders
+
+两个分支使用独立参数：
+
+$$
+F_{RD}=TCN_{RD}(R)
+$$
+
+$$
+F_{PC}=TCN_{PC}(P)
+$$
+
+得到：
+
+$$
+F_{RD}\in R^{T\times d}
+$$
+
+$$
+F_{PC}\in R^{T\times d}
+$$
+
+其中：
+
+$$
+F_{RD}
+$$
+
+主要编码：
+
+> 动作如何发生。
+
+$$
+F_{PC}
+$$
+
+主要编码：
+
+> 人在哪里以及空间如何变化。
+
+---
+
+# 5. Modality-aware Sequence Construction
+
+两个分支不能简单相加，因为这样会丢失模态来源。
+
+因此保持两个 token 独立。
+
+对于第 $t$ 帧：
+
+Range-Doppler token：
+
+$$
+z_t^{RD}
+=
+W_RD f_t^{RD}
++
+E_t
++
+E_{RD}
+$$
+
+Point token：
+
+$$
+z_t^{PC}
+=
+W_PC f_t^{PC}
++
+E_t
++
+E_{PC}
+$$
+
+其中：
+
+* $E_t$：时间编码；
+* $E_{RD},E_{PC}$：模态编码。
+
+随后按照时间交错：
+
+$$
+Z=
+[z_1^{RD},
+z_1^{PC},
+z_2^{RD},
+z_2^{PC},
+...
+,z_T^{RD},
+z_T^{PC}]
+$$
+
+形成：
+
+$$
+Z\in R^{2T\times d}
+$$
+
+这样 Event Query 可以自行决定：
+
+> 当前动作更依赖运动频谱还是空间结构。
+
+---
+
+# 6. Event Query Decoder
+
+这是整个模型的核心。
+
+传统动作识别通常：
+
+$$
+Feature
+\rightarrow
+Classifier
+$$
+
+只能回答：
+
+> 这是什么动作？
+
+但连续动作描述需要：
+
+* 动作什么时候发生；
+* 动作持续多久；
+* 多个动作如何排列。
+
+因此引入：
+
+$$
+K
+$$
+
+个可学习 Event Queries：
+
+$$
+Q^0=
+[q_1,q_2,...,q_K]
+$$
+
+每个 Query 表示一个潜在事件槽位。
+
+---
+
+## 6.1 Query-Feature Interaction
+
+采用 Transformer Decoder：
+
+每层：
+
+### Self Attention
+
+Query 之间交流：
+
+$$
+Q'=SelfAttn(Q)
+$$
+
+作用：
+
+避免多个 Query 重复关注同一个事件。
+
+---
+
+### Cross Attention
+
+Query 从雷达序列读取信息：
+
+$$
+Q''=
+Attention(Q',Z,Z)
+$$
+
+其中：
+
+$$
+Q=Event Query
+$$
+
+$$
+K,V=Radar Tokens
+$$
+
+因此每个 Query 自动学习：
+
+* 哪些时间区域重要；
+* 哪些运动模式属于同一个事件。
+
+---
+
+## 6.2 Iterative Refinement
+
+经过多层 Decoder：
+
+$$
+Q^0
+\rightarrow
+Q^1
+\rightarrow
+Q^2
+\rightarrow
+Q^3
+$$
+
+随着层数增加：
+
+第一层：
+
+> 粗略寻找运动区域。
+
+第二层：
+
+> 聚合完整事件信息。
+
+第三层：
+
+> 形成稳定事件表示。
+
+最终：
+
+$$
+E=
+\{e_1,e_2,...,e_K\}
+$$
+
+---
+
+# 7. Boundary Deep Supervision
+
+为了让 Event Query 学会时间定位，在每个 Decoder Layer 后增加 Boundary Head。
+
+对于：
+
+$$
+q_i
+$$
+
+预测：
+
+$$
+(c_i,w_i)
+$$
+
+其中：
+
+* $c_i$：事件中心；
+* $w_i$：持续时间。
+
+恢复：
+
+$$
+start_i=c_i-\frac{w_i}{2}
+$$
+
+$$
+end_i=c_i+\frac{w_i}{2}
+$$
+
+同时预测：
+
+$$
+p_i^{event}
+$$
+
+判断该 Query 是否是真实事件。
+
+---
+
+训练：
+
+$$
+L_{event}
+$$
+
+监督：
+
+$$
+p_i^{event}
+$$
+
+$$
+L_{boundary}
+$$
+
+监督：
+
+$$
+(c_i,w_i)
+$$
+
+并对每层 Decoder 输出监督：
+
+$$
+L=
+\sum_l\lambda_lL^l
+$$
+
+作用：
+
+让 Query 不仅学习：
+
+> 动作是什么
+
+还学习：
+
+> 动作在哪里发生。
+
+---
+
+# 8. Event Query → Radar Event Tokens
+
+经过 Event Decoder 后：
+
+$$
+E=
+[e_1,e_2,...,e_N]
+$$
+
+首先：
+
+* 去除 no-event Query；
+* 根据中心时间排序。
+
+得到：
+
+$$
+[e_1,e_2,...,e_N]
+$$
+
+按照时间顺序排列。
+
+---
+
+加入时间信息：
+
+$$
+\tilde e_i
+=
+e_i+
+PE(c_i,w_i)
+$$
+
+使每个 Event Token 包含：
+
+* 动作语义；
+* 时间位置；
+* 持续时间。
+
+---
+
+# 9. Event Projector
+
+LLM 的隐藏维度通常大于雷达网络：
+
+例如：
+
+$$
+d_{radar}=256
+$$
+
+$$
+d_{LLM}=4096
+$$
+
+因此：
+
+$$
+Z_R=
+Projector(\tilde E)
+$$
+
+得到：
+
+$$
+Z_R\in R^{N\times d_{LLM}}
+$$
+
+这些就是：
+
+$$
+\boxed{
+Radar Event Tokens
+}
+$$
+
+---
+
+# 10. Instruction-conditioned LLM Interaction
+
+不同于简单：
+
+$$
+Radar Token + Text Token
+$$
+
+拼接。
+
+这里采用类似 MMSense 的思想：
+
+文本作为 Query。
+
+---
+
+文本：
+
+$$
+I
+$$
+
+经过 tokenizer：
+
+$$
+T_1,T_2,...,T_M
+$$
+
+进入 LLM：
+
+$$
+H_{text}
+$$
+
+在部分 Transformer Layer 插入：
+
+Cross Attention：
+
+$$
+Attention(
+Q=H_{text},
+K=Z_R,
+V=Z_R
+)
+$$
+
+含义：
+
+> 当前语言状态主动查询雷达事件。
+
+例如：
+
+Instruction:
+
+> Describe the person's continuous actions.
+
+LLM 会关注：
+
+* 事件顺序；
+* 动作变化；
+* 持续时间。
+
+---
+
+# 11. Final Generation
+
+融合后的语言隐藏状态：
+
+$$
+H'
+$$
+
+进入 LLM Decoder：
+
+根据：
+
+$$
+P(y_t|y_{<t},Z_R,I)
+$$
+
+逐词生成描述。
+
+输出：
+
+例如：
+
+> The person first stands still, then slowly sits down and remains seated.
+
+---
+
+# 12. Training Strategy
+
+建议分阶段训练。
+
+---
+
+## Stage 1：Radar Encoder Training
+
+训练：
+
+* RD Encoder；
+* Point Encoder；
+* Temporal Encoder。
+
+目标：
+
+获得稳定运动表示。
+
+---
+
+## Stage 2：Event Query Training
+
+加入：
+
+* Event Query Decoder；
+* Boundary Head。
+
+训练：
+
+$$
+L_{event}+L_{boundary}
+$$
+
+目标：
+
+学习连续事件发现。
+
+---
+
+## Stage 3：LLM Alignment
+
+冻结 LLM。
+
+训练：
+
+* Event Projector；
+* Cross Attention Adapter。
+
+使用：
+
+$$
+L_{language}
+$$
+
+目标：
+
+学习：
+
+$$
+Radar Event
+\rightarrow
+Language
+$$
+
+---
+
+# 13. 该方案的核心创新点总结
+
+如果写论文，我认为可以总结成三个：
+
+## 1. Dual Representation Continuous Radar Encoding
+
+利用：
+
+$$
+RD+PointCloud
+$$
+
+分别建模：
+
+* dense motion dynamics；
+* sparse spatial structure。
+
+---
+
+## 2. Query-driven Continuous Event Discovery
+
+无需预定义动作类别，通过：
+
+$$
+Learnable Event Queries
+$$
+
+从连续雷达序列中自动发现动作事件。
+
+---
+
+## 3. Instruction-conditioned Radar-Language Alignment
+
+不是把雷达特征简单映射到语言空间，而是：
+
+$$
+Text\ Token
+\rightarrow
+CrossAttention
+\rightarrow
+Radar\ Event\ Token
+$$
+
+让 LLM 主动读取雷达事件信息。
+
+---
+
+整体上，这个版本相比最初的 Global/Local、多级 Fusion、多次 Cross-Attention 方案更加简洁：
+
+$$
+\boxed{
+RD/PC
+\rightarrow
+Temporal Feature
+\rightarrow
+Event Query
+\rightarrow
+Event Token
+\rightarrow
+LLM
+}
+$$
+
+每个模块职责明确，也更符合你当前研究目标：**连续毫米波动作理解，而不是单纯动作分类。**
+

@@ -1,0 +1,972 @@
+TP2
+-DETR: Unlocking Deformable DETR for Zero-Shot Temporal Action
+Proposal Generation with Temporal Feature Pyramids
+Ya-Yun Cheng1
+Kan Tippayamontri2
+Chih-Yuan Yang23
+Jane Yung-jen Hsu12
+{r12922062,yjhsu}@csie.ntu.edu.tw {m1461023,cyyang}@cgu.edu.tw
+1
+Department of Computer Science and Information Engineering, National Taiwan University
+2
+Department of Artiﬁcial Intelligence, Chang Gung University
+3
+Artiﬁcial Intelligence Research Center, Chang Gung University
+Abstract
+Standard Transformer attention often causes over-
+smoothing in temporal action localization, particularly
+with slow-moving video content. A compelling remedy
+is to adopt deformable attention because of its enhanced
+capability to focus on relevant features. However, exist-
+ing Deformable DETR-based methods often fail to fully
+exploit this beneﬁt, especially for detecting short actions
+in zero-shot settings where features are derived from
+vision-language models. This limitation stems from the lack
+of an effective temporal feature pyramid, which restricts
+the method’s ability to precisely localize short actions,
+similar to how feature pyramids aid small object detection
+in images.
+To this end, we propose TP2
+-DETR, a novel end-
+to-end framework designed to fully unlock the poten-
+tial of Deformable DETR for Zero-Shot Temporal Ac-
+tion Proposal Generation (ZSTAPG). Our key innova-
+tion is the integration of a dedicated temporal feature
+pyramid network, with several effective variants explored.
+For system efﬁciency and stability, we also design a
+shared, lightweight, and multi-scale-aware salient head
+for early supervision, which is augmented by auxiliary
+prediction heads providing deep supervision. Evaluated
+on the THUMOS14 and ActivityNet1.3 datasets, TP2
+-
+DETR achieves state-of-the-art performance under stan-
+dard zero-shot split settings, thereby validating its suc-
+cess in harnessing Deformable DETR’s potential for pre-
+cise and effective ZSTAPG. Our code is available at
+https://github.com/kantippayamontri/TP2 DETR
+1. Introduction
+Temporal Action Localization (TAL) is a fundamental task
+in video understanding that aims to precisely identify the
+start time, end time, and the category of speciﬁc actions
+within long, untrimmed videos. This capability is highly
+valuable for numerous real-world applications. Based on
+this deﬁnition, TAL can be naturally decomposed into two
+subtasks: proposal generation, which determines the can-
+didate temporal segments containing actions, and proposal
+classiﬁcation, which assigns the deﬁnitive action label to
+each segment.
+In recent years, TAL methods have made remarkable
+progress under the closed-set setting [19, 20, 35]. However,
+the labor-intensive and expensive nature of obtaining tem-
+poral annotations for long, untrimmed videos signiﬁcantly
+limits the scalability of fully-supervised approaches. Con-
+sequently, the emergence of powerful semantic alignment
+and transferability in vision-language models (VLMs) has
+made Zero-Shot Temporal Action Localization (ZSTAL) a
+compelling area of research. Most ZSTAL methods lever-
+age pre-trained VLMs to address the classiﬁcation subtask.
+Transformers are widely used to model temporal rela-
+tionships in videos due to their powerful attention mecha-
+nism. However, applying standard dense attention across
+long video sequences often leads to over-smoothing be-
+cause slow-changing video content causes repeated dense
+attention to over-average similar frame features. Conse-
+quently, the discriminability at each timestamp is weakened,
+making it harder to accurately localize action boundaries.
+To address the over-smoothing issue, deformable atten-
+tion offers a promising solution. As ﬁrst introduced in
+Deformable DETR [36] for object detection, it employs a
+sparse attention strategy that focuses only on a small set
+of relevant positions. This inherent sparsity mitigates over-
+smoothing, which has led several recent studies [20, 25] to
+adopt Deformable DETR as the core architecture for TAL.
+Existing approaches often emphasize deformable atten-
+tion, yet another key strength of Deformable DETR—its
+use of multi-scale feature pyramids to improve small ob-
+ject detection—has not been fully leveraged in the temporal
+domain. This omission is due to the fundamental differ-
+This CVPR Findings paper is the Open Access version, provided by the Computer Vision
+Foundation. Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+8237
+ence between modalities: unlike images, which naturally
+produce multi-scale feature maps from their ResNet [6] fea-
+ture extractor, videos lack an explicit and natural temporal
+downsampling path. This challenge is ampliﬁed in zero-
+shot settings, relying on features from pre-trained VLMs.
+These features, typically extracted from the ﬁnal encoder
+layer, provide a ﬂat temporal representation.
+To address these limitations and fully unlock the po-
+tential of Deformable DETR in the temporal domain, we
+propose TP2
+-DETR (Temporal Feature Pyramids-based
+Temporal Action Proposal Generation DETR). This novel
+architecture is speciﬁcally designed for Zero-Shot Temporal
+Action Proposal Generation (ZSTAPG), the proposal gener-
+ation subtask of ZSTAL.
+Based on the insights above, TP2
+-DETR is designed with
+three key components:
+1. A Temporal Feature Pyramid Network (TFPN), which
+generates the multi-scale feature representation, i.e. a
+Temporal Feature Pyramid (TFP).
+2. Multi-Scale-Aware Salient Heads, adopted from [4] for
+early supervision but modiﬁed by a uniﬁed MLP.
+3. Auxiliary Supervision for Stability, additional prediction
+heads to each intermediate decoder layer for deep super-
+vision to improve training stability.
+TP2
+-DETR is evaluated on two public benchmarks:
+THUMOS14 [8] and ActivityNet v1.3 [7]. Our model
+demonstrates superior performance across nearly all zero-
+shot split settings compared to prior work. The improve-
+ments are particularly signiﬁcant on THUMOS14, a dataset
+characterized by short actions. This strong result vali-
+dates our core motivation: effectively adapting the strengths
+of Deformable DETR’s small-object detection capabilities
+to the challenging task of short-action localization in the
+ZSTAPG setting.
+2. Related Work
+ZSTAPG is a challenging sub-task within ZSTAL, whose
+overall goal is to locate the start and end times of actions
+in an untrimmed video and classify them, even if the action
+category was not seen during the model’s training phase.
+Temporal Action Localization. Typical TAL methods as-
+sume that all action classes are available during both train-
+ing and inference, and they generally fall into two cate-
+gories: two-stage methods [4, 22, 28] and one-stage meth-
+ods [9, 16, 20, 31, 35]. The former separates the process
+into proposal generation and proposal classiﬁcation, often
+using dedicated modules for each, while the latter jointly
+handles both subtasks within a uniﬁed framework.
+TAL is conceptually analogous to object detection. The
+key difference is that while object detection localizes ob-
+jects in 2D spatial space, TAL localizes actions over a 1D
+temporal sequence. This similarity has enabled the adap-
+tation of many object detection techniques to the TAL do-
+main. In particular, DETR-based [4, 11–13, 20, 27, 37] and
+DETR-like [29, 30] architectures have been widely adopted
+in recent TAL research. For example, TadTR [20] builds di-
+rectly upon Deformable DETR, while GAP [4] adopts Con-
+ditional DETR for generalizable zero-shot proposal genera-
+tion, and several other studies propose improvements upon
+the vanilla DETR [12, 27, 37]. Other models, such as RTD-
+Net [29] and PointTAD [30], follow similar DETR-style de-
+coding and bipartite matching, but deviate from standard
+DETR-based designs by removing the transformer encoder,
+relaxing one-to-one matching, or incorporating point-based
+queries and custom interaction modules.
+Zero-Shot Temporal Action Localization. Most ZSTAL
+methods leverage VLMs, which offer remarkable zero-shot
+generalization capabilities. Since the emergence of VLMs
+such as CLIP [26] in 2021, ZSTAL has attracted increasing
+attention, with relevant studies starting in 2022. Similar to
+general TAL models, training-based ZSTAL methods can
+be categorized into two-stage and one-stage frameworks,
+depending on whether they implement proposal generation
+and proposal classiﬁcation as sequential components or as
+a uniﬁed architecture.
+Early two-stage training-based ZSTAL methods, such
+as EffPrompt [9], adopt existing detectors AFSD [15] and
+A2Net [33] for proposal generation, then classify them
+by adopting CLIP via prompting. MMPrompt [10] en-
+hances this by using optical ﬂow for motion cues and
+visual-conditioned prompts for classiﬁcation. More re-
+cently, GAP [4] focuses solely on improving proposal gen-
+eration. It utilizes a Conditional DETR architecture trained
+with proposal-level objectives, rather than frame-level ones,
+and incorporates static representations for reﬁnement. GAP
+is the current state-of-the-art and serves as the primary
+DETR-based reference for our work.
+One-stage training-based ZSTAL was pioneered by
+STALE [22], which jointly performs localization and clas-
+siﬁcation using parallel branches and a consistency loss
+to align them. UnLoc [32] advanced this by using a fea-
+ture pyramid and an early video-text fusion module to in-
+ject language priors during decoding. More recently, ZEE-
+TAD [25] replaced text prompt tuning with an adapter-
+based module and incorporated Deformable DETR to im-
+prove the handling of ambiguous temporal boundaries dur-
+ing proposal generation.
+Training-Free Approaches. With the increasing expres-
+siveness of VLMs and the goal of avoiding bias intro-
+duced by the training process, training-free approaches
+have started to gain attention in recent ZSTAL research.
+T3AL [14] aligns visual and textual embeddings using
+CoCa [34] to obtain video-level pseudo labels, applies test-
+time adaptation via self-supervised projectors, and uses
+CoCa again to perform text-guided region suppression as
+post-processing. ZEAL [1] prompts a Large Language
+8238
+Model (LLM), such as GPT-4 [24], to expand action class
+names into detailed descriptions, which serve as queries for
+a Large Vision-Language Model (LVLM). The LVLM gen-
+erates frame-level conﬁdence scores, while CLIP is used
+to narrow the search space. FreeZAD [5] replaces gen-
+eral similarity scores from CoCa with the LogOIC score
+to enable more stable boundary evaluations, and integrates
+frequency-based signals to calibrate actionness for more re-
+liable ranking in the ﬁnal localization outputs. Overall,
+although training-free approaches currently underperform
+compared to training-based methods, they demonstrate the
+promising potential of VLMs to enable ZSTAL without re-
+quiring any additional training.
+Transformer-based TAL methods against Over-
+smoothing. Transformer architectures are popular in TAL,
+including DETR-based models, for their ability to model
+long-range temporal dependencies. However, applying
+standard transformer attention to video data causes the
+problem of over-smoothing. This occurs because standard
+attention employs dense aggregation, which, when com-
+bined with the high temporal redundancy of video features,
+results in overly homogenized representations. This lack
+of discriminability blurs temporal boundaries and hinders
+precise action localization, particularly for short actions.
+To address over-smoothing, recent DETR-based TAL
+methods introduce architectural modiﬁcations to revise or
+replace standard attention mechanisms. TranZAD [23]
+and RTD-Net [29] replace the transformer encoder with a
+multi-layer perceptron (MLP) to reduce feature mixing and
+preserve temporal distinctiveness. TadTR [20] and ZEE-
+TAD [25] utilize Deformable DETR for its deformable at-
+tention. TadTR is applied to fully-supervised TAL, while
+ZEETAD targets the zero-shot setting. ReAct [27] extends
+a similar concept by introducing a relational attention mech-
+anism that allows the model to selectively attend to relevant
+action queries and preserve their discriminability.
+Feature Pyramid. For object detection, multi-scale fea-
+ture pyramids have been widely used in literature such as
+FPN [17] and RetinaNet [18] where features from the last
+few layers provide a spatial pyramid with increasing seman-
+tic abstraction and receptive ﬁeld in the backbone networks
+such as ResNet [6]. However, videos do not have such an in-
+tuitive temporal downsampling path. Especially in ZSTAL
+or ZSTAPG, it is common to use VLMs such as CLIP to
+extract frame-wise or snippet-wise features, which are typ-
+ically pre-extracted and come from the ﬁnal encoder layer.
+These features lack intermediate representations and there-
+fore do not form a natural temporal hierarchy in the same
+way that ResNet does for images. Even if intermediate fea-
+tures are extracted from VLMs, they are not structurally
+aligned or semantically organized in a way that supports a
+temporal resolution hierarchy, making them unsuitable for
+direct use as a temporal pyramid. As a result, these limita-
+Figure 1. Model Overview. Given an input video, snippet-wise
+features are extracted using the CLIP visual encoder. These fea-
+tures are processed by a Temporal FPN (TFPN) to produce multi-
+scale temporal representations, which are then encoded and de-
+coded by the Deformable DETR architecture. The model gen-
+erates action proposals through prediction heads, while auxiliary
+salient and prediction heads are added to support stable end-to-end
+learning.
+tions highlight the need for a dedicated TFPN design.
+3. Proposed Method
+Our approach involves creating a TFP on a Deformable
+DETR-based TAPG method and adding auxiliary heads to
+stabilize the training process, as illustrated in Figure 1.
+Given an input video, we ﬁrst extract snippet-wise fea-
+tures using the visual encoder of CLIP [26] for computa-
+tional efﬁciency. These features are then processed by a
+TFPN, which generates a TFP. The TFP is subsequently en-
+coded by a Deformable Transformer encoder and decoded
+by a Deformable Transformer decoder initialized with a set
+of learnable object queries. The resulting output embed-
+dings from the decoder are passed through prediction heads
+(i.e., bounding box and actionness heads) to output the pro-
+posal segments and their corresponding actionness scores.
+To stabilize training and encourage multi-scale temporal
+reasoning throughout the pipeline, we incorporate auxiliary
+salient heads and prediction heads.
+Our contributions lie in three components: (a) TFPN (b)
+Multi-Scale Aware Salient Head (c) Auxiliary Supervision
+for Stable Training, and we explain them as follows.
+3.1. TFPN variants
+We design four TFPN variants to investigate their perfor-
+mance within Deformable DETR architecture.
+TFPN by Direct Downsampling. The simplest way is to
+downsample the video feature sequence directly, level by
+level, to form a trivial feature pyramid as illustrated in Fig-
+ure 2(A). Let X1
+be the snippet features generated from an
+input video V through a CLIP-based snippet feature extrac-
+tor Fv as
+X1
+= Fv(V ) ∈ RT 1
+×C
+, (1)
+8239
+(A) Direct downsampling (B) CNN-based TFPN (C)Transformer-based TFPN
+Figure 2. Three types of TFPN. The yellow regions in (A) indicate an action instance located within a temporal span.
+where T1
+is the number of timestamps of V and C is the
+feature dimension. We generate the l-th layer by
+Xl
+=↓n (Xl−1
+) ∈ RT l
+×C
+, (2)
+where ↓n (·) denotes nearest-neighbor downsampling with
+a ﬁxed rate 2, and Tl
+= 1
+2 Tl−1
+.
+CNN-based TFPN. Similar to the spatial FPN [17], which
+expands the receptive ﬁeld and preserves complementary
+semantics across scales, we build a TFP by applying one-
+dimensional convolutions with a stride of 2, which is for-
+mulated as
+Xl
+= LN(Conv(Xl−1
+)) ∈ RT l
+×C
+, (3)
+where Conv means convolution and LN(·) denotes Layer
+Normalization.
+Enhanced CNN-based TFPN. To enhance feature discrim-
+inability, we use the Scalable-Granularity Perception (SGP)
+layers from TriDet [28] as our TFP. The SGP module is de-
+signed to be a substitute for the self-attention module in a
+transformer layer, but still captures both global context and
+local receptive ﬁelds. Given that Deformable DETR’s core
+strength lies in preserving discriminability via deformable
+attention, we explore the synergy of integrating SGP layers
+and Deformable DETR. We generate the pyramid layer Xl
+by ﬁrst creating an intermediate layer
+X̄l
+= SGP
+
+LN(Xl−1
+)
+
++ Xl−1
+, (4)
+where + means element-wise addition and
+SGP(X) = φ(X)  FC(X)
++ Convw(X) 
+
+Convw(X) + Convkw(X)
+
++ X, (5)
+φ(X) = ReLU(FC(AvgPool(X))), (6)
+where  means element-wise multiplication, and FC and
+Convw denote the fully-connected layer and the 1-D depth-
+wise convolution layer [3] over the temporal dimension with
+window size w. Then, we compute
+
+Xl
+=↓p (FFN
+
+GN(X̄l
+)
+
++ X̄l
+, (7)
+where FFN(·) is an MLP feed-forward network, and GN(·)
+indicates Group Normalization. Finally, we generate the
+next layer
+Xl
+=↓p ( 
+Xl
+) ∈ RT l
+×C
+, (8)
+where ↓p (·) denotes max-pooling downsampling.
+Transformer-based TFPN. We modify the multi-scale
+transformer encoder proposed by ActionFormer [35] as our
+TFPN in this type. ActionFormer’s multi-scale transformer
+encoder uses local attention rather than the typical global
+attention, which only pays attention to nearby tokens in a
+local window to speed up computation, like the kernel size
+in CNN, as shown in Figure 2(C). We modify the original
+multi-scale transformer encoder to ﬁt our ZSTAPG setting.
+Since our input features X are already high-level represen-
+tations encoded by CLIP, we eliminate the depthwise con-
+volutions and normalization layers that were originally ap-
+plied at the beginning of each pyramid level. In addition,
+instead of using additional strided convolutions, we sim-
+ply apply nearest-neighbor interpolation for downsampling.
+We make these adjustments to retain the original tempo-
+ral structure and avoid introducing unnecessary transforma-
+tions that might distort the feature semantics. We calculate
+Xl
+through
+X̄l
+= αl
+LocalMHSA
+
+LN(Xl−1
+)
+
++ Xl−1
+, (9)
+
+Xl
+= ᾱl
+FFN
+
+LN(X̄l
+)
+
++ X̄l
+, (10)
+Xl
+=↓n ( 
+Xl
+) ∈ RT l
+×C
+, (11)
+where LocalMHSA means local multi-head self-attention,
+and αl
+and ᾱl
+are hyperparameters.
+3.2. Salient Head
+The salient head for ZSTAPG is proposed by GAP [4] to
+stabilize the training process. It is a small, independent net-
+work to predict the foreground probability (i.e. actionness)
+for each timestamp in a video, as illustrated in Figure 3, as
+early supervision for the ﬁnal proposal generation. It is used
+only during training, and disregarded during inference. We
+adopt the idea of using a salient head, but adjust its network
+architecture and add one more salient head. GAP’s origi-
+nal salient head is implemented as a 1D CNN on top of the
+transformer encoder’s output sequence.
+8240
+Figure 3. Illustration of the salient head. Ground-truth action seg-
+ments (reg and brown rectangles) produce a binary mask salient gt
+where foreground frames are shown as white squares while back-
+ground frames as black squares. The salient head outputs per-
+timestamp scores (salient logits), which are compared to salient gt
+to compute the salient loss for early supervision.
+Algorithm 1: Uniﬁed MLP-based Salient Head
+Input: TFP layers {Xl
+}L
+l=1 ∈ RT l
+×C
+Output: Salient logits S ∈ RT 1
+×1
+Parameters: W1, b1, W2, b2 are weights and biases
+of two linear layers
+1: {X̃l
+}L
+l=2 ← Upsample {Xl
+}L
+l=2, temporally linearly
+to T1
+2: X ← Concat({X̃l
+}L
+l=1)
+3: Xﬂat ← Flatten(X)
+4: H ← ReLU(Xﬂat · W1 + b1)
+5: S ← H · W2 + b2
+6: return S
+MLP-based Salient Head. We replace the CNN layers
+with MLPs and refer to it as the MLP-based Salient Head.
+Although MLPs are less capable of modeling local tempo-
+ral context, they better preserve sharp boundary predictions
+because each neuron operates independently across times-
+tamps. This property is particularly beneﬁcial for short ac-
+tion proposals that require high boundary precision.
+Second Salient Head. We observe that not only the output
+sequence of the transformer encoder, but also the outputs of
+the TFPN can serve as the sources of another salient head.
+Thus, we propose a simple and effective fusion method, as
+detailed in Algorithm 1, to merge multi-scale sequences to
+predict salient scores. We concatenate the multi-scale fea-
+tures along the channel dimension and feed them into the
+MLP, allowing it to learn how to integrate different scale
+representations per timestamp. This design eliminates the
+need for manual fusion if each scale generates an individual
+salient score.
+3.3. Deep supervision
+Our remaining components, including bipartite matching
+and object-detection-based bounding box loss and classi-
+ﬁcation loss, are similar to existing TAL and TAPG meth-
+ods [4, 28, 35]. Because TP2
+-DETR is a TAPG method,
+we convert all class labels into a binary actionness score
+a ∈ {0, 1}.
+Bipartite Matching Loss. Let Nq be the number of our
+learnable queries and greater than the number of ground-
+truth proposals Ngt in a video. Let p̂i = (b̂i, âi) denote a
+predicted proposal where b̂i = (t̂s
+i , t̂e
+i ) is a temporal win-
+dow and âi be an actionness score, and pj = (bj, aj), j =
+1, · · · , Ngt be the ground-truth action temporal windows
+and all aj are assigned to the value 1. Padded bj = ∅ for
+Ngt < j ≤ Nq and let π be a permutation of Nq elements,
+the optimal assignment π̂ is determined by
+π̂ = arg min
+π
+Nq
+
+i=1
+Lmatch(pi, p̂π(i)), (12)
+and
+Lmatch(pi, p̂π(i)) = {bi=∅}[αL1 · LL1(bi, b̂π(i))
++ αtIoU · LtIoU(bi, b̂π(i)) + β · Lfocal(ai, âπ(i))], (13)
+where αL1, αtIoU, and β are hyperparameters, and LL1 is the
+L1 loss, LtIoU is the temporal IoU loss [20], and Lfocal is a
+binary classiﬁcation loss implemented via focal loss [18].
+Training Objectives. Given the one-to-one assignments
+from bipartite matching, we deﬁne the overall training ob-
+jective as
+L = λbbox L1 · Lbbox L1 + λbbox tIoU · Lbbox tIoU
++ λactionness · Lactionness + λsalient · Lsalient, (14)
+where λs are hyperparameters and
+Lbbox L1 =
+Ndec
+
+l=1
+Nq
+
+i=1
+LL1(bi, b̂l
+π(i)), (15)
+Lbbox tIoU =
+Ndec
+
+l=1
+Nq
+
+i=1
+LtIoU(bi, b̂l
+π(i)), (16)
+Lactionness =
+Ndec
+
+l=1
+Nq
+
+i=1
+Lfocal(ai, âl
+π(i)), (17)
+where Ndec is the number of transformer decoder layers,
+and b̂l
+π(i) and âl
+π(i) are the temporal window and action-
+ness score predicted by the l-th layer’s intermediate output
+sequence of our transformer decoder from the i-th learnable
+query. The salient loss Lsalient is calculated from both the
+TFPN and the transformer encoder outputs as
+Lsalient =
+T 1
+
+t=1
+
+LBCE(mt, sfpn
+t ) + LBCE(mt, senc
+t )
+
+, (18)
+where LBCE means binary cross-entropy loss, mt = 1 if
+there is an action at timestamp t, otherwise 0. sfpn
+t and senc
+t
+are salience scores generated by our two salient heads.
+8241
+Inference. During inference, we simply forward the video
+features through the network to obtain the predicted propos-
+als, i.e. P̂ = {(b̂i, âi)}
+Nq
+i=1, where each proposal consists of
+a predicted temporal window and its corresponding action-
+ness score, generated by the learned bounding box head and
+actionness head.
+4. Experiments
+We evaluate our model on two publicly available bench-
+marks: THUMOS14 TAL [8] and ActivityNet1.3 [7]. The
+THUMOS14 TAL dataset contains 413 untrimmed videos
+with temporal annotations across 20 action classes. It pro-
+vides 200 validation videos and 213 test videos. The av-
+erage video duration is 212 seconds, with an average of
+15 action instances per video, and the action instance du-
+ration is 5 seconds on average. Following the protocol
+established by GAP, we use the same training/test sets to
+conduct our experiments. The ActivityNet1.3 dataset is
+much larger, consisting of 19,994 (training/validation/test:
+10,024/4,926/5,044) untrimmed videos covering 200 action
+categories. Its average video duration is 180 seconds, but
+in a long-tailed distribution. While most are short clips, a
+sparse but inﬂuential number are very long videos (5 to 10
+minutes). There are only 1.5 action instances per video,
+but the average instance duration is 50 seconds, reﬂecting a
+lower granularity in temporal action labeling.
+Zero-Shot Split Settings. We adopt the same protocol used
+by three existing methods [4, 9, 22] where the dataset is split
+into two settings: 75%/25% and 50%/50% for training/test.
+For both settings, we report the ﬁnal performance as the
+average over ten different splits.
+Evaluation Metrics. We use mean Average Precision
+(mAP) under multiple temporal Intersection over Union
+(tIoU) thresholds as the main evaluation metric, a stan-
+dard criterion for measuring proposal quality for tempo-
+ral action localization. In the general setting, AP is usu-
+ally computed for each class independently, and the ﬁnal
+mAP is averaged over all classes and thresholds. How-
+ever, our model follows a two-stage design for ZSTAL,
+where the ﬁnal classiﬁcation is handled by vision-language
+models (VLMs). As a result, we intentionally design the
+proposal generation stage to be class-agnostic, where the
+model only predicts whether a segment is likely to con-
+tain any action (i.e., foreground), regardless of its seman-
+tic category. This design simpliﬁes the proposal evaluation
+while remaining consistent with standard mAP computation
+practices, the details are shown in the supplementary ma-
+terial. We report mAP@[0.3:0.1:0.7] for THUMOS14 and
+mAP@[0.5:0.05:0.95] for ActivityNet1.3 for a pair compar-
+ison with existing methods [16].
+Implementation Details. We adopt the visual encoder from
+pre-trained CLIP [26] (ViT-B/16) to extract video features
+with per-timestamp feature dimension C = 512 in the same
+manner as existing methods [4, 9, 22]. We use a snippet
+(aggregating 8 consecutive frames) as the timestamp unit
+for efﬁcient computation. Our TFPN settings are shown
+in Table 2. Both the proposal generation heads (i.e., the
+bounding box head and the actionness head) are imple-
+mented using fully connected (FC) layers.
+We use the AdamW [21] optimizer with a learning rate
+of 2 × 10−5
+for the TFPN and 1 × 10−4
+for the Deformable
+DETR. A multiplier of 0.1 is applied to the linear projection
+layers responsible for predicting reference points and sam-
+pling offsets. The weight decay is set to 1 × 10−4
+. We train
+35 epochs with a batch size 16 and a StepLR scheduler with
+a decay step at epoch 30.
+Key hyperparameters for bipartite matching (Eq. 13) are
+αL1 = 5, αtIoU = 2, and β = 2, and for training objectives
+(Eq. 14) are λbbox L1 = 5, λbbox tIoU = 2, and λactionness = 2.
+Our method is implemented in PyTorch, and all experiments
+are conducted on a NVIDIA RTX 4080 GPU. Our model
+size is 43.35M, smaller than GAP’s 53.34M, (Report Infer-
+ence Speed here).
+Results. Tables 1 shows the performance comparison
+among SOTA methods. To fairly compare them, we re-
+move the semantic classiﬁcation branch in GAP (denoted
+as GAP‡
+) to align with our model which does not rely on
+class-speciﬁc supervision. We reimplement TadTR by dis-
+abling its classiﬁcation head and removing the computation
+and training involving the classiﬁcation loss, and replace
+class logits with actionness scores for conﬁdence predic-
+tion, which is consistent with the setup in TP2
+-DETR.
+In this case, TP2
+-DETR consistently outperforms GAP‡
+across all split settings, highlighting its robust generaliza-
+tion in the zero-shot scenario. All results are based solely on
+RGB-frame features extracted from CLIP (ViT-B/16), with-
+out incorporating additional modalities such as optical ﬂow.
+Under this constraint, ZEETAD§
+refers to a re-evaluated
+variant reproduced within the GAP framework.
+Design of Salient Head. As described in the previous sec-
+tion, we adopt a uniﬁed MLP-based salient head applied to
+the encoder output, instead of using the multi-scale-aware
+CNN-based extension from GAP [4], which was originally
+designed for single-scale features. To assess the effective-
+ness of our design, we conduct experiments as shown in
+Table 3. Compared to applying the salient head only on the
+encoder output, the joint conﬁguration yields consistently
+better performance, further validating the beneﬁts of our
+proposed early supervision strategy.
+Ablation Study. We show the performance of our compo-
+nents in Table 4. Our model introduces three core compo-
+nents: (1) a TFPN, (2) a multi-scale-aware salient head, and
+(3) auxiliary supervision for training stability. The auxiliary
+supervision includes both deep supervision via additional
+decoder-layer prediction heads and early supervision via a
+shared salient head applied to earlier stages. Because the
+8242
+Table 1. Comparison with SOTA ZSTAPG methods. AVG refers to the average mAP (%) computed across different IoU thresholds:
+[0.3:0.1:0.7] for THUMOS14 and [0.5:0.05:0.95] for ActivityNet1.3. We could not reproduce the GAP results using the released code and
+received no author response. Thus, their reported mAP scores are listed but omitted from the comparison.
+Split Method
+mAP@tIoU for THUMOS14 mAP@tIoU for ANet1.3
+0.3 0.4 0.5 0.6 0.7 AVG 0.5 0.75 0.95 AVG
+75%/
+25%
+TadTR [20]‡
+30.49 26.61 21.98 16.53 11.08 21.34 37.59 23.34 2.97 23.06
+EffPrompt [9] 39.70 31.60 23.00 14.90 7.50 23.30 37.60 22.90 3.80 23.10
+STALE [22] 40.50 32.30 23.50 15.30 7.60 23.80 38.20 25.20 6.00 24.90
+ZEETAD [25]§
+47.30 – 29.70 – 11.50 29.70 45.50 28.20 6.30 28.40
+GAP [4] reported 52.30 44.20 32.80 22.40 12.40 32.90 47.60 32.50 8.60 31.80
+GAP [4] reproduced 43.63 34.48 24.75 14.90 7.50 24.86 44.14 29.93 6.65 29.00
+GAP [4]‡
+adjusted 52.50 42.69 30.78 18.71 9.00 30.72 46.91 29.08 4.65 28.81
+ActionFormer [35] 58.09 49.92 38.79 27.14 15.57 37.90 48.57 31.33 6.67 31.13
+TP2
+-DETR Direct Downsampling 55.69 47.05 35.34 24.21 13.37 35.13 47.30 30.22 6.59 30.09
+TP2
+-DETR CNN-based (basic) 53.46 44.65 34.88 22.86 12.09 33.59 47.81 30.38 6.58 30.37
+TP2
+-DETR CNN-based (enhanced) 51.95 43.05 31.48 21.21 12.14 31.96 48.62 31.32 7.15 31.17
+TP2
+-DETR Transformer-based 58.16 49.56 38.27 26.20 15.52 37.54 48.59 32.97 7.06 32.41
+50%/
+50%
+TadTR [20]‡
+28.82 24.22 18.91 13.41 8.41 18.76 35.59 21.45 2.30 21.37
+EffPrompt [9] 37.20 29.60 21.60 14.00 7.20 21.90 32.00 19.30 2.90 19.60
+STALE [22] 38.30 30.70 21.20 13.80 7.00 22.20 32.10 20.70 5.90 20.50
+GAP [4] reported 44.20 36.00 27.10 15.10 8.00 26.10 41.60 26.20 6.10 26.40
+GAP [4] reproduced 37.38 29.39 20.86 12.89 6.03 21.36 40.44 27.32 5.33 26.52
+GAP [4]‡
+adjusted 50.00 40.06 28.64 17.08 8.04 29.11 45.67 28.53 3.97 28.18
+ActionFormer [35] 55.92 47.00 36.22 24.11 13.20 35.29 47.40 30.03 6.03 29.94
+TP2
+-DETR Direct Downsampling 53.86 44.79 33.98 22.38 11.87 33.37 45.78 28.67 5.58 28.67
+TP2
+-DETR CNN-based (basic) 51.17 42.22 31.37 19.66 9.73 30.83 46.29 29.22 5.64 29.12
+TP2
+-DETR CNN-based (enhanced) 51.71 42.40 31.09 20.31 11.07 31.32 48.18 30.68 6.37 30.46
+TP2
+-DETR Transformer-based 56.05 47.46 36.52 24.69 13.34 35.61 47.18 30.25 6.28 30.08
+‡ w/o class logits § w/o optical ﬂow fully-supervised method
+Table 2. Experimental settings. THU14 means THUMOS14, and
+ANet1.3 means ActivityNet1.3.
+Item THU14 ANet1.3
+#pyramid layers 4 4
+window size of Local MHSA 9 17
+#Deformable DETR enc/dec layers 3/5 2/3
+#reference points for enc/dec 4/4 4/6
+#queries Nq 40 30
+λsalient 3 2
+salient head is functionally involved across two proposed
+components, we cannot isolate it from our model. From the
+experimental results, it is clear that every component con-
+sistently contributes to improve the performance.
+Qualitative Comparison. We visualize the predicted re-
+sults of a test video in Figure 4 and additional ones in the
+supplementary material. Speciﬁcally, we select the top-k
+class-agnostic proposals in two ways for visualization: (1)
+by highest actionness scores, following the GAP approach;
+and (2) by lowest bipartite matching cost, consistent with
+the matching process in the training stage. Here, k is set to
+the number of ground-truth action instances (Ngt) in each
+video. The visualizations show that TP2
+-DETR produces
+more accurate and comprehensive coverage of ground-truth
+segments compared to both GAP and the baseline.
+5. Conclusion
+We propose TP2
+-DETR, a model tailored to Deformable
+DETR for ZSTAPG. Experimental results demonstrate its
+effectiveness.
+Limitations. Although TP2
+-DETR performs well on THU-
+MOS14, its improvement on ActivityNet1.3 is less consis-
+tent. This suggests that the model may not generalize as
+effectively to longer or more complex temporal patterns.
+A contributing factor could be the preprocessing design in
+ActivityNet1.3, where each video is uniformly resized to a
+ﬁxed number of timestamps, regardless of its original du-
+ration. For long videos, this may lead to substantial tem-
+poral information loss, especially when actions span ex-
+tended periods. In contrast to approaches that apply slid-
+ing window inference to preserve ﬁner temporal granularity,
+our model processes the entire video as a single sequence,
+which may limit its capacity to model long-range struc-
+tures. Future work could explore adaptive resizing schemes
+or window-based inference strategies to mitigate this is-
+sue. Furthermore, enhancing the modeling of long-range
+8243
+Table 3. Analysis of the design of the salient head. We compare various feature fusion types for the per-scale CNN-based design and our
+uniﬁed MLP-based variants. Salient scores at low temporal resolution layers are linearly upsampled to the largest resolution for fusion.
+Design of salient heads
+mAP@tIoU for THUMOS14, 50%/50% split
+0.3 0.4 0.5 0.6 0.7 AVG
+2nd head on TFPN, CNN-based per scale, max fusion 55.74 47.49 36.86 25.05 14.43 35.91
+2nd head on TFPN, CNN-based per scale, mean fusion 56.47 47.68 36.64 24.51 13.26 35.71
+2nd head on TFPN, CNN-based per scale, adaptive fusion 55.89 47.24 36.22 24.47 13.87 35.57
+Single head on encoder, Uniﬁed MLP-based 55.02 47.06 36.59 25.17 14.72 35.71
+2nd head on TFPN, both Uniﬁed MLP-based 55.95 47.82 37.34 25.89 14.84 36.37
+Table 4. Ablation study on the effectiveness of each proposed component.
+Method
+mAP@tIoU for THUMOS14, 50%/50% split
+0.3 0.4 0.5 0.6 0.7 AVG
+Baseline (Deformable DETR) 51.37 42.55 31.12 19.09 8.78 30.58
++ Transformer-based TFPN 53.90 44.69 33.82 22.45 11.03 33.18
++ Deep Supervision (bounding box and actionness heads) 55.96 47.18 36.37 24.84 13.80 35.63
++ Early Supervision (MLP-based salient head) 55.95 47.82 37.34 25.89 14.84 36.37
+Figure 4. Qualitative comparison of the 50%/50% split. The THUMOS14 video 0000464 (class PoleVault) contains 38 action instances
+(k = 38). We select the top-k class-agnostic proposals in two ways: (1) by actionness scores (following the GAP approach) and (2) by
+bipartite matching using the same cost as in training. Our method better predicts the temporal bounding box than GAP and Deformable
+DETR (Baseline).
+dependencies—such as through adaptive temporal scaling
+or more granular control over the local window sizes in
+self-attention—may improve the model’s robustness across
+diverse action durations. Our current framework does not
+speciﬁcally analyze the impact of window size in the local
+multi-head self-attention used in the TFPN, which may in-
+ﬂuence its responsiveness to actions of varying lengths.
+Future Work. Our model represents each timestamp as a
+single token, but in some efﬁcient transformer designs such
+as EdgeViT [2], a token can cover larger and more context-
+aware temporal regions. This may help reduce temporal re-
+dundancy, enhance local context modeling, and improve ef-
+ﬁciency, especially for long videos.
+In addition, TP2
+-DETR has not used any class-aware
+information, and the current design follows a two-stage
+paradigm, where proposal generation and classiﬁcation are
+decoupled. Reformulating it as a one-stage method should
+be a promising direction to reduce the risk of error propa-
+gation between stages, as reported by STALE [22], and po-
+tentially improve both the efﬁciency and robustness of the
+overall system.
+Furthermore, although our salient head is trained inde-
+pendently as an auxiliary component to facilitate early su-
+pervision, we observe that its predictions (i.e., salient logits)
+often overlap with those of the primary head (i.e., bounding
+box head). This implicit consistency suggests potential for
+cross-head information sharing, motivating a future study to
+explore mechanisms for shared or guided learning between
+these two components to further enhance proposal accuracy.
+Acknowledgments
+This work was supported by the National Science and Tech-
+nology Council (NSTC) of Taiwan under Grant No. NSTC
+115-2634-F-002-001.
+8244
+References
+[1] Josiah Aklilu, Xiaohan Wang, and Serena Yeung-Levy.
+Zero-shot Action Localization via the Conﬁdence of Large
+Vision-Language Models. arXiv:2410.14340, 2024. 2
+[2] Zekai Chen, Fangtian Zhong, Qi Luo, Xiao Zhang,
+and Yanwei Zheng. EdgeViT: Efﬁcient visual model-
+ing for edge computing. In Proceedings of the 17th
+International Conference on Wireless Algorithms, Systems,
+and Applications (WASA), pages 393–405, 2022. 8
+[3] François Chollet. Xception: Deep learning with depthwise
+separable convolutions. In CVPR, pages 1800–1807, 2017.
+4
+[4] Jia-Run Du, Kun-Yu Lin, Jingke Meng, and Wei-Shi Zheng.
+Towards Completeness: A Generalizable Action Proposal
+Generator for Zero-Shot Temporal Action Localization. In
+ICPR, pages 252–267, 2024. 2, 4, 5, 6, 7
+[5] Chaolei Han, Hongsong Wang, Jidong Kuang, Lei Zhang,
+and Jie Gui. Training-free zero-shot temporal action detec-
+tion with vision-language models. arXiv:2501.13795, 2025.
+3
+[6] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+Deep Residual Learning for Image Recognition. In CVPR,
+pages 770–778, 2016. 2, 3
+[7] Fabian Caba Heilbron, Victor Escorcia, Bernard Ghanem,
+and Juan Carlos Niebles. ActivityNet: A large-scale video
+benchmark for human activity understanding. In CVPR,
+pages 961–970, 2015. 2, 6
+[8] Y.-G. Jiang, J. Liu, A. Roshan Zamir, G. Toderici, I. Laptev,
+M. Shah, and R. Sukthankar. THUMOS challenge: Ac-
+tion recognition with a large number of classes. http:
+//crcv.ucf.edu/THUMOS14/, 2014. 2, 6
+[9] Chen Ju, Tengda Han, Kunhao Zheng, Ya Zhang, and Weidi
+Xie. Prompting Visual-Language Models for Efﬁcient Video
+Understanding. In ECCV, pages 105–124, 2022. 2, 6, 7
+[10] Chen Ju, Zeqian Li, Peisen Zhao, Ya Zhang, Xiaopeng
+Zhang, Qi Tian, Yanfeng Wang, and Weidi Xie. Multi-
+modal prompting for low-shot temporal action localization.
+arXiv:2303.11732, 2023. 2
+[11] Ho-Joong Kim, Jung-Ho Hong, Heejo Kong, and Seong-
+Whan Lee. TE-TAD: Towards Full End-to-End Temporal
+Action Detection via Time-Aligned Coordinate Expression.
+In CVPR, pages 18837–18846, 2024. 2
+[12] Jihwan Kim, Miso Lee, and Jae-Pil Heo. Self-feedback detr
+for temporal action detection. In ICCV, pages 10252–10262,
+2023. 2
+[13] Jihwan Kim, Miso Lee, Cheol-Ho Cho, Jihyun Lee, and Jae-
+Pil Heo. Prediction-Feedback DETR for Temporal Action
+Detection. In AAAI, pages 4266–4274, 2025. 2
+[14] Benedetta Liberatori, Alessandro Conti, Paolo Rota, Yiming
+Wang, and Elisa Ricci. Test-time zero-shot temporal action
+localization. In CVPR, pages 18720–18729, 2024. 2
+[15] Chuming Lin, Chengming Xu, Donghao Luo, Yabiao Wang,
+Ying Tai, Chengjie Wang, Jilin Li, Feiyue Huang, and Yan-
+wei Fu. Learning Salient Boundary Feature for Anchor-free
+Temporal Action Localization. In CVPR, pages 3319–3328,
+2021. 2
+[16] Tianwei Lin, Xiao Liu, Xin Li, Errui Ding, and Shilei Wen.
+BMN: Boundary-Matching Network for Temporal Action
+Proposal Generation. In ICCV, pages 3888–3897, 2019. 2,
+6
+[17] Tsung-Yi Lin, Piotr Dollár, Ross Girshick, Kaiming He,
+Bharath Hariharan, and Serge Belongie. Feature pyramid
+networks for object detection. In CVPR, pages 936–944,
+2017. 3, 4
+[18] Tsung-Yi Lin, Priyal Goyal, Ross Girshick, Kaiming He, and
+Piotr Dollár. Focal loss for dense object detection. In ICCV,
+pages 2980–2988, 2017. 3, 5
+[19] Shuming Liu, Chen-Lin Zhang, Chen Zhao, and Bernard
+Ghanem. End-to-End Temporal Action Detection with 1B
+Parameters Across 1000 Frames. In CVPR, pages 18591–
+18601, 2024. 1
+[20] Xiaolong Liu, Qimeng Wang, Yao Hu, Xu Tang, Shiwei
+Zhang, Song Bai, and Xiang Bai. End-to-End Temporal Ac-
+tion Detection With Transformer. IEEE TIP, 31:5427–5441,
+2022. 1, 2, 3, 5, 7
+[21] Ilya Loshchilov and Frank Hutter. Decoupled Weight Decay
+Regularization. In ICLR, 2019. 6
+[22] Sauradip Nag, Xiatian Zhu, Yi-Zhe Song, and Tao Xiang.
+Zero-Shot Temporal Action Detection via Vision-Language
+Prompting. In ECCV, pages 681–697, 2022. 2, 6, 7, 8
+[23] Sayak Nag, Orpaz Goldstein, and Amit K. Roy-Chowdhury.
+Semantics Guided Contrastive Learning of Transformers for
+Zero-shot Temporal Activity Detection. In WACV, pages
+6232–6242, 2023. 3
+[24] OpenAI. GPT-4 Technical Report. arXiv:2303.08774, 2024.
+3
+[25] Thinh Phan, Khoa Vo, Duy Le, Gianfranco Doretto, Don-
+ald A. Adjeroh, and Ngan Le. ZEETAD: Adapting Pretrained
+Vision-Language Model for Zero-Shot End-to-End Tempo-
+ral Action Detection. arXiv:2311.00729, 2023. 1, 2, 3, 7
+[26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sas-
+try, Amanda Askell, Pamela Mishkin, Jack Clark,
+Gretchen Krueger, and Ilya Sutskever. Learning Transfer-
+able Visual Models From Natural Language Supervision.
+arXiv:2103.00020, 2021. 2, 3, 6
+[27] Dingfeng Shi, Yujie Zhong, Qiong Cao, Jing Zhang, Lin Ma,
+Jia Li, and Dacheng Tao. ReAct: Temporal Action Detection
+with Relational Queries. In ECCV, pages 324–344, 2022. 2,
+3
+[28] Dingfeng Shi, Yujie Zhong, Qiong Cao, Lin Ma, Jia Li, and
+Dacheng Tao. TriDet: Temporal Action Detection with Rel-
+ative Boundary Modeling. In CVPR, pages 18857–18866,
+2023. 2, 4, 5
+[29] Jing Tan, Jiaqi Tang, Limin Wang, and Gangshan Wu. Re-
+laxed Transformer Decoders for Direct Action Proposal Gen-
+eration. In ICCV, pages 13506–13515, 2021. 2, 3
+[30] Jing Tan, Xiaotong Zhao, Xintian Shi, Bin Kang, and Limin
+Wang. PointTAD: Multi-Label Temporal Action Detection
+with Learnable Query Points. In NeurIPS, page 1111, 2022.
+2
+[31] Mengmeng Xu, Chen Zhao, David S. Rojas, Ali Thabet,
+and Bernard Ghanem. G-TAD: Sub-Graph Localization for
+8245
+Temporal Action Detection. In CVPR, pages 10153–10162,
+2020. 2
+[32] Shen Yan, Xuehan Xiong, Arsha Nagrani, Anurag Arnab,
+Zhonghao Wang, Weina Ge, David Ross, and Cordelia
+Schmid. UnLoc: A Uniﬁed Framework for Video Local-
+ization Tasks. In ICCV, pages 13577–13587, 2023. 2
+[33] Le Yang, Houwen Peng, Dingwen Zhang, Jianlong Fu, and
+Junwei Han. Revisiting anchor mechanisms for temporal ac-
+tion localization. IEEE TIP, 29:8535–8548, 2020. 2
+[34] Jiahui Yu, Zirui Wang, Vijay Vasudevan, Legg Yeung, Mo-
+jtaba Seyedhosseini, and Yonghui Wu. CoCa: Contrastive
+Captioners are Image-Text Foundation Models. Transactions
+on Machine Learning Research (TMLR), 2022. 2
+[35] Chenlin Zhang, Jianxin Wu, and Yin Li. ActionFormer: Lo-
+calizing Moments of Actions with Transformers. In ECCV,
+pages 492–510, 2022. 1, 2, 4, 5, 7
+[36] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang,
+and Jifeng Dai. Deformable DETR: Deformable Transform-
+ers for End-to-End Object Detection. In ICLR, 2021. 1
+[37] Yuhan Zhu, Guozhen Zhang, Jing Tan, Gangshan Wu, and
+Limin Wang. Dual DETRs for Multi-Label Temporal Action
+Detection. In CVPR, pages 18559–18569, 2024. 2
+8246
+

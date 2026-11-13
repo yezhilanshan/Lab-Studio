@@ -1,0 +1,1145 @@
+Contents lists available at ScienceDirect
+Measurement
+journal homepage: www.elsevier.com/locate/measurement
+Micro-motion enhanced multi-person activity recognition with
+millimeter-wave radar
+Haoming Feng , Huaqing Li ∗
+, Wenwen Zhu , Denghao Li , Yukun Huang
+College of Electronic and Information Engineering, Southwest University, Chongqing, 400715, China
+A R T I C L E I N F O
+Keywords:
+Human activity recognition (HAR)
+Multi-person activity recognition (MPAR)
+Feature separability
+Temporal attention
+Occlusion scenarios
+A B S T R A C T
+As a non-contact sensing device, millimeter-wave radar exhibits unique strengths in human activity recognition
+(HAR). Existing methods rely on micro-Doppler signatures for activity classification, but they often encounter
+feature aliasing in multi-person activity recognition (MPAR) scenarios. Although point cloud-based approaches
+can distinguish individual targets, they primarily extract static morphological features, neglecting the micro-
+motion information of human joints, which is crucial for accurate activity recognition. To address these
+limitations, we proposes an innovative MPAR framework that integrates spatial point clouds and micro-motion
+features. First, an improved point cloud data association algorithm is applied to achieve multi-target point
+cloud feature separation, followed by a dynamic projection mechanism to construct time–Doppler feature
+maps. Then, a torso micro-motion enhancement algorithm is designed to enhance the details of human
+body movements. Finally, a CNN-LSTM hybrid network architecture with a temporal-attention is constructed
+for action classification. Experimental results show that the proposed micro-motion enhancement algorithm
+improves recognition accuracy by 27.1% and 2.3%, compared to two traditional time–frequency analysis
+methods. Furthermore, MPAR task in occlusion scenarios achieves recognition accuracy of 93.5%. In summary,
+proposed framework not only retains the inherent advantages of millimeter-wave radar but also significantly
+enhances multi-person activity recognition in complex scenarios.
+1. Introduction
+In recent years, human activity recognition (HAR) has become
+crucial in applications like smart homes, elderly care, security, and
+emergency rescue [1–4]. HAR methods typically rely on wearable
+sensors or non-contact devices [5–8]. Wearable sensors face challenges
+like user compliance, loss, and false alarms. In contrast, non-contact
+devices represented by millimeter-wave radar have gained attention
+for its all-weather capability and non-visual nature, making it suitable
+for low-light or extreme conditions [9]. Millimeter-wave radar also
+reduces privacy concerns, making it ideal for sensitive environments,
+such as bedrooms and bathrooms, where elderly individuals are at
+higher risk [10–12].
+Currently, HAR methods based on millimeter-wave radar can be
+broadly categorized into two main types. One category consists of
+feature map-based algorithms, which achieve recognition by captur-
+ing micro-Doppler signatures associated with human motion. These
+features stem from the relative movement between limbs and the
+torso and can be obtained using different radar waveforms. Distinct
+human actions, such as walking, crawling, and boxing, produce unique
+micro-Doppler signals, enabling the differentiation of human motion
+∗ Corresponding author.
+E-mail address: huaqingli@swu.edu.cn (H. Li).
+characteristics from those of other objects [13,14]. Another category,
+point cloud-based HAR, gains significant attention, particularly using
+multi-Input, multi-Output (MIMO) radar systems. These systems com-
+bine velocity, distance, and angle information to generate radar point
+clouds, enabling the extraction of individual targets through clustering.
+This makes point cloud-based methods highly effective for multi-person
+activity recognition (MPAR). Typically, these methods convert point
+cloud data into an 𝑋𝑌 𝑍 matrix, which is then used as input for
+classification models.
+A comprehensive review of radar target recognition based on micro-
+Doppler features summarizes relevant research [15]. In 2009, a pio-
+neering work introduces feature extraction from micro-Doppler spec-
+trograms and uses them as inputs for a support vector machine (SVM)
+to classify seven different activities [16]. Since then, feature-map-
+based radar HAR methods become widely applied. One study employs
+a long short-term memory (LSTM) network architecture to classify
+six different human activities, achieving an average recognition ac-
+curacy of 90% [17]. Subsequently, network architectures combining
+convolutional neural networks (CNN) with LSTM also began to be ap-
+plied [18–20]. With the continued advancement of technology, various
+https://doi.org/10.1016/j.measurement.2025.119090
+Received 18 March 2025; Received in revised form 8 August 2025; Accepted 21 September 2025
+Measurement 258 (2026) 119090
+Available online 3 October 2025
+0263-2241/© 2025 Elsevier Ltd. All rights are reserved, including those for text and data mining, AI training, and similar technologies.
+H. Feng et al.
+combinations of feature maps get explored. In [21], by integrating
+time-Doppler maps, time-distance maps, and distance-Doppler maps,
+an accuracy of 93% in recognizing six types of human activities gets
+achieved. Later, features such as time-angle maps and distance-angle
+maps get introduced, further enhancing the recognition accuracy of
+HAR [22–24]. However, feature-map-based algorithms for HAR typi-
+cally use single-input single-output (SISO) radar data, which generally
+lacks spatial attributes. As a result, these methods are mainly suited for
+single-person activity recognition, as the features of different activities
+tend to overlap in multi-person scenarios. This limitation restricts the
+application of such algorithms in MPAR.
+Additionally, in [25], point clouds are voxelized into uniform grids
+and processed with a CNN-LSTM network, achieving 90.47% recogni-
+tion accuracy for five action types. Furthermore, [26] optimizes the
+classification model, improving real-time recognition accuracy. Kim
+et al. [27] employ high-resolution radar-generated human activity
+point clouds, feeding them into a DCNN network, and achieve a 97% ac-
+curacy for seven actions. In MPAR domain, [28] focuses on recognizing
+behaviors of multiple patients by extracting velocity information from
+point clouds and converting it into time-Doppler maps, achieving high
+accuracy. Further extending this approach, [29] incorporates additional
+features—such as distance, horizontal angle, and pitch angle—into
+time-Doppler, time-distance, time-horizontal angle, and time-pitch an-
+gle maps. These feature maps are then input into a classification
+network, achieving a multi-target recognition accuracy of 93.97%.
+Finally, [30] tackles the challenge of separating point clouds from mul-
+tiple targets and reduces them from 3D to 2D, achieving an accuracy
+of 92.2% for classifying five types of actions. Although current MPAR
+methods achieve significant progress in recognition accuracy, they
+remain highly dependent on environmental robustness. While effective
+in recognizing multi-person activities, these methods [28–30] do not
+adequately account for potential issues such as occlusion and crossover
+of moving targets. When such disturbances occur, the recognition
+accuracy often decreases significantly. Furthermore, [28,29] only map
+the feature information of the point cloud and generate feature maps,
+leading to the insufficient capture of micro-motion features, which
+further impacts the accuracy of recognition.
+In summary, although prior MPAR methods have achieved promis-
+ing recognition accuracy, they still face two major limitations: fea-
+ture aliasing caused by overlapping targets in multi-person scenarios,
+and the insufficient capture of fine-grained micro-motion information
+from point clouds. To address these challenges, this paper proposes a
+novel MPAR framework that combines point cloud separation, dynamic
+micro-Doppler mapping, and temporal-attention-based classification.
+The main contributions of this paper are summarized as follows:
+• A spatiotemporal adaptive RDM binding (STAR-Bind) is proposed
+to effectively separate multi-person motion features in complex
+scenarios and significantly preserve the micro-movement charac-
+teristics of each target.
+• A torso micro-motion recognition enhancement algorithm (TM-
+REA) is designed to improve the visibility of different types of
+HAR feature maps.
+• A network CNN_LSTM with temporal-attention (TA-CL) is specif-
+ically constructed for millimeter-wave radar-based HAR, thereby
+enhancing the recognition accuracy.
+• This paper employs a frequency-modulated continuous wave
+(FMCW) millimeter-wave radar to collect motion datasets from
+different individuals across various scenarios, demonstrating the
+algorithm’s robustness in multi-person action recognition within
+complex environments.
+The remainder of the paper is organized as follows. Section 2 in-
+troduces the signal processing principles of FMCW radar. The proposed
+MPAR algorithm is presented in Section 3. Section 4 presents the radar
+dataset, experimental setup, results, and discussion. Finally, Section 5
+concludes the paper.
+Fig. 1. Range-Doppler processing scheme for FMCW radar.
+2. Background and signal modeling
+2.1. FMCW radar signal processing
+FMCW radar has emerged as a predominant sensing modality for
+HAR due to its superior range resolution and Doppler sensitivity [31].
+The transmitted signal with linear frequency modulation can be ex-
+pressed as:
+𝑆T(𝑡) = 𝐴𝑡𝑒
+𝑗2𝜋
+(
+𝑓0𝑡+ 𝐵
+2𝑇
+𝑡2
+)
+, 0 ≤ 𝑡 < 𝑇𝑐 (1)
+where 𝐴𝑡 denotes the transmission amplitude, 𝑓0 is the carrier fre-
+quency, 𝐵 denotes the sweep bandwidth, and 𝑇 is the chirp duration.
+For a target at distance 𝑟 with radial velocity 𝑣, the received signal
+experiences a time delay 𝜏 = 2(𝑟+𝑣𝑡)
+𝑐
+, where 𝑐 is the speed of light.
+The down-converted intermediate frequency (IF) signal after homodyne
+mixing becomes:
+𝑆IF(𝑡) = 𝐴𝑟𝑒
+𝑗2𝜋
+(
+2𝐵𝑟
+𝑐𝑇
+𝑡+
+2𝑓0𝑣
+𝑐
+𝑡+𝜂(𝑡)
+)
+(2)
+where 𝐴𝑟 represents the received signal amplitude and 𝜂(𝑡) additive
+white Gaussian noise.
+As shown in Fig. 1, range-Doppler map (RDM) is obtained through
+2D fast Fourier transform (FFT):
+𝑋(𝑘, 𝑙) =
+𝑁−1
+∑
+𝑛=0
+𝑀−1
+∑
+𝑚=0
+𝑆IF(𝑛, 𝑚)𝑒
+−𝑗2𝜋
+(
+𝑛𝑘
+𝑁
++ 𝑚𝑙
+𝑀
+)
+(3)
+where 𝑁 and 𝑀 denotes the number of samples per chirp and chirps
+per frame, respectively. The peak indices (𝑘peak, 𝑙peak) in RDM yield:
+𝑟 =
+𝑐𝑘peak
+2𝐵
+(4)
+𝑣 =
+𝜆𝑙peak
+2𝑇 𝑀
+(5)
+with 𝜆 = 𝑐∕𝑓0 being the wavelength.
+2.1.1. Point clouds generation
+After obtaining RDM, constant false alarm rate (CFAR) detection
+is performed to obtain the target’s speed and range information. In
+our work, data collection is performed using Texas Instruments (TI)
+IWR6843ISK-ODS radar, which consists of four receiving antennas and
+three transmitting antennas. Its virtual antenna layout can be used to
+measure angles, as shown in Fig. 2. Then, an angle estimation algorithm
+is applied to the target data from different virtual antennas to obtain
+angle information. MUSIC [32] super-resolution angle estimation algo-
+rithm is applied to overcome the Rayleigh limit of traditional FFT-based
+methods.
+Measurement 258 (2026) 119090
+2
+H. Feng et al.
+Fig. 2. IWR6843ISK-ODS antenna placement MIMO array.
+After obtaining range and angle information, the coordinates of each
+target point can be calculated in the Cartesian coordinate system.
+2.1.2. Clustering
+Density-based spatial clustering of applications with noise (DB-
+SCAN) algorithm has become a cornerstone in radar point cloud pro-
+cessing, particularly for its dual capability in cluster identification and
+noise suppression [33]. Unlike centroid-based approaches that rely on
+prior knowledge of cluster quantities, DBSCAN autonomously distin-
+guishes targets from background noise through density connectivity
+analysis, which is a key advantage in millimeter-wave radar applica-
+tions where multipath reflections cause spatially heterogeneous noise
+distributions.
+However, the algorithm’s performance is highly sensitive to the
+selection of two critical parameters: the neighborhood radius (𝜖) and
+minimum cluster size (MinPts). To address this, we propose an adaptive
+parameter optimization framework. In the first phase, the statistical
+𝜖 estimation method determines 𝜖 as the 90th percentile of k-nearest
+neighbor (k-NN) distances across the point cloud, ensuring an optimal
+balance between target coverage and noise rejection. In the second
+phase, the dynamic scaling of MinPts adapts the minimum cluster size to
+5% of the total point count, allowing the algorithm to remain sensitive
+to the complexity of the scene.
+3. Methodology
+The proposed MPAR framework clusters the point cloud to separate
+different targets and uses Kalman filter (KF) in combination with
+the joint probability data association (JPDA) algorithm [34] for data
+association. It predicts the state of each target at the next time step
+and associates the information accordingly. Then each target’s feature
+information is mapped to the original RDM in each frame, features
+from other targets are removed to obtain a clean RDM for each target.
+Furthermore, these RDMs are projected onto the Doppler dimension to
+create time-Doppler maps, which are processed using the TMREA torso
+micro-motion enhancement algorithm proposed in this work, yielding
+more effective micro-Doppler maps. Finally, these enhanced micro-
+Doppler maps are fed into TA-CL network for activity classification, as
+illustrated in Fig. 3.
+3.1. Spatiotemporal adaptive RDM binding
+The principal challenge in synthesizing temporal-Doppler sequences
+stems from the dynamic association of target tracking states subse-
+quent to JPDA-processed RDM data. To address this issue, a spa-
+tiotemporal adaptive RDM binding (STAR-Bind) method is presented.
+It enables discriminative target characterization through KF-driven re-
+verse localization within the RDM coordinate system, augmented by
+multidimensional constraint mechanisms. The proposed methodology,
+STAR-Bind, is architected around three principal components: multi-
+target tracking framework, RDM coordinate mapping, and multi-target
+RDM separation.
+3.1.1. Multi-target tracking framework
+Let  = {𝑇1, 𝑇2, … , 𝑇𝐾 } denote the initial target set obtained
+through DBSCAN clustering, where each target 𝑇𝑘 is characterized by
+the state vector:
+𝐱𝑘(𝑡) =
+[
+𝑟𝑘(𝑡), ̇
+𝑟𝑘(𝑡), 𝜃𝑘(𝑡)
+]𝑇
+(6)
+where 𝑟𝑘(𝑡) represents the radial distance, ̇
+𝑟𝑘(𝑡) is the radial velocity,
+and 𝜃𝑘(𝑡) is the azimuth angle estimated via the MUSIC algorithm.
+The target motion is modeled using linear kinematics:
+𝐱𝑘(𝑡|𝑡 − 1) = 𝐅𝐱𝑘(𝑡 − 1) + 𝐰(𝑡) (7)
+where 𝐅 is the state transition matrix, and 𝐰(𝑡) represents the process
+noise with covariance 𝐐. The state transition matrix 𝐅 and the process
+noise covariance 𝐐 are defined as:
+𝐅 =
+⎡
+⎢
+⎢
+⎣
+1 𝛥𝑡 0
+0 1 0
+0 0 1
+⎤
+⎥
+⎥
+⎦
+, 𝐐 = diag(𝜎2
+𝑟 , 𝜎2
+𝑣, 𝜎2
+𝜃 ) (8)
+where 𝜎2
+𝑟 , 𝜎2
+𝑣, and 𝜎2
+𝜃
+represents the process noise variances for radial
+distance, radial velocity, and azimuth angle, respectively.
+The measurement update follows:
+𝐳𝑘(𝑡) = 𝐇𝐱𝑘(𝑡|𝑡 − 1) + 𝐯(𝑡), 𝐯(𝑡) ∼  (0, 𝐑) (9)
+where 𝐇 = 𝐈3 (identity matrix), and the measurement noise 𝐯(𝑡)
+is Gaussian with zero mean and covariance 𝐑 = diag(𝜎2
+𝑧𝑟
+, 𝜎2
+𝑧𝑣
+, 𝜎2
+𝑧𝜃
+),
+where 𝜎2
+𝑧𝑟
+, 𝜎2
+𝑧𝑣
+, and 𝜎2
+𝑧𝜃
+are the measurement noise variances for radial
+distance, radial velocity, and azimuth angle, respectively.
+The joint association probability 𝛽𝑗𝑘 between measurement 𝑗 and
+target 𝑘 is computed as:
+𝛽𝑗𝑘 =
+exp
+(
+− 1
+2
+𝐞𝑇
+𝑗𝑘
+𝐒−1
+𝑘
+𝐞𝑗𝑘
+)
+∑𝐾
+𝑙=1 exp
+(
+−1
+2
+𝐞𝑇
+𝑗𝑙
+𝐒−1
+𝑙
+𝐞𝑗𝑙
+)
++ 𝛽0
+(10)
+where 𝐞𝑗𝑘 = 𝐳𝑗 − 𝐇𝐱𝑘 denotes the innovation vector (i.e., the differ-
+ence between the measured and predicted state), and 𝐒𝑘 represents
+the innovation covariance matrix, which is typically the sum of the
+predicted measurement covariance 𝐇𝐏𝑘𝐇𝑇 and the measurement noise
+covariance 𝐑. Here, 𝛽0 is a small constant that controls the trade-off be-
+tween data association and false alarm probability, ensuring a balance
+between detecting targets and minimizing spurious associations.
+3.1.2. RDM coordinate mapping
+For each target 𝑇𝑘 in the 𝑡th frame, we extract its motion features,
+including velocity 𝑣𝑘(𝑡) and radial distance 𝑟𝑘(𝑡). These features serve
+as the key parameters for matching the target in the RDM. The target
+feature vector for target 𝑇𝑘 at time 𝑡 is given by:
+𝐟𝑘(𝑡) =
+[
+𝑣𝑘(𝑡), 𝑟𝑘(𝑡)
+]𝑇
+. (11)
+The original RDM 𝐃(𝑡) contains the measurements of all targets,
+and our task is to match each target’s features to the corresponding
+region in the map. This is done using maximum likelihood estimation
+(MLE). Given the target features 𝐟𝑘(𝑡), the likelihood of a measurement
+𝐳𝑗(𝑡) being associated with target 𝑇𝑘 is calculated using a Gaussian
+distribution to model the measurement noise.
+The likelihood function for target 𝑇𝑘 can be expressed as:
+𝑘 =
+∏
+𝑗∈𝑘
+𝑝(𝐳𝑗(𝑡)|𝐟𝑘(𝑡)), (12)
+where 𝑘 represents the set of measurements associated with target
+𝑇𝑘 in frame 𝑡, and 𝑝(𝐳𝑗(𝑡)|𝐟𝑘(𝑡)) is the likelihood of measurement 𝐳𝑗(𝑡)
+given the target features 𝐟𝑘(𝑡). Assuming Gaussian measurement noise,
+the likelihood function is given by:
+𝑝(𝐳𝑗(𝑡)|𝐟𝑘(𝑡)) =
+1
+√
+2𝜋𝜎2
+exp
+(
+−
+(𝐳𝑗(𝑡) − ̂
+𝐳𝑘(𝑡))2
+2𝜎2
+)
+, (13)
+Measurement 258 (2026) 119090
+3
+H. Feng et al.
+Fig. 3. System overview.
+Fig. 4. Torso micro-motion amplification process.
+where ̂
+𝐳𝑘(𝑡) is the predicted position of target 𝑇𝑘 in the RDM, and 𝜎2 is
+the measurement noise variance.
+The maximum likelihood estimate for the position of target 𝑇𝑘 is
+given by:
+̂
+𝐳𝑘(𝑡) = arg max
+𝐳𝑘(𝑡)
+𝑘. (14)
+3.1.3. Multi-target RDM separation
+Once the best matching position for target 𝑇𝑘 is identified, we
+proceed to remove the interference from other targets in the RDM.
+Since the original map contains measurements from multiple targets,
+the region corresponding to target 𝑇𝑘 may overlap with those of other
+targets. To isolate target 𝑇𝑘’s features, we remove the influence of other
+targets by subtracting their corresponding regions.
+This process can be represented as:
+̃
+𝐃𝑘(𝑡) = 𝐃(𝑡) −
+∑
+𝑙≠𝑘
+𝐃𝑙(𝑡), (15)
+where ̃
+𝐃𝑘(𝑡) is the purified distance-Doppler map for target 𝑇𝑘, and 𝐃𝑙(𝑡)
+is the map corresponding to other targets 𝑇𝑙 (for 𝑙 ≠ 𝑘).
+After removing the interference from other targets, we obtain the
+purified RDM ̃
+𝐃𝑘(𝑡), which contains only the information corresponding
+to target 𝑇𝑘. This map serves as an independent representation of the
+target’s rang-Doppler information, and it is used for further analysis.
+3.2. Torso micro-motion recognition enhancement algorithm
+After obtaining RDM for each target in each frame, we apply
+the velocity dimension projection method to process RDM, resulting
+in time-Doppler map (TDM). To address the signal attenuation in
+human micro-motion characterization using millimeter-wave radar, a
+sliding detection-based torso micro-motion recognition enhancement
+algorithm is proposed. It improves the saliency of weak motion features
+in time-Doppler spectrograms through adaptive gain control.
+The micro-motion features of body limbs in time-Doppler spectro-
+grams exhibit three key characteristics:
+1. Discrete time-frequency energy distribution with low amplitude
+2. Susceptibility to adjacent cell noise interference
+3. Reduced inter-class discriminability under low SNR conditions
+Based on the above three characteristics, TMREA is proposed. It in-
+volves a three-tier sliding detection window (as shown in Fig. 4). Three-
+tier sliding detection window consists of the following components:
+detection unit 𝐷, guard unit 𝐺, and training unit 𝑇 .
+Let 𝐸(𝑖, 𝑗) denote the amplitude at cell (𝑖, 𝑗) in the time-Doppler
+spectrogram. To prevent residual micro-motion signal interference
+within the training unit 𝑇 , a dynamic truncation strategy is employed:
+𝑇valid =
+{
+𝐸(𝑖, 𝑗) ∈ 𝑇
+|
+|
+|
+|
+𝐸(𝑖, 𝑗) ≤ 𝜇𝑇 + 𝜅 ⋅ 𝜎𝑇
+}
+(16)
+where 𝜇𝑇 is the mean value of the signal in units 𝑇 , 𝜎𝑇 is the standard
+deviation of the signal in 𝑇 . The truncation coefficient 𝜅 is determined
+by the maximum likelihood estimation:
+𝜅 = 2.5 ⋅
+(
+1 − 𝑒
+−
+𝜎𝑇
+𝜇𝑇
+)
+(17)
+To suppress the spatial attenuation effect of the radar beam, an
+exponential distance weighting function is designed:
+𝑤(𝑖, 𝑗) = exp
+(
+−
+‖(𝑖, 𝑗) − 𝐷center‖2
+𝑅𝑇
+)
+(18)
+The weighted noise baseline estimate is:
+𝐸𝑇 =
+∑
+(𝑖,𝑗)∈𝑇valid
+𝑤(𝑖, 𝑗) ⋅ 𝐸(𝑖, 𝑗)
+∑
+(𝑖,𝑗)∈𝑇valid
+𝑤(𝑖, 𝑗)
+(19)
+Measurement 258 (2026) 119090
+4
+H. Feng et al.
+Fig. 5. The architecture of TA-CL network.
+Implement amplitude enhancement is:
+𝐸′
+(𝑖, 𝑗) =
+{
+𝐸(𝑖, 𝑗), if 𝐸(𝑖, 𝑗) > 𝛼 ⋅ 𝐸𝑇
+0, otherwise
+(20)
+where 𝛼 = 1.8 is determined empirically.
+Traverse the spectrogram with a step size of 𝛥𝑠 = 3 pixels, and apply
+median filtering to overlapping regions to suppress boundary effects.
+This achieves 98.7% feature space coverage.
+3.3. Occlusion modeling and handling mechanism
+To address radar echo degradation caused by mutual occlusion
+among multiple moving targets, this framework introduces a multi-
+level coordination mechanism to ensure temporal feature continuity.
+When a target 𝑇𝑘 becomes occluded, its state vector 𝑥𝑘(𝑡) continues
+to be predicted using the Kalman filter. Although monostatic radar can-
+not receive echoes from fully occluded targets, the joint probabilistic
+data association (JPDA) method retains a robust hypothesis through
+the association probability 𝛽𝑗𝑘. A designated occlusion flag weight 𝛽0 is
+introduced to reduce the influence of missing observations and preserve
+trajectory continuity.
+When the occlusion is lifted, the target is likely to reappear near
+its predicted position. We constrain the search region using reverse
+coordinate mapping as:
+̂
+𝑧𝑘(𝑡) = arg max
+𝑧𝑘(𝑡)
+𝑘 s.t. ‖𝑧𝑘(𝑡) − 𝐇𝐱𝑘(𝑡|𝑡 − 1)‖2 ≤ 𝛥𝑡ℎ (21)
+where the threshold 𝛥𝑡ℎ is adaptively calculated based on the maximum
+possible displacement speed of the target.
+The reassigned RDM is further processed using the TMREA al-
+gorithm. Its dynamic truncation strategy suppresses noise remnants
+introduced by occlusion:
+𝑇valid =
+{
+(𝑖, 𝑗) ∈ 𝑇
+|
+|
+|
+|
+𝐸(𝑖, 𝑗) ≤ 𝜇𝑇 + 𝜅 ⋅ 𝜎𝑇
+}
+(22)
+The truncation factor 𝜅 is optimized to enhance the contrast of micro-
+Doppler components even under partially degraded conditions.
+Experimental results in Section 4 demonstrate that even under mod-
+erate occlusion, the proposed mechanism maintains robust multi-target
+tracking and recognition, achieving a recognition accuracy of 93.5%.
+This confirms the effectiveness of integrating predictive tracking and
+probabilistic association for handling occlusions in complex dynamic
+environments.
+3.4. 2D-CNN_LSTM classification model with temporal-attention
+To achieve high accuracy of recognition, we design a deep learning
+model TA-CL, which is specifically intended to capture and model
+multi-level spatio-temporal features in radar data, as illustrated in
+Fig. 5.
+The input feature maps are first processed through a 3-layer CNN
+for multi-scale feature extraction. Each convolutional layer uses a 3 × 3
+kernel, with the number of channels increasing progressively to expand
+the receptive field. To enhance feature representation, a Leaky-ReLU
+activation function is applied after each convolutional layer, introduc-
+ing non-saturating nonlinearity to mitigate gradient sparsity issues.
+Additionally, local response normalization is incorporated between
+convolutional layers to improve feature contrast, while max pooling
+layers (with a 2 × 2 kernel and a stride of 2) are employed for spatial
+downsampling and translation invariance, ultimately producing robust
+low-level feature representations.
+For each action instance, we construct a time series of 𝑇 = 90
+frames from the time–Doppler map (TDM) sequence. Each TDM frame
+𝐈𝑡 is independently passed through the CNN backbone to obtain a
+corresponding spatial feature vector 𝐅𝑡 ∈ R𝑑. The resulting sequence
+{𝐅1, 𝐅2, … , 𝐅𝑇 } is stacked to form a feature matrix 𝐒 ∈ R𝑇 ×𝑑, which
+serves as the input to the LSTM module. For longer recordings, we
+adopt a sliding window strategy with a window length of 90 and a
+stride of 10 frames to enhance data diversity and temporal alignment.
+To address the strong temporal correlations in radar data, a stacked
+LSTM network is designed as a temporal feature parser. The spatial
+features output by the DCNN are serialized and fed into the LSTM
+units, where the gating mechanisms (input gate, forget gate, output
+gate) dynamically regulate the cell state (𝑐𝑡) and hidden state (ℎ𝑡),
+explicitly modeling long- and short-term dependencies. By vertically
+stacking multiple LSTM layers, the network can hierarchically abstract
+high-order temporal patterns, capturing the progressive evolution of
+target actions.
+To overcome the limitation of traditional LSTMs in selectively fo-
+cusing on key time steps, a hierarchical temporal attention mechanism
+is proposed:
+1. Feature Compression: Max pooling and average pooling are
+applied along the time axis to the LSTM output feature matrix,
+generating dual-channel temporal saliency descriptors.
+2. Weight Generation: The dual-channel descriptors are fed into
+a shared-weight MLP, and a Sigmoid function normalizes the
+output to produce the temporal attention weight vector 𝛼𝑡.
+Measurement 258 (2026) 119090
+5
+H. Feng et al.
+Table 1
+Radar parameters.
+Parameter Value Unit
+Radar height 1.8 m
+Chirp count 99 /
+Slope 31.032 MHz/μs
+Frame count 90 /
+Frame period 60 ms
+Frequency bandwidth 3103.2 MHz
+Sampling rate 10 MHz
+Number of samples 256 /
+Ramp time 100 μs
+Table 2
+Summary of height and weight data by gender.
+Gender Avg. height (cm) Avg. weight (kg)
+Male 175.60 67.90
+Female 162.50 53.20
+Overall Avg. 169.05 60.58
+3. Feature Weighting: The original LSTM output is adaptively
+weighted using 𝛼𝑡, suppressing contributions from noisy time
+segments and focusing on key action intervals.
+The attention-optimized feature vectors are projected into a high-
+dimensional semantic space via a fully connected layer, with a Dropout
+layer (dropout rate 0.5) embedded to mitigate overfitting risks. Finally,
+the Softmax function outputs a normalized probability distribution,
+enabling end-to-end multi-class classification.
+4. Experiments and analysis
+4.1. Experimental setup
+Experiments are conducted using an NVIDIA GeForce RTX 4080
+GPU, Intel Core i7-12700H CPU, and 32 GB of DDR4 RAM. Our
+radar system employs the IWR6843IKS-ODS mmWave sensor evalua-
+tion board from Texas Instruments (TI), connected to the DCA1000EVM
+board for raw signal acquisition. The radar parameters are provided in
+Table 1.
+4.2. Dataset establishment
+Experimental scenarios are set in four common human activity
+environments (as shown in Fig. 6), including balcony, office, classroom,
+and laboratory. To minimize interference from clutter, only the test
+subjects are present in the scene. The subjects perform activities within
+a range of 1 to 3.5 meters from the radar, and their lateral distance
+from millimeter-wave radar does not exceed 3 m, ensuring they remain
+within the radar’s field of view throughout the activity.
+To validate the generalizability and robustness of our method, we
+recruit 20 test subjects with varying heights, weights, and genders,
+including 14 males and 6 females. Detailed information is provided in
+Table 2.
+Initially, individual actions are collected from each test subject.
+These construct the dataset Data-A, which aims to provide a diverse
+set of samples and sufficient test data for subsequent experiments. The
+subjects are asked to perform the eight activities (A1-A8) in all four
+scenarios, with each action repeated twice. Each action is captured
+over 90 frames, resulting in a total of 1,440 frames per subject in
+each scenario. Eight common types of human activities are collected,
+including A1: Boxing, A2: Crouching with hands on head, A3: Falling,
+A4: Jogging, A5: Kicking, A6: Sitting, A7: Standing, and A8: Walking.
+Detailed descriptions can be found in Table 3.
+To ensure both diversity and class balance in the Data-B dataset,
+we adopted the following strategy. In each session, one participant
+Fig. 6. Four scene and Diagram: (a) Balcony, (b) Office, (c) Classroom, (d)
+Laboratory, (e)Diagram of experimental scene.
+Table 3
+Summary of actions and their descriptions.
+Action Description
+A1 Boxing: Fighting with gloves in a ring.
+A2 Crouching: Bending down with hands on head.
+A3 Falling: Losing balance and descending.
+A4 Jogging: Running at a slow, steady pace.
+A5 Kicking: Striking with the foot.
+A6 Sitting: Resting on a seat.
+A7 Standing: Upright position, not moving.
+A8 Walking: Moving on foot at a steady pace.
+consistently performed the A8 (walking) action, while the remaining
+two participants each performed a different action selected from the
+remaining seven classes (A1–A7). This setup results in 𝐶2
+7
+= 21 unique
+action pairings, guaranteeing that every action class is adequately
+represented in various multi-person interaction scenarios.
+To further enhance the diversity and coverage of the dataset, we
+additionally collected data from nine sessions in which all three partic-
+ipants simultaneously performed the same action (for each of the eight
+action classes). In total, this yielded 30 distinct experimental groups.
+For each group, 900 frames of micro-Doppler data were collected,
+resulting in a comprehensive dataset of 27,000 frames. This design
+ensures a balanced and representative dataset for robust multi-person
+activity recognition evaluation.
+Compared to similar studies [17,18,28,29], our dataset is more
+extensive, providing stronger evidence for the generalizability of our
+proposed method.
+4.3. Sample preprocessing
+The collected data samples must undergo preprocessing to extract
+the desired feature maps before training the classification model. In
+the single-person motion dataset, three different methods are employed
+to generate the micro-Doppler feature maps: the proposed TMREA
+Measurement 258 (2026) 119090
+6
+H. Feng et al.
+Fig. 7. Three methods are employed to generate the micro-Doppler feature
+maps:STFT, Projection, and TMREA.
+method, along with STFT and the traditional velocity-domain projec-
+tion method. The processing results are shown in Fig. 7. As shown
+above, our method significantly enhances micro-motion features com-
+pared to the feature maps generated by the other two methods.
+Then, the feature maps obtained using the different methods are
+separately input into the constructed classification model, as well as
+other comparative models, for training. The dataset-A is divided into a
+training set and a test set with a 4:1 ratio.
+In the multi-person motion dataset-B, STAR-Bind algorithm is used
+to extract and save the feature maps of the individual target motions.
+Subsequently, various data association algorithms are applied, and the
+number of ID-switches for each experimental set is recorded.
+4.4. Ablation experiments
+4.4.1. Ablation on network modules
+To further evaluate the effectiveness of our proposed framework,
+ablation studies were conducted. Specifically, we analyzed the individ-
+ual contributions of key network components and compared alternative
+temporal modeling methods. Firstly, experiments were carried out on
+the DATA-A dataset, for which feature maps were generated using the
+proposed TMREA algorithm. In this ablation study, we compared three
+variants: CNN-only, CNN-LSTM without TA, and the complete TA-CL
+model.
+Table 4
+Comparison of Parameters, FLOPs, and Accuracy for different tempo-
+ral modules.
+Temporal module Params FLOPs Accuracy (%)
+TA-CNN-GRU 296K 108M 94.2 ± 0.7
+TA-CNN-Bi-GRU 517K 188M 95.6 ± 0.8
+TA-CNN-Bi-LSTM 662K 240M 97.1 ± 0.6
+TA-CNN-Transformer 465K 158M 97.1 ± 0.7
+TA-CL (Proposed) 370K 134M 𝟗𝟕.𝟐 ± 𝟎.𝟖
+The precision of each model for classifying different action cat-
+egories is presented via radar charts, as shown in Fig. 8. It can be
+observed that in the baseline models, the classification accuracy for
+‘‘Crouching’’ (A2) versus ‘‘falling’’ (A3), and ‘‘boxing’’ (A1) versus
+‘‘kicking’’ (A5), is notably lower compared to other categories. Further
+analysis reveals that this phenomenon is attributed to micro-motion
+confusion between similar action categories. Specifically, ‘‘squatting’’
+and ‘‘falling’’ significantly overlap in joint motion continuity, whereas
+‘‘kicking’’ and ‘‘boxing’’ share highly similar upper-limb trajectories
+and rhythmic patterns. This similarity results in ambiguity during
+fine-grained action classification.
+To address this issue, the proposed TA-CL model incorporates a
+temporal attention mechanism that enables differentiated weighting of
+temporal features. Specifically, this mechanism adaptively focuses on
+discriminative key frames within action sequences (such as gait tran-
+sitions, limb acceleration peaks, or the onset of a striking movement)
+rather than uniformly processing all temporal information. These key
+frames contain significant inter-class discriminative features, essential
+for accurately distinguishing between visually similar actions.
+Experimental validation demonstrates that this mechanism substan-
+tially enhances inter-class differentiation. In particular, classification
+accuracy significantly improves for challenging action pairs, such as
+squatting versus falling (A2 vs. A3) and boxing versus kicking (A1 vs.
+A5), by effectively highlighting discriminative temporal characteristics.
+4.4.2. Comparison of temporal modeling approaches
+To systematically validate the comprehensive advantages of the
+TA-CL model in terms of temporal sequence modeling capability and
+potential for lightweight deployment, we designed an ablation study
+focusing on different temporal network variants. Specifically, we main-
+tained the spatial feature extraction module (TA-CNN) as the baseline
+architecture, and sequentially replaced the original LSTM temporal
+units with gated recurrent units (GRU) [35], bidirectional gated recur-
+rent units (Bi-GRU), Transformer encoders [36], and bidirectional long
+short-term memory networks (Bi-LSTM). By rigorously comparing the
+performance of these temporal modules given identical spatial feature
+inputs, we quantitatively evaluated our model’s dual enhancement in
+terms of capturing complex action sequence features (measured by clas-
+sification accuracy) and model compactness (measured by Params/MB,
+FLOPs).
+As shown in Table 4, the proposed TA-CL model achieves the
+highest recognition accuracy (97.2%) while maintaining a modest pa-
+rameter count (370K) and relatively low computational complexity
+(134M FLOPs). Although both Bi-LSTM and Transformer configurations
+reach comparable accuracy (97.1%), they require significantly more
+parameters and higher FLOPs. In contrast, GRU-based models are more
+lightweight but do not achieve the same level of accuracy as LSTM-
+based approaches. Overall, the LSTM architecture, when combined with
+temporal attention, offers an effective balance between accuracy and
+efficiency, making it the most suitable choice for micro-Doppler radar
+sequence modeling in this work.
+Measurement 258 (2026) 119090
+7
+H. Feng et al.
+Fig. 8. Classification precision radar chart for different models: (a) CNN, (b) CNN-LSTM, (c) TA-CL.
+Fig. 9. Confusion Matrix: (a) STFT_TA-CL. (b) Projection_TA-CL. (c) TMREA_TA-CL.
+4.4.3. Recognition accuracy of different time-frequency mapping methods
+To demonstrate the superior capability of TMREA algorithm in
+enhancing human micro-movement features, we conduct a compara-
+tive analysis between the STFT and traditional velocity-dimensional
+projection methods. Various classification models are used to recog-
+nize and classify the feature maps generated by the three methods.
+Fig. 9 presents the confusion matrices of the classification results
+for three algorithms in TA-CL model. It is evident that the TMREA
+algorithm achieves substantial improvements over the other two al-
+gorithms, particularly in the recognition of actions A1 and A5, as
+well as A2 and A3, which are prone to confusion. In these cases,
+TMREA algorithm achieves recognition accuracy exceeding 95%. This
+significant improvement is attributed to the ability of TMREA algorithm
+to effectively enhance the micro-Doppler features of the human torso’s
+subtle movements while suppressing clutter noise.
+The poor performance of STFT algorithm in this experiment may
+be attributed to the fixed window length, which leads to insufficient
+time resolution for fast motions (e.g., boxing), or frequency domain
+aliasing for slow motions (e.g., sitting or standing). In contrast, both the
+velocity-domain projection method and TMREA algorithm do not rely
+on a specific window length, thus avoiding the issues of frequency do-
+main aliasing. Furthermore, TMREA algorithm further enhances micro-
+motion signatures and suppresses noise based on velocity-domain pro-
+jection method, resulting in superior recognition performance.
+4.4.4. Sensitivity analysis of gain threshold in TMREA
+To comprehensively evaluate the robustness and adaptability of the
+proposed TMREA algorithm, we conducted a sensitivity analysis on the
+gain threshold parameter 𝛼. In this experiment, all other parameters
+were fixed while 𝛼 was systematically varied across a practical range.
+For each value, we assessed both recognition accuracy and the visual
+quality of the resulting micro-Doppler signatures.
+As summarized in Table 5, setting 𝛼 too low causes the algorithm
+to retain excessive background noise and clutter, which degrades the
+clarity of the enhanced micro-Doppler features and leads to a noticeable
+drop in classification accuracy. Conversely, excessively high values
+of 𝛼 render the algorithm overly selective, resulting in the loss of
+critical target micro-motion information and a corresponding decline
+Table 5
+Recognition accuracy under different gain threshold 𝛼 val-
+ues.
+Gain threshold 𝜶 Recognition accuracy (%)
+1.2 91.3
+1.4 95.4
+1.6 96.2
+1.8 97.2
+2.0 95.5
+in recognition performance. Our results indicate that there exists an
+optimal interval for 𝛼, within which a favorable trade-off between noise
+suppression and signal preservation is achieved, thereby yielding the
+highest recognition accuracy.
+These results demonstrate that TMREA maintains a high degree of
+robustness to moderate variations in 𝛼 and is capable of delivering sta-
+ble performance across diverse motion types when appropriately tuned.
+For practical deployments, we recommend selecting 𝛼 within this em-
+pirically validated range to fully leverage the algorithm’s capacity for
+both noise rejection and micro-motion enhancement.
+4.5. Performance comparison
+To further verify the advanced capability of the proposed TA-CL
+model for human motion recognition, we conducted a comparative
+analysis with several representative models widely adopted in related
+studies, including DCNN [28], LSTM, CNN-LSTM [37], CCLN [18],
+ConvLSTM, and ST-ConvLSTM [38].
+Table 6 presents the independent classification accuracies for eight
+motion types across several models using the feature maps generated
+by TMREA. TA-CL model demonstrates the highest or near-highest
+accuracy across all motion types, achieving 100% accuracy for A4, A6,
+and A7. However, the recognition accuracy for A5 and A8 is slightly
+lower than that of CCLN and CNN-LSTM. Although ConvLSTM and
+ST-ConvLSTM perform well on time-series RDMs, they show limited
+performance when handling micro-Doppler feature maps, similar to
+the standalone LSTM network. This suggests that while these models
+excel at capturing temporal correlations in spectrograms, they are less
+effective in capturing spatiotemporal features.
+Measurement 258 (2026) 119090
+8
+H. Feng et al.
+Table 6
+Action classification accuracy for different models (A1–A8).
+Model A1 (%) A2 (%) A3 (%) A4 (%) A5 (%) A6 (%) A7 (%) A8 (%)
+DCNN [28] 94.0 91.2 92.0 94.5 94.2 93.2 94.0 95.4
+LSTM 87.5 85.8 86.8 88.0 88.5 86.8 88.6 90.7
+CNN-LSTM [37] 95.6 93.8 94.0 95.8 95.4 94.5 95.5 96.3
+CCLN [18] 95.4 94.0 94.5 95.7 96.0 94.4 95.2 96.1
+ConvLSTM [38] 91.0 89.5 90.5 92.0 92.2 91.5 91.2 93.2
+ST-ConvLSTM [38] 93.0 91.5 92.0 94.0 94.0 92.8 93.3 94.4
+TA-CL (Proposed) 96.0 95.3 95.6 100.0 95.0 100.0 100.0 96.0
+Fig. 10. Multi-person time-Doppler separation visualization.
+4.6. Multi-target feature decoupling and recognition analysis
+In order to evaluate the effectiveness of proposed STAR-Bind al-
+gorithm for multi-object tracking, we use the multiple object tracking
+accuracy (MOTA) metric, which combines several tracking errors such
+as false positives, false negatives, and identity swaps. The formula for
+MOTA is defined as:
+MOTA = 1 −
+∑
+𝑡(FN(𝑡) + FP(𝑡) + ID Swap(𝑡))
+∑
+𝑡 GT(𝑡)
+(23)
+where the parameters are defined as follows:
+• FN(t): The number of false negatives at frame 𝑡, which represents
+the targets that were not detected at time 𝑡, despite being present
+in the ground truth.
+• FP(t): The number of false positives at frame 𝑡, which represents
+the number of spurious detections at frame 𝑡, where a non-existent
+target is incorrectly identified.
+• ID Swap(t): The number of identity swaps at frame 𝑡, which occurs
+when a target is misidentified as a different target during the
+tracking process.
+• GT(t): The number of ground truth targets at frame 𝑡, which refers
+to the true number of targets present in the scene at frame 𝑡.
+To evaluate the overall performance, the average MOTA value is
+calculated from 30 experimental runs, and the total number of ID-Swap
+occurrences is recorded. Additionally, the performance of proposed
+STAR-Bind algorithm is compared with several other multi-object track-
+ing algorithms, as shown in Table 7. STAR-Bind algorithm achieves the
+best results, with an average MOTA of 93% and only 5 instances of
+ID-Swap.
+In contrast, Kalman filter combined with the nearest neighbor algo-
+rithm (KF-NN) yields the poorest performance. This is primarily due to
+the inability of the nearest neighbor algorithm to accurately associate
+targets in the presence of occlusions. On the other hand, the STAR-
+Bind algorithm utilizes JPDA method, which calculates the association
+probability between each target and observation and selects the optimal
+Table 7
+Comparison of MOTA and Total ID-Switches for different algo-
+rithms.
+Algorithm MOTA Total ID-Swaps
+KF-NN 0.85 12.0
+KF-HA 0.88 9.0
+PF-NN 0.83 15.0
+PF-JPDA 0.90 7.0
+PF-HA 0.86 10.0
+STAR-Bind (Proposed) 0.93 5.0
+match based on these probabilities. JPDA can handle multiple possible
+associations between multiple targets and measurements, making it
+particularly suitable for applications in scenarios with dense targets or
+severe occlusions.
+The particle filter combined with JPDA (PF-JPDA) performs slightly
+worse than STAR-Bind. This can be attributed to the fact that human
+motion is often approximately linear, and the Kalman filter used in
+STAR-Bind is highly effective in estimating target states and is robust to
+noise. In contrast, particle filters are more sensitive to noise, and their
+performance can be significantly affected in high-noise environments or
+when target trajectories undergo sudden changes, leading to tracking
+instability. Therefore, STAR-Bind algorithm effectively combines the
+advantages of JPDA and Kalman filtering, demonstrating exceptional
+performance in multi-person motion tracking tasks.
+To evaluate the performance of proposed framework, we process all
+30 experimental samples in DATA-B using STAR-Bind algorithm and
+TMREA algorithm, converting raw radar signals into distinct motion
+feature maps for each target. To demonstrate the effectiveness of the
+proposed STAR-Bind association mechanism and dynamic projection
+strategy, we visualize the separated time-Doppler maps (TDMs) for
+multiple moving subjects. As shown in Fig. 10, the original radar frame
+contains overlapping micro-Doppler signatures from three individuals
+performing distinct actions simultaneously.
+After the point cloud-based separation and inverse RDM projection,
+the dynamic Doppler features of each target are successfully isolated.
+Measurement 258 (2026) 119090
+9
+H. Feng et al.
+Table 8
+Multi-Person action scenes classification accuracy for different models (A1–A8).
+Model A1 (%) A2 (%) A3 (%) A4 (%) A5 (%) A6 (%) A7 (%) A8 (%)
+DCNN [28] 89.0 87.0 88.0 89.0 86.0 90.0 89.0 92.0
+LSTM 83.0 82.0 83.0 82.0 83.0 86.0 82.0 87.0
+CNN-LSTM [37] 89.0 91.0 91.0 92.0 88.0 90.0 86.0 92.0
+CCLN [18] 88.0 87.0 89.0 92.0 89.0 91.0 90.0 91.0
+ConvLSTM [38] 85.0 84.0 83.0 87.0 83.0 86.0 85.0 86.0
+ST-ConvLSTM [38] 86.0 85.0 84.0 87.0 89.0 90.0 93.0 94.0
+TA-CL (Proposed) 91.0 92.0 93.0 94.0 92.0 96.0 95.0 95.0
+Each subfigure shows a clear time-Doppler trace corresponding to a
+single target, indicating that the proposed pipeline effectively resolves
+inter-target interference in the Doppler domain.
+For each action category, 100 micro-Doppler spectrograms are gen-
+erated, forming a comprehensive test set. These spectrograms are sub-
+sequently fed into the pre-trained model (trained on DATA-A) to assess
+recognition accuracy. The accuracy metric is defined as the ratio of
+correctly identified actions to the total number of spectrograms per
+action category.
+As summarized in Table 8, the recognition accuracies for actions
+A1–A8 under multi-person scenarios exhibit a slight decline compared
+to single-person scenarios. This degradation primarily stems from the
+inherent challenges of signal aliasing in both time and frequency do-
+mains, where overlapping reflections from multiple subjects complicate
+the separation of individual motion features. Despite these limitations,
+our algorithm achieves an average recognition accuracy of 93.5%
+across all action categories in multi-person scenarios, demonstrating
+robust performance even under complex interference conditions.
+5. Conclusion
+This paper presented an MPAR algorithm that integrates spatial
+point cloud and micro-Doppler features. Through improved cluster-
+ing, tracking, and data association techniques, the proposed method
+achieves effective separation of multi-target point cloud features and
+constructs time-Doppler feature maps using a dynamic projection mech-
+anism. Additionally, a trunk-based micro-Doppler enhancement algo-
+rithm was designed to significantly improve feature representation.
+A hybrid CNN-LSTM network with integrated temporal attention was
+further developed for robust activity classification.
+Experimental results demonstrated that the proposed framework
+significantly enhances feature separability and recognition accuracy,
+particularly under occlusion scenarios, thereby addressing key lim-
+itations of previous millimeter-wave radar-based MPAR approaches.
+However, the current work is limited by the angular resolution of the
+single-radar system, which constrains the scalability to larger numbers
+of closely spaced targets. Furthermore, the classification network pri-
+marily employs conventional deep learning backbones, which may not
+fully exploit the rich spatiotemporal information in more challenging
+scenarios.
+In future work, we will focus on extending the system to support
+a greater number of targets by employing higher-resolution or cas-
+caded MIMO radar platforms. We also plan to investigate advanced
+classification networks, such as transformer-based architectures and
+self-supervised learning approaches, to further improve recognition
+performance and generalization. These advancements are expected to
+make the proposed MPAR framework more versatile and robust for
+practical applications in dynamic, densely populated, or unconstrained
+environments.
+CRediT authorship contribution statement
+Haoming Feng: Writing – review & editing, Writing – original
+draft, Validation, Software, Methodology, Investigation, Data curation,
+Conceptualization. Huaqing Li: Writing – review & editing, Validation,
+Resources, Funding acquisition. Wenwen Zhu: Writing – review &
+editing, Investigation, Data curation. Denghao Li: Writing – review &
+editing, Data curation. Yukun Huang: Writing – review & editing, Data
+curation.
+Declaration of competing interest
+The authors declare the following financial interests/personal rela-
+tionships which may be considered as potential competing interests:
+Huaqing Li reports financial support was provided by the Fundamental
+Research Funds for the Central Universities. Huaqing Li reports finan-
+cial support was provided by the National Natural Science Foundation
+of China. Huaqing Li reports financial support was provided by the
+Chongqing Science Fund for Distinguished Young Scholars. If there
+are other authors, they declare that they have no known competing
+financial interests or personal relationships that could have appeared
+to influence the work reported in this paper.
+Acknowledgments
+This work was supported in part by the Fundamental Research
+Funds for the Central Universities under Grant SWU-XDJH202312,
+in part by the National Natural Science Foundation of China under
+Grant 62173278, and in part by the Chongqing Science Fund for
+Distinguished Young Scholars under Grant 2024NSCQ-JQX0103.
+Data availability
+No data was used for the research described in the article.
+References
+[1] C. Li, Z. Peng, T.-Y. Huang, T. Fan, F.-K. Wang, T.-S. Horng, J.-M. Munoz-
+Ferreras, R. Gomez-Garcia, L. Ran, J. Lin, A review on recent progress of portable
+short-range noncontact microwave radar systems, IEEE Trans. Microw. Theory
+Tech. 65 (5) (2017) 1692–1706.
+[2] S.Z. Gürbüz, Ü. Kaynak, B. Özkan, O.C. Kocaman, F. Kıyıcı, B. Tekeli, Design
+study of a short-range airborne UAV radar for human monitoring, in: 2014
+48th Asilomar Conference on Signals, Systems and Computers, IEEE, 2014, pp.
+568–572.
+[3] F. Fioranelli, M. Ritchie, H. Griffiths, Classification of unarmed/armed per-
+sonnel using the NetRAD multistatic radar for micro-Doppler and singular
+value decomposition features, IEEE Geosci. Remote. Sens. Lett. 12 (9) (2015)
+1933–1937.
+[4] J. Le Kernec, F. Fioranelli, C. Ding, H. Zhao, L. Sun, H. Hong, J. Lorandel, O.
+Romain, Radar signal processing for sensing in assisted living: The challenges
+associated with real-time implementation of emerging algorithms, IEEE Signal
+Process. Mag. 36 (4) (2019) 29–41.
+[5] J. Qin, L. Liu, Z. Zhang, Y. Wang, L. Shao, Compressive sequential learning for
+action similarity labeling, IEEE Trans. Image Process. 25 (2) (2015) 756–769.
+[6] X. Yu, M.A. Al-qaness, ASK-HAR: Attention-based multi-core selective kernel
+convolution network for human activity recognition, Measurement 242 (2025)
+115981.
+[7] A. Dahou, M.A. Al-qaness, M. Abd Elaziz, A. Helmi, Human activity recognition
+in IoHT applications using arithmetic optimization algorithm and deep learning,
+Measurement 199 (2022) 111445.
+[8] J. Wu, R. Jafari, Orientation independent activity/gesture recognition using
+wearable motion sensors, IEEE Internet Things J. 6 (2) (2018) 1427–1437.
+[9] J. Wang, Y. Chen, S. Hao, X. Peng, L. Hu, Deep learning for sensor-based activity
+recognition: A survey, Pattern Recognit. Lett. 119 (2019) 3–11.
+Measurement 258 (2026) 119090
+10
+H. Feng et al.
+[10] S.Z. Gurbuz, M.G. Amin, Radar-based human-motion recognition with deep
+learning: Promising applications for indoor monitoring, IEEE Signal Process. Mag.
+36 (4) (2019) 16–28.
+[11] E. Cippitelli, F. Fioranelli, E. Gambi, S. Spinsante, Radar and RGB-depth sensors
+for fall detection: A review, IEEE Sensors J. 17 (12) (2017) 3585–3604.
+[12] M.G. Amin, Y.D. Zhang, F. Ahmad, K.D. Ho, Radar signal processing for elderly
+fall detection: The future for in-home monitoring, IEEE Signal Process. Mag. 33
+(2) (2016) 71–80.
+[13] Z. Li, J. Le Kernec, Q. Abbasi, F. Fioranelli, S. Yang, O. Romain, Radar-
+based human activity recognition with adaptive thresholding towards resource
+constrained platforms, Sci. Rep. 13 (1) (2023) 3473.
+[14] S.Z. Gürbüz, B. Erol, B. Çağlıyan, B. Tekeli, Operational assessment and adaptive
+selection of micro-Doppler features, IET Radar, Sonar Navig. 9 (9) (2015)
+1196–1204.
+[15] A. Hanif, M. Muaz, A. Hasan, M. Adeel, Micro-Doppler based target recognition
+with radars: A review, IEEE Sensors J. 22 (4) (2022) 2948–2961.
+[16] Y. Kim, H. Ling, Human activity classification based on micro-Doppler signatures
+using a support vector machine, IEEE Trans. Geosci. Remote Sens. 47 (5) (2009)
+1328–1337.
+[17] A. Shrestha, H. Li, J. Le Kernec, F. Fioranelli, Continuous human activity
+classification from FMCW radar with Bi-LSTM networks, IEEE Sensors J. 20 (22)
+(2020) 13607–13619.
+[18] X. Xiong, A. Ren, T. Yuan, A. Zahid, Q.H. Abbasi, M.A. Imran, Human motion
+recognition by micro-Doppler features and concatenated CNN-LSTM network,
+IEEE Sensors J. (2024).
+[19] F. Sakagami, H. Yamada, S. Muramatsu, Accuracy improvement of human motion
+recognition with MW-FMCW radar using CNN, in: 2020 International Symposium
+on Antennas and Propagation, ISAP, IEEE, 2021, pp. 173–174.
+[20] S. Gong, X. Yan, Y. Fang, A. Paul, Z. Wu, J. Chen, A dual-stream CNN-BiLSTM
+for human motion recognition with raw radar data, IEEE Sensors J. (2024).
+[21] W. Ding, X. Guo, G. Wang, Radar-based human activity recognition using hybrid
+neural network model with multidomain fusion, IEEE Trans. Aerosp. Electron.
+Syst. 57 (5) (2021) 2889–2898.
+[22] F. Luo, E. Bodanese, S. Khan, K. Wu, Spectro-temporal modeling for human
+activity recognition using a radar sensor network, IEEE Trans. Geosci. Remote
+Sens. 61 (2023) 1–13.
+[23] R.G. Guendel, N.C. Kruse, F. Fioranelli, A. Yarovoy, Multipath exploitation for
+human activity recognition using a radar network, IEEE Trans. Geosci. Remote
+Sens. 62 (2024) 1–13.
+[24] A. Gorji, A. Bourdoux, S. Pollin, H. Sahli, et al., Multi-view CNN-LSTM ar-
+chitecture for radar-based human activity recognition, Ieee Access 10 (2022)
+24509–24519.
+[25] A.D. Singh, S.S. Sandha, L. Garcia, M. Srivastava, Radhar: Human activity
+recognition from point clouds generated through a millimeter-wave radar, in:
+Proceedings of the 3rd ACM Workshop on Millimeter-Wave Networks and
+Sensing Systems, 2019, pp. 51–56.
+[26] Y. Wang, H. Liu, K. Cui, A. Zhou, W. Li, H. Ma, m-activity: Accurate and
+real-time human activity recognition via millimeter wave radar, in: ICASSP 2021-
+2021 IEEE International Conference on Acoustics, Speech and Signal Processing,
+ICASSP, IEEE, 2021, pp. 8298–8302.
+[27] Y. Kim, I. Alnujaim, D. Oh, Human activity classification based on point clouds
+measured by millimeter wave MIMO radar with deep recurrent neural networks,
+IEEE Sensors J. 21 (12) (2021) 13522–13529.
+[28] F. Jin, R. Zhang, A. Sengupta, S. Cao, S. Hariri, N.K. Agarwal, S.K. Agarwal,
+Multiple patients behavior detection in real-time using mmwave radar and deep
+CNNs, in: 2019 IEEE Radar Conference (RadarConf), IEEE, 2019, pp. 1–6.
+[29] Z. Wu, Z. Cao, X. Yu, J. Zhu, C. Song, Z. Xu, A novel multiperson activity
+recognition algorithm based on point clouds measured by millimeter-wave MIMO
+radar, IEEE Sensors J. 23 (17) (2023) 19509–19523.
+[30] X. Dang, K. Fan, F. Li, Y. Tang, Y. Gao, Y. Wang, Multi-person action recognition
+based on millimeter-wave radar point cloud., Appl. Sci. (2076-3417) 14 (16)
+(2024).
+[31] M. Sun, Z. Xu, B. Sun, S. Zhang, FMCW multi-person action recognition
+system based on point cloud nearest neighbor sampling algorithm, in: 2021 4th
+International Conference on Pattern Recognition and Artificial Intelligence, PRAI,
+IEEE, 2021, pp. 120–124.
+[32] M. Dibiase, M. Mohammadgholiha, L. De Marchi, Optimal array design and
+directive sensors for guided waves doa estimation, Sensors 22 (3) (2022) 780.
+[33] S.A. Shah, F. Fioranelli, Human activity recognition: Preliminary results for
+dataset portability using FMCW radar, in: 2019 International Radar Conference,
+RADAR, IEEE, 2019, pp. 1–4.
+[34] J.L. Williams, Marginal multi-Bernoulli filters: RFS derivation of MHT, JIPDA,
+and association-based MeMBer, IEEE Trans. Aerosp. Electron. Syst. 51 (3) (2015)
+1664–1687.
+[35] J. Chung, C. Gulcehre, K. Cho, Y. Bengio, Empirical evaluation of gated recurrent
+neural networks on sequence modeling, 2014, arXiv preprint arXiv:1412.3555.
+[36] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A.N. Gomez, Ł. Kaiser,
+I. Polosukhin, Attention is all you need, Adv. Neural Inf. Process. Syst. 30 (2017).
+[37] J. Zhu, H. Chen, W. Ye, A hybrid CNN–LSTM network for the classification
+of human activities based on micro-Doppler radar, Ieee Access 8 (2020)
+24713–24720.
+[38] C. Ding, L. Zhang, H. Chen, H. Hong, X. Zhu, C. Li, Human motion recognition
+with spatial-temporal-convLSTM network using dynamic range-doppler frames
+based on portable FMCW radar, IEEE Trans. Microw. Theory Tech. 70 (11)
+(2022) 5029–5038.
+Measurement 258 (2026) 119090
+11
+

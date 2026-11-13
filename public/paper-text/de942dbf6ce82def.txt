@@ -1,0 +1,1363 @@
+1
+Large Language Model-Based Gray Wolf
+Optimization for Near-Field ISAC Networks
+Zhen Chen, Senior Member, IEEE, Kezhi Wang, Senior Member, IEEE, Jianqing Li, Senior Member, IEEE,
+Xiu Yin Zhang, Fellow, IEEE, and Kai-Kit Wong, Fellow, IEEE
+Abstract—The advent of extremely large antenna arrays and
+high-frequency signaling is expected to enable next-generation
+integrated sensing and communication (ISAC) networks to pre-
+dominantly operate in the near-field region. Due to the dual
+influence of distance and angle on wave propagation char-
+acteristics in the near-field region, accurately modeling these
+characteristics remains a critical challenge. Motivated by the
+potential of large language models (LLMs) in angle prediction
+and distance estimation, a LLM-enhanced multi-objective opti-
+mization problem (MOP) is developed to accurately capture the
+dependence of the channel on both the angular position and
+distance. The formulated LLM-enhanced MOP framework is
+decomposed into a series of sub-problems, which can balance
+spectral efficiency for communication and localization accuracy
+for sensing. To overcome the computational and energy challenges
+associated with LLMs, a gray wolf optimization (GWO)-based
+algorithm is integrated as black-box search operators with
+LLM-specific prompt engineering to olve these sub-problems.
+Numerical results demonstrate that the proposed LLM-GWO
+scheme achieves an effective trade-off between communication
+and sensing performance, outperforming baseline approaches in
+terms of both Pareto front quality and convergence.
+Index Terms—Large language model, Grey wolf optimization,
+Multi-objective optimization, Near-Field ISAC, Pareto front.
+I. INTRODUCTION
+THE forthcoming sixth-generation (6G) and beyond wire-
+less networks are expected to support advanced applica-
+tions, such as Integrated Sensing and Communications (ISAC),
+by leveraging much wider bandwidths at higher frequencies
+and significantly larger antenna arrays at base stations (BS)
+[1]–[3]. To address a massive number of access devices, the
+extremely large antenna arrays will likely be adopted to future
+communications. However, increasing the number of antennas
+also expands the antenna aperture, which may grow to several
+dozens or even hundreds of meters. This large size can lead
+to wireless communication occurring in the near field [4].
+In conventional Fraunhofer (far-field) regions, electromagnetic
+(EM) propagation is typically approximated as a planar wave,
+where phase responses exhibit a linear relationship with angles
+[5]. However, as communications transition into the near-
+field region, the nature of signal propagation changes fun-
+damentally. Unlike the far-field communication, the near-field
+communication requires the adoption of an accurate spherical-
+wave model, which captures nonlinear phase variations that
+depend not only on angles but also on corresponding distances
+[6]. This shift in modeling marks a critical distinction between
+the far-field and near-field regions. Importantly, it provides
+an exciting opportunities for near-field communications, as it
+enables more precise signal propagation characteristics.
+Due to the unique characteristics of near-field propagation,
+research on ISAC systems from a near-field perspective has
+grown significantly [7]–[10]. For example., the authors of
+[7] provided a comprehensive overview of how near-field
+communication influences ISAC and discussed its potential
+applications. Meanwhile, the works in [11] and [12] focused
+on designing waveforms and beamforming methods for down-
+link near-field ISAC system. Specifically, [8] analyzed the
+uniform spherical wave, whereas [13] investigated the non-
+uniform spherical wave. Furthermore, [14] examined RIS-
+enabled UAV-to-vehicle channels in both near-field and far-
+field regions, offering a gain-loss mathematical model that
+emphasizes the importance of near-field systems. Despite these
+advances, the performance of near-field ISAC in both downlink
+and uplink settings were yet to be thoroughly explored. A
+major challenge lies in managing interference from target echo
+signals, which can vary depending on the shape, size, and
+material of the targets. Moreover, achieving a flexible balance
+between sensing and communication functions in practical
+near-field environments presents a significant challenge.
+To address these issues, multi-objective optimization
+(MOO) techniques are crucial in near-field ISAC networks,
+as they allow sensing and communication performance goals
+to be optimized simultaneously. As a result, there has been
+increasing interest in incorporating metaheuristic algorithms
+into near-field ISAC network optimization, which are effective
+in handling complex environments. However, these objec-
+tive functions often face conflicting objectives that include
+maximizing data throughput, minimizing Cramr-Rao lower
+bounds (CRLBs) to achieve accurate target localization, en-
+suring sufficient coverage and reducing communication energy
+consumption. Therefore, how to design MOO techniques are
+vital in enhancing the overall efficiency of near-field ISAC
+systems.
+Recent developments have highlighted the integration of
+Large Language Models (LLMs) with MOO techniques to
+improve performance and adaptability. LLMs play two key
+roles in this setting [15], [16]. First, when provided with
+well-designed prompts, LLMs can generate solutions without
+requiring detailed problem encoding. These solutions can ac-
+count for multiple objectives and constraints, that simplifying
+optimization by allowing users to describe goals in natural
+language, thus reducing the need for specialized technical
+knowledge. Second, LLMs can use the broad knowledge
+to design or choose effective operators for multi-objective
+evolutionary algorithms (MOEAs). By interpreting natural
+language descriptions of optimization problems, LLMs help
+2
+devise robust strategies that improve search efficiency and
+convergence. This integration facilitates AI-driven control and
+interaction, advancing beyond traditional manual systems.
+One notable effort is presented in [17], where LLMs were
+used experimentally to generate novel optimization methods.
+Similarly, a few studies [18], [19] have demonstrated the
+feasibility of using LLMs as black-box solvers for single-
+objective optimization tasks, relying exclusively on prompting
+without additional training.
+Nevertheless, how to integrate LLMs with the MOEA
+framework in a manner that ensures broad applicability across
+various MOEA implementations remains an open challenge.
+Since users/targets often operate in hybrid far-field and near-
+field environments with fluctuating parameters, existing studies
+primarily examine the effectiveness of these metaheuristic
+algorithms in static or predefined environments. However, real-
+world hybrid scenarios are inherently dynamic, and existing
+studies are limited by fixed or rule-based parameter tuning
+methods. To address this significant gap, this paper proposes a
+novel LLM-assisted MOEA framework designed that attempts
+to employ LLMs in MOPs. Drawing inspiration from the
+social hierarchy and hunting behavior of grey wolves [20],
+a Grey Wolf Optimization (GWO)-based metaheuristic is
+integrated into the LLM as a context-aware layer. This enables
+the proposed model to dynamically adjust to environmental
+changes, thereby enhancing its responsiveness. Such context-
+aware adaptability directly addresses the dynamic require-
+ments of near-field ISAC networks, which can enhance situ-
+ational awareness and enable more informed decision-making
+throughout the optimization process. Our main contributions
+are summarized as follows
+• A new GWO model is developed that integrates LLMs
+to manage the trade-off between communication and
+sensing in near-field ISAC systems. Unlike conventional
+GWO or other metaheuristics that rely on fixed strategies,
+our approach leverages natural language understanding
+for more adaptive decision-making. The proposed LLM-
+GWO model acts as a quasi-intelligent optimizer, poten-
+tially setting a new standard for adaptive metaheuristic
+algorithms.
+• To tackle the proposed optimization challenging, the
+LLM-enhanced GWO is exploited in the MOO prob-
+lem by decomposing the original problem into smaller
+subproblems. Unlike static heuristic operators, the LLM
+act as intelligent operators that can adjust based on the
+evolving optimization environments, which is integrated
+into the MOEA framework through tailored prompt engi-
+neering. This setup ensures that both objective functions
+and constraints are considered, aiming to maximize the
+SINR for communication while minimizing sensing error
+using the CRB.
+• We verify the effectiveness of the proposed LLM-GWO
+operator on an established benchmark with extensive
+simulation. Simulation results show that our framework
+outperforms conventional methods in both energy and
+spectral efficiency, achieving performance close to SDR
+techniques with significantly lower computational time.
+The remainder of this paper is organized as follows. Section
+II introduces the system model and defines the optimization
+problem, including its objective functions and constraints.
+Section III presents an MOP optimization method using LLMs
+to solve the formulated problem. Section IV shows simulation
+results that demonstrate the effectiveness of our approach.
+Finally, the conclusion summarizes our findings.
+Notation: (·)T
+, (·)H
+, (·)†
+, ∥ · ∥ and ∥ · ∥F
+denote the
+transpose, the conjugate transpose, pseudo-inverse, ℓ2 norm,
+and Frobenius norm, respectively. ⊗ represents the Kronecker
+product operation. a[i] is the i-th element of a vector a.
+II. RELATED WORKS
+A. GWO-based Multiobjective evolutionary algorithm
+The GWO algorithm draws its inspiration from the hier-
+archical leadership and hunting strategies exhibited by grey
+wolves in their natural environment [21]. In GWO algorithm,
+three top solutions are selected as leaders: best xα, second-
+best xβ, and third-best xδ. These leaders guide the remaining
+wolves, denoted as xω, to search for the global optimum.
+The algorithm works through three main phases: encircling,
+hunting and attacking the prey.
+1) Encircling: The encircling phase mimics how grey
+wolves surround the prey during the hunting processing. This
+behavior can be mathematically represented as follows
+x(t + 1) = xp(t) − A(t) × |C(t) × xp(t) − x(t)|, (1)
+where x(t) denotes the position vector of a grey wolf at the
+t-th iteration, and xp(t) is the position vector of the prey at
+the same iteration. The coefficients C(t) and A(t) influence
+the behavior of wolves, which are defined as:
+A(t) = 2 × a(t) × r1 − a(t),
+C(t) = 2 × a(t) × r2,
+(2)
+where r1 and r2 are random variables within ranging between
+0 and 1. These random factors introduce exploration capabil-
+ities into the algorithm. Meanwhile, the convergence factor
+a(t) reduces linearly from 2 to 0 as the number of iterations
+increases, which is calculated as:
+a(t) = 2 −
+(2 × t)
+tmax
+. (3)
+This gradual reduction enables the wolves to shift from
+exploratory behavior in the early stages of the process to a
+more exploitative focus as the iterations advance.
+2) Hunting: By considering the location of the three best
+hunters (xα, xβ, and xδ), the other wolves xω follow them to
+hunt according to
+Dα(t) = |Cα(t) × xα(t) − x(t)|
+Dβ(t) = |Cβ(t) × xβ(t) − x(t)|
+Dδ(t) = |Cδ(t) × xδ(t) − x(t)|
+(4)
+xα(t + 1) = xα(t) − Aα(t) × Dα(t)
+xβ(t + 1) = xβ(t) − Aβ(t) × Dβ(t)
+xδ(t + 1) = xδ(t) − Aδ(t) × Dδ(t)
+(5)
+3
+x(t + 1) =
+xα(t + 1) + xβ(t + 1) + xδ(t + 1)
+3
+(6)
+where Cα(t), Cβ(t), and Cδ(t) are calculated using Eq. (2);
+xα(t + 1), xβ(t + 1) and xδ(t + 1) are the first three optimal
+solutions at (t + 1)-th iteration; and Aα(t), Aβ(t) and Aδ(t)
+can be obtained from Eq. (2).
+3) Attacking the prey: When the prey stops moving, the
+wolves stop hunting. Otherwise, the wolf begins to attack.
+This stage is directly related to the convergence factor a(t)
+in Eq. (3), which decreases linearly from 2 to 0 as the number
+of iterations increasing. As a(t) decreases, each grey wolf
+updates its position by moving between its current location
+and the prey. The algorithm starts by randomly placing the
+wolves in the search space and evaluating their fitness using
+a given function. In each iteration, the top three wolves
+(xα, xβ, and xδ), are selected to guide the rest in the main
+steps: encircling, hunting, and attacking the prey. This iterative
+process continues until the maximum number of iterations,
+tmax, is reached. The average of the three best solution is
+considered to be the final solution.
+The conventional GWO algorithm has a small number of
+parameters in the search process and is easy to implement.
+But the global search ability of the algorithm is weak, re-
+sulting in falling into a local optimum in some cases easily.
+Recent studies have also examined their potential in various
+research areas [22], [23], including notable improvements in
+metaheuristic optimization algorithms, showing that LLMs can
+imitate mutation and crossover operations from evolutionary
+algorithms through careful tuning and prompting [24]. Despite
+these promising developments, the application of LLMs for
+designing metaheuristic optimization algorithms remains in
+its infancy. The main reason that there often depend on
+frequent interactions with LLMs during optimization, which
+can be expensive and limit scalability. While single-objective
+optimization has been studied, the use of LLMs in multi-
+objective evolutionary optimization is still largely unexplored.
+This gap motivates our work on a more efficient LLM-based
+GWO framework for near-field ISAC systems. Our goal is to
+harness the strengths of LLMs to overcome current challenges
+and expand the possibilities for multi-objective optimization in
+complex environments.
+III. SYSTEM MODEL AND PROBLEM FORMULATION
+The near-field ISAC system consists of a BS equipped with
+a uniform linear array (ULA) containing N antennas. The
+system communicates with K single-antenna entities, which
+could either be communication users or sensing targets. These
+entities are collectively represented by K = {1, 2, ..., K}. As
+shown in Fig. 1, we consider a communication user or sensing
+target located at a distance of r and an angle of θ from the
+center of the ULA. Thus, the coordinate of user/target k is
+given by
+pk = [rk cos θk, rk sin θk]T
+. (7)
+Assuming the ULA is positioned parallel to the x-axis, with
+the n-th antenna element’s coordinate specified as:
+qn = (0, (n − 1)l), n = 1, ..., N (8)
+Fig. 1. Illustration of the near-field ISAC system.
+where l is the spacing between adjacent antennas. To deter-
+mine the spatial relationship between an antenna element and
+a user/target, the distance between the n-th antenna element
+and the user/target k is given by:
+dn(rk, θk) = ∥pk − qn∥
+=
+√
+r2
+k + ((n − 1)l)2 − 2rk(n − 1)l cos θk.
+(9)
+According to [25], a critical aspect of the system is the
+classification of spatial regions into near-field and far-field
+zones, which depends on the distance between the BS and
+the user/target. The boundary between these zones is defined
+as the Rayleigh distance:
+d =
+2L2
+λ
+=
+2(N − 1)2
+l2
+λ
+, (10)
+where L = (N − 1)l is the aperture of the antenna array. N
+is the number of antennas, l = λ
+2 is the antenna spacing with
+λ denoting for the carrier wavelength.
+In general, when the transmission distance surpasses the
+Rayleigh distance, the system operates in the far-field region.
+In this case, electromagnetic waves exhibit a planar wavefront,
+and the beam directionality is focused on a single angle.
+However, when the transmission distance is shorter than the
+Rayleigh distance, the system transitions into the near-field
+region. This is characterized by a spherical wavefront, where
+the beam focuses on a localized area, providing enhanced
+precision in sensing and communication. For example., in
+a 28 GHz communication system, the Fraunhofer distance
+approximates the Rayleigh distance, varies with the number of
+antenna elements. Users located within a transmission range of
+a few dozen meters may be classified in the near-field region,
+particularly for systems with larger antenna arrays. It follows
+from the above that the electromagnetic wave characteristics
+differ significantly across the near-field and far-field regions.
+In the far-field, the beam directs energy uniformly in one
+direction, making it effective for long-distance communication.
+Conversely, the spherical wavefront enables focused energy
+in a small area that enhancing sensing accuracy in the near-
+field. This ability to adapt beamforming between planar and
+spherical wavefronts is pivotal in designing efficient ISAC
+systems.
+4
+A. Channel Model
+Inspired by [25], the distance between ISAC BS and users
+depend on the Rayleigh distance characteristics, and there
+are two types of channels for near-field and far-field com-
+munications [26]. We assume that different users transmit
+mutually orthogonal pilot sequences to the ISAC BS, enabling
+independent channel estimation for each user [27]. In the
+Fresnel region of the near-field, specifically within the range
+1.2L ≤ r ≤ 2L2
+λ , it is worth noting that the channel gain
+of each link between the antenna elements and the user or
+target remains approximately identical [28]. Building on this
+property, the channel between user k and the n-th antenna
+element can be expressed as:
+h(dn(rk, θk)) = ρ̂ke−
+2jπdn(rk,θk)
+λ = ρke−
+2jπ(dn(rk,θk)−rk)
+λ , (11)
+where ρk = ρ̂ke−
+2jπrk
+λ and ρ̂k represents the free-space path
+loss of user/target k.
+1) Far-field communications: A classical approach assumes
+that the distance between the user and the ULA is significantly
+larger than the length of the ULA. Under this assumption,
+the curvature difference of the spherical wavefronts across
+different antennas becomes negligible. Therefore, the distance
+difference from the user/target k to the reference antenna and
+the n-th antenna can be approximated as:
+∆d = dn(rk, θk) − rk = (n − 1)l cos θk. (12)
+Then, the far-field channel vector h(rk, θk) ∈ CN×1
+between
+the ISAC BS and the user or target k can be formulated as
+follow:
+h(rk, θk) = [h(d1(rk, θk)), ..., h(dN (rk, θk))]
+T
+= ρ̂ke−
+2jπd0
+λ a(rk, θk),
+(13)
+where a(rk, θk) ∈ CN×1
+is the far-field array response vector
+of user/target k, which can be written as
+a(rk, θk) =
+1
+√
+N
+[
+1, e
+2jπl cos θk
+λ , ..., e
+2jπ(N−1)l cos θk
+λ
+]
+. (14)
+2) Near-field communications: When the distance between
+user/target k and ISAC BS is smaller than the Rayleigh
+distance (dn(rk, θk) < L), the wavefront is described with
+the spherical model. Thus, the distance (9) can be rewritten as
+dn(rk, θk) =
+√
+r2
+k
+(
+1 +
+((n − 1)l)2
+r2
+k
+−
+2(n − 1)l cos θk
+rk
+)
+(15)
+By applying the Fresnel approximation
+√
+1 + x ≈ 1 + 1
+2 x,
+the distance between the n-th antenna and the user/target k is
+reduced to
+dn(rk, θk) ≈ rk +
+1
+2
+(
+((n − 1)l)2
+rk
+− 2(n − 1)d cos θk
+)
+= rk +
+µ
+rk
+− ψ cos θk,
+(16)
+where µ = ((n−1)l)2
+2 and ψ = (n − 1)d.
+Then, the near-field array response vector is
+a(rk, θk) =
+1
+√
+N
+[
+..., e
+2πj
+λ
+(
+µ
+rk
+−ψ cos θk
+)
+, ...
+]
+. (17)
+Unlike communication channel modeling, monostatic target
+sensing relies on the echo signal received at the BS. This
+process is characterized by the round-trip channel matrix Q ∈
+CN×N
+, which plays a key role in sensing channel modeling.
+Let rs, θs, and ρs represent the distance, angle, and complex
+channel gain of the sensing target, respectively. Based on these
+parameters, the near-field round-trip channel matrix for target
+s is given by:
+Q(rs, θs) = ρsa(rs, θs)aT
+(rs, θs). (18)
+In view of the above-mentioned analysis, near-field mod-
+eling depends on antenna positions, while far-field modeling
+focuses on angles of arrival. The decoding vector for receiving
+the signal from user k is formulated as fk = hk/∥hk∥ with hk
+being h(rk, θk) or Q(rk, θk) depending on the distance between
+user/target k and ISAC BS.
+B. Problem Formulation
+In this subsection, we focus on the near-field network
+configuration, a coherent time block of length T is employed
+at the start of each coherent time block. Then, the communica-
+tion channels are estimated using exsiting channel estimation
+methods. Following this initialization, the ISAC BS utilizes
+the remaining portion of the coherent time block to perform
+joint communication and sensing. To achieve this, the ISAC
+BS transmits a carefully designed joint communication and
+sensing signal:
+x =
+∑
+k∈K
+fkzk + s, (19)
+where fk ∈ CN×1
+denotes the beamforming vector used
+to transmit the information symbol zk ∈ C to the user
+k. Additionally, a dedicated sensing signal s ∈ CN×1
+is
+integrated into the system to maximize the sensing degrees
+of freedom.
+To ensure effective signal transmission and sensing, specific
+assumptions are made regarding the statistical properties of
+the transmitted symbols. The information symbols zk, k ∈ K
+are independently distributed and normalized to unit power,
+satisfying E[zkzi] = 1, if k = i; and E[zkzi] = 0, otherwise.
+For the sensing signal s, the statistical behavior is described
+by the covariance matrix Rs = E[ssH
+]. The covariance matrix
+of the sensing signal provides a foundation for optimizing
+the joint communication and sensing performance. Then, the
+covariance matrix of the sensing signal is given by
+Rx = E[xxH
+] =
+∑
+k∈K
+fkfH
+k + Rs. (20)
+1) Communication Model: The communication signal re-
+ceived by user k is modeled as
+yk = hT
+k (rk, θk)fkzk
+| {z }
+desired signal
++
+∑
+i̸=k
+hT
+k (rk, θk)fizi
++ hT
+(rk, θk)s + zk,
+(21)
+where zk ∼ CN(0, σ2
+k ) denotes additive white Gaussian noise
+(AWGN). The first term represents the desired signal, while
+5
+the remaining terms include interference from other users, the
+sensing signal and noise, respectively.
+The achievable communication rate for all users is quanti-
+fied as:
+Rcom
+(h(rk, θk), fk, Rx)
+=
+∑
+k∈K
+log2
+(
+1 + SINR(rk, θk)
+)
+. (22)
+where SINR(rk, θk) =
+|hT
+(rk,θk)fk|2
+hT (rk,θk)Rxh∗(rk,θk)+|hT (rk,θk)fk|2+σ2
+k
+.
+2) Sensing Model: The sensing process involves receiving
+echo signals at the ISAC BS, which can be expressed as
+ys = Q(rs, θs)x + ws (23)
+where ws ∈ CN(0N , σ2
+s IN ) is the AWGN.
+According to [28], the joint estimation of distance and angle
+relies on the near-field sensing channel Q(rs, θs). The sensing
+performance can be estimated with the mean squared error
+(MSE) metrics: ζ2
+rs
+= E[|rs − r̂s|] and ζ2
+θs
+= E[|θs − θ̂s|2
+].
+However, due to the difficulty of deriving closed-form expres-
+sions for these MSEs, the Cramr-Rao Bound (CRB) is used
+as an alternative metric. The inverse of the Fisher Information
+Matrix (FIM) is employed to CRB, which are calculated as
+CRB(Q(rs, θs)) = J−1
+ζ (24)
+where Jζ is the FIM that can be calculated based on the
+derivatives of the received signal ys with respect to the
+parameters ζi ∈ {rs, θs}. Using the general FIM definition, Jζ
+can be partitioned into submatrices based on the parameters
+being estimated:
+Jζ =
+[
+J11 J12
+JT
+12 J22
+]
+, (25)
+where J11 captures the Fisher information for the distance and
+angle parameters {rs, θs}:
+J11 =
+2|ρs|2
+N
+σ2
+s
+Re
+{
+tr
+(
+∂Q
+∂rs
+Rx
+∂QH
+∂rs
+)}
+(26)
+and J12 represents the cross-correlation between {rs, θs} and
+ρs, that is
+J12 =
+2N
+σ2
+s
+Re
+{
+ρstr
+(
+∂Q
+∂rs
+RxQH
+)}
+(27)
+and J22 corresponds to the Fisher information for the complex
+channel gain
+J22 =
+2N
+σ2
+s
+Re
+{
+tr
+(
+QRxQH
+)}
+(28)
+and Rx = E[xxH
+] is the signal covariance matrix.
+By taking the expressions for J11, J12 and J22, the
+CRB(Q(rs, θs)) is provided as
+CRB(Q(rs, θs)) =
+(
+J11 − J12J−1
+22 JT
+12
+)−1
+. (29)
+Based on the settings mentioned above, we have ζ2
+rs
+≥
+[CRB]1,1 and ζ2
+θs
+≥ [CRB]2,2, where the submatrices J11, J12,
+and J22 are determined through detailed matrix operations.
+To evaluate near-field sensing capacity, the log sum of the
+CRBs is employed as the objective function, which provide a
+scalar measure of the overall estimation performance across
+parameters rs and θs. Since CRB values can vary widely,
+taking the logarithm reduces the dynamic range, preserving
+the relative highlighting reductions in high-error components,
+especially when using LLM-based sampling techniques. Thus,
+the sensing object function is expressed as
+Rrad
+(
+Q(rs, θs), Rx
+)
+= log2
+(
+tr
+(
+CRB(Q(rs, θs), Rx)
+))
+. (30)
+It follows that the utility of the network is maximized
+while minimizing the log sum of CRBs by jointly optimizing
+parameters rs and θs, ∀s ∈ K. Therefore, the optimization
+problem can be formulated as
+min
+h(rk,θk),
+fk,Rx,
+Q(rs,θs)
+[
+−Rcom
+(h(rk, θk), fk, Rx), Rrad
+(Q(rs, θs), Rx)
+]
+(31a)
+s.t. Rcom
+(h(rk, θk), fk, Rx) ≥ Rmin,k (31b)
+0 ≤ tr(Rx) ≤ Pmax (31c)
+θk, θs ∈ P, ∀k, s ∈ K (31d)
+Rx ≻
+∑
+k∈K
+fkfH
+k (31e)
+where Rmin,k denotes the minimum rate requirement of user
+k and tr(Rx) denotes the transmit power of ISAC BS, which
+should be no less than 0; Pmax denotes the maximum transmit
+power. (31d) denotes the constraints of user/target angle, which
+are limited in the range of P. The last constraint (31e) is from
+that the covariance matrix of the sensing signal, Rs, which is
+derived from the relationship:
+Rs = Rx −
+∑
+k∈K
+fkfk (32)
+where fk denotes the beamforming vector for user k. The
+sensing signals are appropriately designed without compromis-
+ing the performance of communication signals. The condition
+Rs ≻ 0 guarantees a positive semidefinite covariance matrix,
+which is necessary for the stability and feasibility of the
+sensing process.
+There is always a trade-off between the two objects
+Rcom
+(h(rk, θk), fk, Rx) and Rrad
+(Q(rs, θs), Rx) in the MOO
+problem (31). In formulated problem (31), it is difficult to
+optimize the physical channel realizations due to the nature
+of the channel stochastic and environment-dependent. Instead,
+we optimize channel-related parameters by configuring the
+positions of communication users and sensing targets, which
+determine the angle of arrival and distance. This abstraction
+enables learning spatial configurations to jointly enhance com-
+munication and sensing, which is also a core of our LLM-
+based framework.
+IV. PROPOSED ALGORITHM
+The proposed problem (31) is non-convex due to the cou-
+pled variables in the objective functions, making it difficult
+to solve directly. To address this issue, the LLM-based GWO
+optimization strategy is developed to solve the problem (31),
+where the LLM is used to convert natural language descrip-
+tions into formal mathematical expressions. To this end, the
+6
+proposed problem (31) can be rewritten as follows:
+P1 : min
+x
+G(x) = min
+x
+{
+−Rcom
+(x), Rrad
+(x)
+}
+s.t. x ∈ C
+(33)
+where x = [r1, r2, ..., rK, θ1, θ2, ..., θK, f1, f2, ..., fK] rep-
+resents all optimization variables, C denotes the decision
+space, and Fa(x) = Rcom
+(h(rk, θk), fk, Rx), Fb(x) =
+Rrad
+(Q(rs, θs), Rx). The proposed LLM-GWO problem in-
+volves decomposing (P1) into a series of single-objective
+sub-problems based on the weighted Tchebycheff method, in
+which the sub-problem is expressed as
+min
+x
+U(x|ω, ϑ) = max
+i∈{a,b}
+{ωi(Fi(x) − ϑ∗
+i )}
+s.t. x ∈ C
+(34)
+where ω = [ωa, ωb] denotes the weight vector satisfying
+0 < ωa, ωb < 1, ωa +ωb = 1. The current minimum objective
+function values is defined as ϑ∗
+i = min{Fi(x)} for i = a, b.
+This distributed weight vectors is provided by Das and Dennis
+[29], which is particularly suitable for controlling the trade-
+off between objectives in the proposed optimization setting.
+The weighted Tchebycheff method guarantees a fundamental
+relationship between Pareto-optimal solutions and specific
+weights [30]. For each Pareto-optimal point x∗
+, there exists
+a corresponding weight vector ω∗
+to ensure x∗
+as the optimal
+solution of the weighted Tchebycheff formulation in (34). This
+dual relationship highlights the equivalence between solving
+the Tchebycheff formulation with appropriate weights and the
+Pareto-optimal solution.
+For conventional Grey Wolf Optimizer (GWO) algorithm,
+the gray wolf population gradually converges around the opti-
+mal individual as the number of iterations increases, resulting
+in a decline in population diversity. This makes it difficult
+to avoid local optimal solution when the optimal individual
+becomes trapped, which result in premature termination and
+reduced accuracy in finding the optimal solution. Inspired by
+LLM [19], the LLM-driven search operator is integrated into
+the framework of MOO problem (34), whose main function is
+to effectively expand the search space and improve the global
+search ability of the algorithm. The steps are as follows.
+1) Initialization: The initialized weight variables with a
+population size of M is selected, i.e., ωj, j = 1, ..., M. LLMs
+adapt to tasks through in-context learning (ICL) by leveraging
+input examples; however, the performance heavily depends on
+the selection of diverse and high-quality inputs. Inspired by the
+principle of lens imaging, we introduce the reverse learning
+strategy that including both the solution and its opposite. By
+combining the reverse learning strategy with LLM search, the
+bidirectional search is considered to expand the search scope
+and improve the search diversity of ICL.
+As shown in Fig. 2, the reverse learning strategy with the
+principle of lens imaging is illustrated. The reverse point of
+the individual ϑ can be calculated with the principle of lens
+imaging:
+(a + b)/2 − ϑ
+ϑ∗ − (a + b)/2
+=
+h
+h∗
+. (35)
+where ϑ∗
+denotes the reverse point of the individual ϑ.
+Fig. 2. Schematic diagram of lens imagingreverse learning.
+If κ = h/h∗
+, then Eq. (35) is extend to the i-dimensional
+optimization problem, which can be rewritten as:
+ϑ∗
+i =
+ϑmin + ϑmax
+2
++
+ϑmin + ϑmax
+2κ
+−
+ϑi
+κ
+(36)
+where ϑmin and ϑmax denote the minimum and maximum
+values of the variables across all initial solutions. ϑ∗
+i is the
+lens inverse solution of ϑi. The scaling factor κ of the lens
+is important for the learning performance of lens imaging. A
+smaller κ produces a wider range of inverse solutions, while a
+larger κ results in a narrower range, supporting more focused
+local searches.
+However, this approach becomes ineffective when the lead
+wolves are trapped in a local minimum or are far from the
+optimal solution. To address this issue, a probabilistic strategy
+is exploited by selecting m inputs for the j-th subproblem:
+with probability P from a local neighborhood uj
+, and with
+probability 1−P from the global population Φ. This balances
+local precision and global diversity, capturing specific patterns
+while avoiding overfitting. This expands the search scope
+and enables a bidirectional search for the optimal solution.
+Combining the reverse learning strategy with LLM improves
+the GWO algorithm’s search performance, which can solve
+complex tasks effectively by leveraging both localized and
+global information. Thus, the original problem (33) is decom-
+posed into M single-objective sub-problem based on GWO
+strategy, in which the j-th subproblem associated with ωj
+is
+given by
+U(xj
+|ωj
+, ϑj
+) = max
+i∈{a,b}
+{
+ωj
+i (Fi(x) − ϑi)
+}
+. (37)
+Accordingly, an initial population of size M is uniformly
+and randomly generated from set C, i.e., xj
+∈ C, j = 1, ..., N,
+where xj
+is the initial solution for the j-th subproblem. The
+function U(xj
+|ωj
+, ϑj
+) is continuous with respect to ωj
+, which
+which implies that the optimal solutions of two subproblems
+j and j′
+will be close if their weight vectors ωj
+and ωj′
+are
+close in terms of Euclidean distance. Therefore, the neighbor
+set of ωj
+is defined as the set of indices of the S weight
+vectors nearest to ωj
+, denoted as Nj = {j1, ..., jS}, which
+can be expressed as
+ωj
+= 2 × a(t) × r2, (38)
+where a(t) can be given by (3). The difference is that the
+size of the selected individuals can scale flexibly due to
+the adaptable interaction with LLMs. This scalability enables
+the method to accommodate varying problem complexities or
+7
+optimization requirements dynamically. After individuals are
+selected, there are ranked in descending order based on the
+evaluation metrics. Then, the top three candidate solutions (i.e.
+xα, xβ and xδ) are chosen. These candidates are subsequently
+assessed using the aggregation function corresponding to the
+j-th subproblem, ensuring an efficient evaluation process.
+2) Evolution: The problem (33) is reformulated as a se-
+ries of scalarized objective functions. Within the transformed
+framework, a LLM is employed as a black-box operator,
+performing two key tasks: encircling and hunting. These op-
+erations are executed through prompt engineering to generate
+new candidate solutions.
+To design effective prompts, we incorporate the following
+three types of information into prompt engineering: problem
+description, in-context examples and task instructions. More
+specifically, for the in-context examples of the j-th subprob-
+lem at each generation, the LLM receives d selected parent
+solutions along with their objective values. These examples are
+partly drawn from Nj and partly from the entire population.
+Regarding constraint (31c), the LLM is instructed to strictly
+avoid generating any infeasible points. For constraint (31c),
+the LLM is asked to strictly output unexpected point. Then,
+we introduce the transmit powers as follows
+tr(Rx) = tr
+(
+∑
+k∈K
+fkfH
+k
+)
++ tr(Rs) (39)
+where tr(
+∑
+k∈K fkfH
+k ) and tr(Rs) = tr(ssH
+) denote the
+communication power and sensing power of ISAC BS, respec-
+tively. The communication vector fk and sensing vector s can
+be obtained from the results of LLM. Moreover, each variable
+is normalized in the prompt to ensure the generated points
+within the viable ranges. A detailed example of the prompt
+and the generated solution are provided in Algorithm 1.
+Fig. 2 shows the overall design of the proposed LLM-
+GWO algorithm for the ISAC system in the near-field region.
+Specifically, for the number of iterations t, the convergence
+coefficient a(t) is obtained according to (3) and the weight
+vector ωj
+is computed according to (38). Subsequently, with
+the addition of the initialized reference point ϑ, the neighbor
+set Nj, and the population Φ, the subproblem Uj
+(x|ω, ϑ)
+and the parent points xi, · · · , xd are determined to generate
+the sample set for the textual prompt entered into LLM
+with task goal, definition and rules. The LLM generates a
+number of individuals based on the textual prompt, and the
+best 3 individuals xα, xβ, xδ are selected to calculate the
+best candidate solutions x′
+according to (6). After that, ϑ,
+Nj and Φ are updated based on x′
+and the process will
+continue to repeat according to the next iteration number t+1.
+An example of a prompt is illustrated as follow:
+Example Prompt:
+-“As a research expert in near-field ISAC and metaheuris-
+tic algorithm.”
+-“You are given a multi-objective evolutionary problem
+to maximize the spectral efficiency of users and the
+localization Cramer-Rao of the sensing target. ”
+Algorithm 1 Proposed LLM-MOEA algorithm
+1: Input The population size: N. The neighbor size: S.
+Parents number: d; Iteration number: Nmax; The number
+of points generated by LLM: no. .
+2: Initialize: set Φ = ∅. ω1
+, ..., ωM
+based on Das and
+Dennis method.
+3: Calculate the d the M closest weight variables to each
+weight variable ωj, j = 1, ..., M.
+4: Update the neighbor set Nj.
+5: Generate an initial population xj, j = 1, ..., M and com-
+pute U(x|ω, ϑ).
+6: Reference point generated by ϑ∗
+.
+7: while Nmax not reached do
+8: i = i + 1;
+9: Evolution
+10: forj = 1, 2, ..., M do;
+11: Selection:
+12: Parent solution points d selected by partly from Nj
+with a probability of P and partly from the
+population with a probability of 1 − P.
+13: Reproduction via the LLM:
+14: a) Generate textual Prompt for LLM given the
+subproblem Uj
+(x|ω, ϑ).
+15: b) Using LLM, a number of offspring points
+{x′
+1, ..., x′
+no
+} is generated with given the instruc-
+tion prompt.
+16: Update:
+17: a) update the best candidate solution x′
+from (40) and
+based on Φ.
+18: b) update variables ϑ∗
+, {xj1
+, ..., xjM
+} and Φ
+19: Output: Φ
+-“Now you will help me minimize (34)”
+-“Object 1 represents the ISAC BS communication per-
+formance and object 2 represents the ISAC BS sensing
+performance.”
+-“Variable 1 and Variable 2 represent the distance and
+angle of near-field communication users, respectively;
+Variable 3 represents the transmitted precoding of BS;
+Variable 4 and Variable 5 represent the distance and angle
+of near-field sensing user, respectively. ”
+-“Please generate two points that are different from all
+points above, and not dominated by any of the above.”
+-“The points with their objective values as shown below.”
+point: <start>7.304 -2.12 6.058 8.926 6.256<end>
+value: 9.515
+point: <start>8.468 4.460 7.970 1.244 6.217<end>
+value: 9.360
+...
+point: <start>3.022 -5.726 2.688 6.290 4.906<end>
+value: 9.519
+point: <start>3.098 -5.724 4.940 8.694 1.682<end>
+value: 9.876
+Please generate two points that are different from all
+points above, and new points requires targeting unex-
+plored areas of the search space, ensuring they remain
+lower than previously identified points. Each output new
+8
+Fig. 3. A LLM-based GWO framework for near-field ISAC system.
+point must start with <start> and end with <end>.
+1) Description of task: The objective of this task is to
+identify more optimal solutions by minimizing the aggregation
+function value for the j-th subproblem. The goal is to enhance
+solution quality while maintaining computational efficiency.
+2) In-context samples: To assist the LLM in generating
+new candidate solutions, a set of demonstration samples is
+provided. These samples include solutions from the current
+population and the corresponding fitness values. Each sample
+follows a specific format: the variables are marked with
+a starting symbol <start> and an ending symbol <end>.
+This structured presentation ensures clarity and consistency
+in guiding the LLM.
+3) Expected outputs: The desired result is to generate s = 2
+new individuals (points) that are distinct from the provided
+input points. These new points should adhere to a recognizable
+format, such as beginning with <start> and ending with
+<end>, to allow the LLE-GWO algorithm to parse them
+effectively from the LLM’s responses. To maintain stable in-
+teraction, restrictions are imposed to avoid redundancy, such as
+preventing the inclusion of code or unnecessary explanations.
+4) Update: Within the search space, the best candidate
+solution, xα, is considered the closest to the optimal point,
+followed sequentially by xβ and xδ. To mathematically formal-
+ize the hunting behavior, all new output points x′
+generated
+by the LLM are sorted in descending order based on their
+performance or fitness values. This step ensures a focused
+search toward optimal solutions and aligns the algorithm’s
+progression with the most promising candidates, and then, the
+best candidate solution x′
+is updated by adding up the mean
+values of the three best positions (i.e., xα, xβ and xδ) as (6),
+that is
+x′
+=
+xα + xβ + xδ
+3
+(40)
+0 100 200 300 400 500 600 700 800 900 1000
+Iteration
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+Average
+Fitness
+Functions GWO
+LEDMA
+Proposed LLM-GWO
+Fig. 5. The convergence curves for the average fitness functions.
+For each output point x′
+generated from (40), the reference
+point ϑ∗
+is updated as follows: for i = 1, 2, if ϑ∗
+i > Fi(x),
+then set ϑ∗
+i = Fi(x). Next, the neighboring population is
+updated. For each ji ∈ Nj, if U(x′
+|ωji
+, ϑ∗
+) ≤ U(xji
+|ωji
+, ϑ∗
+),
+then update xji
+= x′
+and G(xji
+) = G(x′
+). Finally, the
+evolutionary archive Φ is updated by removing all solutions
+dominated by x′
+. If no existing solution in Φ dominates x′
+,
+then add x′
+to Φ.
+V. NUMERICAL RESULTS
+In this section, the prediction performance of the proposed
+is evaluated with the near-field communication setting of ISAC
+network. As similarly in [31], we consider the difference in the
+probability of near-field and far-field users maximize the SINR
+of the near-field communication objective function, while
+minimization near-field sensing performance. The magnitude
+of the RCS is assumed to be uniformly distributed in range
+9
+(a) GWO (b) LEDMA (c) LLM-GWO
+Fig. 4. 2-D version forms of the used real-valued benchmarking functions (r, θ, f).
+in [0.8, 1]. The channel power at a reference distance of 1
+meter is set to ϱ0 = −60dB. Additionally, the ISAC BS
+operates with a bandwidth of B = 51.2 MHz, while the
+noise power is fixed at σ2
+= −110dBm. The transmission
+power limits for the ISAC BS are defined as pmax = 20dBm
+and pmin = 0dBm, ensuring the system adheres to realistic
+operational constraints.
+To verify the auxiliary role of the LLM in accelerating the
+convergence rate and enhancing the diversity of the population
+within the MOEA framework, we conducted a comparative
+analysis of existing LLM-enabled metaheuristic algorithm,
+named as LEDMA [32], GWO and our proposed LLM-
+GWO framework. Among them, LEDMA and GWO share
+the same algorithmic foundation as our framework, with the
+primary distinction lying in their reproductive strategies. These
+methods have proven to be effective for solving MOPs due to
+their ability to efficiently handle objectives, maintain solution
+diversity, and adapt to complex problems. However, there
+also face notable challenges, such as sensitivity to parame-
+ter settings, high computational intensity, and limitations in
+tackling high-dimensional problems. The effectiveness of these
+methods often depends on the specific problem, requiring
+a careful balance of trade-offs during implementation. For
+the proposed LLM-GWO algorithm, we integrate the GPT-
+4.0 model as the LLM search operator, the main reason is
+that it demonstrated capacity to perform reasoning, constraint-
+aware synthesis and multi-objective trade-off analysisłall of
+which are core to our formulation of LLM-based optimization.
+Additionally, GPT-4’s reinforcement learning fine-tuning and
+instruction-following behavior make it well-suited to high-
+level control and policy generation in structured environments.
+Fig. 4 compares the embeddings of samples with the highest
+and lowest Pareto front using three visualization methods:
+GWO, LEDMA and the proposed LLM-GWO. In the Fig. 4,
+the proposed LLM-GWO decision boundary clearly separates
+the two groups, showing that they occupy different areas in the
+embedding space. These findings indicate that Pareto front not
+only reflects the quality of jailbreak prompts but also strongly
+influences their representation in the embedding space.
+Fig. 5 depicts the convergence curves of of our proposed
+LLM-GWO approach as well as two baseline algorithms with
+respect to the number of iterations. With the number of
+iterations increasing, the convergence performance of LEDMA
+0 2 4 6 8 10 12 14 16 18
+Rrad
+21
+22
+23
+24
+25
+26
+R
+com
+Proposed
+GWO
+Fig. 6. Pareto-optimal points distribution achieved by existing GWO and
+LLM-GWO algorithms.
+scheme reduces more faster than that of GWO scheme. An in-
+teresting phenomenon is that with a small number of iterations,
+deploying the proposed LLM-GWO framework can converges
+rapidly to a stable, desired state, and it also has better fault
+tolerance and high stability. Besides, Fig. 5 demonstrates that
+the proposed LLM-GWO approach converges faster than the
+LEDMA and GWO scheme, and achieves the lowest average
+fitness function value of 0.007, while the LEDMA and GWO
+achieve average fitness function value of 0.267 and 0.029,
+respectively. This further demonstrates the superiority of our
+proposed LLM-GWO approach in terms of the average fitness
+function.
+Fig. 6 illustrates the relationship between the sensing rate
+Rrad
+min for distance and angle estimation and the minimum
+communication rate Rcom
+min . We observe that the Pareto bound-
+ary achieved by the proposed LLM-GWO outlined in (34).
+The curve connecting these two points signifies the Pareto
+boundary of the ISAC’s rate region, thereby revealing a funda-
+mental trade-off between sensing accuracy and communication
+performance. Despite this trend, it is worth emphasizing that
+the RCRBs remain at a relatively low level even when Rcom
+min is
+considerably high. This observation validates the effectiveness
+of the proposed LLM-GWO approach. Furthermore, although
+the proposed LLM-GWO scheme experiences a slight degra-
+10
+0 10 20 30 40 50 60 70 80 90
+Angle(degree)
+-12
+-10
+-8
+-6
+-4
+-2
+0
+2
+Beampattern(dB)
+Proposed
+LEDMA
+GWO
+Fig. 7. Beampattern of radar functionality of LLM-GWO scheme.
+dation in sensing performance at the same communication
+rate, it significantly reduces power consumption. This trade-off
+makes LLM-GWO a compelling solution in power-constrained
+scenarios.
+Fig. 7 shows how Algorithm 1 enables radar functionality by
+steering transmit and receive beams toward specific directions,
+30◦
+and 60◦
+. The algorithm focuses signals from multiple
+antennas to form a directional ”beam” or ”lobe” [33]. This
+beam is based on LLM-driven beam training, which enhances
+target detection and reduces interference. The transmit signal
+helps by directing energy toward the targets, while the receive
+beamforming is optimized to clearly capture the reflected
+signals. This demonstrates the beamforming gain achieved by
+Algorithm 1 in the far or near-field ISAC systems. As shown
+in the Fig. 7, the proposed LLM-GWO approach provides
+higher power at the target locations than the LEDMA and
+GWO-based methods. This result confirms that the proposed
+LLM-GWO approach improves target estimation performance.
+VI. CONCLUSION
+This paper presented a novel LLM-enabled near-field ISAC
+framework that jointly optimizes communication and sensing
+by maximizing network utility and minimizing localization
+CRBs. By integrating LLM with the Grey Wolf Optimizer
+through prompt-guided decomposition of a multi-objective
+problem, we introduced a scalable and effective solution
+strategy. Numerical evaluations confirmed the superior perfor-
+mance of the proposed LLM-GWO method over traditional
+GWO, achieving improved Pareto fronts and faster conver-
+gence. These results not only validate the feasibility of LLM-
+assisted GWO optimization in ISAC systems but also establish
+a promising foundation for future research into intelligent,
+adaptive optimization tools in ISAC applocation.
+REFERENCES
+[1] N. Babu, A. Kosasih, C. Masouros, and E. Bjrnson, “Symbol-Level
+Precoding for Near-Field ISAC,” IEEE Communications Letters, vol. 28,
+no. 9, pp. 2041–2045, 2024.
+[2] Z. Chen, J. Ye, and L. Huang, “A two-stage beamforming design for
+active ris aided dual functional radar and communication,” in 2023 IEEE
+Wireless Communications and Networking Conference (WCNC), 2023,
+pp. 1–6.
+[3] Z. Chen, G. Chen, J. Tang, S. Zhang, D. K. So, O. A. Dobre, K.-K.
+Wong, and J. Chambers, “Reconfigurable-Intelligent-Surface-Assisted
+B5G/6G Wireless Communications: Challenges, Solution, and Future
+Opportunities,” IEEE Communications Magazine, vol. 61, no. 1, pp.
+16–22, 2023.
+[4] Z. Zhang, Y. Liu, Z. Wang, J. Chen, and T. Q. S. Quek, “Dynamic
+MIMO Architecture Design for Near-Field Communications,” IEEE
+Transactions on Wireless Communications, vol. 23, no. 10, pp. 14 669–
+14 684, 2024.
+[5] H. Jiang, W. Shi, X. Chen, Q. Zhu, and Z. Chen, “High-Efficient
+Near-Field Channel Characteristics Analysis for Large-Scale MIMO
+Communication Systems,” IEEE Internet of Things Journal, pp. 1–1,
+2024.
+[6] S. Yang, C. Xie, W. Lyu, B. Ning, Z. Zhang, and C. Yuen, “Near-
+Field Channel Estimation for Extremely Large-Scale Reconfigurable
+Intelligent Surface (XL-RIS)-Aided Wideband mmWave Systems,” IEEE
+Journal on Selected Areas in Communications, vol. 42, no. 6, pp. 1567–
+1582, 2024.
+[7] J. Cong, C. You, J. Li, L. Chen, B. Zheng, Y. Liu, W. Wu, Y. Gong,
+S. Jin, and R. Zhang, “Near-Field Integrated Sensing and Communi-
+cation: Opportunities and Challenges,” IEEE Wireless Communications,
+pp. 1–8, 2024.
+[8] K. Qu, S. Guo, N. Saeed, and J. Ye, “Near-Field Integrated Sensing
+and Communication: Performance Analysis and Beamforming Design,”
+IEEE Open Journal of the Communications Society, vol. 5, pp. 6353–
+6366, 2024.
+[9] Y. Xu, Y. Li, and T. Q. Quek, “Robust transmission design for ris-
+assisted integrated sensing and communication systems,” IEEE Trans-
+actions on Vehicular Technology, vol. 73, no. 11, pp. 17 151–17 164,
+2024.
+[10] X. Yang, R. Zhang, D. Zhai, F. Liu, R. Du, and T. X. Han, “Constel-
+lation design for integrated sensing and communication with random
+waveforms,” IEEE Transactions on Wireless Communications, vol. 23,
+no. 11, pp. 17 415–17 428, 2024.
+[11] D. Singh, A. Kumar, H. D. Joshi, A. K. Singh, W. Anwar, T. Myllyl,
+M. Magarini, L. Nkenyereye, and K. Dev, “Generalized Adaptive
+Spreading Modulation: A Novel Waveform for Integrated Sensing and
+Communication Oriented Vehicular Applications,” IEEE Internet of
+Things Journal, vol. 11, no. 18, pp. 29 486–29 493, 2024.
+[12] N. H. Chu, D. N. Nguyen, D. T. Hoang, Q.-V. Pham, K. T. Phan, W.-J.
+Hwang, and E. Dutkiewicz, “AI-Enabled mm-Waveform Configuration
+for Autonomous Vehicles With Integrated Communication and Sensing,”
+IEEE Internet of Things Journal, vol. 10, no. 19, pp. 16 727–16 743,
+2023.
+[13] A. M. Elbir, K. V. Mishra, S. Chatzinotas, and M. Bennis, “Terahertz-
+Band Integrated Sensing and Communications: Challenges and Oppor-
+tunities,” IEEE Aerospace and Electronic Systems Magazine, pp. 1–10,
+2024.
+[14] H. Jiang, W. Shi, Z. Zhang, C. Pan, Q. Wu, F. Shu, R. Liu, Z. Chen, and
+J. Wang, “Large-Scale RIS Enabled Air-Ground Channels: Near-Field
+Modeling and Analysis,” IEEE Transactions on Wireless Communica-
+tions, pp. 1–11, 2024.
+[15] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, “LLM4CP: Adapting
+Large Language Models for Channel Prediction,” Journal of Communi-
+cations and Information Networks, vol. 9, no. 2, pp. 113–125, 2024.
+[16] M. Wong, T. Rios, S. Menzel, and Y. S. Ong, “Prompt Evolutionary De-
+sign Optimization with Generative Shape and Vision-Language models,”
+in 2024 IEEE Congress on Evolutionary Computation (CEC), 2024, pp.
+1–8.
+[17] M. Pluhacek, A. Kazikova, T. Kadavy, A. Viktorin, and R. Senkerik,
+“Leveraging large language models for the generation of novel meta-
+heuristic optimization algorithms,” in Proceedings of the Companion
+Conference on Genetic and Evolutionary Computation, 2023, pp. 1812–
+1820.
+[18] C. Yang, X. Wang, Y. Lu, H. Liu, Q. V. Le, D. Zhou, and X. Chen,
+“Large language models as optimizers,” vol. arXiv preprint arX-
+iv:2309.03409, 2024.
+[19] F. Liu, X. Lin, Z. Wang, S. Yao, X. Tong, M. Yuan, and Q. Zhang, “Large
+Language Model for Multi-objective Evolutionary Optimization,” arXiv
+preprint arXiv:2310.12541, 2024.
+[20] S. Mirjalili, S. M. Mirjalili, and A. Lewis, “Grey wolf optimizer,”
+Advances in Engineering Software, vol. 69, pp. 46–61, 2014.
+[21] E. Emary, H. M. Zawbaa, and C. Grosan, “Experienced gray wolf
+optimization through reinforcement learning and neural networks,” IEEE
+Transactions on Neural Networks and Learning Systems, vol. 29, no. 3,
+pp. 681–694, 2018.
+11
+[22] K. Sanderson, “GPT-4 is here: what scientists think,” Nature, vol. 615,
+p. 773, 2023.
+[23] J. Chen, Z. Liu, X. Huang, C. Wu, Q. Liu, G. Jiang, Y. Pu, Y. Lei,
+X. Chen, and X. Wang, “When large language models meet personal-
+ization: perspectives of challenges and opportunities,” World Wide Web,
+vol. 27, no. 4, pp. 1–45, 2024.
+[24] Y. Chen, X. Song, C. Lee, Z. Wang, R. Zhang, D. Dohan, K. Kawakami,
+G. Kochanski, A. Doucet, M. A. Ranzato, S. Perel, and N. de Freitas,
+“Towards learning universal hyperparameter optimizers with transform-
+ers,” in Advances in Neural Information Processing Systems, S. Koyejo,
+S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, Eds., vol. 35.
+Curran Associates, Inc., 2022, pp. 32 053–32 068.
+[25] Z. Ding, R. Schober, and H. V. Poor, “NOMA-Based Coexistence
+of Near-Field and Far-Field Massive MIMO Communications,” IEEE
+Wireless Communications Letters, vol. 12, no. 8, pp. 1429–1433, 2023.
+[26] K. Wang, Z. Ding, and G. K. Karagiannidis, “User Clustering for
+Coexistence Between Near-Field and Far-Field Communications,” IEEE
+Communications Letters, vol. 28, no. 10, pp. 2442–2446, 2024.
+[27] X. Zhang, H. Zhang, and Y. C. Eldar, “Near-Field Sparse Channel
+Representation and Estimation in 6G Wireless Communications,” IEEE
+Transactions on Communications, vol. 72, no. 1, pp. 450–464, 2024.
+[28] Z. Wang, X. Mu, and Y. Liu, “Near-Field Integrated Sensing and
+Communications,” IEEE Communications Letters, vol. 27, no. 8, pp.
+2048–2052, 2023.
+[29] I. Das and J. E. Dennis, “Normal-Boundary Intersection: A New
+Method for Generating the Pareto Surface in Nonlinear Multicriteria
+Optimization Problems,” vol. 8, no. 3, 1998.
+[30] Y. Hao, Q. Ni, H. Li, and S. Hou, “Robust Multi-Objective Optimization
+for EE-SE Tradeoff in D2D Communications Underlaying Hetero-
+geneous Networks,” IEEE Transactions on Communications, vol. 66,
+no. 10, pp. 4936–4949, 2018.
+[31] Q. Wu, Y. Zeng, and R. Zhang, “Joint Trajectory and Communication
+Design for Multi-UAV Enabled Wireless Networks,” IEEE Transactions
+on Wireless Communications, vol. 17, no. 3, pp. 2109–2121, 2018.
+[32] H. Li, M. Xiao, K. Wang, D. I. Kim, and M. Debbah, “Large Language
+Model Based Multi-Objective Optimization for Integrated Sensing and
+Communications in UAV Networks,” IEEE Wireless Communications
+Letters, vol. 14, no. 4, pp. 979–983, 2025.
+[33] H. Li, Z. Wang, X. Mu, P. Zhiwen, and Y. Liu, “Near-Field Integrated
+Sensing, Positioning, and Communication: A Downlink and Uplink
+Framework,” IEEE Journal on Selected Areas in Communications,
+vol. 42, no. 9, pp. 2196–2212, 2024.
+

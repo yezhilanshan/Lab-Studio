@@ -1,0 +1,778 @@
+WiFi2Cap: Semantic Action Captioning from Wi-Fi
+CSI via Limb-Level Semantic Alignment
+Tzu-Ti Wei, Chu-Yu Huang, Yu-Chee Tseng, and Jen-Jee Chen
+PAIRLab, College of AI, National Yang Ming Chiao Tung University, Taiwan, R.O.C
+{a2699560.ai09, apple32112311.ai12, yctseng, jenjee}@nycu.edu.tw
+Abstract—Privacy-preserving semantic understanding of hu-
+man activities is important for indoor sensing, yet existing
+Wi-Fi CSI-based systems mainly focus on pose estimation or
+predefined action classification rather than fine-grained language
+generation. Mapping CSI to natural-language descriptions re-
+mains challenging because of the semantic gap between wireless
+signals and language and direction-sensitive ambiguities such as
+left/right limb confusion. We propose WiFi2Cap, a three-stage
+framework for generating action captions directly from Wi-Fi
+CSI. A vision–language teacher learns transferable supervision
+from synchronized video–text pairs, and a CSI student is
+aligned to the teacher’s visual space and text embeddings. To
+improve direction-sensitive captioning, we introduce a Mirror-
+Consistency Loss that reduces mirrored-action and left–right am-
+biguities during cross-modal alignment. A prefix-tuned language
+model then generates action descriptions from CSI embeddings.
+We also introduce the WiFi2Cap Dataset, a synchronized CSI–
+RGB–sentence benchmark for semantic captioning from Wi-Fi
+signals. Experimental results show that WiFi2Cap consistently
+outperforms baseline methods on BLEU-4, METEOR, ROUGE-
+L, CIDEr, and SPICE, demonstrating effective privacy-friendly
+semantic sensing.
+Index Terms—Wi-Fi CSI, Privacy-Preserving Sensing, Seman-
+tic Action Captioning, Cross-Modal Alignment, Visual Knowl-
+edge Transfer, Mirror-Consistency
+I. INTRODUCTION
+Generating natural-language descriptions of human activ-
+ities is a key capability for human-centered sensing and
+interaction. Recent vision–language models and contrastive
+pretraining (e.g., CLIP [1]) have substantially improved cap-
+tioning from visual inputs, but deploying cameras in private
+indoor spaces (e.g., bedrooms and hospital wards) raises
+serious privacy concerns.
+This motivates privacy-preserving alternatives that avoid
+recording identifiable appearance information. Prior work
+has explored non-visual modalities such as mmWave radar,
+infrared sensing, and Wi-Fi signals [2]–[9]. Among them, Wi-
+Fi Channel State Information (CSI) is robust to occlusion and
+lighting, and has enabled fine-grained perception such as pose
+estimation [9]–[11].
+However, existing CSI-based systems largely target low-
+or mid-level outputs, such as joint coordinates, segmentation
+masks, or predefined action labels, rather than free-form
+and fine-grained language generation. As a result, mapping
+numerical radio signals to natural-language descriptions re-
+mains challenging for two reasons. First, there is a substan-
+tial semantic gap between CSI and language, together with
+limited paired CSI–text supervision. Second, action caption-
+ing requires preserving direction-sensitive semantics, such as
+left/right limbs and mirrored movements, which are easily
+confused during cross-modal alignment.
+To address these challenges, we study the largely unex-
+plored problem of semantic action captioning directly from
+Wi-Fi CSI. We propose WiFi2Cap, a three-stage framework in
+which a data-rich vision–language teacher transfers semantic
+knowledge to a CSI student through contrastive alignment,
+followed by caption generation with a frozen autoregressive
+language model via prefix tuning (Fig. 1). To reduce frequent
+confusions between mirrored actions, such as left–right limb
+ambiguity, we further introduce a Mirror-Consistency Loss
+during alignment.
+To support both training and evaluation, we also introduce
+the WiFi2Cap Dataset, a synchronized benchmark for CSI-
+based semantic captioning that combines Wi-Fi CSI, RGB
+videos, and sentence-level action descriptions. The dataset
+covers 100 action classes, with each instance recorded as a
+5-second clip and captured with one transmitter and three
+receivers.
+Contributions. This paper makes three contributions:
+• Wi-Fi CSI action captioning: We propose WiFi2Cap, a
+framework that generates fine-grained action captions di-
+rectly from CSI by combining visual knowledge transfer
+with contrastive learning.
+• Mirror-Consistency for direction-sensitive semantics:
+We identify left/right limb confusion and mirrored-action
+ambiguity as a critical failure mode in cross-modal action
+captioning, and introduce a mirror-consistency objec-
+tive to explicitly enforce limb-aware, direction-sensitive
+alignment.
+• Dataset and evaluation: We introduce the WiFi2Cap
+Dataset, a synchronized CSI–RGB–sentence benchmark
+tailored to semantic caption generation, and demonstrate
+consistent gains over CSI-only baselines on standard
+captioning metrics.
+II. RELATED WORK
+A. RF-Based Human Sensing
+RF sensing has gained increasing attention for device-free
+human understanding due to its robustness to lighting and
+occlusion and its privacy advantage over cameras [12], [13].
+arXiv:2603.22690v1
+[cs.CV]
+24
+Mar
+2026
+Stage 1: Vision-Language Teacher
+CLIP
+Visual Encoder
+Action caption
+“The person raises their right arm and
+moves it back and forth in a waving motion.”
+Video
+Embedding
+CLIP Text
+Encoder
+Text
+embedding
+Teacher learns a shared video-text semantic space
+Stage 2: CSI-Text Student
+Student first matches the teacher, then aligns to language
+Stage 3: Prefix-Guided
+Caption Generation
+CSI
+Encoder
+Linear Layer
+GPT-2
+decoder
+Generated caption
+“a person raises the left hand and waves”
+Only CSI is needed at inference time
+Text
+Projection Head
+Video
+Transformer
+Encoder
+Visual
+Projection
+Head
+: Frozen : Trainable
+Text
+embedding
+Mirror-Consistancy Loss & Contrastive Loss
+Stage 2-2
+CLIP Text
+Encoder
+Text
+Projection Head
+Action caption
+“The person raises their right arm and
+moves it back and forth in a waving motion.”
+CSI
+Encoder
+CSI embedding
+Stage 2-1 Alignment Loss
+Mirror-Consistancy Loss & Contrastive Loss
+Fig. 1. WiFi2Cap framework. (a) Stage 1: Vision–language teacher trained with contrastive learning and Mirror-Consistency. (b) Stage 2: CSI–text student
+trained via teacher-guided visual alignment and CSI–text contrastive learning with Mirror-Consistency. (c) Stage 3: Prefix-guided language generation.
+Beyond Wi-Fi, other privacy-preserving modalities such as
+mmWave radar and infrared sensing have also been explored
+for human-centric semantic understanding [2], [4], [6], and
+recent radar–language models further suggest a growing in-
+terest in language-grounded semantic interpretation of non-
+visual signals [14], [15]. CSI-based systems can recover rich
+motion cues for tasks such as segmentation and 2D/3D pose
+estimation [9], [10], [16], and recent Transformer variants
+further improve temporal–spectral modeling [17]. However,
+most RF works still target geometric or categorical outputs
+(poses or action labels), while free-form language generation
+from Wi-Fi signals remains largely unexplored.
+B. Cross-Modal Knowledge Transfer
+Cross-modal transfer learning addresses limited supervi-
+sion in the target modality by leveraging a stronger source
+modality [18]. Knowledge distillation transfers soft predic-
+tions or intermediate representations from a teacher to a
+student [19]. Recent studies extend this idea to cross-modal
+representation distillation, where a vision–language teacher
+defines a semantic embedding space and a student from
+another modality is trained to align paired samples while
+separating mismatches [20]. WiFi2Cap follows this paradigm
+by aligning CSI features to a vision–language teacher to
+bridge the modality gap under scarce CSI–text pairs.
+C. Contrastive Learning
+Contrastive objectives such as InfoNCE [21] and its scal-
+able variants (SimCLR [22], MoCo [23]) have shown strong
+transferability, and CLIP [1] demonstrates that large-scale
+contrastive pretraining can learn highly semantic cross-modal
+embeddings. A practical challenge for action understanding is
+mirror ambiguity (e.g., left/right limbs), which motivates our
+mirror-consistency regularization during alignment.
+D. Prefix/Prompt Tuning for Language Conditioning
+Prefix/prompt tuning conditions a frozen language model
+using a small number of trainable parameters, avoiding full
+fine-tuning. Prefix-Tuning [24] injects learnable key/value
+prefixes into Transformer attention, while Prompt Tuning [25]
+and P-Tuning v2 [26] learn continuous prompts/prefix-like
+parameters across layers. Following this line, WiFi2Cap maps
+CSI embeddings into per-layer prefixes via a lightweight MLP
+for CSI-conditioned caption generation.
+III. WIFI2CAP DATASET
+Existing Wi-Fi sensing datasets mainly target pose esti-
+mation or action classification and do not provide the mul-
+timodal supervision needed for CSI-based caption generation.
+To support this task, we construct the WiFi2Cap dataset,
+a synchronized CSI–RGB–sentence benchmark that supports
+all three stages of our framework. The dataset covers 100
+action categories, and each sample is a 5-second clip with
+synchronized CSI, RGB observations, and a sentence-level
+description.
+A. Data Collection
+For each action category, participants perform a predefined
+movement. To introduce controlled spatial diversity, before
+every recording the participant randomly selects one of 24
+standing positions arranged in a 4×6 grid. During recording,
+CSI is collected with one transmitter and three receivers
+5.3m
+3.5m
+TX
+RX1
+RX2
+RX3
+0.45m
+0.5m
+CSI
+Heatmaps
+RGB
+Frames
+Sentence
+A man remains in the squat position,
+keeping his arms raised high as he holds
+his balance while facing away.
+The person jogs slowly to the left while
+facing left.
+Collection Setup Synchronized Samples
+Fig. 2. Data acquisition setup and multimodal samples. Left: the
+physical collection setup, including one transmitter (Tx), three receivers
+(Rx1–Rx3), the RGB camera, and the 4 × 6 grid of participant positions.
+Right: synchronized CSI heatmaps, RGB frames, and sentence-level action
+descriptions.
+around the participant, while an RGB camera provides the
+visual reference. All devices remain fixed, and CSI streams
+are synchronized with RGB videos for aligned training and
+evaluation (Fig. 2).
+B. Data Annotation
+Each action category is paired with a textual description to
+supervise both semantic alignment and caption generation. We
+start from concise action prompts (e.g., “standing and waving
+the left hand”) and use a GPT-based large language model
+(LLM) for wording refinement, while manually verifying all
+descriptions to avoid semantic drift.
+C. CSI Preprocessing
+We decode CSI using PicoScenes [27]. For each receiver,
+CSI is represented as complex channel responses over time
+and decomposed into amplitude and phase sequences. We
+remove pilot and guard subcarriers and apply standard phase
+sanitization [28]. The three synchronized receivers are treated
+as multi-view observations, producing the CSI inputs used by
+the student encoder and caption generator.
+IV. WIFI2CAP FRAMEWORK
+As shown in Fig. 1, WiFi2Cap generates action captions
+from Wi-Fi CSI in three stages: (i) a vision–language teacher
+that learns a shared video–text embedding space with con-
+trastive learning and mirror-consistency regularization; (ii) a
+CSI student that encodes CSI amplitude/phase, fuses them
+with a gating module, and aligns CSI embeddings to the
+teacher’s visual/text embeddings; and (iii) prefix-guided gen-
+eration that conditions a frozen language model by mapping
+CSI embeddings into per-layer key/value prefixes.
+A. Vision–Language Teacher
+Following [29], we use frozen CLIP encoders for frames
+and captions and learn lightweight temporal/projection mod-
+ules to align video and text in a shared space, as illustrated
+in Stage 1 of Fig. 1.
+1) Vision Branch: For the i-th video, we uniformly sample
+L frames {xi,1, . . . , xi,L}. Each frame is encoded by the
+frozen CLIP image encoder ϕv(·) to obtain ℓ2-normalized
+features zi,j = ϕv(xi,j) ∈ RD
+. We form Zi ∈ RL×D
+, add
+positional embeddings P, and aggregate temporally using a
+Transformer gθ(·):
+Hi = gθ(Zi + P). (1)
+Temporal average pooling yields ui = 1
+L
+PL
+j=1 Hi,j, which is
+projected and normalized to the final video embedding vi ∈
+Rd
+.
+2) Text Branch: For caption yi, we extract qi = ϕt(yi) ∈
+RD
+using the frozen CLIP text encoder and project it to ti ∈
+Rd
+with ℓ2 normalization.
+3) Contrastive Objective: Given a minibatch of N pairs
+{(vi, ti)}N
+i=1, we compute cosine similarities sij = v⊤
+i tj/τ
+and minimize a symmetric InfoNCE loss:
+Lv→t
+con = −
+1
+N
+N
+X
+i=1
+log
+exp(sii)
+PN
+j=1 exp(sij)
+,
+Lt→v
+con = −
+1
+N
+N
+X
+i=1
+log
+exp(sii)
+PN
+j=1 exp(sji)
+,
+Lcon = 1
+2 Lv→t
+con + Lt→v
+con
+
+.
+(2)
+4) Mirror-Consistency Loss: To disambiguate mirrored se-
+mantics (e.g., left/right limbs), we create a mirrored pair
+(x̃i, ỹi) by horizontally flipping frames and swapping direc-
+tional words in the caption. With margin m > 0, we enforce
+that each visual embedding matches its correct caption more
+than its mirrored caption:
+L(i)
+mc = max 0, m + s(vi, t̃i) − s(vi, ti)
+
++ max 0, m + s(ṽi, ti) − s(ṽi, t̃i)
+
+.
+(3)
+The teacher objective is Lteacher = Lcon + λmcLmc.
+B. CSI–Text Student
+The student is trained in two steps, as illustrated in Stage 2
+of Fig. 1: (1) align CSI embeddings to the frozen teacher’s
+visual embeddings; and (2) align CSI to text with contrastive
+learning and mirror-consistency.
+1) Vision–CSI Alignment: For receiver r, we denote CSI
+amplitude/phase as M
+(r)
+i , Φ
+(r)
+i ∈ RT ×Na×Nsc
+. We encode
+them with two ResNet-18 backbones famp and fpha (no
+weight sharing) and apply global average pooling to obtain
+a
+(r)
+i , p
+(r)
+i ∈ Rdc
+:
+a
+(r)
+i = famp
+
+M
+(r)
+i
+
+, (4)
+p
+(r)
+i = fpha
+
+Φ
+(r)
+i
+
+. (5)
+We fuse amplitude and phase via a gating module [30]. Given
+u
+(r)
+i = [a
+(r)
+i ; p
+(r)
+i ], a gate g
+(r)
+i ∈ [0, 1]dc
+produces
+f
+(r)
+i = g
+(r)
+i ⊙ a
+(r)
+i + (1 − g
+(r)
+i ) ⊙ p
+(r)
+i . (6)
+A projection Wp maps f
+(r)
+i to c
+(r)
+i = norm(Wpf
+(r)
+i ) ∈ Rd
+.
+We average valid receiver views and normalize to obtain c̄i,
+Amplitude Phase
+ResNet-18
+ResNet-18
+Global Average
+Pooling
+Global Average
+Pooling
+Amplitude
+Embedding
+Phase
+Embedding
+Concatenate Linear
+GeLU
+Linear
+Sigmoid
+Gated
+Fusion
+Projection
+CSI Embedding
+Fig. 3. CSI encoder. Dual ResNet-18 backbones encode amplitude and phase
+inputs, followed by gated fusion and projection to a CSI embedding.
+then align c̄i to the teacher visual embedding vi using a
+symmetric InfoNCE distillation loss Lalign.
+2) CSI–Text Alignment: We further align c̄i to the CLIP
+text embedding ti with a symmetric InfoNCE loss Lcon. To
+improve direction sensitivity, we apply a text-only mirror-
+consistency loss using swapped captions ỹi:
+L(i)
+mc = max 0, m + s(c̄i, t̃i) − s(c̄i, ti)
+
+. (7)
+The student objective is Lstudent = Lcon + λmc Lmc.
+C. Prefix-Guided Language Generation
+We condition a frozen GPT-2 decoder on CSI by prefix
+tuning. Given CSI embedding c̄i ∈ Rd
+, a lightweight MLP gϕ
+produces layer-wise key/value prefixes injected into each self-
+attention block. Let L be the number of layers, prefix length
+Lp, and hidden size dh (dh = 768). We reshape gϕ(c̄i) ∈
+RL×Lp×2dh
+into prefixes {K
+(ℓ)
+i , V
+(ℓ)
+i }L
+ℓ=1.
+For tokenized caption yi = (yi,1, . . . , yi,Ti
+), the conditional
+likelihood is
+pθ(yi | c̄i) =
+Ti
+Y
+t=1
+pθ yi,t | yi,1:t−1, gϕ(c̄i)
+
+, (8)
+and we minimize the standard autoregressive loss
+LLM = −
+1
+N
+N
+X
+i=1
+Ti
+X
+t=1
+log pθ yi,t | yi,1:t−1, gϕ(c̄i)
+
+. (9)
+In practice, GPT-2 remains frozen and we optimize only gϕ.
+V. EXPERIMENT RESULTS
+A. Main Results on the WiFi2Cap Dataset
+We first evaluate caption generation on the proposed
+WiFi2Cap dataset, which is specifically constructed to support
+CSI-based semantic captioning. We compare two systems: (i)
+a baseline (CSI→LM) that directly conditions the language
+TABLE I
+CAPTIONING RESULTS ON THE WIFI2CAP AND PERSON-IN-WIFI 3D
+DATASETS. BEST SCORES WITHIN EACH DATASET BLOCK ARE IN BOLD.
+Dataset Method BLEU-4 METEOR ROUGE-L CIDEr SPICE
+WiFi2Cap
+Baseline (CSI→LM) 14.85 25.86 32.38 0.12 0.28
+Full WiFi2Cap 51.78 57.48 64.32 0.52 0.63
+Person-in-WiFi 3D
+Baseline (CSI→LM) 12.15 20.38 26.12 0.10 0.23
+Full WiFi2Cap 47.07 58.80 57.26 0.43 0.51
+model on the CSI encoder without vision–language alignment
+or mirror-consistency training; and (ii) the full WiFi2Cap
+pipeline.
+Table I shows that WiFi2Cap clearly outperforms the base-
+line on all captioning metrics on the proposed WiFi2Cap
+dataset. BLEU-4 improves from 14.85 to 51.78, METEOR
+from 25.86 to 57.48, and ROUGE-L from 32.38 to 64.32, with
+consistent gains in CIDEr and SPICE. These results indicate
+that the proposed teacher-guided alignment and prefix-based
+generation strategy substantially improve CSI-to-text caption-
+ing quality on our dataset.
+B. Transferability on the Person-in-WiFi 3D Dataset
+We further evaluate transferability on the public Person-
+in-WiFi 3D dataset [9]. To avoid confounding factors from
+multi-person scenes and strong view changes, we select a
+single indoor scene and filter clips to a single-person subset.
+Each clip is associated with one of eight action categories.
+Because the dataset does not provide free-form captions, we
+convert these category labels into natural sentences using a
+lightweight GPT prompting recipe (1 sentence, present tense,
+concise, no background details) and manually spot-check the
+outputs. We reuse the same architectures and hyperparameters
+as in Sec. V-A.
+As shown in Table I, WiFi2Cap also generalizes well
+to this external dataset. Relative to the baseline, WiFi2Cap
+improves BLEU-4 from 12.15 to 47.07, METEOR from 20.38
+to 58.80, and ROUGE-L from 26.12 to 57.26, with consistent
+improvements in CIDEr and SPICE. These results suggest
+that the proposed alignment-then-generation pipeline remains
+effective under a different capture setup, even when captions
+are synthesized from categorical labels.
+C. Qualitative Validation and Examples
+Representative qualitative examples are summarized in Ta-
+ble II. We show one successful case and one partial mis-
+match case. In the successful case, the generated caption
+preserves the core action semantics and differs only in a near-
+synonymous verb choice. In the partial mismatch case, the
+model correctly captures the pose and balance but misses
+the directional phrase. Overall, these examples suggest that
+WiFi2Cap usually produces specific and fluent action de-
+scriptions, while remaining errors are mainly fine-grained
+directional confusions.
+D. Ablation Study
+We analyze the following axes: (i) the relative importance
+of different training stages; (ii) the contribution of the mirror-
+TABLE II
+QUALITATIVE EXAMPLES OF GENERATED CAPTIONS.
+Ground Truth Prediction
+Sample 1
+(correct)
+The person raises both arms
+and moves them back and forth
+in a synchronized waving mo-
+tion while staying in a squat.
+The person raises both arms
+and swings them back and
+forth in a synchronized wav-
+ing motion while staying in a
+squat.
+Sample 2
+(partially
+correct)
+A man stands upright on his
+left foot, facing forward, and
+maintains his balance with a
+steady posture.
+A man stands upright on his
+left foot, facing away, while
+maintaining his balance and
+keeping his body steady.
+TABLE III
+ABLATION ON TRAINING STAGES. A CHECK MARK INDICATES THE STAGE
+IS ENABLED.
+Stages Metrics
+S1 S2-1 S2-2 S3 BLEU-4 METEOR ROUGE-L CIDEr SPICE
+– – ✓ ✓ 22.57 35.02 40.39 0.21 0.38
+✓ ✓ – ✓ 47.10 51.08 57.74 0.47 0.61
+✓ ✓ ✓ ✓ 51.78 57.48 64.32 0.52 0.63
+consistency loss; (iii) the choice of language model for prefix-
+guided caption generation; and (iv) the text-side backbone
+(CLIP B/32 vs. L/14). All results are reported using BLEU-4,
+METEOR, ROUGE-L, CIDEr, and SPICE.
+1) Ablation of Training Stages: Table III quantifies the
+contribution of each stage. Using only Stage 2-2 (CSI–Text
+Alignment) performs poorly (e.g., BLEU-4 = 22.57, ME-
+TEOR = 35.02, ROUGE-L = 40.39). Adding Stage 1 (Vision–
+Language Teacher), Stage 2-1 (Vision–CSI Alignment), and
+Stage 3 (Prefix-Guided Tuning) yields a large jump (BLEU-4
+= 47.10, METEOR = 51.08, ROUGE-L = 57.74). Enabling
+the full pipeline brings the best scores (BLEU-4 = 51.78,
+METEOR = 57.48, ROUGE-L = 64.32), showing that the
+stages are complementary: the teacher establishes a stable
+semantic target, the student aligns CSI to text, and the prefix
+injects CSI semantics directly into generation.
+2) Mirror-Consistency Analysis: Table IV compares train-
+ing without the mirror-consistency loss, with teacher-only
+mirroring (Stage 1 only), and with full mirror-consistency
+(Stages 1 and 2). The mirror term yields consistent improve-
+ments in overall caption quality while specifically helping
+preserve direction-sensitive semantics, such as left/right limb
+usage and mirrored action directions. By lifting all five cap-
+tioning metrics from the no-mirror baseline to the full model,
+these results support mirror-consistency as a core component
+for semantic disambiguation rather than a minor auxiliary
+regularizer.
+3) Choice of Language Model: Table V compares GPT-2,
+Qwen, and microsoft/phi-2 as the decoder in Stage 3. Qwen
+attains the strongest overall caption quality (highest BLEU-
+4 and METEOR, with solid CIDEr/SPICE), GPT-2 achieves
+the best ROUGE-L but lags on BLEU-4/METEOR, and phi-
+2 trails on most metrics. These trends indicate that both
+model capacity and pretraining data materially affect CSI-
+TABLE IV
+EFFECT OF THE MIRROR-CONSISTENCY LOSS.
+Setting BLEU-4 METEOR ROUGE-L CIDEr SPICE
+w/o Mirror-Consistency 35.25 44.53 51.04 0.36 0.46
+Teacher-only Mirror 44.38 52.29 58.75 0.47 0.59
+Full Mirror-Consistency 51.78 57.48 64.32 0.52 0.63
+TABLE V
+EFFECT OF THE LANGUAGE MODEL IN STAGE 3 (CSI-CONDITIONED
+GENERATION).
+Language Model BLEU-4 METEOR ROUGE-L CIDEr SPICE
+GPT-2 51.78 57.48 64.32 0.52 0.63
+Microsoft/phi-2 47.97 52.75 59.55 0.46 0.62
+Qwen 55.11 60.13 63.83 0.53 0.66
+conditioned generation.
+4) Text-Side Backbone: Table VI contrasts CLIP B/32 vs.
+L/14 on the text side. L/14 gives small but consistent gains
+over B/32 across BLEU-4, METEOR, ROUGE-L, CIDEr, and
+SPICE while preserving the same ranking among language
+models. This suggests that a stronger text backbone modestly
+improves the semantic target used to supervise CSI.
+E. Additional Analysis
+1) Left–Right Confusion Analysis of VLMs: To further
+verify that direction-sensitive ambiguity is a real failure mode
+rather than an artifact of our dataset, we conduct a hand-
+side recognition test on Qwen2-VL-2B-Instruct. We query
+the model with a binary question: “Is the person using
+their left hand or right hand? Answer with ‘left’ or ‘right’.”
+Using the original pretrained weights, Qwen2-VL-2B-Instruct
+attains 53.3% accuracy, indicating substantial ambiguity in
+distinguishing mirrored limb semantics. We then fine-tune
+Qwen2-VL-2B-Instruct on the UTD-MHAD dataset using the
+proposed Mirror-Consistency loss by pairing each training
+image with its horizontally flipped version. The accuracy
+increases to 73.3%, demonstrating that mirror-consistency su-
+pervision effectively improves direction-sensitive understand-
+ing and supporting our use of this objective in WiFi2Cap.
+2) Visualization of Modality Alignment: Fig. 4 visualizes
+the cosine similarity matrix between CSI and text embeddings.
+Before Stage 2-2, the matrix shows weak structure and a
+low top-1 matching accuracy of 0.067. After the proposed
+training, the diagonal becomes much clearer and the top-1
+accuracy increases to 0.600, indicating substantially improved
+alignment between CSI and text representations.
+VI. CONCLUSIONS
+We introduced WiFi2Cap, a three-stage framework for
+generating natural-language action descriptions directly from
+Wi-Fi CSI. The framework addresses two central challenges
+in CSI-based semantic captioning: bridging the modality
+gap between wireless signals and language, and preserving
+direction-sensitive semantics such as left/right limb descrip-
+tions. To this end, WiFi2Cap transfers semantic supervision
+TABLE VI
+CHOICE OF BACKBONE FOR THE TEXT ENCODER.
+Text Backbone BLEU-4 METEOR ROUGE-L CIDEr SPICE
+CLIP B/32 51.78 57.48 64.32 0.52 0.63
+CLIP L/14 53.76 58.37 65.21 0.53 0.67
+Fig. 4. Visualization of modality alignment between CSI and text
+embeddings. Each row denotes a CSI embedding and each column denotes
+a text embedding; brighter values indicate higher cosine similarity. A clearer
+diagonal pattern after training indicates stronger CSI–text correspondence.
+from synchronized video–text pairs to CSI through teacher-
+guided alignment and CSI–text contrastive learning, while the
+proposed Mirror-Consistency Loss mitigates mirrored-action
+and left–right ambiguities during cross-modal alignment. We
+also introduced the WiFi2Cap Dataset, a synchronized CSI–
+RGB–sentence benchmark for semantic captioning from Wi-
+Fi signals. Experiments and ablations show consistent gains
+in caption quality and direction-sensitive disambiguation.
+Overall, WiFi2Cap establishes a privacy-friendly bridge from
+wireless sensing to fine-grained semantic understanding.
+REFERENCES
+[1] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal,
+G. Sastry, A. Askell, P. Mishkin, J. Clark et al., “Learning transferable
+visual models from natural language supervision,” in International
+conference on machine learning. PmLR, 2021, pp. 8748–8763.
+[2] W. Li, W. Lei, K. Shi, Z. Shi, Y. Wang, and J. Zhou, “mmskeleton:
+3d human skeleton estimation using millimeter wave radar sparse point
+clouds,” in 2024 IEEE/CIC International Conference on Communica-
+tions in China (ICCC). IEEE, 2024, pp. 307–312.
+[3] A. Sengupta, F. Jin, R. Zhang, and S. Cao, “mm-pose: Real-time human
+skeletal posture estimation using mmwave radars and cnns,” IEEE
+sensors journal, vol. 20, no. 17, pp. 10 032–10 044, 2020.
+[4] M. Ryoo, B. Rothrock, C. Fleming, and H. J. Yang, “Privacy-preserving
+human activity recognition from extreme low resolution,” in Proceed-
+ings of the AAAI conference on artificial intelligence, vol. 31, no. 1,
+2017.
+[5] R. Gade and T. B. Moeslund, “Thermal cameras and applications: a
+survey,” Machine vision and applications, vol. 25, no. 1, pp. 245–262,
+2014.
+[6] S.-Y. Chiu, Y.-T. Huang, C.-T. Lin, Y.-C. Tseng, J.-J. Chen, M.-H. Tu,
+B.-C. Tung, and Y. Nieh, “Privacy-preserving video conferencing via
+thermal-generative images,” in 2023 IEEE International Conference on
+Robotics and Automation (ICRA). IEEE, 2023, pp. 9478–9485.
+[7] Y. Ren, Z. Wang, Y. Wang, S. Tan, Y. Chen, and J. Yang, “Gopose:
+3d human pose estimation using wifi,” Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies, vol. 6,
+no. 2, pp. 1–25, 2022.
+[8] Y. Yang, P. Hu, J. Shen, H. Cheng, Z. An, and X. Liu, “Privacy-
+preserving human activity sensing: A survey,” High-Confidence Com-
+puting, vol. 4, no. 1, p. 100204, 2024.
+[9] K. Yan, F. Wang, B. Qian, H. Ding, J. Han, and X. Wei, “Person-
+in-wifi 3d: End-to-end multi-person 3d pose estimation with wi-fi,” in
+Proceedings of the IEEE/CVF Conference on CVPR, 2024, pp. 969–978.
+[10] F. Wang, S. Zhou, S. Panev, J. Han, and D. Huang, “Person-in-
+wifi: Fine-grained person perception using wifi,” in Proceedings of the
+IEEE/CVF ICCV, 2019, pp. 5451–5460.
+[11] M. Zhao, T. Li, M. A. Alsheikh, Y. Tian, H. Zhao, A. Torralba, and
+D. Katabi, “Through-wall human pose estimation using radio signals,”
+in Proceedings of the IEEE/CVF Conference on CVPR, 2018, pp. 7356–
+7365.
+[12] L. Nguyen, P. Susarla, A. Mukherjee, M. Cañellas, C. Álvarez Casado,
+X. Wu, O. Silvén, D. Jayagopi, and M. B. Lopez, “Non-contact
+multimodal indoor human monitoring systems: A survey,” Information
+Fusion, vol. 110, p. 102457, 2024.
+[13] L. Biase, P. Pecoraro, G. Pecoraro, M. L. Caminiti, and V. D. Lazzaro,
+“Markerless radio frequency indoor monitoring for telemedicine: Gait
+analysis, indoor positioning, fall detection, tremor analysis, vital signs
+and sleep monitoring,” Sensors, vol. 22, p. 8486, 2022.
+[14] M. Pushkareva, Y. Feldman, C. Domokos, K. Rambach, and D. Di Cas-
+tro, “Radar spectra-language model for automotive scene parsing,” in
+2024 International Radar Conference (RADAR). IEEE, 2024, pp. 1–6.
+[15] J.-Y. Yuan, S.-Y. Chen, S.-J. Yao, R. Zhang, H. C. Feng, K.-l. Jiang,
+Y.-X. Shang, Y.-X. Zhao, and B. Tang, “Sig2text: A vision-language
+model for non-cooperative radar signal parsing,” IET Radar, Sonar &
+Navigation, vol. 20, no. 1, p. e70113, 2026.
+[16] W. Jiang, H. Xue, C. Miao, S. Wang, S. Lin, C. Tian, S. Murali, H. Hu,
+Z. Sun, and L. Su, “Towards 3d human pose construction using wifi,”
+in Proceedings of the 26th Annual International Conference on Mobile
+Computing and Networking (MobiCom), 2020, pp. 1–14.
+[17] Y. Zhou, C. Xu, L. Zhao, A. Zhu, F. Hu, and Y. Li, “Csi-former: Pay
+more attention to pose estimation with wifi,” Entropy, vol. 25, no. 1,
+p. 20, 2023.
+[18] F. Zhuang, Z. Qi, K. Duan, D. Xi, Y. Zhu, H. Zhu, H. Xiong, and
+Q. He, “A comprehensive survey on transfer learning,” Proceedings of
+the IEEE, vol. PP, pp. 1–34, 2020.
+[19] G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a
+neural network,” arXiv preprint arXiv:1503.02531, 2015.
+[20] S. Kim, R. Xiao, M.-I. Georgescu, S. Alaniz, and Z. Akata, “Cosmos:
+Cross-modality self-distillation for vision language pre-training,” in
+Proceedings of the IEEE/CVF Conference on CVPR, 2025, pp. 14 690–
+14 700.
+[21] A. van den Oord, Y. Li, and O. Vinyals, “Representation learning with
+contrastive predictive coding,” arXiv preprint arXiv:1807.03748, 2018.
+[22] T. Chen, S. Kornblith, M. Norouzi, and G. Hinton, “A simple framework
+for contrastive learning of visual representations,” in ICML, 2020.
+[23] K. He, H. Fan, Y. Wu, S. Xie, and R. Girshick, “Momentum contrast
+for unsupervised visual representation learning,” in Proceedings of the
+IEEE/CVF Conference on CVPR, 2020, pp. 9726–9735.
+[24] X. L. Li and P. Liang, “Prefix-tuning: Optimizing continuous prompts
+for generation,” in Proceedings of the 59th Annual Meeting of the
+Association for Computational Linguistics (ACL), 2021, pp. 4582–4597.
+[25] B. Lester, R. Al-Rfou, and N. Constant, “The power of scale for
+parameter-efficient prompt tuning,” in Proceedings of the 2021 con-
+ference on empirical methods in natural language processing, 2021,
+pp. 3045–3059.
+[26] X. Liu, K. Ji, Y. Fu, W. Tam, Z. Du, Z. Yang, and J. Tang, “P-
+tuning: Prompt tuning can be comparable to fine-tuning across scales
+and tasks,” in Proceedings of the 60th Annual Meeting of the Association
+for Computational Linguistics (Volume 2: Short Papers), 2022, pp. 61–
+68.
+[27] Z. Jiang, T. H. Luan, H. Hao, J. Wang, X. Ren, K. Zhao, W. Xi,
+Y. Xu, and R. Li, “Eliminating the barriers: Demystify wi-fi baseband
+design and introduce picoscenes wi-fi sensing platform,” arXiv preprint
+arXiv:2010.10233, 2020.
+[28] X. Wang, L. Gao, and S. Mao, “Phasefi: Phase fingerprinting for indoor
+localization with a deep learning approach,” in Proceedings of the IEEE
+Global Communications Conference (GLOBECOM), 2015, pp. 1–6.
+[29] M. Benavent-Lledo, D. Mulero-Pérez, D. Ortiz-Perez, and J. Garcia-
+Rodriguez, “Text-driven online action detection,” Integrated Computer-
+Aided Engineering, vol. 32, no. 4, pp. 415–423, 2025.
+[30] J. Arevalo, T. Solorio, M. Montes, and F. A. González, “Gated multi-
+modal units for information fusion,” arXiv preprint arXiv:1702.01992,
+2017.
+

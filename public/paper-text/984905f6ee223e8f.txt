@@ -1,0 +1,2148 @@
+1
+Large Multimodal Model-aided Scheduling for 6G
+Autonomous Communications
+Sunwoo Kim, Member, IEEE, and Byonghyo Shim, Fellow, IEEE
+Institute of New Media and Communications, Department of Electrical and Computer Engineering, Seoul
+National University, Seoul, Korea
+Email: swkim@islab.snu.ac.kr, bshim@snu.ac.kr
+Abstract—Recently, large language models (LLMs) have gained
+signiﬁcant attention for their ability to generate fast and accurate
+answer to the given query. These models have evolved into large
+multimodal models (LMMs), which can interpret and analyze
+multimodal inputs such as images and text. With the exponential
+growth of AI functionalities in autonomous devices, the central
+unit (CU), a digital processing unit performing AI inference,
+needs to handle LMMs to effectively control these devices. To en-
+sure seamless command delivery to devices, the CU must perform
+the scheduling, which involves resource block (RB) allocation for
+data transmission and modulation and coding scheme (MCS)
+index selection based on the channel conditions. This task is
+challenging in many practical environments in 6G, where even
+small user movement can cause abrupt channel changes. In this
+paper, we propose a novel LMM-based scheduling technique to
+address this challenge. Our key idea is to leverage LMM to
+predict future channel parameters (e.g., distance, angles, and
+path gain) by analyzing the visual sensing information as well
+as pilot signals. By exploiting LMMs to predict the presence
+of reliable path and geometric information of users from the
+visual sensing information, and then combining these with past
+channel states from pilot signals, we can accurately predict future
+channel parameters. Using these predictions, we can preemptively
+make channel-aware scheduling decisions. From the numerical
+evaluations, we show that the proposed technique achieves more
+than 30% throughput gain over the conventional scheduling
+techniques.
+I. INTRODUCTION
+Recently, generative AI has received great attention for its
+capability to create high-quality outputs that even humans
+cannot easily generate [2]. Among various forms of generative
+AI, large language models (LLMs) have garnered signiﬁcant
+attention for their capacity to answer questions without requir-
+ing additional examples or hints (i.e., zero-shot prompting)
+and solve problems with only a few input-output pairs (i.e.,
+few-shot prompting) [3]. While LLMs have been primarily
+focused on language data, they have recently evolved into large
+multimodal models (LMMs) to handle and interpret diverse
+A part of this paper has been presented at IEEE Vehicular Technol-
+ogy Conference (VTC), Chengdu, China, Oct. 2025 [1]. This work was
+supported in part by Institute of Information & communications Technol-
+ogy Planning & Evaluation (IITP) under the Graduate School of Artiﬁcial
+Intelligence Semiconductor(IITP-2025-RS-2023-00256081) grant funded by
+the Korea government(MSIT), in part by the National Research Foun-
+dation of Korea(NRF) grant funded by the Korea government(MSIT)
+(2022M3C1A3099336), and in part by the MSIT(Ministry of Science and
+ICT), Korea, under the ITRC(Information Technology Research Center)
+support program(IITP-2023-2021-0-02048) supervised by the IITP(Institute
+for Information & Communications Technology Planning & Evaluation).
+Fig. 1. LLM/LMM-based task-oriented communication system.
+modalities such as images, videos, and audio. Due to their
+ﬂexibility and adaptability, LMMs are now actively integrated
+into automation applications such as driverless vehicles [4],
+humanoids [5], and surgical/agricultural manufacturing [6].
+While there are lots of trials to integrate LLMs/LMMs into
+autonomous tasks (e.g., robot, humanoid, and autonomous
+vehicle), their application to future wireless communication
+systems is still relatively scarce [7]. This is mainly because
+AI operations are often conﬁned in a single agent (e.g., a
+humanoid) so that the exchange of information with other
+agents and the central unit (CU) (e.g., cloud center or digital
+unit) is unnecessary, or at least not that important. In the future,
+however, as the range of tasks performed by autonomous
+devices grows exponentially, far more agents will cooperate
+and collaborate, making both inter-agent communication and
+communication between the CU and agents critical [8]. In
+such systems, wireless communications will play a central role
+for exchanging status information among agents to provide
+mutual feedback, as well as multimodal sensing information
+(e.g., LiDAR and radio frequency (RF) signal) to control these
+agents using the LMM in the CU (see Fig. 1).
+In order to ensure that autonomous devices can perform
+their designated operations such as car assembly or remote
+surgery, CU needs to perform the scheduling, a task to
+allocate resource blocks (RBs) for the data transmission and
+select appropriate link parameters (i.e., modulation and coding
+scheme (MCS)) based on the channel conditions. For instance,
+by selecting a proper MCS index conforming to the channel
+quality, CU can satisfy the symbol error rate (SER) require-
+ment while ensuring seamless command delivery to devices.
+In the upcoming 6G environments, however, scheduling will
+arXiv:2601.06211v1
+[cs.IT]
+8
+Jan
+2026
+2
+Visual sensing
+and
+Channel acquisition
+Step 1.
+Object
+detection
+Preemptive
+scheduling
+Acquired sequences of
+images and pilot
+signals
+Step 2.
+Channel
+prediction
+Sensing image
+acquisition and received
+pilot signals
+Sequence of past
+user positions and
+LoS/NLoS channels
+Predicted
+future channels
+of users
+Preemptive
+RB allocation and
+MCS selection
+LMM-based
+object detection
+LMM
+LMM-aided mobility
+prediction and
+Transformer-based
+channel prediction
+LMM
+Sequence of
+past images
+Current time
+slot image
+Input
+embedding
+Multi-head
+attention
+Fig. 2. Conceptual illustration of the proposed LMM-PS.
+be by no means easy due to sudden channel state changes1
+caused by densely distributed obstacles, various spectrums,
+and also movement of autonomous devices. In such scenarios,
+conventional scheduling techniques relying on outdated chan-
+nel information might fail to meet users’ quality-of-service
+(QoS) requirements, resulting in an operation failure.
+To overcome the problem, one can consider a preemptive
+scheduling strategy that performs the scheduling decision
+based on predicted future channel conditions [10]–[12]. The
+core idea of this strategy is to capture the temporal relationship
+between historical channel conditions and use it to predict
+future channel conditions. Efﬁcacy of this strategy is closely
+tied to the channel prediction quality but conventional preemp-
+tive scheduling mechanism relying solely on the pilot/control
+signaling and past channel estimates cannot properly handle
+unexpected changes caused by the sudden future events (e.g.,
+blockage or movement direction change).
+An aim of this paper is to propose a novel scheduling
+technique that leverages LMMs to improve the quality of
+preemptive scheduling. In the proposed technique, dubbed as
+large multimodal model-based preemptive scheduling (LMM-
+PS), we aggressively exploit LMMs to predict user’s future
+channel parameters (e.g., distance, angles, and path gain). Un-
+like conventional scheduling techniques that rely exclusively
+on pilot signals, LMM-PS additionally exploits visual sensing
+information as an input to LMM to predict the presence of
+the LoS and strong NLoS paths and geometric information
+(distance and angles) of users. In doing so, LMM-PS can
+quickly understand sudden events in the channel prediction
+process. Since LMM is a powerful tool in extracting correlated
+features across sequential data and generating subsequent
+elements [3], it can be used to predict each user’s future
+channel parameters based on its historical movement captured
+in the visual sensing information.
+The operation of proposed LMM-PS is divided into two
+major steps (see Fig. 2). In the ﬁrst step, locations and sizes of
+users and obstacles are extracted via LMM specialized for the
+object detection (OD), which is designed to detect arbitrary
+objects speciﬁed in the input sentence. In the second step,
+1Even slight user movements can cause the line-of-sight (LoS) path to
+disappear, leading to a signiﬁcant signal-to-noise ratio (SNR) drop (e.g., up to
+35 dB in the mmWave band [9]) when shifting from LoS to non-LoS (NLoS).
+both LMM-aided mobility prediction and Transformer-based
+channel parameter prediction are performed in parallel to
+predict each user’s future LoS and NLoS channel parameters,
+respectively:
+• LMM-aided LoS channel parameter prediction: To es-
+timate each user’s future LoS channel parameters (i.e.,
+azimuth/elevation angle and distance of the LoS path),
+we leverage an LMM to predict the user’s future location
+based on custom-designed text prompts, which are lan-
+guage instructions derived from sequences of the user’s
+past locations. For example, to predict a user’s future
+location based on its trajectory in the visual sensing in-
+formation, we use a prompt such as: “Using the sequence
+of past x-y coordinate pairs: (x1, y1) = (930, 380),
+(x2, y2) = (932, 377), (x3, y3) = (935, 374), predict the
+next pair (x4, y4)”. Once the user’s future location is
+predicted, the future LoS channel parameters are obtained
+via a simple coordinate transformation.
+• Transformer-based NLoS channel parameter prediction:
+To estimate the future NLoS channel parameters from
+the sequence of past channels, we exploit Transformer,
+a DNN model capturing both long- and short-term cor-
+relations between input and output sequences via the
+attention mechanism [13]. By assigning larger attention
+weights to input sequence (i.e., past channels) that are
+strongly correlated with the output values (i.e., future
+channel parameters), the proposed LMM-PS can extract
+future NLoS channel parameters and thus predict future
+channels even in the presence of sudden channel state
+changes.
+From the realistic evaluations in dynamically changing
+6G environments, we demonstrate that LMM-PS signiﬁcantly
+reduces the channel prediction error caused by unexpected
+events (e.g., blockages) and thus outperforms conventional
+scheduling approaches in terms of the total system through-
+put. For example, we observe that LMM-PS achieves 32%
+throughput improvement over the proportional-fair scheduling
+technique. Even when compared to the deep reinforcement
+learning (DRL)-based preemptive scheduling technique, we
+observe that LMM-PS achieves 11% throughput gain.
+We brieﬂy summarize the notations used in this paper. We
+use uppercase and lowercase boldface letters for matrices and
+3
+TABLE I
+SUMMARY OF NOMENCLATURE.
+Notation Description
+BS Base station
+CU Central unit
+CQI Channel quality indicator
+MCS Modulation and coding scheme
+SER Symbol error rate
+DL Deep learning
+DNN Deep neural network
+RB Resource block
+mmWave Millimeter wave
+THz Terahertz
+RI Rank indicator
+PMI Precoding matrix indicator
+QoS Quality-of-service
+LoS Line-of-sight
+NLoS Non-line-of-sight
+OD Object detection
+SoC System-on-chip
+SDM Spatial division multiplexing
+vectors, respectively. Operations (·)T
+, (·)H
+, and (·)
+†
+denote
+transpose, conjugate transpose, and pseudo-inverse, respec-
+tively. Also, operators ⊗ and ⊙ denote the Hadamard and
+Kronecker products, respectively. C and R denote the ﬁeld of
+complex numbers and real numbers, respectively. Note that
+the sets of user equipments (UEs), RBs, and MCS indices
+are denoted as K = {1, · · · , K}, B = {1, · · · , B}, and
+M = {0, · · · , M}, respectively. k·kp indicates the p-norm,
+xi denotes the i-th column of matrix X, and x(i) denotes the
+i-th entry of vector x. Lastly, I, Id, Ic, and P denote RGB
+image, depth image, cropped RGB image, and text prompt,
+respectively. In Table I, we summarize the technical terms.
+The rest of this paper is organized as follows. In Section
+II, we discuss the system model and then formulate the
+preemptive scheduling problem. In Section III, we provide a
+detailed description of the proposed LMM-PS. In Section IV,
+we present the simulation results and then conclude the paper
+in Section V.
+II. PREEMPTIVE SCHEDULING PROBLEM
+In this section, we brieﬂy discuss the system model and
+conventional scheduling techniques. We then formulate the
+preemptive scheduling problem as a constrained optimization
+task.
+A. Preemptive Scheduling and System Model
+Main goal of preemptive scheduling is to maximize the
+total system throughput in the future time slot T by allo-
+cating RBs to K UEs and selecting an appropriate MCS
+index for each UE. To indicate the allocation of an RB to
+each UE at the t-th time slot, we deﬁne a binary vector
+x
+(t)
+b = [x
+(t)
+b (1) · · · x
+(t)
+b (K)] ∈ RK
+:
+x
+(t)
+b (k) =
+(
+1 if the b-th RB is allocated to the k-th UE,
+0 otherwise.
+(1)
+One needs to make sure that each UE needs to use the same
+MCS index m across all its scheduled RBs [14]. To indicate
+the MCS index assigned to each UE, we deﬁne the binary
+one-hot vector z
+(t)
+k = [z
+(t)
+k (1) · · · z
+(t)
+k (M)] ∈ RM
+:
+z
+(t)
+k (m) =
+(
+1 if MCS m is assigned to the k-th UE,
+0 otherwise.
+(2)
+Based on the 5G NR resource deﬁnition in [15], the down-
+link throughput Rk of the k-th UE can be expressed as
+R
+(t)
+k =
+M
+X
+m=1
+B
+X
+b=1
+1 − (1 − (1 − e
+(t)
+SER,k)Ns
+)
+!
+·
+f(z
+(t)
+k (m))x
+(t)
+b (k)NSDMNRE, (3)
+where f(·) is the MCS order table that maps the selected
+MCS index m to the unit spectral efﬁciency (U-SE), which
+represents the number of bits carried by each resource element
+(RE), and NSDM is the number of spatial division multiplexing
+(SDM) layers, which is the number of data streams transmitted
+from the base station (BS) to each UE. Also, eSER,k is the SER
+of the k-th UE and NRE is the number of REs contained in
+each RB. Note that the total system throughput for K UEs is
+R
+(t)
+total =
+PK
+k=1 R
+(t)
+k .
+In our work, we consider the multi-input single-output
+(MISO) system where the BS equipped with a uniform planar
+array (UPA) of NT = Nx × Ny antennas serves K single-
+antenna UEs. In this setup, the received pilot signal y(t)
+∈
+CNT ×1
+from the k-th UE is given by
+y
+(t)
+k = h
+(t)
+k s + n
+(t)
+k , (4)
+where h
+(t)
+k ∈ CNT ×1
+is the uplink channel vector for the k-th
+UE, s ∈ C is the uplink pilot symbol, and n
+(t)
+k ∼ CN(0, σ2
+nI)
+is the additive Gaussian noise.
+As for the channel model, we use the block-fading multi-
+path channel model where the channel varies from block-to-
+block [16]. We note here that the proposed technique is an
+LMM-based technique so that it can ﬂexibly adapt to diverse
+task objectives and dynamic environments through the training
+process (e.g., ﬁne-tuning and continual learning). This means
+that its performance might not be affected much by changes in
+the channel environment or interference patterns. Speciﬁcally,
+the uplink channel vector h
+(t)
+k ∈ CM×1
+for the k-th UE is
+h
+(t)
+k = δ
+(t)
+k h
+(t)
+LoS,k + h
+(t)
+NLoS,k (5)
+= δ
+(t)
+k h
+(t)
+LoS,k +
+L
+X
+l=1
+h
+(t)
+NLoS,l,k, (6)
+where L is the number of NLoS paths and δ
+(t)
+k represents the
+status of LoS link of the k-th UE:
+δ
+(t)
+k =
+(
+1 if LoS link is available for the k-th UE,
+0 else.
+(7)
+Note that the LoS and NLoS channel components are ex-
+pressed as [17]
+h
+(t)
+LoS,k = α
+(t)
+LoS,ke−j2πfc
+r
+(t)
+LoS,k
+c a(θ
+(t)
+LoS,k, φ
+(t)
+LoS,k), (8)
+h
+(t)
+NLoS,l,k = α
+(t)
+NLoS,l,ke−j2πfc
+r
+(t)
+NLoS,l,k
+c a(θ
+(t)
+NLoS,l,k, φ
+(t)
+NLoS,l,k),
+(9)
+4
+BS
+k
+Wall
+UE
+CQI feedback
+Uplink pilot
+RB allocation and MCS selection
+Data
+Transmission
+Time slot length
+Time slot 4
+Time slot 3
+Time slot 2
+-
+Data
+Transmission
+Scheduling based on the
+channel condition at time slot 3
+Not connected
+Time slot 2 Time slot 4
+Time slot 3
+: Duration of uplink pilot transmission
+: Duration of CQI feedback
+Fig. 3. Illustration of the conventional CQI feedback-based scheduling. When the BS makes scheduling decisions based on the outdated CQI feedback, they
+may no longer reﬂect the true channel condition, leading to degradation of beamforming gain and transmission rate.
+where α
+(t)
+LoS,k and α
+(t)
+NLoS,l,k are the complex path gains of the
+LoS path and the l-th NLoS path, respectively. Also, c is the
+speed of light, a(θ, φ) ∈ CNT ×1
+is the array response vector,
+fc is the carrier frequency, and r
+(t)
+LoS,k and r
+(t)
+NLoS,l,k are the
+LoS distance and the distance of the l-th NLoS path between
+the BS and the k-th UE, respectively. Finally, (θ
+(t)
+LoS,k, φ
+(t)
+LoS,k)
+and (θ
+(t)
+NLoS,l,k, φ
+(t)
+NLoS,l,k) are the azimuth/elevation angles of
+the LoS path and the l-th NLoS path, respectively.
+B. Conventional Scheduling Techniques
+In conventional scheduling techniques, UE periodically
+transmits a CQI value to help the BS select an appropriate
+MCS for the downlink transmission [18], [19]. After receiving
+the transmit pilot signal from the BS, UE computes the
+downlink channel response and derives the rank indicator
+(RI) and precoding matrix indicator (PMI) [20]. The PMI is
+mapped to a CQI value using a pre-deﬁned CQI mapping
+table [21], using which an MCS index is determined [22].
+Over the years, various deep learning (DL)-based scheduling
+techniques have been proposed to handle the complex CQI-to-
+MCS mapping process [18], [20], [23]. Key feature of these
+techniques is that they use the CQI feedback and channel state
+information as inputs to DL models.
+In dynamically varying 6G environments, performance of
+conventional scheduling techniques might degrade severely
+due to densely distributed obstacles, short channel coherence
+time of mmWave/THz channels, and diverse spectrums. These
+factors result in rapid channel variations so that the reliable
+path (presumably the LoS path) may disappear even with a
+small UE movement [9], [24]. Since the CQI feedback is
+reported at relatively long intervals (typically every 8 ms [25]),
+actual channel condition in the current time might differ
+signiﬁcantly from the estimated channel condition obtained
+from the CQI feedback (see Fig. 3). Clearly, this mismatch
+will result in a severe degradation in the beamforming gain
+and transmission rate.
+Recently, preemptive scheduling techniques performing the
+scheduling decision based on predicted future channel con-
+ditions have gained much attention [10]–[12]. The common
+wisdom behind these techniques is to capture temporal de-
+pendencies in historical CQI measurements to predict future
+CQI values. Since these techniques rely exclusively on the
+past channel information, they often fail to capture sudden
+channel variations such as blockages, hand tremors, or abrupt
+changes in movement direction. In contrast, by detecting the
+signal propagation environment using vision sensing images
+and then inferring sudden events (e.g., signal blockages) from
+UE movements using LMM, LMM-PS can quickly understand
+and identify the wireless environments.
+C. Preemptive Scheduling Problem Formulation
+Since the main goal of preemptive scheduling is to maxi-
+mize the total system throughput in the future time slot T , its
+objective function can be expressed as
+R
+(T )
+total =
+K
+X
+k=1
+M
+X
+m=1
+B
+X
+b=1
+1 − 1 − (1 − e
+(T )
+SER,k)Ns
+
+!
+·
+f(z
+(T )
+k (m))x
+(T )
+b (k)NSDMNRE.
+(10)
+Other than the throughput maximization, two major con-
+straints need to be considered: 1) data rate constraint and 2)
+SER constraint. First, the rate constraint requires that the total
+number of RBs allocated to UE
+PB
+b=1 x
+(T )
+b (k) needs to be
+larger than N
+(T −1)
+RB,k (the minimum number of RBs to meet
+the UE’s rate requirement R
+(T −1)
+k,min in the (T − 1)-th slot).
+In the preemptive scheduling, without knowing the exact rate
+requirements of UEs in the T -th (future) slot, the BS needs to
+allocate RBs for the T -th slot at the (T −1)-th slot. To handle
+this uncertainty, the scheduler ensures that the allocated RBs
+for the T -th slot meet the rate requirements in the (T − 1)-th
+slot.
+In addition, the SER constraint requires that the SER of
+the k-th UE e
+(T )
+SER,k is better (lower) than the target SER
+SERk,max [26]. To check this, the SER must be computed
+based on the channel estimate ĥk, which is derived from yk
+using the conventional channel estimation technique such as
+the linear minimum mean square error (LMMSE). According
+to [27], the SER is given by
+e
+(t)
+SER,k =
+
+
+
+
+
+
+
+
+
+
+
+1 − 1 − Q
+r
+2|ĥ
+(t)
+k
+|2
+σ2
+n
+!!2
+if Qm = 2,
+1 − 1 − 2(
+√
+Qm−1)
+√
+Qm
+Q
+r
+3|ĥ
+(t)
+k
+|2
+(Qm−1)σ2
+n
+!!2
+else,
+(11)
+5
+1) User localization
+and channel estimation
+2) Channel parameter
+prediction
+3) Channel prediction
+and scheduling
+Input Images
+UEs’ image locations
+Obstacles’ positions and sizes
+person.
+wall, pillar, board.
+Prompt
+Beam-based
+positioning
+Designed
+prompts
+Prompt design
+for LMM
+Identiﬁed
+beam index
+Input Image
+Preemptive
+Scheduling at
+Predicted
+channels
+RB allocation vectors
+MCS assignment vectors
+Channel
+prediction
+RB allocation
+and
+MCS index
+selection
+UE 3
+UE 2
+BS
+UE 1
+LMM-based
+object detection
+LMM and Transformer-
+based channel
+parameter prediction
+Channel estimates
+Predicted channel parameters
+Input
+embedding
+Multi-head
+attention
+Fig. 4. Overall process of the proposed LMM-PS.
+where
+|ĥ
+(t)
+k |2
+σ2
+n
+is the SNR of the k-th UE, Q(·) is the Q-function,
+and Qm is the modulation order chosen from the order table2
+.
+By incorporating these constraints, the preemptive schedul-
+ing problem P can be formulated as
+P : max
+{x
+(T )
+1 ,··· ,x
+(T )
+B ,z
+(T )
+1 ,··· ,z
+(T )
+K }
+R
+(T )
+total (12a)
+s.t.
+B
+X
+b=1
+x
+(T )
+b (k) ≥ N
+(T −1)
+RB,k , ∀k ∈ K,
+(12b)
+K
+X
+k=1
+x
+(T )
+b (k) ≤ NT , ∀b ∈ B,
+(12c)
+e
+(T )
+SER,k ≤ SERk,max, ∀k ∈ K,
+(12d)
+M
+X
+m=1
+z
+(T )
+k (m) = 1. ∀k ∈ K.
+(12e)
+In this work, we assume that the number of SDM layers NSDM
+is ﬁxed to 13
+. In our problem P, the resource constraint (12c)
+is employed to ensure that the maximum number of UEs
+scheduled in an RB does not exceed the number of BS anten-
+nas [28]. Also, we use the MCS assignment constraint (12e)
+to guarantee that only one MCS is used across all scheduled
+RBs for each UE.
+2For example, if we use the 256QAM order table, then Qm is
+2 if the selected MCS index mk ∈ {0, 1, 2, 3, 4}, 4 if mk ∈
+{5, 6, 7, 8, 9, 10}, 6 if mk ∈ {11, 12, 13, 14, 15, 16, 17, 18, 19}, 8 if
+mk ∈ {20, 21, 22, 23, 24, 25, 26, 27} [21].
+3This ensures that NSDM does not exceed the number of UE receive
+antennas, as required in [28].
+By plugging (10), P can be re-expressed as
+P
+′
+: max
+{x
+(T )
+1 ,··· ,x
+(T )
+B ,z
+(T )
+1 ,··· ,z
+(T )
+K }
+K
+X
+k=1
+M
+X
+m=1
+B
+X
+b=1
+
+1 − (1 − (1 − e
+(T )
+SER,k)Ns
+)
+
+·
+f(z
+(T )
+k (m))x
+(T )
+b (k)NRE (13a)
+s.t.
+B
+X
+b=1
+x
+(T )
+b (k) ≥ Bk,min, ∀k ∈ K,
+(13b)
+K
+X
+k=1
+x
+(T )
+b (k) ≤ NT , ∀b ∈ B,
+(13c)
+e
+(T )
+SER,k ≤ SERk,max, ∀k ∈ K,
+(13d)
+M
+X
+m=1
+z
+(T )
+k (m) = 1, ∀k ∈ K.
+(13e)
+Unfortunately, since the objective function of P
+′
+is the total
+system throughput of the future time slot T , the optimal solu-
+tions {x
+(T )
+opt,b}B
+b=1 and {z
+(T )
+opt,k}K
+k=1 can be obtained only when
+the UEs’ future channels (i.e., (h
+(T )
+1 , · · · , h
+(T )
+K )) are perfectly
+known, which is obviously unrealistic for the causality issue.
+III. LMM-BASED PREEMPTIVE SCHEDULING
+The primary goal of LMM-PS is to solve P
+′
+by predicting
+the future channels of UEs (h
+(T )
+1 , · · · , h
+(T )
+K ) with the help of
+visual sensing and LMMs. In a nutshell, LMM-PS predicts the
+future channels based on sequences of both visual sensing and
+RF-based past channel estimates. Then, using the predicted
+future channels, LMM-PS ﬁnds out {x
+(T )
+b }B
+b=1 and {z
+(T )
+k }K
+k=1
+satisfying the constraints (13b)-(13e) of P
+′
+.
+Speciﬁcally, LMM-PS consists of three major stages (see
+Fig. 4). First, in the user localization and channel estimation
+6
+Locate each person in the
+image using bounding box.
+Vision
+Sensing
+Image
+Prompt
+Bounding boxes for each person:
+Person 1 (leftmost):
+Person 2:
+Person 3:
+Person 4:
+Person 5 (rightmost):
+Note: These bounding box coordinates are approximate and may
+not be exact.
+LMM
+Text
+Encoder
+Image
+encoder
+Multimodal
+Fusion
+Block
+Text
+Features
+Image
+Features
+Fig. 5. Basic structure of LMM.
+stage, the BS uses the LMM-OD to identify UE locations, as
+well as positions and sizes of obstacles. For the LMM-OD, we
+use GLIPv2, the off-the-shelf LMM trained to detect objects
+speciﬁed in the input sentence [29]. Using the acquired UE
+locations and uplink pilot signals, the BS performs the channel
+estimation in each time slot.
+Second, in the channel parameter prediction stage, the BS
+predicts each UE’s future channel parameters (e.g., distance,
+angles, and path gain). Since the channel in mmWave/THz
+environments is modeled by a small number of propagation
+paths (LoS and 1 ∼ 4 NLoS paths) and each path consists of
+few channel parameters, LMM-PS can effectively predict the
+future channel by estimating these parameters instead of the
+full-dimensional channel h
+(T )
+k . To predict UE’s future large-
+scale LoS channel parameters (distance/angles of the LoS
+path) from its past image locations, the BS uses LLaVA, an
+LMM capable of capturing spatio-temporal correlations across
+multimodal sequential data by combining visual and textual
+information. Since LLaVA uses both image and text inputs
+to generate the next elements, it can effectively predict UE’s
+future channel parameters based on its past trajectory [30].
+Moreover, as a language-based model, LLaVA can ﬂexibly
+adapt to new task objectives (e.g., changing the target UE
+types) using the text prompt. LLaVA can also readily adapt to
+various deployment environments through a relatively simple
+ﬁne-tuning process. For example, using the low-rank adap-
+tation (LoRA)-based ﬁne-tuning technique [31], we can train
+only the parameters of the newly added block (called adapter),
+which helps LLaVA to quickly perform robust UE trajectory
+prediction across various deployment scenarios.
+Simultaneously, the BS employs Transformers to predict
+UE’s future NLoS channel parameters (and LoS path gain)
+from past channel estimates. Since Transformer assigns rela-
+tively large attention weights to input data (i.e., past channels)
+that are highly correlated to the output values (i.e., future
+channel parameters), it can effectively capture long-term spa-
+tial correlation that tends to be preserved even under sudden
+environmental changes (e.g., appearance of new scatterers), re-
+sulting in an enhancement of the channel prediction accuracy.
+Finally, in the channel prediction and scheduling stage,
+LMM-PS solves the problem P
+′
+in (13a) using the predicted
+future channels. To be speciﬁc, the BS generates future chan-
+nel estimates by substituting the acquired channel parameters
+into the channel models (8) and (9). These estimates are
+then used to compute the proportional-fair (PF) metric [32]
+determining the UE’s scheduling priority. Then, among the
+RBs satisfying the constraints (13b)-(13c), the BS allocates
+the maximum number of RBs to UEs with the highest PF
+values, while UEs with smaller PF values are allocated fewer
+RBs. Similarly, among the MCS indices satisfying the con-
+straints (13d)-(13e), the highest eligible MCS index is chosen
+for each UE.
+A. Role of LMMs in Channel Prediction
+LMMs are extensions of LLMs designed to process inputs
+from multiple modalities (e.g., images and text). Key compo-
+nents of LMMs include pre-trained encoders for each modality
+(e.g., ViT [33] for images and BERT [34] for text) and a fusion
+network that integrates features from each modality to generate
+task-speciﬁc predictions (see Fig. 5) [35].
+The major beneﬁts of using LMM in LMM-PS when
+compared to the conventional DNN can be summarized as:
+• In contrast to the conventional object detector (OD) that
+can only identify objects of pre-deﬁned classes (e.g.,
+cats and laptops), the LMM tailored for object detection
+(LMM-OD) can readily detect arbitrary objects, both
+inside and outside of these classes. This is because while
+conventional OD relies solely on image inputs, LMM-OD
+exploits both image and text inputs to understand an input
+sentence and identify the image locations of the objects
+mentioned in the sentence. This means that LMM-OD
+can ﬂexibly adapt to new task objectives or environmental
+changes. For example, if obstacles causing LoS blockages
+(e.g., robots and motorcycles) newly appear in the cap-
+tured image, one can simply update the prompt so that
+LMM-OD is not distracted and focuses only on the target
+object.
+• Unlike the conventional trajectory prediction techniques
+relying solely on past UE trajectories, LMMs can capture
+the spatio-temporal relationships in the scene to predict
+UEs’ future pixel-level locations. Using the improved
+prediction capability, one can detect unexpected events
+7
+Input Image
+Using the sequence of x-y
+coordinate pairs:
+,
+,
+, predict the next
+pair .
+LMM
+Obstacle
+Predicted future
+location of target UE
+Overlapping
+region
+Is target
+UE
+located
+behind
+the
+obstacle?
+YES
+Input Prompt
+Output
+Is target UE overlapping
+with the obstacle?
+Blockage will
+occur at
+target UE!
+YES
+Fig. 6. Illustration of LMM-aided blockage prediction.
+(e.g., LoS blockages or sudden changes in movement
+direction) and then consider them in the channel predic-
+tion process. For example, LMMs can identify UEs that
+may overlap with obstacles by comparing their predicted
+locations with the obstacles’ positions and sizes (see
+Fig. 6), which cannot be achieved in conventional DNN
+technique. Note that the high-precision LoS blockage
+prediction enabled by LMMs is crucial in 6G channel
+environments, where the ultra-high frequency spectrum
+(e.g., FR2 band and FR3 mid-upper band) is explored. In
+such environments, channel becomes LoS dominant due
+to the severe signal attenuation in NLoS paths (at most a
+few paths will survive), which implies that even a single
+LoS blockage misdetection might severely degrade the
+channel prediction accuracy.
+• Updating weights of DNNs whenever the environment or
+task changes is not practical for real-world scenarios. In
+contrast, since LMMs are language-based models, one
+can easily update/modify the task without the model
+training using the prompt engineering. Among various
+prompting techniques, chain-of-thought (CoT) prompting,
+which guides LMMs to reason through intermediate steps,
+is used in our study. For example, when a prompt
+like “Using the sequence of past x-y coordinate pairs:
+(x1, y1) = (630, 480), (x2, y2) = (632, 477), (x3, y3) =
+(635, 474), predict the next pair (x4, y4)” is given, and if
+the model generates an implausible output that deviates
+from the established pattern (e.g., (x4, y4) = (941, 611)),
+then additional prompts can be used to enhance the
+CoT reasoning (e.g., “If the predicted pair is physically
+implausible, predict the next pair (x6, y6) from the longer
+sequence: (x1, y1) = (625, 485), (x2, y2) = (628, 483),
+(x3, y3) = (630, 480), (x4, y4) = (632, 477), (x5, y5) =
+(635, 474)”).
+B. LMM-based User Localization and Channel Estimation
+The ﬁrst stage of LMM-PS, called the user localization and
+channel estimation stage, is divided into four main steps: 1)
+beam-based positioning, 2) object detection in RGB image,
+3) multi-user ID identiﬁcation, and 4) LoS/NLoS channel
+components estimation.
+1) Beam-based Positioning: In this step, we transmit a few
+beams to identify the approximate direction of the UEs. For the
+identiﬁed physical area, we use the RGB-d camera installed
+at the BS to capture both RGB and depth images.
+2) Object Detection in RGB Image: From the captured
+RGB image I(t)
+, we use the LMM-OD glmm-od to identify
+the locations of UEs, as well as the positions and sizes of
+obstacles.
+• User Localization: Since most UEs are small-scale mo-
+bile devices (e.g., cell phones and laptops) [36], [37], they
+occupy only a few pixels in I(t)
+, making it difﬁcult for
+glmm-od to identify them. To overcome this shortcoming,
+we adopt a two-stage object detection process where
+glmm-od identiﬁes persons holding the UEs in I(t)
+and
+then detects each UE in the cropped image I
+(t)
+c of the
+identiﬁed person. For example, glmm-od identiﬁes persons
+in I(t)
+using the text prompt “person” and I(t)
+as inputs.
+Then, glmm-od uses I
+(t)
+c and the text prompt “cell phone”
+as inputs to identify the image locations of K
+′
+cell phones
+P
+(t)
+img = {(x
+(t)
+img,k, y
+(t)
+img,k)}K
+′
+k=1. By combining the angles
+of each UE (θ̂
+(t)
+LoS,k, φ̂
+(t)
+LoS,k) obtained via pixel-to-angle
+conversion4
+, along with the distance r̂
+(t)
+LoS,k measured
+from the captured depth image I
+(t)
+d , we obtain K
+′
+sets
+of LoS channel parameter estimates (see Fig. 7).
+• Obstacle Identiﬁcation: To determine the locations and
+sizes of obstacles in I(t)
+, glmm-od uses a text prompt
+specifying the types of obstacles to identify. For instance,
+using the input text prompt “wall, board”, glmm-od re-
+turns Pobs = {(ximg,j, yimg,j, wimg,j, himg,j)}J
+j=1, which
+contains the center coordinates, width, and height of walls
+and boards in I(t)
+.
+3) Multi-user ID identiﬁcation: Since LMM-OD detects
+multiple UEs in the captured image I(t)
+, each detected UE
+needs to be identiﬁed by its assigned ID from the BS. To this
+4Using the focal length of the RGB-d camera df (e.g., 50 mm), the camera’s
+direction angles (θi, φi), and the 2D location (ximg, yimg) of each detected
+object, pixel-to-angle conversion can be performed as in [9].
+8
+LMM-based large-scale object detection: Person and Obstacle
+Person.
+Board.
+RGB Image
+Prompt
+Person
+Person
+Depth Image
+Target UEs’distances
+Obstacles’distances
+Pixel-to-angle
+conversion
+LMM-OD
+Board
+Crop &
+Resize
+LMM-based small-scale object detection: Cell Phone
+Target UEs’locations in an
+image
+LMM-OD
+Cell Phone.
+Prompt
+Distance(r): 2.44m
+Azimuth angle( ): -25.3°
+Elevation angle( ): 7.7°
+Cell Phone
+Target UEs’azimuth/elevation angle
+estimates
+Distance(r): 5.71m
+Azimuth angle( ): 32.4°
+Elevation angle( ): 9.7°
+Person
+Person
+Cell Phone
+Fig. 7. Illustration of the sensing and LMM-aided user localization and obstacle identiﬁcation.
+end, we perform the multi-user ID identiﬁcation through the
+following steps (see Fig. 8):
+1) After acquiring the azimuth and elevation angles
+(θ̂
+(t)
+LoS,k, φ̂
+(t)
+LoS,k) of K′
+detected UEs, we generate a
+beamforming vector for each detected UE: f
+(t)
+k =
+a(θ̂
+(t)
+LoS,k, φ̂
+(t)
+LoS,k).
+2) Since the channel estimates for all K UEs (served by the
+BS) are available via the conventional channel estimation
+technique, we identify the ID of each detected UE by
+determining which channel estimate ĥ
+(t)
+k maximizes the
+correlation with UE’s beamforming vector f
+(t)
+k . For this
+purpose, we compute the correlation |ĥ
+(t)H
+k f
+(t)
+k | between
+each of the K′
+beamforming vectors and the K channel
+estimates, generating a correlation matrix R(t)
+∈ RK′
+×K
+.
+3) To correctly identify the IDs of all detected UEs, accu-
+rate one-to-one matching between the K′
+beamforming
+vectors and the K channel estimates is crucial. To this
+end, we formulate the matching problem using R(t)
+,
+where the cost of assigning a beamforming vector f
+(t)
+k
+to a channel estimate ĥ
+(t)
+k is deﬁned as the inverse of
+the correlation |ĥ
+(t)H
+k f
+(t)
+k |. We then solve this problem
+using the Hungarian algorithm [38], which computes the
+optimal one-to-one matching between the two sets by
+iteratively minimizing the total matching cost. In our case,
+we perform one-to-one matching between beamforming
+vectors and channel estimates.
+For any UE not detected in I(t)
+, we select the beamform-
+ing vector (i.e., beam codeword) that maximizes the refer-
+ence signal received power (RSRP) from the beam code-
+book. Using the chosen beam codeword index, we extract
+rough estimates of the UE’s distance and angles [39]. Af-
+ter identifying the IDs of all K′
+detected UEs, we de-
+termine the large-scale LoS channel parameters for all K
+UEs by matching each set of distances and angles esti-
+mated using LMM-OD with the identiﬁed UE: Ĉ
+(t)
+LoS, large =
+[(r̂
+(t)
+LoS,1, θ̂
+(t)
+LoS,1, φ̂
+(t)
+LoS,1) · · · (r̂
+(t)
+LoS,K, θ̂
+(t)
+LoS,K, φ̂
+(t)
+LoS,K)].
+4) LoS/NLoS Channel Components Estimation: Once the
+large-scale LoS channel parameter estimates are acquired,
+we estimate the small-scale LoS path gain parameter from
+the received pilot signal y
+(t)
+k using the least squares (LS)
+technique:
+α̂
+(t)
+LoS,k = ej2πfc
+r̂
+(t)
+LoS,k
+c (a(θ̂
+(t)
+LoS,k, φ̂
+(t)
+LoS,k))†
+sy
+(t)
+k . (14)
+Using both the acquired large-scale and small-
+scale channel parameters, we estimate the full-
+dimensional LoS channel component for each UE as
+ĥ
+(t)
+LoS,k = α̂
+(t)
+LoS,ke−j2πfc
+r̂
+(t)
+LoS,k
+c a(θ̂
+(t)
+LoS,k, φ̂
+(t)
+LoS,k).
+Since the channel h
+(t)
+k consists of LoS and NLoS compo-
+nents (see (5)), we estimate the NLoS component ĥ
+(t)
+NLoS,k of
+each visible UE5
+by subtracting the LoS component estimate
+ĥ
+(t)
+LoS,k from the channel estimate ĥ
+(t)
+k (i.e., ĥ
+(t)
+NLoS,k = ĥ
+(t)
+k −
+ĥ
+(t)
+LoS,k). For non-visible UEs, we can readily assume that their
+LoS paths are blocked by obstacles so that their channels
+consist solely of NLoS components, setting ĥ
+(t)
+LoS,k = 0 and
+ĥ
+(t)
+NLoS,k = ĥ
+(t)
+k .
+C. Channel Parameter Prediction Using LMM and Transform-
+ers
+In this subsection, we discuss the second stage of LMM-
+PS, referred to as the channel parameter prediction stage.
+To predict future large-scale LoS channel parameters based
+on the spatio-temporal relationships in the UEs’ past image
+locations, LMM-PS uses LLaVA, the LMM capable of cap-
+turing these relationships and generating the next elements.
+5By visible and non-visible UEs, we mean UEs that are present and absent
+in the captured image I(t), respectively.
+9
+1) Beamforming
+vector
+generation
+UEs’ large-scale LoS channel
+parameter matrix
+2) Correlation
+matrix
+generation
+3) Multi-user ID
+identification using
+Hungarian algorithm
+Detected UEs’
+large-scale LoS
+channel parameters
+Detected UEs’
+beamforming vectors
+Correlation matrix
+channel estimates
+LoS/NLoS
+channel components
+estimation
+LMM-OD
+LoS component estimates
+NLoS component estimates
+Fig. 8. Step-by-step operations of multi-user identiﬁcation process in LMM-PS.
+LMM-PS also employs Transformers to predict future small-
+scale LoS path gain and NLoS channel parameters from past
+LoS/NLoS components. By assigning higher attention to past
+channel estimates strongly correlated with future parameters,
+Transformers can predict these values effectively.
+1) Large-Scale LoS Channel Parameter Prediction Using
+LMM: Since LLaVA generates future channel parameter pre-
+dictions based on the input text prompt PLLaVA, designing
+PLLaVA carefully is crucial for clear and accurate guidance.
+Speciﬁcally, PLLaVA consists of two types of prompts: one for
+predicting UEs’ future angles and another for their distances.
+• Future UE angles prediction prompt: To predict
+each UE’s future azimuth/elevation angles (θ̂
+(T )
+LoS,k, φ̂
+(T )
+LoS,k)
+from its past image locations {(x
+(t)
+img,k, y
+(t)
+img,k)}T −1
+t=T −Tc
+,
+we use a prompt such as: “Using the sequence of
+past x-y coordinate pairs: (x1, y1) = (740.0, 380.0),
+(x2, y2) = (742.5, 377.0), (x3, y3) = (745.0, 374.0),
+predict the next pair (x4, y4)”. Once LLaVA predicts
+the next image location (x
+(T )
+img,k, y
+(T )
+img,k), it is converted
+into angle estimates (θ̂
+(T )
+LoS,k, φ̂
+(T )
+LoS,k) via pixel-to-angle
+conversion.
+• Future UE distance prediction prompt: To predict the
+future distance of each UE from the BS r̂
+(T )
+LoS,k, we use a
+sequence of past measured distances {r̂
+(t)
+LoS,k}T −1
+t=T −Tc
+. For
+example, we use a prompt such as: “Using the sequence
+of past distance values: r1 = 12.3, r2 = 11.2, r3 = 10.3,
+predict the next distance value r4” (see Fig. 9).
+Once LLaVA predicts future UE image locations and dis-
+tances, LMM-PS leverages this information to detect sudden
+events. Speciﬁcally, to identify potential future LoS blockages,
+LMM-PS checks whether each UE’s predicted image location
+overlaps with any obstacle in I(T −1)
+by comparing it against
+the obstacles’ positions and sizes. If an overlap is detected,
+then LMM-PS determines the future LoS link status of the
+UE δ̂
+(T )
+k by checking whether its predicted distance from the
+BS r̂
+(T )
+LoS,k is shorter than the overlapping obstacle’s distance
+from the BS r̂j:
+δ̂
+(T )
+k =
+(
+1 if r̂
+(T )
+LoS,k < r̂j, ∀(k, j) ∈ O(T )
+0 else,
+(15)
+where O(T )
+is the index set of UEs and obstacles whose
+predicted image locations overlap.
+2) LoS Path Gain and NLoS Channel Parameter Prediction
+Using Transformers: Since LoS and NLoS channel com-
+ponents depend on their respective channel parameters, we
+design two separate Transformer-based channel predictors:
+one for LoS (TCP-L) and the other for NLoS (TCP-N), to
+effectively predict each UE’s future LoS path gain and NLoS
+channel parameters.
+In TCP-L and TCP-N, we use past estimated LoS and
+NLoS channel components to construct the input matrices
+e
+HLoS and e
+HNLoS, respectively. These matrices are embedded
+into Sembed ∈ RK(T −1)×NT
+and then passed through Nattn
+attention blocks, where each block sequentially applies multi-
+head attention, layer normalization, a fully-connected (FC)
+layer, and another layer normalization. This process generates
+the feature matrices GLoS,B ∈ RK(T −1)×NT
+and GNLoS,B ∈
+RK(T −1)×NT
+for TCP-L and TCP-N, which are converted to
+the UEs’ future LoS path gains α̂
+(T )
+LoS ∈ RK×2
+and their ini-
+tially predicted NLoS channel parameters Ĉ
+(T −1)
+NLoS ∈ RK×5Lmax
+using multiple FC layers, respectively6
+(see Fig. 10).
+To handle the variation in the number of NLoS paths L
+caused by sudden scatterers, TCP-N exploits visual sensing
+and Transformer. Speciﬁcally, TCP-N extracts the image fea-
+ture matrix F ∈ RD×5Lmax
+from the captured image I(T −1)
+using an image feature extractor7
+, while embedding Ĉ
+(T −1)
+NLoS
+into Zembed,F ∈ RK×5Lmax
+. Next, F and Zembed,F are passed
+through Nattn attention blocks to generate the feature matrix
+GNLoS,F ∈ RK×5Lmax
+, which is then converted to two outputs
+using multiple FC layers: (1) future NLoS channel parameter
+6Note that 5 of Ĉ
+(T )
+NLoS comes from real and imaginary values of path gains,
+azimuth and elevation angles, and distance.
+7In this work, we use the Swin Transformer-based image feature extrac-
+tor [43] to mitigate the complexity overhead.
+10
+Input Prompt
+Input Image
+Question 1.
+Using the sequence of x-y coordinate pairs: ,
+, , predict the next pair .
+UEs’past image positions
+UEs’past distances Answers
+Answer 1.
+LLaVA
+Fig. 9. Prompt Design.
+predictions Ĉ
+(T )
+NLoS ∈ RK×5Lmax
+and (2) existence probabilities
+(i.e., score values Ŝ
+(T )
+NLoS ∈ RK×Lmax
+) of NLoS paths. By as-
+signing relatively large attention weights to input data that are
+highly correlated to the NLoS channel parameters (i.e., RGB
+pixels associated with path scatterers), TCP-N can extract the
+channel-related visual features from the visual sensing image
+and then predict the channel parameters. Finally, by selecting
+the set of predicted channel parameters whose score value is
+greater than a pre-deﬁned threshold, TCP-N can ﬂexibly adjust
+the number of predicted NLoS paths.
+Once the channel prediction using the acquired future chan-
+nel parameters is completed, we compute the PF metric for all
+UEs, which determines their scheduling priority. The BS then
+allocates the maximum number of RBs to UEs with the highest
+PF values, while allocating fewer RBs to UEs with smaller
+PF values, subject to the constraints (13b)-(13c). Similarly, the
+highest MCS index is chosen from the set of indices satisfying
+the constraints (13d)-(13e).
+D. TCP Loss Function Design and Training Process
+In the training phase, we optimize the network parameters
+of TCP-L and TCP-N by minimizing the regression loss
+function L, which quantiﬁes the difference between the true
+and predicted channel parameters. To obtain the ground-truth
+channel parameters, we use MATLAB’s ray-tracing function.
+In this process, we can identify signal propagation paths
+and their associated channel parameters, and then apply a
+realistic path loss model to generate synthetic datasets. The
+loss functions for TCP-L and TCP-N are expressed as
+LTCP-L = kα△k2
+2 + λkα△k1,
+α△ = α
+(T )
+LoS − α̂
+(T )
+LoS, (16)
+LTCP-N = kC△k2
+2 + λkC△k1,
+C△ = C
+(T )
+NLoS − Ĉ
+(T )
+NLoS, (17)
+where kα△k2
+2 and kC△k2
+2 are the mean square error (MSE)
+losses, kα△k1 and kC△k1 are the mean absolute error (MAE)
+losses, and λ is the regularization weight for the MAE loss
+term. Note that in our loss function design, we combine both
+MAE and MSE to mitigate the vanishing gradient problem.
+When the MSEs kα△k2
+2 and kC△k2
+2 approach zero, their
+gradients also become very small, which can slow down the
+TABLE II
+SIMULATION PARAMETERS
+Parameters Values
+Carrier frequency fc 28 GHz
+Number of BS antennas NT 64
+Time slot length τs 100 ms
+Bandwidth W 100 MHz
+Number of symbols in RB Ns 14
+Minimum user height hmin 0.5 m
+Maximum user height hmax 2 m
+Maximum user speed vmax 25 km/h
+Maximum number of NLoS paths Lmax 3
+Number of training samples 25, 600
+Number of validation samples 3, 000
+Number of test samples 7, 400
+Number of hidden units E 64
+Number of attention blocks Nattn 5
+Number of training epochs 500
+Regularization coefﬁcient λ 1.0
+Total number of time slots T 11
+Total number of RBs NRB,total 70
+Training batch size B 128
+Initial learning rate η of Adam Optimizer 10−3
+Time window size Tc 3
+convergence of TCP. By including the MAEs kα△k1 and
+kC△k1, which have constant gradients, we can achieve more
+stable and consistent training [9].
+IV. EXPERIMENTS AND DISCUSSIONS
+A. Simulation Setup
+In our simulations, the BS serves K = 10 single-antenna
+UEs, which are randomly distributed within the 20 × 20 m2
+service area. Note that v and h are the speed and height of UEs,
+which are also randomly chosen from the ranges [hmin, hmax]
+and [0, vmax], respectively. Every UE moves straight8
+and
+changes the direction randomly if it reaches the edge of
+service area. To generate the path gain αk,p =
+q
+βL
+k,pβS
+k,p =
+q
+ρ(rk,p) · 10
+zkσsh
+10 βS
+k,p for the p-th path, we use the path loss
+model and shadow fading speciﬁed in 3GPP TR 38.901 Rel.
+17 [40], where ρ(r) = −(31.84+21.5 log10(r)+19 log10(fc))
+8While UE mobility patterns can be complex in real-world scenarios, the
+proposed LMM-PS can predict UE trajectories every 100 ms so that LMM-
+PS can maintain robust prediction performance even under random-walk-like
+mobility scenarios.
+11
+T -N
+T -L
+Multi-head
+Attention
+Layer
+Normalization
+Input
+Embedding
+Input
+Preprocessing FC layer
+Layer
+Normalization
+Multi-head
+Attention
+Layer
+Normalization
+FC layer
+Layer
+Normalization
+Multi-head
+Attention
+Layer
+Normalization
+FC layer
+Layer
+Normalization
+Multi-head
+Attention
+Layer
+Normalization
+FC layer
+Layer
+Normalization
+◌ ◌ ǡ
+◌ ◌ ǡ
+Input
+Embedding
+Input
+Preprocessing
+Image
+Feature
+Extractor
+Input
+Embedding
+Multi-head
+Attention
+Layer
+Normalization
+FC layer
+Layer
+Normalization
+Multi-head
+Attention
+Layer
+Normalization
+FC layer
+Layer
+Normalization
+◌ ◌ ǡ
+Input
+Concatenation
+Fig. 10. Detailed architecture of TCP in LMM-PS.
+Fig. 11. Object detection results of LMM-PS on the VOBEM2 set. Green
+and pink bounding boxes indicate persons and obstacles, respectively.
+is the path loss, σsh = 4, and zk ∼ N(0, 1). Note that
+βS
+k,p ∼ CN(0, 1) is the small-scale fading coefﬁcient. The
+system parameters are summarized in Table II.
+As for the pre-trained LLaVA model, we select LLaVA-
+v1.6-13B from the latest set of LLaVA models, which range
+from v1.6-7B to v1.6-34B, to balance inference speed and per-
+formance. In the training phase of TCP-L and TCP-N, we use
+the Adam optimizer, a widely used optimizer that maintains
+the robustness of the learning process [41]. Additionally, to
+help the smooth convergence of the loss value during training,
+we employ a learning rate decay strategy, reducing the learning
+rate by a factor of 10 after every 100 training epochs.
+To evaluate the UE localization performance of GLIPv2,
+we use VOBEM2 [42], a sensing dataset tailored for wireless
+communications. VOBEM2 has 104 pairs of RGB and depth
+images containing persons and cell phones, some of which
+are obscured by obstacles. In our experiments, we deﬁne
+obstacles as walls, pillars, or boards. For the obstacle detection
+evaluation, we manually annotate bounding boxes for each
+obstacle in the VOBEM2 images (see https://github.com/islab-
+github/VOBEM2). We then perform the object detection on
+these newly annotated images using GLIPv2 (see Fig. 11).
+Furthermore, to evaluate the UE mobility and blockage predic-
+tion performances of LLaVA, we use synthetically generated
+test samples of TCP.
+For the object detection performance comparison, we
+employ two off-the-shelf object detectors: 1) Swin Trans-
+former [43] and 2) EfﬁcientDet-D8 [44]. Also, for the mobility
+(trajectory) prediction performance comparison, we use two
+benchmark schemes:
+1) DL-based trajectory prediction [45]: In this scheme, the
+BS uses an encoder-decoder architecture, where the en-
+coder captures UEs’ common movement patterns in a
+speciﬁc area from past trajectories, and then the decoder
+predicts future trajectories based on these patterns.
+2) Sage-Husa Filter-based trajectory prediction [46]: In this
+scheme, the BS estimates the unknown and time-varying
+noises in the measurements of UEs’ movements based on
+the noise statistics. After that, the BS predicts the future
+trajectories using these noise estimates.
+12
+TABLE III
+OBJECT DETECTION AND LOCALIZATION PERFORMANCE USING GLIPV2 AND THE VOBEM2 DATASET.
+Human/Phone Localization error (Phone) Obstacle Localization error
+Recall (%) Distance (cm) Az/El Angles (deg) Precision/Recall (%) Distance (cm) Az/El Angles (deg)
+GLIPv2 99.18 / 95.45 0.84 0.113 / 0.256 90.00 / 89.55 25.9 0.366 / 0.687
+Swin Transformer 98.09 / 92.56 1.36 0.133 / 0.289 - - -
+EfﬁcientDet-D8 94.55 / 90.08 3.20 0.140 / 0.400 - - -
+TABLE IV
+MOBILITY AND BLOCKAGE PREDICTION PERFORMANCE USING LLAVA-V1.6-13B. LATENCY AND POWER CONSUMPTION ARE ESTIMATED BASED ON
+THE QUALCOMM AI 100 EDGE.
+Localization error (Phone) Blockage prediction Resource usage
+Distance (cm) Az Angle (deg) El Angle (deg) Accuracy (%) Latency (ms) Power (W)
+LLaVA-v1.6-13B 12.78 0.27 0.1 91.7 25 15
+DL-based trajectory prediction [B3] 45.66 8.5 7.86 - 31 25
+Sage-Husa ﬁlter-based trajectory prediction [B4] 22.01 14.26 13.66 - 30 20
+DL-based blockage prediction - - - 82.4 31 25
+To compare the scheduling performance, we use four bench-
+mark schemes:
+1) DRL-based preemptive scheduling [20]: The BS exploits
+DRL to determine each UE’s optimal MCS index and
+RB allocation for the T -th (future) slot. These scheduling
+decisions are made based on past estimated channels and
+SNRs of UEs.
+2) Round Robin-based reactive scheduling [47]: The BS
+allocates an equal number of RBs to each UE, which
+implies that rate requirements of some UEs may not be
+satisﬁed. Note that MCS indices are selected based on
+the SNRs in the (T − 1)-th slot.
+3) Maximum SNR-based reactive scheduling [26]: The BS
+prioritizes RB allocation to UEs with high SNR values
+in the (T − 1)-th slot. This process continues until all
+RBs are assigned, without considering fairness or QoS
+guarantees for all UEs.
+4) Proportional fair-based reactive scheduling [48]: The BS
+makes scheduling decisions based on UEs’ SNRs ob-
+served in the (T − 1)-th slot, allocating RBs to pursue
+a balance between the total system throughput and QoS
+requirement satisfaction.
+B. Simulation Results
+In Table III, we present the UE and cell phone detection
+performance in terms of recall (i.e., percentage of the detected
+objects among all target objects). We observe that GLIPv2
+outperforms Swin Transformer and EfﬁcientDet, achieving
+an average recall of over 97% for detecting both persons
+and cell phones. By leveraging both image and text inputs,
+GLIPv2 understands an input sentence and identiﬁes the image
+locations of the objects mentioned in the sentence, thereby
+enhancing the performance of conventional object detectors
+that rely solely on image inputs.
+We also present the obstacle detection performance in
+Table III. The results show that GLIPv2 achieves around 90%
+in both precision (i.e., the percentage of the correctly detected
+objects among total detected objects) and recall in the obstacle
+detection. Since conventional object detectors are trained to
+identify pre-deﬁned object classes only, they struggle to detect
+obstacles that were not explicitly labeled or included in their
+training data.
+In Table IV, we evaluate the mobility prediction perfor-
+mance of LLaVA-v1.6-13B. We observe that LLaVA accu-
+rately predicts large-scale LoS channel parameters (distance
+and angles), achieving an average distance error of less than
+15 cm. Furthermore, we compare the blockage prediction
+accuracy of the proposed LMM-PS with a DL-based blockage
+prediction scheme [49], which uses a long short-term memory
+(LSTM) network to predict future blockage status based on
+a sequence of past estimated channels. The results in Table
+IV show that LMM-PS, which exploits LLaVA’s mobility
+prediction results, improves blockage prediction accuracy by
+over 10% compared to the LSTM-based scheme, thanks to its
+ability to quickly identify the surrounding wireless environ-
+ment through the visual sensing information.
+We also see from Table IV that the latency and power
+consumption of LMM-PS are much lower than those of
+the conventional techniques. Since future UE positions are
+predicted from captured images using LLaVA, in essence the
+beam sweeping latency of conventional RF-based trajectory
+prediction techniques is replaced with the LMM inference
+latency, leading to a reduction of the latency and power
+consumption of LMM-PS. For example, when employing the
+latest AI-focused SoC Qualcomm AI 100 Edge, inference time
+is around 25 ms, but the beam sweeping latency of conven-
+tional RF-based techniques is about 30 ms [50]. Similarly, in
+terms of the power consumption, the beam sweeping stage
+typically consumes 20 W [50] while the Qualcomm AI 100
+Edge consumes around 15 W, indicating promising energy
+savings with LMM-PS.
+To validate the effectiveness of the proposed Transformer-
+aided models in LoS path gain and NLoS channel parameter
+estimation, we have newly investigated the channel prediction
+performance of LMM-PS in terms of the average NMSE (see
+Fig. 12(a)). We have also conducted the performance eval-
+uation of two recent approaches: [51] LSTM-aided channel
+prediction and [52] Kalman ﬁlter-based channel prediction (see
+[51] and [52] in Fig. 12(a)). To ensure a fair comparison, we
+used the same large-scale LoS channel parameters (distance
+and angles of the LoS path) predicted by the LMM as inputs
+for LoS channel prediction in all schemes we tested. From
+Fig. 12(a), we observe that LMM-PS performs uniformly
+better than [51] and [52]. Since Transformer assigns relatively
+large attention weights to input data (i.e., past channels)
+13
+4 5 6 7 8 9 10
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+Average
+NMSE
+(dB)
+LSTM-based channel prediction [B4]
+Kalman filter-based channel prediction [B5]
+LMM-PS (without matching)
+LMM-PS
+(a)
+4 5 6 7 8 9 10
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+Average
+NMSE
+(dB)
+Block fading (training baseline)
+EPA channel
+ETU channel
+(b)
+Fig. 12. (a) Average NMSE of channel prediction techniques and (b) Average NMSE of LMM-PS for various channel models.
+that are highly correlated to the output values (i.e., future
+channel parameters), LMM-PS can effectively capture long-
+term spatial correlation that tends to be preserved even under
+sudden environmental changes, which leads to a meaningful
+improvement in the channel prediction process.
+To demonstrate the efﬁcacy of LMM-PS under various
+channel conditions, we have tested its channel prediction per-
+formance for the extended pedestrian-A (EPA) and extended
+typical urban (ETU) channels (see Fig. 12(b)). We observe
+that the overall performance of LMM-PS under these models
+is similar to that under the block-fading channel. For example,
+when K = 4, LMM-PS under ETU channel achieves an
+average NMSE of about 4.27 dB, which is comparable to
+the NMSE achieved by LMM-PS under block-fading channel
+(3.25 dB).
+In Fig. 13(a), we plot the total system throughput of LMM-
+PS as a function of SERmax. We conﬁrm that LMM-PS
+outperforms the conventional techniques across the board. For
+example, LMM-PS achieves 11% throughput gain over the
+DRL-based scheduling at SERmax = 10−2
+. This is mainly
+because LMM-PS predicts the future movements of UEs using
+LLaVA and the channel parameters for strong NLoS paths
+using Transformers, which helps LMM-PS predict future LoS
+and NLoS channel component used to compute the future PF
+metric.
+In Fig. 13(b), we plot the total system throughput of LMM-
+PS as a function of the number of UEs K. We observe that
+LMM-PS achieves signiﬁcantly higher throughput compared
+to conventional techniques. While conventional techniques
+relying exclusively on past estimated channels often fail
+to capture sudden channel changes (e.g., blockages) in the
+wireless environment, LMM-PS can understand these events
+using the visual sensing information and LMMs, resulting in
+substantial total system throughput improvement. For example,
+when K = 7, LMM-PS achieves a 32% throughput gain over
+the Round-Robin scheduling technique.
+To judge the generalization ability of LMM-PS, we newly
+evaluated UE and obstacle localization performance using the
+VOMM dataset [3], a vision dataset tailored for mobility sce-
+narios (see Table V). For the obstacle detection evaluation, we
+manually annotated bounding boxes for each obstacle in the
+VOMM images (see https://github.com/islab-github/VOMM).
+From our experiments, we conﬁrm that the localization per-
+formance of LMM-PS in VOMM is comparable to that in
+VOBEM2. Based on the localization results in Table V, we
+further evaluated the throughput performance of LMM-PS
+under various mobility scenarios (see Fig. 14(a)). We observe
+that the throughput performance of LMM-PS in VOMM is
+comparable to that in VOBEM2. For example, when the
+UE velocity is v = 12km/h, LMM-PS in VOMM achieves
+about 167.8 bps/Hz, which is very close to the total system
+throughput achieved in VOBEM2 (168.4 bps/Hz).
+Finally, to assess the robustness of LMM-PS in various
+environments, we have designed new simulation spaces (using
+AutoCAD) by deploying obstacles with varying densities ρo,
+which is deﬁned as the ratio of the XY -plane area occupied by
+obstacles to the total service area. We then tested the through-
+put performance of LMM-PS in these spaces (see Fig. 14(b)).
+We observe that LMM-PS achieves signiﬁcant improvement in
+the total system throughput over the conventional strategies.
+For instance, when ρo = 20%, LMM-PS achieves 26% gain
+in the total system throughput over the Round Robin-based
+technique.
+V. CONCLUSION
+In this paper, we proposed an LMM-aided preemptive
+scheduling technique called LMM-PS for future 6G au-
+tonomous communication systems. Unlike conventional ap-
+proaches relying solely on RF signals, LMM-PS exploits
+visual sensing information and LMMs to quickly detect and
+14
+0.01 0.02 0.03 0.04 0.05 0.06 0.07 0.08 0.09 0.1
+SERmax
+100
+110
+120
+130
+140
+150
+160
+170
+Total
+system
+throughput
+(bps/Hz)
+Round-Robin scheduling (reactive)
+Proportional-Fair scheduling (reactive)
+Maximum-SNR scheduling (reactive)
+DRL-based scheduling (preemptive)
+LMM-PS (proposed)
+(a)
+4 5 6 7 8 9 10
+60
+80
+100
+120
+140
+160
+Total
+system
+throughput
+(bps/Hz)
+Round-Robin scheduling (reactive)
+Proportional-Fair scheduling (reactive)
+Maximum-SNR scheduling (reactive)
+DRL-based scheduling (preemptive)
+LMM-PS (proposed)
+(b)
+Fig. 13. (a) Total system throughput as a function of SERmax (K = 10, v = 12km/h) and (b) Total system throughput as a function of number of UEs
+(SERmax = 10−2, v = 12km/h).
+TABLE V
+OBJECT DETECTION AND LOCALIZATION PERFORMANCE USING GLIPV2 AND THE VOMM DATASET.
+Phone Localization error (Phone) Obstacle Localization error
+Recall (%) Distance (cm) Az/El Angles (deg) Precision/Recall (%) Distance (cm) Az/El Angles (deg)
+GLIPv2 99.57 0.67 0.090 / 0.223 92.28 / 88.67 46.8 0.569 / 0.929
+Swin Transformer 95.26 3.64 0.142 / 0.400 - - -
+analyze the signal propagation environment. By forecasting
+the future positions of mobile devices and sudden events,
+and combining these with past RF-based channel information,
+LMM-PS can generate accurate future channel estimates for
+the preemptive scheduling. Through numerical experiments,
+we demonstrated that LMM-PS signiﬁcantly outperforms tra-
+ditional RF-based scheduling techniques in terms of the total
+system throughput. While we did not use latest LMMs (e.g.,
+GPT-4V and LLaMA-VID) in the current version of LMM-PS,
+replacing the existing backbones with these models that handle
+new input types (e.g., image sequences) will be a promising
+research direction. We believe that the proposed LMM-PS
+is an effective tool to support the emerging LLM/LMM-
+based autonomous communication paradigm, where tasks are
+executed through the cooperation of AI, multimodal sensing,
+and wireless communications.
+REFERENCES
+[1] S. Kim, J. Son, and B. Shim, “Large multimodal model-based scheduling
+for autonomous communication systems,” to appear in IEEE Veh. Technol.
+Conf. (VTC), 2025.
+[2] Y. Chang et al., “A survey on evaluation of large language models,” ACM
+Trans. Intell. Syst. Technol., vol. 15, no. 3, pp. 1–45, Mar. 2024.
+[3] M. Xu et al., “A survey of resource-efﬁcient llm and multimodal foun-
+dation models,” arXiv preprint arXiv:2401.08092, 2024.
+[4] Z. Yang, X. Jia, H. Li, and J. Yan, “LLM4Drive: A survey of large lan-
+guage models for autonomous driving,” arXiv preprint arXiv:2311.01043,
+2023.
+[5] M. Ahn et al., “AutoRT: Embodied foundation models for large scale
+orcehstration of robotic agents,” arXiv preprint arXiv:2401.12963, 2024.
+[6] G. Wang et al., “Surgical-LVLM: Learning to adapt large vision-language
+model for grounded visual question answering in robotic surgery,” arXiv
+preprint arXiv:2401.08092, 2024.
+[7] H. Zhou et al., “Large language model (LLM) for telecommunications: A
+comprehensive survey on principles, key techniques, and opportunities,”
+IEEE Commun. Surveys Tuts., vol. 27, no. 3, pp. 1955–2005, Jun. 2025.
+[8] F. Jiang, Y. Peng, L. Dong, K. Wang, K. Yang, C. Pan, D. Niyato, and
+O. A. Dobre, “Large language model enhanced multi-agent systems for
+6G communications,” IEEE Wireless Commun., vol. 31, no. 6, pp. 48-55,
+Dec. 2024.
+[9] Y. Ahn, J. Kim, S. Kim, S. Kim, and B. Shim, ”Sensing and computer
+vision-aided mobility management for 6G millimeter and terahertz com-
+munication systems,” IEEE Trans. Commun., vol. 72, no. 10, pp. 6044-
+6058, Oct. 2024.
+[10] R. Zeng, T. Liu, X. Yu, and Z. Zhang, ”Novel channel quality indicator
+prediction scheme for adaptive modulation and coding in high mobility
+environments,” IEEE Access, vol. 7, pp. 11543-11553, 2019.
+[11] A. Balieiro, K. Dias and P. Guarda, ”Addressing the CQI feedback delay
+in 5G/6G networks via machine learning and evolutionary computing,”
+Intelligent and Converged Networks, vol. 3, no. 3, pp. 271-281, Sept.
+2022.
+[12] Q. He, G. Dan, and G. P. Koudouridis, “Semi-persistent scheduling for
+5G downlink based on short-term trafﬁc prediction,” in Proc. IEEE Global
+Commun. Conf. (GLOBECOM), 2020.
+[13] A. Vaswani et al., “Attention is all you need,” Adv. Neural Inform.
+Process. Syst., 2017.
+[14] 3GPP Technical Speciﬁcation 38.212, “5G; NR; Multiplexing and chan-
+nel coding,” v15.7.0, Sept. 2019.
+[15] A. Omri, M. Shaqfeh, A. Ali, and H. Alnuweiri, “Synchronization
+procedure in 5G NR systems,” IEEE Access, vol. 7, pp. 41286–41295,
+2019.
+[16] S. Kim, J. Wu, and B. Shim, “Efﬁcient channel probing and phase shift
+control for mmWave reconﬁgurable intelligent surface-aided communica-
+tions,” IEEE. Trans. Wireless Commun., vol. 23, no. 1, pp. 231–246, Jan.
+2024.
+[17] J. Son, I. Keum, H. Kim, H. Cho, and B. Shim, “Transformer-based
+environment-aware localization in the NLoS scenarios,” in Proc. IEEE
+Wireless Commun. Netw. Conf. (WCNC), 2024.
+[18] X. Ye, Y. Yu, and L. Fu, “Deep reinforcement learning based link
+adaptation technique for LTE/NR Systems,” IEEE Trans. Veh. Technol.,
+vol. 72, no. 6, pp. 7364–7379, Jun. 2023.
+15
+0 5 10 15 20
+110
+120
+130
+140
+150
+160
+170
+Total
+system
+throughput
+(bps/Hz)
+Round-Robin scheduling (reactive)
+Proportional-fair scheduling (reactive)
+Maximum-SNR scheduling (reactive)
+DRL-based scheduling (preemptive)
+LMM-PS (proposed)
+(a)
+10 15 20 25 30 35 40
+Obstacle density (%)
+100
+110
+120
+130
+140
+150
+160
+170
+Total
+system
+throughput
+(bps/Hz)
+Round-Robin scheduling (reactive)
+Proportional-fair scheduling (reactive)
+Maximum-SNR scheduling (reactive)
+DRL-based scheduling (preemptive)
+LMM-PS (proposed)
+(b)
+Fig. 14. (a) Total system throughput as a function of UE velocity (K = 10, SERmax = 10−1) and (b) Total system throughput as a function of the obstacle
+density (K = 10, SERmax = 10−1, v = 12km/h).
+[19] S. Jeong, H. Ju, S. Kim, and B. Shim, “Automated environment-aware
+channel feedback for 6G massive MIMO systems,” in Proc. IEEE Glob.
+Commun. Wkshps. (GC Wkshps), 2023.
+[20] Y. Liao, Z. Yang, Z. Yin, and X. Shen, “DQN-based adaptive MCS and
+SDM for 5G massive MIMO-OFDM downlink,” IEEE Commun. Lett.,
+vol. 27, no. 1, pp. 185–189, Jan. 2023.
+[21] 3GPP Technical Speciﬁcation 38.214, “5G; NR; Physical layer proce-
+dures for control,” v15.6.0, Jun. 2019.
+[22] 3GPP Technical Speciﬁcation 38.214, “5G; NR; Physical layer proce-
+dures for data,” v16.2.0, Jul. 2020.
+[23] E. Bobrov, D. Kropotov, H. Lu, and D. Zaev, “Massive MIMO adaptive
+modulation and coding using online deep learning algorithm,” IEEE
+Commun. Lett., vol. 26, no. 4, pp. 818–822, Apr. 2022.
+[24] Y. Ahn, J. Kim, S. Kim, and B. Shim, “Computer vision-aided proactive
+mobility management for 6G terahertz communications,” in Proc. IEEE
+Glob. Commun. Conf. (GLOBECOM), 2023.
+[25] 3GPP Technical Speciﬁcation 38.211, “5G; NR; Physical layer proce-
+dures for data,” v16.2.0, Jun. 2018.
+[26] H. Oh and H. Nam, “Maximum rate scheduling with adaptive mod-
+ulation in mixed impulsive noise and additive white gaussian noise
+environments,” IEEE Trans. Wireless Commun., vol. 20, no. 5, pp.
+3308–3320, May 2021.
+[27] A. J. Goldsmith, Wireless Communication. Cambridge, U.K: Cambridge
+Univ. Press, 2005.
+[28] Y. Chen, Y. Wu, Y. T. Hou, and W. Lou, “mCore: Achieving submil-
+lisecond scheduling for 5G MU-MIMO systems,” in Proc. IEEE Conf.
+Comput. Commun., 2021.
+[29] H. Zhang, P. Zhang, X. Hu, Y-C. Chen, L. H. Li, X. Dai, L. Wang, L.
+Yuan, J-N. Hwang, and J. Gao, “GLIPv2: Unifying localization and vl
+understanding,” in Proc. Adv. Neural Inf. Process. Syst., vol. 35, 2022.
+[30] H. Liu, C. Li, Y. Li, Y. Lee, “Improved baselines with visual instruction
+tuning,” in Proc. Comput. Vis. Pattern Recognit. (CVPR), pp. 26296–
+26306, 2024.
+[31] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang,
+and W. Chen, “Lora: Low-rank adaptation of large language models,” in
+Proc. Int. Conf. Learn. Represent. (ICLR), 2021.
+[32] Y. Barayan and I. Kostanic, “Performance evaluation of proportional
+fairness scheduling in LTE,” in Proc. World Congr. Eng. Comput. Sci.,
+vol. 2, pp. 712–717, 2013.
+[33] D. Alexey et al., ”An image is worth 16x16 words: Transformers for
+image recognition at scale,” in arXiv preprint arXiv:2010.11929, 2020.
+[34] J. Devlin, M. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training
+of deep bidirectional transformers for language understanding,” in arXiv
+preprint arXiv:1810.04805, 2019.
+[35] S. Song, X. Li, S. Li, S. Zhao, J. Yu, J. Ma, X. Mao, W. Zhang, and M.
+Wang, “How to bridge the gap between modalities: Survey on multimodal
+large language model,” IEEE Trans. Knowl. Data Eng., vol. 37, no. 9,
+pp. 5311–5329, Sept. 2025.
+[36] S. Kim, Y. Ahn, D. Park, and B. Shim, “VOMTC: Vision objects for
+millimeter and terahertz communications,” IEEE Trans. Cogn. Commun.
+Netw., vol. 11, no. 1, pp. 243–257, Feb. 2025.
+[37] S. Kim, J. Kim, J. Lee, and B. Shim, “Computer vision-aided beam-
+forming for millimeter and terahertz communications,” Jour. Kor. Instit.
+Commun. Inf. Sci., vol. 49, no. 12, pp. 1685–1694, Dec. 2024.
+[38] H. W. Kuhn, “The hungarian method for the assignment problem,” Nav.
+Res. Logistics (NRL), vol. 52, no. 1, pp. 7–21, Feb. 2005.
+[39] Y. Liu, J. Wu, S. Kim, and B. Shim, “Vision-aided blockage prediction
+and proactive handover for indoor mmwave and terahertz communica-
+tions,” in Proc. IEEE Glob. Commun. Conf. (GLOBECOM), 2023.
+[40] 3GPP TR 38.901, “Study on channel model for frequencies from 0.5 to
+100 GHz,” v17.0.0, 2022.
+[41] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+arXiv preprint arXiv:1412.6980, 2014.
+[42] S. Kim, J. Moon, J. Kim, Y. Ahn, D. Kim, S. Kim, K. Shim, and B. Shim,
+“Role of sensing and computer vision in 6G wireless communications,”
+IEEE Wireless Commun., vol. 31, no. 5, pp. 264–271, Oct. 2024.
+[43] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, and B.
+Guo, “Swin Transformer: Hierarchical vision transformer using shifted
+windows,” in Proc. IEEE/CVF Int. Conf. Comput. Vis. (ICCV), pp. 10012–
+10022, 2021.
+[44] M. Tan, R. Pang, and Q. V. Le, “Efﬁcientdet: Scalable and efﬁcient
+object detection,” in Proc. Conf. Comput. Vis. Pattern Recognit. (CVPR),
+pp. 10781-10790, 2020.
+[45] C. Wang, L. Ma, R. Li, T. S. Durrani, and H. Zhang, “Exploring
+trajectory prediction through machine learning methods,” IEEE Access,
+vol. 7, pp. 101441-101452, 2019.
+[46] Y. Yang and W. Gao, “An optimal adaptive Kalman ﬁlter,” J. Geodesy,
+2006.
+[47] H. M. Chaskar and U. Madhow, “Fair scheduling with tunable latency:
+A round-robin approach,” IEEE/ACM Trans. Netw., vol. 11, no. 4, pp.
+592–601, Aug. 2003.
+[48] R. Kwan, C. Leung, and J. Zhang, “Proportional fair multiuser schedul-
+ing in LTE,” IEEE Signal Process. Lett., vol. 16, no. 6, pp. 461–464, Jun.
+2009.
+[49] M. Alrabeiah and A. Alkhateeb, “Deep learning for mmWave beam and
+blockage prediction using sub-6 GHz channels,” IEEE Trans. Commun.,
+vol. 68, no. 9, pp. 5504–5518, Sept. 2020.
+[50] Y. Ahn, J. Kim, S. Kim, K. Shim, J. Kim, S. Kim, and B. Shim, ”Towards
+intelligent millimeter and terahertz communication for 6G: Computer
+vision-aided beamforming, IEEE Wireless Commun., vol. 30, no. 5, pp.
+179-186, Oct. 2023.
+[51] Y. Yang, D. B. Smith, and S. Seneviratne, “Deep learning channel
+16
+prediction for transmit power control in wireless body area networks,”
+in Proc. IEEE Int. Conf. Commun., 2019.
+[52] H. Kim, S. Kim, H. Lee, C. Jang, Y. Choi, and J. Choi, “Massive MIMO
+channel prediction: Kalman ﬁltering vs. machine learning,” IEEE Trans.
+Commun., vol. 69, no. 1, pp. 518–528, Jan. 2021.
+

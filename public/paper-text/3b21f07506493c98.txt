@@ -1,0 +1,1341 @@
+One Model to Fit Them All: Universal IMU-based Human Activity
+Recognition with LLM-assisted Cross-dataset Representation
+QINGXIN WEI, Zhejiang University, China
+JIAMING HUANG, Zhejiang University, China
+YI GAO, Zhejiang University, China
+WEI DONG, Zhejiang University, China
+Human Activity Recognition (HAR) is essential for pervasive computing and intelligent interaction, with broad applications across
+various fields. However, there is still no one model capable of fitting various HAR datasets, severely limiting its applicability in
+practical scenarios. To address this, we propose oneHAR, an LLM-assisted universal IMU-based HAR system designed to achieve
+"one model to fit them all" — just one model that can adapt to diverse HAR datasets without any dataset-specific operation. In
+particular, we propose Cross-Dataset neural network (CDNet) for the "one model," which models both the temporal context
+and spatial relationships of IMU data to capture cross-dataset representations, encompassing differences in device, participant,
+data collection position, and environment, etc. Additionally, we introduce LLM-driven data synthesis, which enhances the
+training process by generating virtual IMU data through three carefully designed strategies. Furthermore, LLM-assisted adaptive
+position processing optimizes the inference process by flexibly handling a variable combination of positional inputs. Our model
+demonstrates strong generalization across five public IMU-based HAR datasets, outperforming the best baselines by up to 46.9% in
+the unseen-dataset scenario, and 6.5% in the cross-dataset scenario.
+CCS Concepts: • Human-centered computing → Ubiquitous and mobile computing; • Computing methodologies →
+Neural networks.
+Additional Key Words and Phrases: Human Activity Recognition, Large Language Models, Cross-dataset, Contrastive Learning
+ACM Reference Format:
+Qingxin Wei, Jiaming Huang, Yi Gao, and Wei Dong. 2025. One Model to Fit Them All: Universal IMU-based Human Activity
+Recognition with LLM-assisted Cross-dataset Representation. Proc. ACM Interact. Mob. Wearable Ubiquitous Technol. 9, 3, Article 139
+(September 2025), 22 pages. https://doi.org/10.1145/3749509
+1 INTRODUCTION
+Human Activity Recognition (HAR) is a pivotal foundation of pervasive computing and intelligent interaction, acting
+as a bridge that connects humans with the digital ecosystem. It has found widespread application across various fields,
+including health monitoring systems that track vital signs [25, 52, 58], smart homes that adapt to our behaviors to
+enhance comfort [22, 26, 47], and even metaverse platforms that provide immersive experiences [56]. HAR involves
+various data types like Inertial Measurement Units (IMUs) signals, vision signals [3, 43], radio signals [4, 76], and
+physiological signals [21, 50], etc. Unlike other data types, IMUs provide broader coverage due to their wearability
+while maintaining high precision across this wide area, remaining unaffected by environmental factors such as
+indoor/outdoor locations or obstructions. As a result, IMU-based HAR has become a highly focused and critically
+important research direction [7, 49].
+IMU-based HAR research has explored many methodologies. Initially, traditional machine learning approaches
+such as Support Vector Machines (SVM), Random Forests (RF), and Logistic Regression [6, 10, 16, 20, 78] were
+predominantly employed. As data volume and label diversity increased, deep learning methods demonstrated
+Authors’ Contact Information: Qingxin Wei, Zhejiang University, Hangzhou, Zhejiang, China, weiqingxin@zju.edu.cn; Jiaming Huang, Zhejiang
+University, Hangzhou, Zhejiang, China, huangjm@zju.edu.cn; Yi Gao, Zhejiang University, Hangzhou, Zhejiang, China, gaoyi@zju.edu.cn; Wei
+Dong, Zhejiang University, Hangzhou, Zhejiang, China, dongw@zju.edu.cn.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that copies are
+not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page. Copyrights for
+components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or republish,
+to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 2474-9567/2025/9-ART139
+https://doi.org/10.1145/3749509
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:2 • Wei et al.
+advantages. These include models based on convolutional neural networks combined with recurrent neural networks
+(CNN-RNN) [2, 41, 67], Transformer architectures [12, 53, 72], and graph convolutional networks (GCN) [36, 40, 57].
+A commonality among these methods is that they are designed specifically for individual HAR datasets. When
+tested on other datasets, their accuracy tends to decline sharply as shown in figure 1, which has been confirmed by
+previous studies [23]. Recently, some approaches have attempted to address this issue by exploring cross-dataset
+25
+50
+75
+100
+MLP CNN LSTM ResNet TSFCN
+UCI->UCI UCI->HHAR
+Accuracy
+(%)
+(a) Cross datasets (UCI to HHAR)
+25
+50
+75
+100
+MLP CNN LSTM ResNet TSFCN
+HHAR->HHAR HHAR->UCI
+Accuracy
+(%)
+(b) Cross datasets (HHAR to UCI)
+Fig. 1. Examples of cross-dataset accuracy drop [23]. The results indicate that methods trained on a single HAR dataset experience
+a substantial drop in accuracy when evaluated on a different dataset.
+training. However, the significant distribution differences across datasets in various dimensions have imposed
+substantial limitations on them. Some methods use self-supervised learning on a source dataset to obtain a pre-trained
+model [19, 24, 30, 60, 62], which is subsequently fine-tuned on labeled samples from a target dataset for cross-dataset
+generalization. However, the introduction of any unseen dataset necessitates the availability of labeled data from
+that dataset for fine-tuning. Moreover, when the target dataset exhibits substantial differences from the source, even
+fine-tuning may fail to achieve satisfactory performance. More recent methods have explored leveraging multiple
+source datasets for joint pretraining to achieve robust performance on different target datasets [7, 31, 59, 64, 71].
+But these existing approaches are either not specifically designed for IMU data or reduce distribution differences by
+excluding a big amount of heterogeneous data from the original datasets. In summary, there is still no one model
+capable of fitting various HAR datasets, which severely restricts the scalability and applicability of IMU-based HAR
+in real-world scenarios [39].
+Unlike the above methods, our goal is to achieve "one model to fit them all" — a single model that can adapt
+to various HAR datasets without requiring any dataset-specific operation. The disparities among these datasets
+encompass various factors, such as differences in device (e.g., type, sampling rate, noise), participant (e.g., body shape,
+age), and data collection position (e.g., waist, ankle), etc. To this end, we propose Cross-Dataset neural Network (CDNet)
+to capture cross-dataset representations. Building upon CDNet, we present oneHAR, an LLM-assisted system that
+enables accurate and universal IMU-based HAR using only one model.
+To achieve this, we need to address two key challenges:
+Challenge I. Learning Generalizable Representations Across Diverse Data Distributions. As discussed
+earlier, each dataset has its own set of domains (i.e., factors), and each domain can take various forms. For example, the
+device-type domain may include smartphones, smartwatches, and smart glasses. When datasets are combined, they
+introduce a wide variety of domains, leading to significant distribution shifts in IMU data, even for the same activity.
+Therefore, learning a generalizable representation that remains unaffected by the effects of these distribution shifts is a
+critical challenge in achieving the universal HAR. To address this, we propose CDNet (Section 4), a novel neural network
+for learning generalizable representation. We divide these domains into intra-dataset and inter-dataset domains based
+on the distribution shifts. For intra-dataset domains, position is one of the most significant factors. Even for the same
+activity, the data recorded by sensors at different body positions can vary significantly due to differences in sensor
+axis orientation, motion amplitude, and movement patterns. For example, during walking, a sensor placed at the waist
+primarily captures the overall body motion with smaller amplitude changes, mainly in the vertical direction, reflecting
+the body’s up-and-down movement. In contrast, a sensor placed at the ankle detects larger amplitude movements in
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:3
+Ours
+UniMTS
+IMUGPT
+LIMU-BERT
+20
+40
+60
+80
+100
+HHAR
+20
+40
+60
+80
+100
+Pamap2
+20
+40
+60
+80
+100
+Realworld
+20
+40
+60
+80
+100
+UCI-HAR
+20
+40
+60
+80
+100
+USC-HAD
+(a) An overall radar chart comparing oneHAR with the SOTA
+methods in the cross-dataset scenario.
+Ours
+UniMTS
+IMUGPT
+DeepConvLSTM
+ByMyEyes
+HARGPT
+HART
+MobileHART
+ISPL Inception
+10
+20
+30
+40
+50
+HHAR
+10
+20
+30
+40
+50
+Pamap2
+10
+20
+30
+40
+50
+Realworld
+10
+20
+30
+40
+50
+UCI-HAR
+10
+20
+30
+40
+50
+USC-HAD
+(b) An overall radar chart comparing oneHAR with the SOTA
+methods in the unseen-dataset scenario.
+Fig. 2. Radar plots comparing the accuracy of all methods under two evaluation scenarios. Our model outperforms the best
+baselines by up to 46.9% in the unseen-dataset scenario and 6.5% in the cross-dataset scenario, while surpassing state-of-the-art
+(SOTA) methods tailored to each individual dataset by 10-20%.
+the forward-backward direction, reflecting the leg’s swing and the impact when the foot strikes the ground. Therefore,
+we integrate the IMU encoder and PositionViT into CDNet to learn representations from the temporal and spatial
+perspectives, respectively. We also introduce the projection layer to fuse these spatio-temporal representations. After
+mitigating intra-dataset domain differences, we turn to inter-dataset domains, which introduce even more complex
+distribution shifts between datasets collected from different environments or participants. Consequently, we introduce
+the IMU-Text Alignment block within CDNet to implement contrastive learning based on the two-tower structure.
+Together, these components enable the learning of highly robust cross-dataset representations that remain unaffected
+by vast domain differences.
+Challenge II. Handling Severe Data Imbalance Across HAR Datasets. Merging multiple datasets often leads
+to domain-level imbalance, where certain domain categories are overrepresented while others are scarce. For instance,
+data may be collected from diverse device types (e.g., smartphones, smartwatches) that exhibit varying levels of
+accuracy and noise characteristics. Additionally, sampling rates can vary widely, from 20Hz to 200Hz, affecting data
+consistency. Furthermore, certain activities are overrepresented (e.g., walking) while others are underrepresented (e.g.,
+cycling), further skewing the data. When datasets with such severe imbalances are directly applied to a unified model,
+the resulting noise can significantly degrade model accuracy. Therefore, addressing these data imbalances is crucial.
+We designed a set of LLM-assisted mechanisms in both the training and inference phases of oneHAR to address this
+critical challenge. Specifically, for the training process, we propose the LLM-Driven Data Synthesis (Section 5.2). The
+core idea is to generate diverse textual descriptions of activities using Large Language Models (LLMs), which are
+then converted into virtual IMU data streams. Most importantly, we have designed three strategies—Data Quality
+Assurance, Data Position Simulation, and Proportional Data Synthesis—to ensure the reliability and usability of the
+model for downstream tasks, addressing aspects of quantity, position, and quality. During inference, the architecture
+of CDNet allows for the input of a variable amount and combination of positional data. To effectively handle this
+variability, we introduce the LLM-assisted Adaptive Position Processing (Section 5.3), which can adaptively integrate
+different positional configurations by evaluating each position’s contribution and inter-positional correlations.
+For experimental evaluation, we selected five of the most popular and widely used datasets: Pamap2 [44], HHAR [51],
+RealworldHAR [54], UCI-HAR [45], and USC-HAD [70], and conducted two comprehensive sets of experiments, as
+shown in Figure 2. Our model outperforms the best baselines by up to 46.9% in the unseen-dataset scenario and 6.5%
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:4 • Wei et al.
+in the cross-dataset scenario, while surpassing state-of-the-art (SOTA) methods tailored to each individual dataset by
+10-20%. These results demonstrate that oneHAR not only exhibits strong generalization even in unseen environments
+but also maintains outstanding task performance on each dataset. The code is available at the repository [1].
+The major contributions of this work can be summarized as follows.
+• We propose oneHAR, an LLM-assisted system that enables accurate and universal IMU-based HAR using just
+one model. It employs a meticulously designed architecture called CDNet learning generalizable representations
+to addresses distribution discrepancies across diverse HAR datasets.
+• We introduce LLM-driven data synthesis, which generates virtual IMU data to tackle the challenge of data
+imbalance across HAR datasets. It incorporates three carefully designed strategies to control the quality,
+positions, and quantity of the synthesized data, thereby enhancing the dataset’s diversity and utility.
+• We extensively evaluate oneHAR using five widely adopted HAR datasets. The results demonstrate that our
+method not only maintains SOTA average performance across all datasets, but also exhibits the strongest
+generalization ability in unseen environments, compared with baselines.
+The remainder of this paper is organized as follows: Section 2 introduces related work and highlights existing
+shortcomings. Section 3 provides an overview of this work. Section 4 presents the LLM-assisted architecture for
+cross-dataset representations, while Section 5 details the LLM-assisted inference and training strategies for achieving
+accurate and universal HAR. Section 6 describes various experiments conducted to evaluate our model. Finally,
+Section 8 concludes the paper, and Section 7 provides the discussion on limitations, future work, and potential
+applications.
+2 RELATED WORK
+2.1 Single-dataset Human Activity Recognition
+Human Activity Recognition (HAR) has been extensively studied, with early research predominantly focusing on
+models trained using single-sensor data collected from a single dataset [6, 10, 16, 20, 78]. To enhance accuracy,
+subsequent efforts explored multi-sensor fusion within a single dataset, aiming to exploit complementary information
+across different sensor modalities. DeepSense [67] proposed a hierarchical deep learning framework that jointly
+models spatial and temporal dependencies across different sensor modalities through the integration of convolutional
+and recurrent neural networks. DeepFusion [65] further refined this approach with a quality-aware fusion mechanism,
+dynamically adjusting sensor contributions based on reliability to improve performance in noisy environments. Further
+developments expanded fusion strategies to multi-sensor configurations within a single dataset. SenseHAR [27]
+proposed a virtual activity sensor framework that learns shared latent representations from multiple physical sensors,
+mitigating reliance on specific sensor setups. GlobalFusion [37] incorporated a dual-attention mechanism to selectively
+emphasize informative features while suppressing noise, achieving better feature alignment across modalities.
+Despite these advancements, all aforementioned methods are trained and evaluated on a single dataset. When
+applied to data from other different datasets, their performance typically degrades significantly, motivating the need
+for research into cross-dataset human activity recognition.
+2.2 Cross-datasets Human Activity Recognition
+Regarding the cross-domain challenges in human activity recognition (HAR), existing methods primarily focus on
+cross-dataset research to enable models to generalize effectively to unseen domains. Two prominent approaches in
+this area are domain adaptation and domain generalization.
+Domain adaptation [5, 17, 73] aims to bridge the distribution gap between source and target domain datasets by
+aligning their representation spaces. Domain-Adversarial Neural Network (DANN) [18] introduced an adversarial
+training framework to minimize the domain discrepancy by aligning features through a domain discriminator [8],
+which has become a foundational method in domain adaptation. Other techniques, like subdomain adaptation [38, 77],
+refine this alignment by addressing fine-grained differences within subdomains, further enhancing model robustness.
+Despite these advancements, this method often assumes the availability of target domain data during training, which
+may not be practical in many real-world scenarios. And the effectiveness of domain adaptation tends to degrade
+when applied to unseen target domains that are significantly different from the source domains.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:5
+Given these practical constraints, domain generalization [34, 59, 74] becomes a more promising approach. It
+overcomes this limitation by learning domain-invariant representations across multiple source domains to generalize
+effectively to unseen target domains. Among these, feature alignment-based methods aim to minimize domain-specific
+variations by aligning features across multiple source domains. An example is Deep Domain Confusion (DDC) [29, 55],
+which introduces a maximum mean discrepancy (MMD) [14, 35] loss to align source domain features, effectively
+reducing domain shifts and improving generalization capabilities. Complementing it, data augmentation-based
+methods enhance robustness by generating domain-diverse samples during training. For instance, MixStyle [75]
+synthesizes new domain variations by mixing feature statistics, such as mean and variance, across different source
+domains, creating a richer training set and improving model adaptability to novel domains. Furthermore, adversarial
+learning-based methods extend adversarial learning techniques to domain generalization by training models to confuse
+domain discriminators while preserving task-relevant features. CrossGrad [48], for example, applies adversarial
+perturbations in both input and feature spaces, enabling the model to generalize effectively across diverse environments.
+Nevertheless, they simplify the original datasets for convenient pre-training. This comes at the cost of removing a
+significant amount of heterogeneity from the datasets, thereby reducing the generalization ability of the method.
+Therefore, we aim to design a novel neural network architecture that maximizes the retention of the original dataset’s
+full heterogeneity, including user characteristics, sensor positions, activities, and devices, while learning robust and
+generalizable representations across datasets from this vast and complex data heterogeneity.
+2.3 LLM-based Human Activity Recognition
+Recent advancements in LLMs have ignited significant interest in their application to HAR, offering new possibilities
+for interpreting sensor data [32, 61] and performing activity recognition tasks. HARGPT [28] demonstrates the
+feasibility of using LLMs for zero-shot HAR by directly inputting raw IMU sensor data into LLMs with carefully
+designed prompts. The study highlights the effectiveness of chain-of-thought (CoT) prompting, enabling LLMs to
+analyze sensor data and achieve robust activity recognition without any fine-tuning or domain-specific preprocessing.
+By My Eyes [68] introduces a visual prompting approach that transforms IMU sensor data into visual representations,
+such as waveforms, which are then used as prompts for multimodal LLMs. This method enhances HAR performance
+by overcoming the limitations of textual prompts for long-sequence sensor data, improving efficiency and adaptability
+in diverse scenarios. IMUGPT [33] leverages LLMs like ChatGPT to generate diverse activity descriptions, which
+are converted into 3D motion sequences via T2M-GPT [69] and further synthesized into realistic IMU data through
+physics-based simulation. LanHAR [66] leverages LLMs to generate semantic interpretations of sensor readings and
+activity labels, mapping them into a shared language space to mitigate cross-dataset heterogeneity and recognize
+unseen activities.
+However, these studies are primarily methodological explorations of how LLMs can be adapted to IMU-based
+HAR tasks. They emphasize feasibility and the potential of LLMs to interpret sensor data, rather than focusing on
+building high-performance or generalizable HAR systems. These approaches often rely on LLMs as the main reasoning
+or prediction engine, which experimental evidence suggests yields sub-optimal performance when compared to
+specialized deep learning models. In contrast, our work takes a different perspective: rather than treating LLMs
+as primary classifiers, we leverage them as auxiliary components to systematically enhance task performance and
+cross-dataset generalization of oneHAR. Specifically, LLMs are employed for virtual data synthesis and adaptive
+position processing to assist both training and inference phase.
+3 OVERVIEW
+We propose oneHAR, a universal HAR system that leverages LLM-assisted cross-dataset representations via CDNet,
+enabling a single model to achieve SOTA performance across diverse datasets. As illustrated in Figure 3, oneHAR
+consists of two key components:
+CDNet Architecture for Learning Generalizable Representation. We design an LLM-assisted architecture
+called the Cross-Dataset Neural Network (CDNet) to capture cross-dataset representations. CDNet integrates four
+core components, as shown in Figure 4. The IMU encoder (Section 4.2) extracts temporal features from individual
+sensors located at different positions, and utilizes the LLM to adaptively assign weights to these positions. PositionVIT
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:6 • Wei et al.
+LLM-Driven Data Synthesis
+Adaptive Position Processing
+Contribution Score Correlation Matrix Virtual Data
+PositionViT
+IMU encoder
+Projection Layer
+wrist
+hip
+ankle
+IMU-Text
+Alignment block
+IMU Embeddings
+Text Embeddings
+Fig. 3. Overview of oneHAR. (i) Two LLM-assisted mechanisms to optimize both the inference and training phases: LLM-driven
+Data Synthesis and LLM-assisted Adaptive Position Processing. (ii) The IMU Encoder, PositionViT, and Projector Layer in CDNet,
+designed to capture cross-dataset spatio-temporal representations. (iii) The IMU-Text Alignment block aligns IMU data with their
+corresponding labels through contrastive learning.
+(Section 4.3) is responsible for modeling spatial relationships among sensors across different positions. Additionally,
+we leverage LLM to adaptively order the sensor positions before modeling, as the sequence order directly impacts
+the quality of the learned representation. The Projection Layer (Section 4.4) then fuses spatio-temporal features into
+a total representation. The IMU-Text Alignment block (Section 4.5) projects the IMU and label embeddings into a
+shared latent space.
+LLM-assisted Inference and Training for High-accuracy oneHAR. First, we design a set of specialized loss
+functions (Section 5.1) for contrastive learning training based on the two-tower structure, focusing on two key
+sub-tasks: alignment and generalization. Second, we propose LLM-driven Data Synthesis (Section 5.2), which enhances
+the training process through data augmentation. Specifically, it follows customized rules to generate virtual IMU
+data across diverse datasets, effectively addressing the data imbalance challenge. Finally, we introduce LLM-assisted
+Adaptive Position Processing (Section 5.3), which enables the LLM to adaptively generate contribution scores and
+correlation matrices during inference, allowing CDNet to handle inputs with flexible position configurations and
+numbers.
+4 CDNet ARCHITECTURE FOR LEARNING GENERALIZABLE REPRESENTATION
+4.1 Problem Statement
+We construct a universal scenario for IMU-based HAR. Consider an IMUs data collection X ∈ R𝐵×𝑁 ×𝑇 ×C , where X
+represents IMUs signals collected from 𝑁 sensors (located at different body positions), each recording C measurement
+channels (e.g., accelerometer x, y, z axes) over 𝑇 time steps for a batch of size 𝐵. The source dataset (X𝑠, Y𝑠 ) is
+formed by randomly sampling data from arbitrary datasets and sensors, while the remaining data forms the target
+dataset (X𝑡 , Y𝑡 ). Our goal is to achieve high activity recognition accuracy on the target dataset X𝑡 , despite substantial
+distribution discrepancies not only between X𝑠 and X𝑡 but also among the samples within X𝑡 itself.
+4.2 IMU Encoder for Temporal Feature Extraction with LLM
+The IMU encoder is designed to extract temporal features from individual sensors located at different body positions.
+To achieve this, we utilize LIMU-BERT [63], a widely adopted self-supervised representation learning model tailored
+for IMU data. LIMU-BERT leverages a transformer-based architecture to capture sequential dependencies, enabling
+the extraction of generalized and task-agnostic feature representations. Specifically, for a set of 𝑁 sensor positions, the
+input sequences X = {X1, X2, . . . , X𝑁 } are independently passed through the IMU Encoder. Each sequence X𝑖 ∈ R𝑇 ×𝐶
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:7
+x y z
+p1
+p2
+pn
+IMU
+Encoder
+LLM-assisted
+Contribution
+Section 4.2
+PositionViT_x
+PositionViT_y
+PositionViT_z
+LLM-assisted
+Correlation
+Section 4.3
+Projector
+Layer
+...
+...
+.
+.
+.
+...
+...
+...
+...
+I1·L1
+I2·L2
+Im·Lm
+I2·L1
+I1·L2
+Im·L1 Im·L2
+I1·Lm
+I2·Lm
+IMU
+projector
+Text Encoder
+L1 Lm
+...
+L2
+...
+I1
+I2
+Im
+Section 4.5
+Section 4.4
+Labels
+means frozen weights
+means training parameters
+Fig. 4. The architecture of oneHAR. IMU data from each body position is first processed by the IMU Encoder to extract temporal
+features. Simultaneously, data from the same axis across all positions is fed into the positionViT to capture spatial dependencies.
+The extracted spatiotemporal features are then fused into a unified representation by the Projection Layer. Finally, the IMU-Text
+Alignment Block aligns the IMU representations with label embeddings in a shared latent space.
+is processed as follows:
+E𝑖 = IMU Encoder(X𝑖), (1)
+where E𝑖 ∈ R𝑇 ×𝑑 is the temporal feature matrix generated for the 𝑖-th sensor position, and 𝑑 is the embedding dimen-
+sion of LIMU-BERT. This step ensures that temporal relationships specific to each sensor position are independently
+encoded, allowing the model to preserve localized temporal dynamics while avoiding interference across sensor
+positions.
+After extracting temporal features for each sensor position, the next step is to aggregate these into a total repre-
+sentation that captures the global temporal dynamics. Since the importance of each sensor position varies across
+different activities, the aggregation process must dynamically assign weights to emphasize the most informative
+positions. For example, sensors on the waist contribute more to stair climbing, while sensors on the ankles are more
+representative in cycling. Specifically, the aggregation is formulated as:
+Etemporal =
+𝑁
+∑︁
+𝑖=1
+𝑤𝑖E𝑖 . (2)
+To determine these weights, we leverage the LLM to assess the relative contributions of each sensor position to
+various activities, as detailed in Section 5.3.
+4.3 PositionViT for Spatial Relationships Modeling with LLM
+The PositionViT is designed to model the spatial relationships across body positions during movements, addressing
+cross-domain variations caused by different sensor placements. Vision Transformer (ViT) [13], initially developed for
+image feature encoding, exhibits strong capabilities in capturing positional correlation across image patches. This
+characteristic makes it particularly suitable for modeling the spatial relationships among sensor positions, where
+each sensor corresponds to a distinct spatial entity. By adapting the ViT structure, we designed the PositionViT to
+effectively encode the spatial features of IMU signals.
+Given the variation independence of 𝑥, 𝑦, and 𝑧 axes in spatial movement, we separately process the data along
+each axis. For each axis, we aggregate the corresponding channel across all sensor positions from the input tensor
+X ∈ R𝐵×𝑁 ×𝑇 ×𝐶:
+X𝑥
+= X[:, :, :, 0], X𝑦
+= X[:, :, :, 1], X𝑧
+= X[:, :, :, 2], (3)
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:8 • Wei et al.
+where X𝑥, X𝑦, X𝑧 ∈ R𝐵×𝑁 ×𝑇 represents the temporal sequences of the 𝑥, 𝑦, and 𝑧 axes, respectively. Each sequence is
+then fed into the corresponding axis-specific ViT modules:
+V𝑥
+= ViT𝑥 (X𝑥
+), V𝑦
+= ViT𝑦 (X𝑦
+), V𝑧
+= ViT𝑧 (X𝑧
+), (4)
+where V𝑥, V𝑦, V𝑧 ∈ R𝐵×𝑇 ×1 are the outputs of the ViT modules for each axis. The outputs of the three PositionViTs
+are concatenated along the axis dimension to form a fused representation:
+Vspatial = Concat(V𝑥
+, V𝑦
+, V𝑧
+), (5)
+where Vspatial ∈ R𝐵×𝑇 ×3 captures the axis-specific spatial relationships. A critical detail in PositionViT is the ordering
+of sensor positions prior to encoding, as the input sequence order directly affects the learned spatial representation.
+To determine the optimal order, we utilize the LLM to assess inter-sensor relationships and prioritize the arrangement
+as detailed in Section 5.3.
+4.4 Projection Layer for Spatiotemporal Feature Fusion
+The projection layer is designed to enhance the spatial representation 𝑉spatial by projecting it into a high-dimensional
+feature space aligned with the temporal embedding space 𝐸temporal. To achieve this, we employ stacked bidirectional
+GRU layers (Bi-GRU).
+The fundamental operation of a Gated Recurrent Unit (GRU) [9] consists of several key steps to control the flow
+of information across time. The update gate 𝑧𝑡 determines how much of the previous hidden state ℎ𝑡−1 should be
+retained, while the reset gate 𝑟𝑡 dictates how much of the previous state should be ignored when computing the new
+candidate state. The candidate state ˜
+ℎ𝑡 is then computed based on the reset gate’s influence on the previous hidden
+state, and finally, the current hidden state ℎ𝑡 is updated as a combination of the previous state and the candidate state,
+weighted by the update gate. These operations are mathematically expressed as follows:
+𝑧𝑡 = 𝜎(𝑊𝑧 · [ℎ𝑡−1,𝑥𝑡 ] + 𝑏𝑧), (6)
+𝑟𝑡 = 𝜎(𝑊𝑟 · [ℎ𝑡−1,𝑥𝑡 ] + 𝑏𝑟 ), (7)
+˜
+ℎ𝑡 = tanh(𝑊ℎ · [𝑟𝑡 · ℎ𝑡−1,𝑥𝑡 ] + 𝑏ℎ), (8)
+ℎ𝑡 = (1 − 𝑧𝑡 ) · ℎ𝑡−1 + 𝑧𝑡 · ˜
+ℎ𝑡, (9)
+where 𝜎 denotes the sigmoid function, tanh is the hyperbolic tangent function, and𝑊𝑧,𝑊𝑟,𝑊ℎ are the weight matrices
+associated with the respective gates, with 𝑏𝑧,𝑏𝑟,𝑏ℎ being the corresponding bias terms. ℎ𝑡−1 is the previous hidden
+state, and 𝑥𝑡 is the input at time step 𝑡. The Bi-GRU extends the standard GRU by processing the input sequence in
+both forward and backward directions. The GRU computes the hidden state as follows:
+ℎforward
+𝑡 = (1 − 𝑧forward
+𝑡 ) · ℎforward
+𝑡−1 + 𝑧forward
+𝑡 · ˜
+ℎforward
+𝑡 , (10)
+ℎbackward
+𝑡 = (1 − 𝑧backward
+𝑡 ) · ℎbackward
+𝑡+1 + 𝑧backward
+𝑡 · ˜
+ℎbackward
+𝑡 , (11)
+and the final hidden state at each time step is obtained by concatenating the forward and backward hidden states:
+ℎ𝑡 = [ℎforward
+𝑡 ,ℎbackward
+𝑡 ]. (12)
+Overall, the projection layer can be expressed as:
+Espatial = LayerNorm(Bi-GRU(Vspatial)), (13)
+where Bi-GRU(·) denotes the stacked bidirectional GRU layers, and Espatial ∈ R𝐵×1×𝑇 ×𝐷 represents the high-
+dimensional spatial embedding aligned with 𝐸temporal. Then we concatenate Espatial with Etemporal along the first
+dimension to get the final spatiotemporal representation Efinal ∈ R𝐵×2×𝑇 ×𝐷 .
+4.5 IMU-Text Alignment Block for Activity Recognition
+After obtaining the IMU cross-dataset representations, to perform downstream tasks like action recognition, it is
+necessary to align them with the corresponding label embeddings in a shared latent space. To achieve this, we utilize a
+Text Encoder to process activity labels and an IMU Projector to project the IMU embeddings into the label embedding
+space.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:9
+4.5.1 Text Encoder. We adopt a pre-trained language model as the text encoder to encode activity labels into feature
+embeddings. Specifically, the activity labels 𝐿 = {𝑙1,𝑙2, . . . ,𝑙𝐵} are processed using a BERT-based architecture, where
+each label 𝑙𝑖 is mapped to a dense embedding 𝑒𝑖:
+𝑒𝑖 = BERT(𝑙𝑖). (14)
+BERT [11], as a bi-directional Transformer, utilizes multiple encoder layers, each comprising multi-head self-attention
+and feedforward neural networks. This architecture allows the text encoder to capture rich contextual representations
+of the activity labels. Pre-trained BERT parameters are used for initialization to leverage its learned language semantics.
+4.5.2 IMU Projector. Then the high-dimensional IMU cross-dataset representations 𝐸final ∈ R𝐵×2×𝑇 ×𝐷, produced by
+the preceding module, are projected into the same latent space as the label embeddings. For this purpose, we design
+the IMU Projector, a lightweight network that applies a series of two-dimensional convolutional layers followed by a
+fully connected layer to generate a reduced representation of the IMU features:
+𝑒IMU = FC(Conv2D(𝐸final)), (15)
+where Conv2D(·) represents the series of 2D convolutional operations, and 𝑒IMU ∈ R𝐵×𝐷 is the resulting low-
+dimensional embedding vector for the IMU data. The Text Encoder and IMU Projector collectively generate semantically
+aligned embeddings for IMU data and activity labels, forming the foundation for subsequent training objectives.
+5 LLM-ASSISTED INFERENCE AND TRAINING FOR HIGH-ACCURACY oneHAR
+5.1 Contrastive Generalization Learning
+In Section 4.5, we have obtained the IMU embeddings aligned with the label embeddings. Next, we aim to train the
+model using contrastive learning to bring each IMU embedding closer to its corresponding label within the shared
+space. However, contrastive learning alone is insufficient to achieve state-of-the-art accuracy. Therefore, we
+further design specialized loss functions to enhance performance. We divide this process into two sub-tasks:
+Alignment Task and Generalization Task.
+5.1.1 Alignment Task. Inspired by multimodal alignment approaches (e.g., vision and language), we adopt contrastive
+learning to align the IMU embeddings with the label embeddings. Both embeddings are first normalized to unit length
+to ensure consistency:
+ˆ
+𝑒IMU =
+𝑒IMU
+∥𝑒IMU∥
+, ˆ
+𝑒label =
+𝑒label
+∥𝑒label∥
+. (16)
+The similarity between normalized embeddings is computed using the dot product:
+Similarity(ˆ
+𝑒IMU, ˆ
+𝑒label) = ˆ
+𝑒IMU · ˆ
+𝑒label. (17)
+The training objective is to maximize the similarity of matching pairs (i.e., ˆ
+𝑒IMU,𝑖 and ˆ
+𝑒label,𝑖) while minimizing the
+similarity of non-matching pairs. Given a batch of 𝐵 matching pairs, the contrastive loss is defined as:
+Lcontrastive = −
+1
+𝐵
+𝐵
+∑︁
+𝑖=1
+log
+exp(Similarity(ˆ
+𝑒IMU,𝑖, ˆ
+𝑒label,𝑖)/𝜏)
+Í𝐵
+𝑗=1 exp(Similarity(ˆ
+𝑒IMU,𝑖, ˆ
+𝑒label,𝑗 )/𝜏)
+, (18)
+where 𝜏 is a temperature parameter to control the concentration of the similarity distribution.
+5.1.2 Generalization Task. In addition to aligning IMUs data with corresponding labels, it is crucial to address
+domain shifts that arise from different datasets. To tackle this issue, we design two loss functions: the Category-Level
+Contrastive Loss and the Domain Adversarial Loss. These losses work together to ensure that features are not only
+aligned but also generalized across diverse domains.
+Category-Level Contrastive Loss. To reduce cross-dataset distribution shifts for the same activities, we introduce a
+category-level contrastive loss. This loss encourages IMU embeddings from activities with similar physical motion
+patterns to remain close in the representation space, while pushing apart those distinct. Concretely, we define
+four high-level categories based on physical similarity: Category 1 (Walking, running, cycling), Category 2 (Sitting,
+standing, lying), Category 3 (Upstairs, downstairs), Category 4 (Jumping). Formally, the loss is defined to maximize
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:10 • Wei et al.
+similarity within the same category while minimizing similarity across categories. Let S ∈ R𝐵×𝐵 denote the similarity
+matrix computed between IMU embeddings:
+𝑀𝑖𝑗 =
+(
+1 if label𝑖 and label𝑗 are in the same category,
+0 otherwise.
+(19)
+The category-level contrastive loss is then formulated as:
+Lcategory = −
+1
+𝐵
+𝐵
+∑︁
+𝑖=1
+𝐵
+∑︁
+𝑗=1
+𝑀𝑖𝑗𝑆𝑖𝑗 − 𝜆
+𝐵
+∑︁
+𝑗=1
+(1 − 𝑀𝑖𝑗 )𝑆𝑖𝑗
+!
+, (20)
+where 𝜆 is a hyperparameter balancing positive and negative similarities. Lcategory serves as a complementary
+supervision mechanism to Lcontrastive. By explicitly drawing physically similar activities closer in the embedding space,
+it reduces overfitting to dataset-specific artifacts and promotes the learning of more generalizable representations.
+Domain Adversarial Loss. To enhance cross-dataset generalization, we incorporate a domain adversarial loss that
+explicitly mitigates dataset-specific biases in the learned representations. This loss leverages a Domain Discriminator
+- implemented as a fully connected neural network - to predict the domain (i.e., dataset) from which each IMU feature
+originates. The Domain Discriminator outputs domain predictions Pdomain ∈ R𝐵×𝑁domains , where 𝑁domains is the number
+of datasets. The domain adversarial loss is defined as:
+Ldomain = −
+1
+𝐵
+𝐵
+∑︁
+𝑖=1
+log Pdomain,𝑖,true, (21)
+where Pdomain,𝑖,true is the predicted probability of the correct domain for the 𝑖-th sample.
+To induce domain-invariant representations, we adopt an adversarial training scheme using the Gradient Reversal
+Layer (GRL). During training, the Domain Discriminator is optimized to minimize Ldomain, thereby improving its
+ability to distinguish the source dataset of each sample. Simultaneously, the feature extractor (i.e., IMU Encoder +
+PositionViT + Projector layer) is trained to maximize this loss via the GRL, which reverses the gradient direction
+during backpropagation. This adversarial setup encourages the IMU features to become indistinguishable across
+domains, thereby promoting generalization.
+5.1.3 Reconstruction task. The final training task integrates three components: the contrastive loss, category-level
+contrastive loss, and domain adversarial loss. The total loss function is formulated as:
+Ltotal = Lcontrastive + 𝛼Lcategory + 𝛽Ldomain, (22)
+where 𝛼 and 𝛽 are weighting coefficients that balance the contributions of each loss term. By combining these loss
+functions, this training task not only aligns IMU data with their corresponding labels but also ensures that the learned
+representations are robust to cross-dataset distribution shifts.
+5.2 LLM-driven Data Synthesis
+As emphasized in Challenge II, different datasets suffer from severe data imbalance. To address this, we propose
+LLM-Driven Data Synthesis, a customized enhancement of the IMUGPT [32] technique, as shown in figure 5. IMUGPT
+utilizes LLMs to generate detailed textual descriptions of various human activities. These descriptions are then
+transformed into 3D human motion sequences using motion simulation frameworks, which are further converted
+into virtual IMU streams. However, overcoming dataset imbalances requires more than just straightforward data
+generation. Three critical factors must be addressed to ensure the synthesized data is both meaningful and reliable.
+5.2.1 How to Ensure Quality of the Virtual Data? We propose the Data Quality Assurance (DQA) strategy,
+which integrates similarity metrics and biomechanical constraints. The strategy is formulated as follows: First, we
+calculate the similarity between virtual data Xvirtual and real data Xreal using two key metrics: Dynamic Time
+Warping (DTW) and Cosine Similarity. These similarity measures are defined as:
+MDTW(Xvirtual, Xreal) = DTW(Xvirtual, Xreal), (23)
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:11
+Real-World
+Datasets Proportional
+Data
+Synthesis
+Strategy
+Label_1
+Label_j
+Label_i
+10580
+5350
+8300
+Prompt
+Description
+Position
+Simulation
+Strategy
+Virtual
+Datasets
+Virtual Data Quality
+Assurance Strategy
+save
+discard
+convert to
+virtual imu data
+generate 3D human motion
+sequences via T2M-GPT
+Fig. 5. Overview of LLM-driven Data Synthesis. Three carefully designed strategies—Data Quality Assurance (DQA), Data Position
+Simulation (DPS), and Proportional Data Synthesis (PDS)—are employed to control the quality, positions, and quantity of the
+synthesized data.
+Mcos(Xvirtual, Xreal) =
+Xvirtual · Xreal
+∥Xvirtual∥∥Xreal∥
+. (24)
+Next, we enforce biomechanical constraints during the motion simulation process. These constraints ensure that joint
+angles remain within allowable limits and follow natural motion trajectories. The constraint function C is given by:
+C(Mvirtual) =
+𝑁
+∑︁
+𝑖=1
+
+max(0,𝜃
+joint
+𝑖 − 𝜃max) + max(0,𝜃min − 𝜃
+joint
+𝑖 )
+
+, (25)
+where 𝜃
+joint
+𝑖 represents the joint angles, and 𝜃max and 𝜃min are the maximum and minimum allowable joint angles,
+respectively. Finally, the overall quality score 𝑄quality is computed as a weighted sum of the similarity measures and
+the biomechanical constraint penalty:
+𝑄quality = 𝛼MDTW + 𝛽Mcos + 𝛾C(Mvirtual), (26)
+where 𝛼, 𝛽, and 𝛾 are the weighting factors. If the quality score falls below a predefined threshold of 𝑄 threshold = 0.7,
+the corresponding virtual data will be discarded. By combining these components, the DQA strategy ensures that the
+generated virtual data closely matches real-world data and adheres to realistic human movement patterns, thereby
+enhancing its reliability and usability for downstream tasks.
+5.2.2 Which Sensor Positions to Simulate? We propose the Data Position Simulation (DPS) strategy. This
+strategy dynamically determines the key sensor positions to simulate by considering two factors evaluated by
+the LLM: contribution score (Section 4.2) and inter-sensor correlation (section 4.3).
+For each activity 𝑎, we calculate the contribution score 𝐶𝑝 (𝑎) for each sensor position 𝑝:
+𝐶𝑝 (𝑎) =
+LLM Score(𝑝,𝑎)
+Í𝑃
+𝑝′=1 LLM Score(𝑝′,𝑎)
+, (27)
+where LLM Score(𝑝,𝑎) represents the score assigned by the LLM according to the specific designed prompt, and 𝑃 is
+the total number of sensor positions. Next, we calculate the inter-sensor correlation matrix Ccorr, where each element
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:12 • Wei et al.
+Algorithm 1 Data Position Simulation (DPS) strategy
+1: Input: Activity 𝑎, Sensor positions 𝑃, Thresholds for Contribution (0.5) and Correlation (0.5)
+2: Output: Selected Sensor Positions for Simulation
+3: Initialize: SelectedPositions ← ∅
+4: for each position 𝑝 ∈ 𝑃 do
+5: Calculate Contribution Scores for each position 𝑝 using Equation (28)
+6: end for
+7: Select 𝑝∗ = arg max(𝐶𝑝 (𝑎)) as the first sensor position
+8: Add 𝑝∗ to SelectedPositions
+9: for each remaining position 𝑝2 ∈ 𝑃 \ SelectedPositions do
+10: Calculate 𝑆(𝑝2) using Equation (30)
+11: if 𝑆(𝑝2) > threshold then
+12: Add 𝑝2 to SelectedPositions
+13: end if
+14: if Contribution of 𝑝2 < 0.5 or Correlation with 𝑝∗ < 0.5 then
+15: Stop adding new positions
+16: end if
+17: end for
+18: return SelectedPositions
+Ccorr(𝑝1, 𝑝2) represents the correlation between sensor positions 𝑝1 and 𝑝2:
+Ccorr(𝑝1, 𝑝2) =
+Í𝑇
+𝑡=1 S𝑝1 (𝑡) · S𝑝2 (𝑡)
+∥S𝑝1 ∥∥S𝑝2 ∥
+. (28)
+The selection of sensor positions for simulation is based on both the contribution score and the inter-sensor
+correlation. Initially, we select the sensor position with the highest contribution score. For the remaining positions,
+we calculate a composite score 𝑆(𝑝2) for each position 𝑝2, which combines its contribution score 𝐶𝑝2 (𝑎) and its
+correlation with the already selected position 𝑝∗:
+𝑆(𝑝2) = 𝛼 · 𝐶𝑝2 (𝑎) + 𝛽 · Ccorr(𝑝∗
+, 𝑝2), (29)
+where 𝛼 and 𝛽 are hyperparameters controlling the relative importance of the contribution score and correlation.
+The sensor position 𝑝2 with the highest 𝑆(𝑝2) is then selected and added to the set of selected positions. The process
+continues iteratively until the remaining positions have either a contribution score less than 0.5 or a correlation
+score less than 0.5. When this occurs, no further positions are added to the selected set. A more formal description is
+provided in Algorithm 1.
+5.2.3 How Much Data to Generate? we propose the Proportional Data Synthesis (PDS) strategy. This
+strategy ensures that the synthetic data complements, rather than overshadows, the real dataset by generating
+data in proportion to the under-representation of each activity in the real dataset.
+Specifically, the number of synthetic samples is proportional to the degree of underrepresentation in the real
+dataset. For example, if jumping samples are 10 times less frequent than walking, the generation process produces
+sufficient synthetic jumping samples to achieve a 1:1 ratio between the two activities.
+5.3 LLM-assisted Adaptive Position Processing
+CDNet needs to handle inputs with flexible configurations, including varying numbers and combinations of sensor
+positions. This introduces two problems. Problem 1: After extracting temporal features from the data at each position,
+how should these features be aggregated? Problem 2: Given data from different positions, what rule should be followed
+to order and combine them as input to the PositionViT? If these problems are not properly addressed, the model’s
+performance could be compromised. Thus, we propose LLM-assisted Adaptive Position.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:13
+Prompt Example
+## Instruction
+You are tasked with evaluating the contribution of different
+sensor placements for detecting the activity "running" and
+calculate two outputs:
+1. Contribution scores for each sensor position.
+2. A correlation matrix that quantifies the relationship
+between each sensor position.
+## Input
+1. Definition:
+“Running” is a dynamic locomotion activity characterized by
+alternating periods of single-leg support and flight phases. Key
+biomechanical features include cyclic arm swing, rhythmic leg
+motion, trunk stabilization, and pronounced vertical and horizontal
+accelerations due to ground impact forces.
+2. Environment:
+Activity performed on a treadmill at a constant speed of 10 km/h.
+Sensors record accelerometer and gyroscope data.
+Sampling rate: 100 Hz.
+3. Sensor Positions: waist, wrist, hip, ankle.
+GPT4o Answer Example
+## Output
+1. Contribution Scores for Sensor Positions:
+2. Correlation Matrix Between Sensor Positions:
+Fig. 6. An example for obtaining the contribution score and correlation matrix through chatGPT.
+We utilize the LLM to adaptively generate contribution scores and correlation matrices during inference, as shown
+in Figure 6. The prompts provided to the LLM are constructed using prior knowledge, incorporating information
+such as sensor position descriptions, activity definitions, and task objectives. By reasoning over this contextual input,
+the LLM considers two key factors: (1) Inter-Sensor Correlations: Positions with stronger correlations (e.g., wrist and
+ankle during walking) are placed closer together. (2) Representativeness for Activities: Sensor positions that are most
+representative of specific activities are prioritized and placed later in the sequence.
+For Problem 1, we use contribution scores to perform a weighted average of the temporal feature at each position,
+resulting in a unified representation. For Problem 2, we apply the method described in Section 5.2, Algorithm 1, which
+utilizes both contribution scores and correlation matrices to sort the sensor positions. The difference lies in the
+termination condition, which is set to complete the sorting of the entire set of positions.
+6 EVALUATION
+To thoroughly assess the performance and generalization ability of oneHAR, we conducted three complementary sets
+of experiments. First, we trained the model on the union of all five datasets and evaluated it on their corresponding test
+sets (Table 2). This "all-datasets training" setting evaluates the model’s ability to learn generalizable representations
+under full exposure to data heterogeneity. Second, to assess cross-dataset generalization in a realistic deployment
+scenario, we adopted a Leave-One-Dataset-Out (LODO) protocol, where one dataset is held out for testing while
+the model is trained on the remaining four (Table 3). This setup measures the model’s capacity to generalize to
+entirely unseen scenario. Third, we conducted an in-depth analysis of the impact of several key innovations within
+oneHAR, demonstrating their contributions in enhancing the performance of CDNet (Figure 7, 8, 9). All baselines were
+re-implemented and evaluated under exactly the same experimental settings, to ensure a fair and direct comparison.
+6.1 Evaluation Setup
+6.1.1 Datasets. We evaluated the performance of oneHAR using five publicly available datasets widely adopted in
+existing research. Table 1 shows the datasets summary.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:14 • Wei et al.
+Table 1. Datasets summary. (U=walking upstairs, D=walking downstairs, W=walking, R=running, J=jumping, Si=sitting,
+St=standing, L=lying, C=cycling)
+Datasets Position Activity Sampling Rate #Users
+UCI-HAR [45] waist U,D,W,Si,St,L 50Hz 30
+HHAR [51] waist, wrist U,D,W,Si,St,C 50Hz,100Hz,125Hz,150Hz 9
+USC-HAD [70] hip U,D,W,St,Si,R,J 100Hz 14
+PAMAP2 [44] ankle, chest, and wrist U,D,R,W,J,St,Si,L,C 100Hz 9
+RealWorldHAR [54] hip, chest, wrist, waist, ankle U,D,R,W,J,St,Si,L 50Hz 15
+• HHAR [51] dataset comprises six activities (downstairs, upstairs, walking, standing, sitting, and cycling)
+performed by nine volunteers. Each participant used six types of smartphones worn on the waist and two types
+of smartwatches worn on the wrist.
+• PAMAP2 [44] dataset involves nine activities (running, walking, jumping, standing, lying, sitting, upstairs,
+downstairs, and cycling) performed by nine users wearing three IMU devices located on the ankle, chest, and
+wrist.
+• RealWorldHAR [54] dataset includes eight activities (running, jumping, walking, standing, lying, sitting, upstairs,
+and downstairs) performed by 15 users. Data were collected from devices placed at five different body positions:
+hip, chest, wrist, waist, and ankle.
+• UCI-HAR [45] dataset captures six activities (downstairs, upstairs, walking, standing, sitting, and lying) per-
+formed by 30 volunteers, with data collected from a smartphone positioned on the waist.
+• USC-HAD [70] dataset includes seven activities (walking, running, jumping, standing, sitting, upstairs, and
+downstairs) performed by 14 users with data collected using a smartphone placed on the hip.
+6.1.2 Baselines. We compare oneHAR with two types of baseline methods to evaluate both its per-dataset performance
+and its ability to generalize across datasets.
+Single-dataset baselines. We selected SOTA methods which are specifically designed to improve classification
+performance on a single dataset, without any consideration for cross-dataset settings. We include them in our
+comparison to demonstrate that although oneHAR is trained as a universal model across multiple datasets, it can still
+outperform the dataset-specific method on each individual dataset. This highlights that our model does not sacrifice
+single-dataset performance for generalization.
+• LIMU-BERT [63] is a lightweight self-supervised model that leverages unlabeled IMU data to learn generalized,
+task-agnostic features, enabling efficient HAR performance with minimal labeled data.
+Cross-dataset baselines. These methods are explicitly designed to tackle the challenges of cross-dataset generaliza-
+tion. We compare oneHAR against them to validate that we can achieve the strongest generalization across datasets
+compared to existing SOTA cross-dataset HAR methods.
+• UniMTS [71] is the first unified pre-training procedure for motion time series that generalizes across diverse
+device latent factors (positions and orientations) and activities.
+• Presotto et al. [42] propose a supervised pretraining strategy by combining multiple public HAR datasets. It
+leverages the diversity of combined data to train the feature extractor, which can be fine-tuned using a limited
+amount of labeled data on an unseen target domain.
+There are some other methods explore the integration of LLMs into the HAR pipeline. While not explicitly designed
+for cross-dataset generalization, they demonstrate that the reasoning and generative capabilities of LLMs can help
+models maintain strong performance when applied to unseen or cross-domain datasets.
+• HARGPT [28] demonstrates the feasibility of using LLMs for zero-shot HAR by directly inputting raw IMU
+sensor data into LLMs with carefully designed prompts. The study highlights the effectiveness of chain-of-
+thought (CoT) prompting, enabling LLMs to analyze sensor data and achieve robust activity recognition without
+any fine-tuning or domain-specific preprocessing.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:15
+• By My Eyes [68] introduces a visual prompting approach that transforms IMU sensor data into visual represen-
+tations, such as waveforms, which are then used as prompts for multimodal LLMs. This method overcomes the
+limitations of textual prompts for long-sequence sensor data, improving efficiency and adaptability in diverse
+scenarios.
+• IMUGPT [33] leverages LLMs like ChatGPT to generate diverse activity descriptions, which are converted into
+3D motion sequences via T2M-GPT and further synthesized into realistic IMU data through physics-based
+simulation.
+6.1.3 Metrics and Implementation Details. Our model is implemented in Python 3.12 using PyTorch 2.3.0 and trained
+on a system equipped with 120GB of RAM, a Xeon Platinum 8352V CPU with 16 cores, and an RTX 4090 GPU with
+24GB of memory. During training, the batch size is set to 256, the number of epochs is set to 80, and the learning
+rate followed a two-phase schedule with 1e-3 for the first phase and 1e-4 for the second phase, using Adam as the
+optimizer. For the text encoder, we use the ’bert-base-uncased’ model from Huggingface Transformers, which contains
+110M parameters. All parameters of BERT are frozen during training. For LLMs, we employ GPT-4o. For the projector
+layer, we use two stacked bidirectional GRU layers with hidden sizes of 18 and 72, respectively. For the IMU projector,
+we use a three-layer, 3-kernel 2D convolutional layer, followed by a fully connected layer that projects the output
+into a 768-dimensional space. Finally, we report both accuracy and macro F1-score as the primary evaluation metrics.
+6.1.4 Data Pre-processing. We perform a series of conventional data pre-processing steps, as described below. First,
+all IMU signals are uniformly downsampled to 50 Hz. Second, signals are segmented into fixed-length windows of
+120 time steps using a sliding window with 50% overlap. Then the noise in the data is handled using a combination of
+smoothing techniques. A moving average filter is used to smooth short-term fluctuations, and a low-pass Butterworth
+filter is applied to suppress high-frequency noise. We also ensure that signals from all sensor positions are temporally
+aligned using their timestamps, so that data from different body locations capture the same movement phase during
+an activity. Finally, we apply layer normalization and position encoding on each sample.
+Each dataset was divided into training and test sets using a class-wise stratified random split with a ratio of 70%
+for training and 30% for testing. Specifically, the resulting test sets contain 5773 samples for HHAR [51], 1542 for
+Pamap2 [44], 7098 for Realworld [54], 2443 for UCI-HAR [45], and 2178 for USC-HAD [70]. Each sample corresponds
+to a fixed-length activity segment that integrates IMU data from multiple sensor positions. To further enrich the
+diversity and generalizability of the training data, we apply our proposed LLM-driven data synthesis approach to
+generate virtual activity samples. These synthetic samples are added exclusively to the training sets. As a result, the
+final training set sizes after augmentation are increased to 20860 samples for HHAR [51], 7710 for Pamap2 [44], 24565
+for Realworld [54], 10215 for UCI-HAR [45], and 9890 for USC-HAD [70].
+6.2 Overall Performance
+We first evaluate the performance of oneHAR in the "all-datasets training" setting, where the model is trained on the
+union of training sets from all five datasets and evaluated on their respective test sets (Table 2). This setup assesses
+the model’s ability to learn generalizable representations in the cross-dataset scenario.
+6.2.1 Compare with Single-dataset HAR Baselines. We first compare oneHAR with baselines that are explicitly
+designed for single-dataset HAR. As shown in Table 2, oneHAR surpasses single-dataset HAR baselines in both
+accuracy and macro F1-score. Specifically, oneHAR achieves accuracy improvements of 21.7% on HHAR, 16.9% on
+PAMAP2, 16.4% on RealWorld, 20.7% on UCI-HAR, and 12.9% on USC-HAD. These results demonstrate that oneHAR
+not only exhibits strong generalization across diverse datasets but also maintains outstanding task performance on
+each dataset - without any dataset-specific tuning.
+6.2.2 Compare with Cross-dataset HAR Baselines. We then compare oneHAR with recent methods explicitly de-
+veloped for cross-dataset HAR, including IMUGPT [32], ISPL Inception [46], DeepConvLSTM [41], HART [15],
+MobileHART [15], and UniMTS [71]. OneHAR achieves the highest average accuracy of 0.933 and macro F1 score
+of 0.928 across the five datasets, up to 6.5% and 6.8% over the SOTA baseline, respectively. These results clearly
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:16 • Wei et al.
+Table 2. Overall performance. Accuracy and macro F1-score on each dataset’s test set after training on all five datasets.
+HHAR pamap2 Realworld UCI-HAR USC-HAD avg
+single
+dataset
+LIMU-BERT [63]
+acc 0.727 0.753 0.795 0.729 0.789 0.762
+f1 0.722 0.725 0.784 0.726 0.780 0.754
+cross
+dataset
+IMUGPT [33]
+acc 0.879 0.809 0.943 0.870 0.700 0.876
+f1 0.880 0.774 0.942 0.869 0.667 0.869
+ISPL Inception [46]
+acc 0.887 0.805 0.832 0.629 0.905 0.812
+f1 0.878 0.791 0.782 0.548 0.894 0.795
+DeepConvLSTM [41]
+acc 0.900 0.774 0.912 0.483 0.718 0.757
+f1 0.770 0.779 0.808 0.401 0.684 0.728
+HART [15]
+acc 0.923 0.905 0.948 0.669 0.909 0.871
+f1 0.615 0.891 0.946 0.636 0.897 0.797
+MobileHART [15]
+acc 0.919 0.901 0.930 0.614 0.920 0.857
+f1 0.712 0.889 0.918 0.532 0.798 0.770
+uniMTS [71]
+acc 0.886 0.834 0.803 0.895 0.931 0.857
+f1 0.885 0.839 0.768 0.893 0.921 0.861
+ours
+acc 0.929 0.906 0.951 0.919 0.906 0.933
+f1 0.930 0.892 0.950 0.911 0.896 0.928
+demonstrate that oneHAR provides superior generalization across highly heterogeneous datasets, validating the
+effectiveness of our LLM-assisted CDNet architecture in overcoming domain gaps.
+6.3 LODO Performance
+To evaluate the true generalization capability of each method in a realistic deployment setting, we adopt a Leave-One-
+Dataset-Out (LODO) protocol. In each round, one dataset is held out entirely for testing, while the model is trained
+on the remaining four datasets. This setting simulates a zero-shot transfer scenario, where the model must perform
+activity recognition on a previously unseen domain without any access to its training data.
+As shown in Table 3, oneHAR consistently achieves the highest accuracy and macro F1-score across all datasets,
+outperforming the previous SOTA (UniMTS) by up to 46.9% in accuracy and 93.0% in F1. Specifically, in terms of
+accuracy, oneHAR achieves improvements of 4.1%, 12.1%, 12.4%, 24.3%, and 11.3% on HHAR, PAMAP2, RealWorld,
+UCI-HAR, and USC-HAD respectively, compared to the best-performing baseline on each dataset.
+These results confirm that oneHAR is not only effective when trained across diverse datasets, but also excels in
+zero-shot deployment scenarios. Nevertheless, we acknowledge that despite the significant relative improvements
+achieved by our model, the performance of all existing methods—including ours—remains insufficient for reliable
+application in real-world zero-shot scenarios.
+6.4 Ablation Studies
+To further investigate the impact of each component on the overall performance of the system, we designed a series
+of tests focusing on three aspects: model design, LLM assistance, and training details. These experiments enable us to
+evaluate the contribution of each innovation to oneHAR.
+6.4.1 Impact of Model Design. We examined the impact of various components in the model architecture on its
+performance. First, we compared the model with a variant that excludes PositionViT, as shown in Figure 7a. In the
+"w/o PositionViT" variant, the PositionViT component was removed, and only the temporal context of the IMU data
+was used for learning the representation. The experimental results in the figure indicate a significant decline in model
+performance without PositionViT. This highlights that modeling the spatial relationships between different sensors
+and integrating spatiotemporal features plays a crucial role in enhancing cross-dataset representation learning.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:17
+Table 3. Zero-shot performance through Leave-One-Dataset-Out (LODO) protocol. Accuracy and macro F1-score on each target
+dataset held out for testing, with the model trained on the remaining four datasets.
+HHAR pamap2 Realworld UCI-HAR USC-HAD avg
+HARGPT [28]
+acc 0.231 0.214 0.167 0.184 0.211 0.197
+f1 0.186 0.136 0.145 0.113 0.189 0.158
+ByMyEyes [68]
+acc 0.198 0.209 0.164 0.190 0.202 0.186
+f1 0.146 0.196 0.108 0.173 0.200 0.146
+IMUGPT [33]
+acc 0.146 0.171 0.124 0.312 0.231 0.171
+f1 0.095 0.139 0.088 0.182 0.198 0.119
+ISPL Inception [46]
+acc 0.145 0.139 0.206 0.096 0.173 0.164
+f1 0.076 0.105 0.097 0.064 0.108 0.088
+DeepConvLSTM [41]
+acc 0.173 0.109 0.166 0.163 0.168 0.163
+f1 0.109 0.085 0.108 0.147 0.133 0.114
+HART [15]
+acc 0.207 0.122 0.110 0.190 0.166 0.157
+f1 0.125 0.082 0.085 0.165 0.151 0.122
+MobileHART [15]
+acc 0.189 0.156 0.157 0.150 0.129 0.156
+f1 0.111 0.135 0.112 0.078 0.119 0.110
+uniMTS [71]
+acc 0.295 0.270 0.284 0.178 0.289 0.273
+f1 0.206 0.196 0.223 0.106 0.209 0.199
+ours
+acc 0.336 0.398 0.408 0.531 0.410 0.401
+f1 0.326 0.387 0.397 0.513 0.347 0.384
+25
+50
+75
+100
+HHAR
+Pamap2
+Realworld
+UCI-HAR
+USC-HAD
+oneHAR w/o positionViT
+Accuracy
+(%)
+(a)
+75
+80
+85
+90
+95
+100
+HHAR
+Pamap2
+Realworld
+UCI-HAR
+USC-HAD
+oneHAR w/ conv w/ linear
+Accuracy
+(%)
+(b)
+75
+80
+85
+90
+95
+100
+HHAR
+Pamap2
+Realworld
+UCI-HAR
+USC-HAD
+oneHAR w/ LSTM w/ linear
+Accuracy
+(%)
+(c)
+Fig. 7. Impact of model design. (a) Accuracy comparison with and without positionViT. (b) Accuracy comparison with different
+projector layer structures. (c) Accuracy comparison with different IMU projector structures.
+Second, we investigated which neural network architecture would be most suitable for the projector layer. In the
+current model, the projector layer consists of multiple layers of Bi-GRU followed by fully connected layers. We also
+experimented with variants using Conv2D layers and variants with only multiple linear layers. As shown in Figure 7b,
+the Bi-GRU architecture performed the best, likely due to its ability to capture both long-term and short-term temporal
+dependencies more effectively. This facilitated the encoding of temporal context into the spatial features.
+Finally, we explored various architectures for the IMU projector in the IMU-Text Alignment block. As shown in
+Figure 7c, we compared the IMU projector consisting of multiple layers of Conv2D with variants using LSTM and
+those with only multiple linear layers. The experimental results indicate that the Conv2D-based IMU projector is
+more suitable for our model.
+6.4.2 Impact of LLM Assistance. We also quantified the impact of LLM assistance on the model. First, we evaluated
+the contribution of virtual IMU data generated by LLM-Driven Data Synthesis to the performance of oneHAR. As
+shown in Figure 8a, we compared our method with a variant (w/o virtual_data) that excluded all virtual data, relying
+solely on real-world datasets for training. The results demonstrate that LLM-driven data synthesis can alleviate
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:18 • Wei et al.
+60
+70
+80
+90
+100
+HHAR
+Pamap2
+Realworld
+UCI-HAR
+USC-HAD
+oneHAR
+Accuracy
+(%)
+w/o datavirtual
+(a)
+60
+70
+80
+90
+100
+HHAR
+Pamap2
+Realworld
+UCI-HAR
+USC-HAD
+oneHAR w/o weights
+Accuracy
+(%)
+(b)
+Fig. 8. Impact of LLM assistance. (a) Accuracy comparison with and without virtual data generated by LLM-Driven Data Synthesis.
+(b) Accuracy comparison with and without weights from contribution scores generated by LLM.
+80
+85
+90
+95
+HHAR Pamap2 Realworld UCI-HAR USC-HAD
+oneHAR w/o Ld w/o Lc w/o Ld&c
+Accuracy
+(%)
+Fig. 9. Impact of training details. Accuracy comparison with different loss functions.
+the severe data imbalance issue. Second, we assessed the contribution of the contribution scores and correlation
+matrices generated by LLM to the performance of oneHAR. As shown in Figure 8b, we compared our method with a
+variant (w/o weight) that did not apply the contribution scores to weight the feature matrices from different sensor
+positions, but instead used a simple arithmetic mean for their fusion. The results show a decrease in accuracy in the
+w/o weight variant, highlighting the importance of contribution scores and correlation matrices generated by LLM
+for cross-dataset representation learning.
+6.4.3 Impact of Training Details. To evaluate the impact of the sub-tasks in the training objective, we compared our
+method with several variants: w/o Lc, w/o Ld, and w/o Lc&Ld. In the w/o Lc variant, we removed the category-level
+contrastive loss; in the w/o Ld variant, we excluded the domain adversarial loss; and in the w/o Lc&Ld variant, we
+removed both of the aforementioned losses, leaving only the contrastive learning loss. As shown in the figure 9, the
+performance drop in the w/o Lc variant highlights that the category-level contrastive loss ensures activities with the
+same physical meaning stay close in the embedding space, regardless of the dataset. The performance degradation
+in the w/o Ld variant demonstrates that the domain adversarial loss helps make IMU features indistinguishable
+across domains, thus promoting better generalization. The further performance decline in the w/o Lc&Ld variant
+underscores that contrastive learning alone is insufficient to achieve state-of-the-art accuracy.
+7 DISCUSSION
+We acknowledge several limitations which we leave as future work. First, the activity types covered in our current
+evaluation are limited to basic modes of locomotion. This choice restricts the model’s ability to generalize to more
+complex or fine-grained human activities, such as object manipulation, social gestures, or multi-tasking behaviors. We
+plan to extend the label space and incorporate more diverse activity datasets that go beyond only modes of locomotion
+to improve the generalization capacity of oneHAR.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:19
+Second, its ability to generalize to entirely unseen scenarios still has room for improvement. In particular, our
+performance on zero-shot recognition tasks remains limited, revealing persistent challenges related to domain shifts.
+We plan to address this by explicitly modeling domain-specific characteristics - for instance, designing dedicated
+generalization modules for user domains (e.g., physical attributes or movement styles). Moreover, we aim to explore
+more domain adaptation strategies to enhance the model’s robustness under real-world distribution shifts.
+Third, our current use of Large Language Models (LLMs) remains relatively shallow. LLMs encode extensive
+prior knowledge about human behavior, contextual interactions, and even digital sensor signals, accumulated from
+large-scale textual corpora. However, our model does not incorporate a dedicated mechanism to fully exploit this
+potential. Moreover, the reasoning process of LLMs is inherently opaque, making it difficult to interpret why certain
+outputs are generated. This lack of transparency raises concerns about potential hallucinations, particularly when
+applied to unfamiliar or highly complex activity patterns. So we envision integrating oneHAR into an LLM-powered
+intelligent assistant capable of real-time activity analysis, personalized feedback, and interactive guidance. Such
+integration would bridge sensing and reasoning, allowing for more adaptive, context-aware, and user-centric HAR
+systems. These directions can enable intelligent behavior understanding in healthcare, smart home, and human–AI
+interaction scenarios.
+8 CONCLUSION
+In this paper, we introduced oneHAR, a universal HAR system designed to achieve "one model to fit them all". We
+introduce CDNet, an LLM-assisted architecture that captures cross-dataset representations by modeling both temporal
+and spatial dependencies of IMU data. Furthermore, we enhance the training process through LLM-driven Data
+Synthesis, which generates virtual IMU data using three carefully designed strategies, and optimize inference with
+LLM-Assisted Adaptive Position Processing, enabling flexible handling of variable positional c onfigurations. Extensive
+experiments on five public datasets demonstrate that oneHAR not only maintains SOTA average performance across
+all datasets, but also exhibits the strongest generalization ability in unseen environments, compared with baselines.
+Acknowledgments
+We thank all the reviewers for their valuable comments and helpful suggestions. This work is supported by the
+National Natural Science Foundation of China under grant no. 62272407, the "Pioneer" and "Leading Goose" R&D
+Program of Zhejiang under grant No. 2023C01033, the National Youth Talent Support Program. Yi Gao and Wei Dong
+are the corresponding authors.
+References
+[1] 2025. oneHAR. https://github.com/ZJU-wqx-2025/uniHAR.
+[2] Alireza Abedin, Mahsa Ehsanpour, Qinfeng Shi, Hamid Rezatofighi, and Damith C Ranasinghe. 2021. Attend and discriminate: Beyond the
+state-of-the-art for human activity recognition using wearable sensors. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 5, 1 (2021), 1–22.
+[3] Marius Bock, Kristof Van Laerhoven, and Michael Moeller. 2024. Weak-Annotation of HAR Datasets using Vision Foundation Models. In
+Proceedings of the 2024 ACM International Symposium on Wearable Computers. 55–62.
+[4] Qiming Cao, Hongfei Xue, Tianci Liu, Xingchen Wang, Haoyu Wang, Xincheng Zhang, and Lu Su. 2024. mmCLIP: Boosting mmWave-based
+Zero-shot HAR via Signal-Text Alignment. In Proceedings of the 22nd ACM Conference on Embedded Networked Sensor Systems. 184–197.
+[5] Zhangjie Cao, Mingsheng Long, Jianmin Wang, and Michael I Jordan. 2018. Partial transfer learning with selective adversarial networks. In
+Proceedings of the IEEE conference on computer vision and pattern recognition. 2724–2732.
+[6] Pierluigi Casale, Oriol Pujol, and Petia Radeva. 2011. Human activity recognition from accelerometer data using a wearable device. In Pattern
+Recognition and Image Analysis: 5th Iberian Conference, IbPRIA 2011, Las Palmas de Gran Canaria, Spain, June 8-10, 2011. Proceedings 5. Springer,
+289–296.
+[7] Kaixuan Chen, Dalin Zhang, Lina Yao, Bin Guo, Zhiwen Yu, and Yunhao Liu. 2021. Deep learning for sensor-based human activity recognition:
+Overview, challenges, and opportunities. ACM Computing Surveys (CSUR) 54, 4 (2021), 1–40.
+[8] Lin Chen, Huaian Chen, Zhixiang Wei, Xin Jin, Xiao Tan, Yi Jin, and Enhong Chen. 2022. Reusing the task-specific classifier as a discriminator:
+Discriminator-free adversarial domain adaptation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+7181–7190.
+[9] Kyunghyun Cho, Bart Van Merriënboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi Bougares, Holger Schwenk, and Yoshua Bengio. 2014.
+Learning phrase representations using RNN encoder-decoder for statistical machine translation. arXiv preprint arXiv:1406.1078 (2014).
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:20 • Wei et al.
+[10] Giuseppe De Leonardis, Samanta Rosati, Gabriella Balestra, Valentina Agostini, Elisa Panero, Laura Gastaldi, and Marco Knaflitz. 2018. Human
+Activity Recognition by Wearable Sensors: Comparison of different classifiers for real-time applications. In 2018 IEEE international symposium
+on medical measurements and applications (memea). IEEE, 1–6.
+[11] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. Bert: Pre-training of deep bidirectional transformers for language
+understanding. In Proceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human
+language technologies, volume 1 (long and short papers). 4171–4186.
+[12] Iveta Dirgová Luptáková, Martin Kubovčík, and Jiří Pospíchal. 2022. Wearable sensor-based human activity recognition with transformer
+model. Sensors 22, 5 (2022), 1911.
+[13] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias
+Minderer, Georg Heigold, Sylvain Gelly, et al. 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv
+preprint arXiv:2010.11929 (2020).
+[14] Gintare Karolina Dziugaite, Daniel M Roy, and Zoubin Ghahramani. 2015. Training generative neural networks via maximum mean
+discrepancy optimization. arXiv preprint arXiv:1505.03906 (2015).
+[15] Sannara Ek, François Portet, and Philippe Lalanda. 2022. Lightweight transformers for human activity recognition on mobile devices. arXiv
+preprint arXiv:2209.11750 (2022).
+[16] Katherine Ellis, Jacqueline Kerr, Suneeta Godbole, Gert Lanckriet, David Wing, and Simon Marshall. 2014. A random forest classifier for the
+prediction of energy expenditure and type of physical activity from wrist and hip accelerometers. Physiological measurement 35, 11 (2014),
+2191.
+[17] Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan, Pascal Germain, Hugo Larochelle, François Laviolette, Mario March, and Victor Lempitsky.
+2016. Domain-adversarial training of neural networks. Journal of machine learning research 17, 59 (2016), 1–35.
+[18] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. 2014.
+Generative adversarial nets. Advances in neural information processing systems 27 (2014).
+[19] Harish Haresamudram, Irfan Essa, and Thomas Plötz. 2022. Assessing the state of self-supervised human activity recognition using wearables.
+Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 3 (2022), 1–47.
+[20] Zhen-Yu He and Lian-Wen Jin. 2008. Activity recognition from acceleration data using AR model representation and SVM. In 2008 international
+conference on machine learning and cybernetics, Vol. 4. IEEE, 2245–2250.
+[21] Stefan Hermann, Paula Breitling, Tobias Röddiger, and Michael Beigl. 2021. Cardiopulmonary resuscitation support: Comparison of wrist-,
+chest-, and ear-Worn devices and estimation algorithms. In Proceedings of the 2021 ACM International Symposium on Wearable Computers.
+28–32.
+[22] Shruthi K Hiremath, Yasutaka Nishimura, Sonia Chernova, and Thomas Plötz. 2022. Bootstrapping human activity recognition systems for
+smart homes from scratch. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 3 (2022), 1–27.
+[23] Zhiqing Hong, Zelong Li, Shuxin Zhong, Wenjun Lyu, Haotian Wang, Yi Ding, Tian He, and Desheng Zhang. 2024. CrossHAR: Generalizing
+Cross-dataset Human Activity Recognition via Hierarchical Self-Supervised Pretraining. Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies 8, 2 (2024), 1–26.
+[24] Rong Hu, Ling Chen, Shenghuan Miao, and Xing Tang. 2023. SWL-Adapt: An unsupervised domain adaptation model with sample weight
+learning for cross-user wearable human activity recognition. In Proceedings of the AAAI Conference on artificial intelligence, Vol. 37. 6012–6020.
+[25] Sozo Inoue, Paula Lago, Tahera Hossain, Tittaya Mairittha, and Nattaya Mairittha. 2019. Integrating activity recognition and nursing care
+records: The system, deployment, and a verification study. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies
+3, 3 (2019), 1–24.
+[26] Amina Jarraya, Amel Bouzeghoub, Amel Borgi, and Khedija Arour. 2018. Distributed Collaborative Reasoning for HAR in Smart Homes.. In
+AAMAS. 1971–1973.
+[27] Jeya Vikranth Jeyakumar, Liangzhen Lai, Naveen Suda, and Mani Srivastava. 2019. SenseHAR: a robust virtual activity sensor for smartphones
+and wearables. In Proceedings of the 17th Conference on Embedded Networked Sensor Systems. 15–28.
+[28] Sijie Ji, Xinzhe Zheng, and Chenshu Wu. 2024. HARGPT: Are LLMs Zero-Shot Human Activity Recognizers? arXiv preprint arXiv:2403.02727
+(2024).
+[29] Ying Jin, Ximei Wang, Mingsheng Long, and Jianmin Wang. 2020. Minimum class confusion for versatile domain adaptation. In Computer
+Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XXI 16. Springer, 464–480.
+[30] Donghyun Kim, Kaihong Wang, Stan Sclaroff, and Kate Saenko. 2022. A broad study of pre-training for domain generalization and adaptation.
+In European Conference on Computer Vision. Springer, 621–638.
+[31] Daehee Kim, Youngjun Yoo, Seunghyun Park, Jinkyu Kim, and Jaekoo Lee. 2021. Selfreg: Self-supervised contrastive regularization for domain
+generalization. In Proceedings of the IEEE/CVF International Conference on Computer Vision. 9619–9628.
+[32] Zikang Leng, Amitrajit Bhattacharjee, Hrudhai Rajasekhar, Lizhe Zhang, Elizabeth Bruda, Hyeokhyen Kwon, and Thomas Plötz. 2024. Imugpt
+2.0: Language-based cross modality transfer for sensor-based human activity recognition. Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies 8, 3 (2024), 1–32.
+[33] Zikang Leng, Hyeokhyen Kwon, and Thomas Plötz. 2023. Generating virtual on-body accelerometer data from virtual textual descriptions for
+human activity recognition. In Proceedings of the 2023 ACM International Symposium on Wearable Computers. 39–43.
+[34] Da Li, Yongxin Yang, Yi-Zhe Song, and Timothy M Hospedales. 2017. Deeper, broader and artier domain generalization. In Proceedings of the
+IEEE international conference on computer vision. 5542–5550.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+One Model to Fit Them All: Universal IMU-based Human Activity Recognition with LLM-assisted Cross-dataset Representation • 139:21
+[35] Haoliang Li, Sinno Jialin Pan, Shiqi Wang, and Alex C Kot. 2018. Domain generalization with adversarial feature learning. In Proceedings of
+the IEEE conference on computer vision and pattern recognition. 5400–5409.
+[36] Shengzhong Liu, Shuochao Yao, Yifei Huang, Dongxin Liu, Huajie Shao, Yiran Zhao, Jinyang Li, Tianshi Wang, Ruijie Wang, Chaoqi Yang,
+et al. 2020. Handling missing sensors in topology-aware iot applications with gated graph neural network. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 4, 3 (2020), 1–31.
+[37] Shengzhong Liu, Shuochao Yao, Jinyang Li, Dongxin Liu, Tianshi Wang, Huajie Shao, and Tarek Abdelzaher. 2020. Giobalfusion: A global
+attentional deep learning framework for multisensor information fusion. Proceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies 4, 1 (2020), 1–27.
+[38] Wang Lu, Yiqiang Chen, Jindong Wang, and Xin Qin. 2021. Cross-domain activity recognition via substructural optimal transport. Neurocom-
+puting 454 (2021), 65–75.
+[39] Wang Lu, Jindong Wang, Yiqiang Chen, Sinno Jialin Pan, Chunyu Hu, and Xin Qin. 2022. Semantic-discriminative mixup for generalizable
+sensor-based cross-domain activity recognition. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 2
+(2022), 1–19.
+[40] Shenghuan Miao, Ling Chen, Rong Hu, and Yingsong Luo. 2022. Towards a dynamic inter-sensor correlations learning framework for
+multi-sensor-based wearable human activity recognition. Proceedings of the ACM on interactive, mobile, wearable and ubiquitous technologies
+6, 3 (2022), 1–25.
+[41] Francisco Javier Ordóñez and Daniel Roggen. 2016. Deep convolutional and lstm recurrent neural networks for multimodal wearable activity
+recognition. Sensors 16, 1 (2016), 115.
+[42] Riccardo Presotto, Sannara Ek, Gabriele Civitarese, François Portet, Philippe Lalanda, and Claudio Bettini. 2023. Combining public human
+activity recognition datasets to mitigate labeled data scarcity. In 2023 IEEE International Conference on Smart Computing (SMARTCOMP). IEEE,
+33–40.
+[43] Valentin Radu and Maximilian Henne. 2019. Vision2sensor: Knowledge transfer across sensing modalities for human activity recognition.
+Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 3, 3 (2019), 1–21.
+[44] Attila Reiss and Didier Stricker. 2012. Introducing a new benchmarked dataset for activity monitoring. In 2012 16th international symposium
+on wearable computers. IEEE, 108–109.
+[45] Jorge-L Reyes-Ortiz, Luca Oneto, Albert Samà, Xavier Parra, and Davide Anguita. 2016. Transition-aware human activity recognition using
+smartphones. Neurocomputing 171 (2016), 754–767.
+[46] Mutegeki Ronald, Alwin Poulose, and Dong Seog Han. 2021. iSPLInception: an inception-ResNet deep learning architecture for human
+activity recognition. IEEE Access 9 (2021), 68985–69001.
+[47] Zahraa Khais Shahid, Saguna Saguna, and Christer Åhlund. 2023. Forecasting and Detecting Anomalies in ADLs in Single-Resident Elderly
+Smart Homes. In Proceedings of the 2023 International Conference on Research in Adaptive and Convergent Systems. 1–8.
+[48] Shiv Shankar, Vihari Piratla, Soumen Chakrabarti, Siddhartha Chaudhuri, Preethi Jyothi, and Sunita Sarawagi. 2018. Generalizing across
+domains via cross-gradient training. arXiv preprint arXiv:1804.10745 (2018).
+[49] Shuai Shao, Yu Guan, Bing Zhai, Paolo Missier, and Thomas Plötz. 2023. ConvBoost: Boosting ConvNets for sensor-based activity recognition.
+Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 7, 2 (2023), 1–21.
+[50] Gulshan Sharma. 2022. Physiological sensing for media perception & activity recognition. In Proceedings of the 2022 International Conference
+on Multimodal Interaction. 696–700.
+[51] Allan Stisen, Henrik Blunck, Sourav Bhattacharya, Thor Siiger Prentow, Mikkel Baun Kjærgaard, Anind Dey, Tobias Sonne, and Mads Møller
+Jensen. 2015. Smart devices are different: Assessing and mitigatingmobile sensing heterogeneities for activity recognition. In Proceedings of
+the 13th ACM conference on embedded networked sensor systems. 127–140.
+[52] Abdulhamit Subasi, Kholoud Khateeb, Tayeb Brahimi, and Akila Sarirete. 2020. Human activity recognition using machine learning methods
+in a smart healthcare environment. In Innovation in health informatics. Elsevier, 123–144.
+[53] Sungho Suh, Vitor Fortes Rey, and Paul Lukowicz. 2023. Tasked: transformer-based adversarial learning for human activity recognition using
+wearable sensors via self-knowledge distillation. Knowledge-Based Systems 260 (2023), 110143.
+[54] Timo Sztyler and Heiner Stuckenschmidt. 2016. On-body localization of wearable devices: An investigation of position-aware activity
+recognition. In 2016 IEEE international conference on pervasive computing and communications (PerCom). IEEE, 1–9.
+[55] Eric Tzeng, Judy Hoffman, Ning Zhang, Kate Saenko, and Trevor Darrell. 2014. Deep domain confusion: Maximizing for domain invariance.
+arXiv preprint arXiv:1412.3474 (2014).
+[56] Monireh Vahdati, Fedwa Laamarti, and Abdulmotaleb El Saddik. 2023. Meta-Review of Wearable Devices for Healthcare in the Metaverse.
+ACM Transactions on Multimedia Computing, Communications and Applications (2023).
+[57] Chongyang Wang, Yuan Gao, Akhil Mathur, Amanda C De C. Williams, Nicholas D Lane, and Nadia Bianchi-Berthouze. 2021. Leveraging
+activity recognition to enable protective behavior detection in continuous data. Proceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies 5, 2 (2021), 1–27.
+[58] Hanchen David Wang and Meiyi Ma. 2023. PhysiQ: Off-site Quality Assessment of Exercise in Physical Therapy. Proceedings of the ACM on
+Interactive, Mobile, Wearable and Ubiquitous Technologies 6, 4 (2023), 1–25.
+[59] Jindong Wang, Cuiling Lan, Chang Liu, Yidong Ouyang, Tao Qin, Wang Lu, Yiqiang Chen, Wenjun Zeng, and S Yu Philip. 2022. Generalizing
+to unseen domains: A survey on domain generalization. IEEE transactions on knowledge and data engineering 35, 8 (2022), 8052–8072.
+[60] Garrett Wilson and Diane J Cook. 2020. A survey of unsupervised deep domain adaptation. ACM Transactions on Intelligent Systems and
+Technology (TIST) 11, 5 (2020), 1–46.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+139:22 • Wei et al.
+[61] Huatao Xu, Liying Han, Qirui Yang, Mo Li, and Mani Srivastava. 2024. Penetrative ai: Making llms comprehend the physical world. In
+Proceedings of the 25th International Workshop on Mobile Computing Systems and Applications. 1–7.
+[62] Huatao Xu, Pengfei Zhou, Rui Tan, and Mo Li. 2023. Practically Adopting Human Activity Recognition. In Proceedings of the 29th Annual
+International Conference on Mobile Computing and Networking (Madrid, Spain) (ACM MobiCom ’23). Association for Computing Machinery,
+New York, NY, USA, Article 85, 15 pages. doi:10.1145/3570361.3613299
+[63] Huatao Xu, Pengfei Zhou, Rui Tan, Mo Li, and Guobin Shen. 2021. Limu-bert: Unleashing the potential of unlabeled data for imu sensing
+applications. In Proceedings of the 19th ACM Conference on Embedded Networked Sensor Systems. 220–233.
+[64] Xuhai Xu, Xin Liu, Han Zhang, Weichen Wang, Subigya Nepal, Yasaman Sefidgar, Woosuk Seo, Kevin S Kuehn, Jeremy F Huckins, Margaret E
+Morris, et al. 2023. GLOBEM: cross-dataset generalization of longitudinal human behavior modeling. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies 6, 4 (2023), 1–34.
+[65] Hongfei Xue, Wenjun Jiang, Chenglin Miao, Ye Yuan, Fenglong Ma, Xin Ma, Yijiang Wang, Shuochao Yao, Wenyao Xu, Aidong Zhang, et al.
+2019. DeepFusion: A deep learning framework for the fusion of heterogeneous sensory data. In Proceedings of the Twentieth ACM International
+Symposium on Mobile Ad Hoc Networking and Computing. 151–160.
+[66] Hua Yan, Heng Tan, Yi Ding, Pengfei Zhou, Vinod Namboodiri, and Yu Yang. 2024. Language-centered Human Activity Recognition. arXiv
+preprint arXiv:2410.00003 (2024).
+[67] Shuochao Yao, Shaohan Hu, Yiran Zhao, Aston Zhang, and Tarek Abdelzaher. 2017. Deepsense: A unified deep learning framework for
+time-series mobile sensing data processing. In Proceedings of the 26th international conference on world wide web. 351–360.
+[68] Hyungjun Yoon, Biniyam Aschalew Tolera, Taesik Gong, Kimin Lee, and Sung-Ju Lee. 2024. By My Eyes: Grounding Multimodal Large
+Language Models with Sensor Data via Visual Prompting. arXiv preprint arXiv:2407.10385 (2024).
+[69] Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Yong Zhang, Hongwei Zhao, Hongtao Lu, Xi Shen, and Ying Shan. 2023. Generating human
+motion from textual descriptions with discrete representations. In Proceedings of the IEEE/CVF conference on computer vision and pattern
+recognition. 14730–14740.
+[70] Mi Zhang and Alexander A Sawchuk. 2012. USC-HAD: A daily activity dataset for ubiquitous activity recognition using wearable sensors. In
+Proceedings of the 2012 ACM conference on ubiquitous computing. 1036–1043.
+[71] Xiyuan Zhang, Diyan Teng, Ranak Roy Chowdhury, Shuheng Li, Dezhi Hong, Rajesh Gupta, and Jingbo Shang. 2024. UniMTS: Unified
+Pre-training for Motion Time Series. Advances in Neural Information Processing Systems 37 (2024), 107469–107493.
+[72] Ye Zhang, Longguang Wang, Huiling Chen, Aosheng Tian, Shilin Zhou, and Yulan Guo. 2022. IF-ConvTransformer: A framework for
+human activity recognition using IMU fusion and ConvTransformer. Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies 6, 2 (2022), 1–26.
+[73] Mingmin Zhao, Shichao Yue, Dina Katabi, Tommi S Jaakkola, and Matt T Bianchi. 2017. Learning sleep stages from radio signals: A conditional
+adversarial architecture. In International conference on machine learning. PMLR, 4100–4109.
+[74] Kaiyang Zhou, Ziwei Liu, Yu Qiao, Tao Xiang, and Chen Change Loy. 2022. Domain generalization: A survey. IEEE Transactions on Pattern
+Analysis and Machine Intelligence 45, 4 (2022), 4396–4415.
+[75] Kaiyang Zhou, Yongxin Yang, Yu Qiao, and Tao Xiang. 2021. Domain generalization with mixstyle. arXiv preprint arXiv:2104.02008 (2021).
+[76] Zhipeng Zhou, Feng Wang, and Wei Gong. 2024. i-Sample: Augment domain adversarial adaptation models for WiFi-Based HAR. ACM
+Transactions on Sensor Networks 20, 2 (2024), 1–20.
+[77] Yongchun Zhu, Fuzhen Zhuang, Jindong Wang, Guolin Ke, Jingwu Chen, Jiang Bian, Hui Xiong, and Qing He. 2020. Deep subdomain
+adaptation network for image classification. IEEE transactions on neural networks and learning systems 32, 4 (2020), 1713–1722.
+[78] Muhammad Zubair, Kibong Song, and Changwoo Yoon. 2016. Human activity recognition using wearable accelerometer sensors. In 2016 IEEE
+International Conference on Consumer Electronics-Asia (ICCE-Asia). IEEE, 1–5.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 139. Publication date: September 2025.
+

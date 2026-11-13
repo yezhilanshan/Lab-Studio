@@ -1,0 +1,1747 @@
+1
+LLM Enabled Beam Training for Pinching Antenna
+Systems (PASS)
+Deqiao Gan, Xiaoxia Xu, Xiaohu Ge, Senior Member, IEEE, and Yuanwei Liu, Fellow, IEEE
+Abstract—To enable intelligent beam training, a large language
+model (LLM)-enabled beam training framework is proposed
+for the pinching antenna system (PASS) in downlink multi-
+user multiple-input multiple-output (MIMO) communications. A
+novel LLM-based beam training supervised learning mechanism
+is developed, allowing context-aware and environment-adaptive
+probing for PASS to reduce overheads. Both single-user and
+multi-user cases are considered. 1) For single-user case, the
+LLM-based pinching beamforming codebook generation problem
+is formulated to maximize the beamforming gain. Then, the
+optimal transmit beamforming is obtained by maximum ratio
+transmission (MRT). 2) For multi-user case, a joint codebook
+generation and beam selection problem is formulated based on
+the system sum rate under the minimum mean square error
+(MMSE) transmit beamforming. The training labels for pinching
+beamforming are constructed by selecting the beam combination
+that maximizes system performance from each user’s Top-S
+candidate beams. Based on pretrained Generative Pre-trained
+Transformers (GPTs), the LLM is trained in an end-to-end fash-
+ion to minimize the cross-entropy loss. Simulation results demon-
+strate that: i) For single-user case, the proposed LLM-enabled
+PASS attains over 95% Top-1 accuracy in beam selection and
+achieves 51.92% improvements in beamforming gains compared
+to conventional method. ii) For multi-user case, the proposed
+LLM-enabled PASS framework significantly outperforms both
+the LLM-based massive MIMO and conventional PASS beam
+training, achieving up to 57.14% and 33.33% improvements in
+sum rate, respectively.
+Index Terms—Beam training, large language model (LLM),
+pinching antenna system (PASS), pinching beamforming.
+I. INTRODUCTION
+TO accommodate the ultra-high-speed and massive con-
+nectivity requirements for next-generation wireless net-
+works, millimeter-wave (mmWave)/terahertz (THz) commu-
+nication has emerged to leverage vast spectrum resources in
+high-frequency bands [1], [2]. However, the high-frequency
+propagation inherently results in high propagation loss, posing
+a critical challenge for reliable communication. To over-
+come this limitation, massive multiple-input multiple-output
+(MIMO) antenna arrays have been widely adopted, employ-
+ing highly directional beamforming techniques to compensate
+for severe path loss [3], [4]. Although conventional massive
+MIMO systems have considerable spatial multiplexing gains,
+D. Gan and X. Ge (Corresponding author) are with the School of Elec-
+tronic Information and Communications, Huazhong University of Science and
+Technology, Wuhan 430074, Hubei, China. (e-mail: gandeqiao@hust.edu.cn,
+xhge@mail.hust.edu.cn).
+X. Xu is with the School of Electronic Engineering and Computer Sci-
+ence, Queen Mary University of London, London E1 4NS, U.K. (email:
+x.xiaoxia@qmul.ac.uk).
+Y. Liu is with the Department of Electrical and Electronic Engineering, The
+University of Hong Kong, Hong Kong (e-mail: yuanwei@hku.hk).
+their reliance on rigid large-scale antenna arrays and static
+beamforming architectures limit their ability to effectively
+respond to user mobility and dynamic line-of-sight (LoS)
+blockage. To address these constraints, several flexible-antenna
+techniques have been developed, including reconfigurable in-
+telligent surfaces (RISs) [5], [6], fluid antennas [7], [8] and
+movable antennas [9], [10].
+Conceptually, pinching antenna system (PASS) serves as a
+new form of flexible-antenna technology that offers greater
+flexibility and scalability. PASS was first prototyped by NTT
+DOCOMO [11], and then introduced into wireless commu-
+nications [12]. An earlier concept known as surface-wave
+communication superhighways was proposed in [2], which
+leverages the similar principles of in-waveguide propaga-
+tion on reconfigurable surfaces. Different from conventional
+reconfigurable-antenna architectures, PASS leverages dielec-
+tric and extensible waveguides embedded with separately con-
+figurable PAs, which can be dynamically activated and reposi-
+tioned along the waveguide [13], [14]. With reconfigurable
+waveguides and pinching antennas (PAs) for in-waveguide
+propagation, PASS can reduce path loss and improve trans-
+mission efficiency [15], [16]. Since PASS enables the flexible
+deployment of PAs close to end users, it establishes robust LoS
+connections. Moreover, this spatial adaptability allows PASS
+to effectively mitigate large-scale path loss and overcome
+coverage gaps [17], [18]. Hence, PASS enables a novel form
+of beamforming, referred to as pinching beamforming, where
+both the large-scale path loss and the phase of the transmitted
+signal can be continuously reconfigured in the spatial do-
+main [19], [20]. Distinctly, PASS demonstrates several unique
+advantages: 1) Adjustable position and beamforming: PAs
+can be readily repositioned along the dielectric waveguide
+to accommodate real-time spatial and service demands, en-
+abling unprecedented adaptability over large physical areas.
+By activating PAs at the desired positions, PASS can achieve
+adjustable beamforming. 2) Path loss configurations and LoS
+support: The adjustment of PAs allows PASS to dynamically
+control large-scale path loss while maintaining strong LoS
+links, significantly reducing the risk of high-frequency link
+blockage [21].
+The strong directionality of narrow beams formed by exten-
+sive arrays leads to increased sensitivity to user mobility and
+environmental obstructions, necessitating precise alignment
+between transmitted and received beams. The dynamic PA
+location require tracking and adapting to user movements,
+which results in continuously varying channel environments,
+complicating both channel estimation and prediction. Further-
+more, the unpredictability of user and PA positions makes
+arXiv:2511.09453v1
+[eess.SP]
+12
+Nov
+2025
+2
+it difficult to leverage historical data for accurate channel
+modeling, especially since the beam direction and PA locations
+are tightly coupled and directly impact system performance.
+Despite the significant advantages of PASS in terms of spa-
+tial adaptability and flexible beamforming, several challenges
+remain as follows:
+• Large Beam Training Overheads: To achieve high se-
+lection accuracy, an exhaustive search over a large
+beamspace is often required, which results in pro-
+hibitively high computational complexity and substantial
+beam training overhead.
+• User Mobility: The dynamic nature of user locations
+necessitates frequent and rapid adjustment of PA positions
+to continuously track and serve mobile users, thereby in-
+creasing the complexity of system control and adaptation.
+• Limited Accuracy: It remains an open problem how to
+fully exploit the integrated information from multiple PAs
+and auxiliary environmental sensing from multimodal
+sensors, e.g., camera images, light detection and ranging
+(LiDAR), Global Positioning System (GPS), to further
+enhance the accuracy and reliability of beam training in
+practical deployments.
+To address these challenges, the development of beam
+training for PASS framework is crucial. The authors of [22]
+proposed a three-stage beam training scheme for PASS, which
+utilized a coarse-fine-search strategy for beam training. Tradi-
+tional hierarchical beam training schemes [23], [24], originally
+designed for static arrays, struggle to accommodate the added
+spatial degrees of freedom in PASS. Moreover, most near-field
+beam training techniques, whether implemented at the base
+station (BS) or via RIS, assume fixed antenna placements,
+making them unsuitable for the highly flexible and reconfig-
+urable PASS paradigm.
+Large language models (LLMs) play a critical role in beam
+training [25], [26]. On the one hand, LLMs have strong
+representation learning capabilities, and can automatically
+extract and fuse complex spatial, context, and multimodal
+features to provide deep information support for accurate beam
+training. On the other hand, LLM can generalize to unknown
+environments and dynamic user distribution, realize adaptive
+reasoning for beam selection, and effectively deal with com-
+plex and nonlinear relationships that are difficult to tackle in
+traditional models. The massive MIMO beam training scheme
+that utilizes LLMs to fuse multimodal and channel information
+for mmWave beam selection was proposed by [27]. The
+authors of [28] designed the application of LLM to wireless
+communications, enabling unified multi-task optimization and
+cross-modal reasoning for beam management. However, there
+is little literature researching LLM-driven beam training for
+PASS. This context motivates the development of new channel
+acquisition and beam training approaches tailored to the spatial
+dynamics of PASS, utilizing both physical models and LLM
+to optimize system performance.
+In this paper, we propose a novel beam training PASS
+framework enabled by LLM in massive MIMO scenarios.
+Specifically, we develop the end-to-end multi-modal sensing
+empowered beam training framework based on LLM for
+PASS, which integrates the multi-modal sensing information,
+including camera images, LiDAR, and GPS, to generate high-
+dimensional tokens by for comprehensive perception of radio
+environment. Leveraging the generalization and representation
+capabilities of LLM, we design an LLM-based codebook
+generation and beam selection mechanism for beam training
+of PASS. We consider single-user and multi-user cases. For
+single-user case, we maximize the beamforming gain by
+training LLM to generate pinching beamforming codebook for
+optimal beam configuration. Then, the transmit beamforming
+for communication is obtained by maximum ratio transmission
+(MRT). For multi-user case, we maximize the system sum rate
+by jointly optimizing pinching beamforming codebook gener-
+ation and beam selection under the minimum mean square
+error (MMSE) transmit beamforming strategy. We propose a
+supervised end-to-end training mechanism to tailor the LLM.
+The key contributions of this work are summarized as follows:
+1) We propose a novel beam training framework for PASS,
+empowered by multimodal sensing information, includ-
+ing camera image, LiDAR, and GPS data. We develop
+an LLM-based supervised learning mechanism to jointly
+perform codebook generation and beam selection. The
+multimodal features are integrated into high-dimensional
+tokens to achieve comprehensive environmental under-
+standing. The pinching beamforming codebook, which
+samples a set of pinching antenna positions for se-
+quential probing, is then generated based on the high-
+dimensional tokens for efficient beam training. We con-
+sider both single-user and multi-user cases.
+2) For single-user case, we formulate an LLM-based pinch-
+ing beamforming codebook generation problem to max-
+imize the beamforming gain. The optimal pinching
+beamforming is selected from the codebook generated
+by LLM. Based on the selected pinching beamforming,
+the optimal transmit beamforming is obtained by MRT.
+3) For multi-user case, we formulate a joint pinching
+beamforming codebook generation and beam selection
+problem to maximize the system sum rate, which can
+enhance beamforming gain and mitigate interference
+by combining MMSE transmit beamforming strategy.
+From Top-S pinching beamforming candidates of each
+user, we search the optimal combination for multi-user
+communication as training labels for efficient training.
+Built on pretrained Generative Pre-Trained Transformer
+(GPT) modules, the LLM is further trained through an
+end-to-end supervised training process by minimizing
+cross-entropy loss.
+4) Numerical simulation results verify the effectiveness of
+the proposed LLM-enabled PASS beam training, which
+demonstrates that: i) In single-user case, the proposed
+LLM-enabled PASS achieves 51.92% improvements in
+beamforming gain compared to standard PASS, and
+achieves over 95% in Top-1 accuracy of beam selection.
+ii) In multi-user case, the proposed LLM-enabled PASS
+increases the system sum rate by 57.14% and 33.33%
+compared to LLM-enabled massive MIMO and the
+conventional PASS beam training method.
+3
+The remainder of this paper is organized as follows: Section
+II introduces the system model of LLM-enabled PASS frame-
+work and the problem formulation. Section III and Section
+IV focus on the beam training framework based on LLM
+for PASS, consists of multimodal feature extraction, codebook
+generation and beam selection, for single-user and multi-user
+cases, respectively. Numerical results are analyzed in Section
+V. The conclusion is shown in Section VI.
+Notations: CM×1
+and RM×1
+denote the space of M × 1
+complex valued vectors and real valued vectors, respectively.
+blkdiag(x) denotes a block-diagonal matrix. The variable,
+vector, and matrix are denoted by x, x, and X, respectively.
+Re {x} and Im {x} denote the real and image parts of x, and
+xH
+is the complex conjugate number of x. XT
+and XH
+denote
+the transpose and the Hermitian matrix. CN(0, σ2
+) represents
+the distribution of a circularly symmetric complex Gaussian
+variable (CSCG) with zero mean and σ2
+variance. T OPS
+represents the true label included among the top-S predicted
+beamforming vectors with the S highest values. Ik represents
+the k-order identity matrix.
+II. SYSTEM MODEL
+Consider an LLM-enabled PASS framework in MIMO
+communication scenario, where one BS serves a set of K =
+{1, 2, . . . , K} of users, k ∈ K. This framework comprises
+dielectric waveguides n ∈ N = {1, 2, . . . , N} each pinched
+along L pinching antennas (PAs), indexed by l ∈ L =
+{1, 2, . . . , L}. The proposed LLM-enabled PASS framework
+for beam training is shown as Fig. 1. The waveguide is
+connected to a dedicated radio frequency (RF) chain, which
+converts the signal multiplexed at the baseband and feeds it
+into the waveguide. And the total number of PAs is M =
+N × L. Denote that both waveguides and PAs are installed at
+a fixed height of d0, users are initialized at the height of 0. The
+length of each waveguide is denoted by xmax
+, and the distance
+between two adjacent PAs is defined as yn = (n − 1)y0. Let
+the three-dimensional Cartesian coordinates of feed point for
+waveguide n as ψW
+n = [0, yn, d0]. The PASS spans across
+the rectangular area with a size of (xmax
+× ymax
+), which
+is the same as the distribution coverage of users. Thus, the
+location of user k is denoted by ψU
+k = [xk, yk, 0], ∀k ∈ K,
+where 0 ≤ xk ≤ xmax
+and 0 ≤ yk ≤ ymax
+. The
+location of flexible PA l on waveguide n along x-axis is
+defined by xn,l. Let xn = [xn,1, xn,2, ..., xn,L]T
+∈ RL×1
+represent the x-axis locations of PAs on the waveguide n, and
+X = [x1, x2, ..., xN ] ∈ RL×N
+typify the total PA location
+matrix along x-axis, where ∀n ∈ N, ∀l ∈ L.
+A. PASS Channel Model
+The effective response vector from waveguide n to PAs can
+be written as
+gn,l(xn,l) =
+1
+√
+L
+e
+−i 2π
+λg
+|ψPA
+n,0−ψPA
+n,l| =
+1
+√
+L
+e
+−i 2π
+λg
+xn,l
+, (1)
+where λg = λ
+neff
+represents the guided wavelength, λ is the
+wavelength, neff represents the effective refractive index of
+the dielectric waveguide, and 1
+√
+L
+means the amplitude of the
+Fig. 1: System model: The proposed LLM-enabled PASS
+framework.
+transmitted signal, that is, the power allocation coefficient for
+L PAs along waveguide n. Additionally, |ψPA
+n,0 − ψPA
+n,l| = xn,l
+denotes the distance from the feed point of waveguide n to
+PA l. Then, the overall in-waveguide channel matrix can be
+expressed as
+G(X) =
+
+
+
+
+
+g1 (x1) 0 . . . 0
+0 g2 (x2) . . . 0
+.
+.
+.
+.
+.
+.
+...
+.
+.
+.
+0 0 . . . gN (xN )
+
+
+
+
+
+. (2)
+Consequently, the geometric free-space spherical propaga-
+tion model is employed to characterize the channel vector
+between PA l on waveguide n and user k, which is expressed
+as
+hH
+n,l,k(xn,l) =
+ηe−iκ|ψU
+k−ψPA
+n,l|
+ψU
+k − ψPA
+n,l
+, (3)
+where κ = 2π
+λ is the wave-domain number. Hence, the
+channel vector from the PAs along wavegudie n is denoted
+by hH
+n,k(xn) ∈ C1×L
+, and the channel matrix for all PAs is
+denoted by hH
+k (X) = [hH
+n,k(x1), hH
+n,k(x2), . . . , hH
+n,k(xN )] ∈
+C1×M
+. To reflect practical propagation conditions, this paper
+considers both the line-of-sight (LoS) and the non-line-of-
+sight (NLoS) [21]. Since the PA and UE are movable and
+the distance between them might be long-range, thus, we
+build a blockage model for PASS to contemplate the multi-
+user interference link that may be blocked. We consider two
+cases, i.e., single-user and multi-user cases, for this model. The
+indicator function of LoS blockage δl,k is introduced into this
+model. If blockage exists between user k and PA l, δl,k = 0.
+In contrast, δl,k = 1, which can be expressed as
+δl,k =
+(
+1, LoS
+0, NLoS
+, (4)
+for user k, the channel vector with LoS blockage can be
+formulated as e
+hH
+n,l,k(xn,l) = δl,khH
+n,l,k(xn,l).
+B. PASS Signal Model
+1) Channel Probing: Pinching beamforming enables flexi-
+ble spatial configuration of antenna arrays, allowing dynamic
+adaptation to user locations and channel conditions, thereby
+4
+significantly enhancing beamforming gain and overall system
+performance in PASS. The pinching beamforming codebook is
+constructed on the BS side, including all feasible PA activation
+positions called as codewords. Each hH
+k G represents the
+activating schedule of PAs. With LoS blockage, the physical
+gain of pinching beamforming along waveguide n under each
+codeword needs to be multiplied by the indicator factor, which
+is denoted by
+fn(X) =
+X
+l
+δl,khH
+k (X)G(X), (5)
+where the predefined pinching beamforming codebook F =
+{f1, ..., fN } and fn ∈ C1×N
+. If the main components of the
+beam direction are blocked (such as the corresponding δl,k =
+0), the actual gain of this codeword is reduced to 0. At the
+time slot t ∈ T = {1, 2, . . . , T}, the pinching beamforming
+vector fn[t] is determined by BS according to the information
+of the codebook during 0-(t−1) time slots. The PASS utilizes
+multiple dielectric distributed waveguides with flexible PAs
+arranged on each waveguide. Each beam is no longer simply
+equivalent to an angle of departure (AoD), but is determined
+by the spatial location of PAs with an activation scheme.
+During the channel probing phase, the system sequentially
+transmits probing signals using each pinching beamforming
+configuration from the above generated codebook. At this
+stage, the transmit digital beamforming matrix is set as the
+identity matrix Wprob
+. At channel probing phase, transmit
+signal can be expressed as
+sprob
+k [t] =
+√
+αkWprob
+s′
+n,k[t], ∀t ∈ T , (6)
+where αk is the power allocation coefficient for UE k, s′
+n,k[t]
+is the probing signal vector for each PA activation, and the
+corresponding received signal is given by
+yprob
+k [t] = δl,khH
+k [t]Wprob√
+αks′
+k[t] + zk, ∀t ∈ T . (7)
+2) Communication Model: In the downlink MIMO com-
+munications, since all waveguides are driven by a common
+baseband signal, this signal is then converted by the RF chain
+and fed to the waveguides for radiation. Transmit beamforming
+is applied in the baseband to achieve spatial multiplexing. Let
+sk denote the transmit signal emitted by the PASS system
+toward all users, which can be expressed as:
+s =
+√
+αksk, (8)
+where transmit signal sk ∈ C for user k is the zero-mean
+unit-variance stationary process satisfying E
+
+sH
+k sk
+
+= 1. Let
+the received signal at UE k through channels manipulated by
+PASS, expressed as
+yk = δl,khH
+k Gwk
+√
+αksk
+| {z }
+desired signal
++ δl,khH
+k Gwk
+K
+X
+i=1,i̸=k
+√
+αisi
+| {z }
+multi-user interference
++zk,
+(9)
+where zk ∈ CN(0, σ2
+) is the additive white Gaussian noise at
+user k, σ2
+is the noise power. Moreover, wk ∈ CN×1
+denotes
+the transmit beamforming vector for user equipments (UEs),
+and pinching beamforming matrix denotes W ∈ CN×K
+. The
+effective pinching beamforming can be formulated as hH
+k G.
+Hence, the signal-to-interference-plus-noise ratio (SINR) for
+user k to decode its own signal can be expressed as
+SINRk(W, X) =
+δl,k hH
+k Gwk
+2
+αk
+δl,k hH
+k Gwi
+2 K
+P
+i=1,i̸=k
+αi + σ2
+, ∀k ∈ K,
+(10)
+then, the corresponding achievable rate is
+Rk = log2 (1 + SINRk(W, X)) , (11)
+and the system sum rate can be expressed as
+P
+k∈K log2 (1 + SINRk(W, X)).
+During the beam training, we train the LLM to get the
+selected pinching beamforming codeword from the generation
+codebook. Then, we utilize MRT technology to derive the
+optimal transmit beamforming in single-user case, which can
+be given by
+wMRT
+k (x) =
+p
+Pmax
+hH
+k (x)
+∥hH
+k (x)∥
+. (12)
+For multi-user case, to evaluate the accuracy of beam
+prediction and selection, we introduce the Top-S function
+[27], [29] to calculate the beam selection accuracy of training
+labels in candidate pinching beamforming sets within the top
+S = {1, 3} predicted beams ranked by model confidence.
+Formally, it is computed as
+T OPS =
+1
+NS
+Ns
+X
+j=1
+1{mj ∈QS }, (13)
+where Ns denotes the total number of test samples, mj is
+the index of the ground truth optimal beam for j-th sample,
+and QS is index set for the Top-S predicted beams. Then, we
+utilize the MMSE strategy to derive the optimized transmit
+beamforming with the selected candidate pinching beamform-
+ing sets from codebook generation, which can be expressed
+as
+WMMSE
+= HH
+(X)(H(X)HH
+(X) + σ2
+Ik)−1
+√
+P, (14)
+where P represents the power allocation diagonal matrix and
+Ik is k-order identity matrix.
+III. BEAM TRAINING OF LLM-BASED PASS FOR
+SINGLE-USER CASE
+In this section, we propose an LLM-based codebook gen-
+eration and beam training mechanism based on LLM. We
+formulate the pinching beamforming codebook generation
+problem to maximize the beamforming gain. With the pinching
+beamforming generated by LLM-based codebook generation
+and labelled in the candidate pinching beamforming sets, the
+optimal transmit beamforming is derived by MRT technique.
+Moreover, we analyze the performance of LLM-based PASS.
+As perfect channel state information (CSI) is unavailable,
+beam training is an effective approach to identify and predict
+the best pinching beamforming. However, for systems em-
+ploying a narrow beam codebook, the corresponding training
+5
+overhead can become substantial, and the probability of suc-
+cessfully selecting the optimal beam diminishes, particularly
+under low SNR conditions in single-user case. Given that
+beam selection at both the transmitter and receiver is highly
+dependent on the transceiver’s surrounding environment, this
+work exploits multimodal sensing information at the BS to
+enhance beam selection trained by LLM and to develop
+a multimodal-assisted beam training framework. This beam
+training framework is shown as Fig. 2.
+A. Problem Formulation
+Single-user case is a special case in multi-user case, the
+received signal for the user can be simplified as
+y1 = δ1,1hH
+1 Gw1
+√
+α1s1, (15)
+we focus on the single-user case where L PAs are deployed
+along a waveguide. Suppose that the L PAs are positioned
+at x1 = [x1,1, x1,2, ..., x1,L]T
+∈ RL×1
+along the waveguide 1,
+and the single user is at location ψU
+1 = [x1, y1, 0], k = K = 1,
+where 0 ≤ x1 ≤ xmax
+and 0 ≤ y1 ≤ yN . The downlink
+channel vector is expressed as
+hH
+1,l,1(x1,l) =
+ηe−iκ|ψU
+1 −ψPA
+1,l|
+ψU
+1 − ψPA
+1,l
+, (16)
+where κ = 2π
+λ is the wave-domain number. Hence, the channel
+vector of the PAs along wavegudie 1 is denoted by hH
+1,1(x1) ∈
+C1×L
+.
+For single-user case, the system sum rate is reduced to the
+form ignoring multi-user interference. The signal-to-noise ratio
+(SNR) for the only one user to decode its signal is given by
+SNR1 =
+δl,1 hH
+1 Gw1
+2
+α1
+σ2
+, k = K = 1, (17)
+and the data rate of user is as follows,
+R1 = log2 (1 + SNR1) . (18)
+To enhance the accuracy of beam selection and prediction,
+we employ the beamforming matching strength ∥fn(xn)wk∥2
+that evaluates the predicted beam alignment with the direction
+of channel, referred to as beamforming gain. Therefore, max-
+imizing the system sum rate can be recast as maximizing the
+beamforming gain under the MRT transmit beamforming strat-
+egy (12). We formulate the beamforming gain maximization
+problem by searching for the optimal pinching beamforming
+x∗
+n,
+P0.0 : arg max
+F(·),Dθ(·)
+∥fn(xn)wk∥2
+, (19a)
+s.t. x̂n = F(y1:T , F1:T , b
+B), ∀l ∈ L, k = K = 1, n=N =1,
+(19b)
+Ft = Dθ({ b
+B[t]}t
+1), ∀t ∈ T = {1, . . . , T}, (19c)
+where x̂n represents the best positions selected from the
+training labels in the selected pinching beamforming set for
+the user, y denotes the received signal during the channel
+probing t ∈ T = {1, . . . , T}, b
+B is the high-dimensional
+tokens fed into the LLM, F denotes the specific mapping
+Fig. 2: The proposed LLM-based Beam Training for PASS.
+during the beam training based on LLM, predicting the optimal
+positions of PAs based on the signal, high-dimensional tokens
+and generated codebook, and Dθ is the calculation process of
+the codebook generation based on the LLM with the learning
+parameter θ. (19b) constraints the optimal positions of PAs are
+predicted and selected from the ideal pinching beamforming
+set for the user, and (19c) means the pinching beamforming
+codeword is processed by first LLM for codebook generation.
+For simplicity, the problem (19) is reduced to
+P0.1 : min
+Fθ(·),Dθ(·)
+∥x∗
+n − x̂n∥2
+, (20a)
+s.t. (19b), (19c), ∀l ∈ L, k = K = 1, n=N =1. (20b)
+B. Algorithm Design
+1) Multimodal Feature Extraction: The multimodal fea-
+ture extraction is the first module of LLM-enabled PASS,
+which is responsible for extracting the dynamic multimodal
+information of the target user from the cameras deployed at
+the BS and converting it into a time-sequential structured
+representation for subsequent LLM processing. The target
+detector, e.g., YOLO series [30], outputs the user’s bounding
+box of the image in each time slot, which is converted into a
+fixed-dimension token sequence through normalization, patch
+partitioning, and linear embedding. Specifically, we extract
+multimodal features from camera images, LiDAR, and GPS to
+construct the high-dimensional tokens for codebook generation
+and beam selection that leverages the strong generalization and
+inference abilities of pretrained LLMs.
+To reduce the overhead and latency of conventional beam
+training, we incorporate real-time multimodal feedback from
+cameras deployed at the BS. The goal of this module is to
+extract the user’s spatio-temporal movement from raw video
+frames and transform it into a structured token sequence that is
+compatible with language models. Specifically, a multimodal
+detector, such as YOLO, is used to extract the bounding box
+6
+of the target user in each time slot. Let the bounding box at
+the t-th time slot be denoted as
+bk,t = [xk,t yk,t LTwid
+k,t LThei
+k,t]T
+∈ R4
+, (21)
+where xk,t = xk and yk,t = yk denote the center coordinates
+of the detected bounding box, LTwid
+k,t and LThei
+k,t are the width
+and height of the detected box. Let the bounding box series
+of user k be represented by Bk ∈ R4×T
+over T time slots,
+where each row corresponds to one of the four bounding box
+attributes, which is represented as
+Bk = [bk,1, bk,2, . . . , bk,T ] ∈ R4×T
+. (22)
+For single-user case, the user position and multimodal
+features are extracted via the multimodal detector, i.e., YOLO,
+yielding bounding boxes b1,t to generate the bounding box
+series of this user B1 = [b1,1, . . . , b1,t, . . . , b1,T ] ∈ R4×T
+.
+After token mapping, the combined information is represented
+as high-dimensional tokens b
+B
+(i)
+P , ∀i = {1, 2, 3, 4}. To bridge
+the modality gap between visual sequences and the LLM
+input format, we design a token mapping part that trans-
+forms raw spatio-temporal bounding box sequences into high-
+dimensional tokens. These tokens are aligned in structure and
+semantics with the textual input space, allowing seamless in-
+tegration with the attention-based reasoning pipeline of LLM.
+To eliminate scale shifts and normalize across different
+scenes, we apply reversible instance normalization (RevIN)
+across each dimension,
+e
+B
+(i)
+k =
+B
+(i)
+k − µ
+(i)
+B
+σ
+(i)
+B
+, ∀i = {1, 2, 3, 4}, (23)
+where µ
+(i)
+B is the mean of Bk, σ
+(i)
+B is the standard deviation
+of Bk. RevIN further stores (µ
+(i)
+B , σ
+(i)
+B ) for subsequent inverse
+transformation if needed during inference.
+Since LLMs cannot directly process the multimodal fea-
+tures and natural language simultaneously. Subsequently, the
+bounding box sequences need to be segmented into patches
+and converted into high-dimensional tokens using learnable
+linear projections, aligning multimodal information semanti-
+cally with textual-like tokens for effective inference by the
+LLM. The series e
+B
+(i)
+k are segmented into overlapping or non-
+overlapping patches of length Lpatch
+, using a temporal sliding
+window of step size Lfull
+. The total number of patches for each
+channel is given by
+NP = ⌊
+T − Lpatch
+Lfull
+⌋ + 1. (24)
+We denote the patch matrix from i-th attribute as e
+B
+(i)
+P ∈
+RNP ×Lpatch
+. To convert the raw patch data into a high-
+dimensional embedding suitable for LLM-based reasoning,
+each patch is passed through a learnable linear projection to
+obtain high-dimensional tokens of patch in spatch
+-th dimension
+space, which can be expressed as
+b
+B
+(i)
+P = e
+B
+(i)
+P · EM(i)
++ m(i)
+, b
+B
+(i)
+P ∈ RP ×spatch
+, (25)
+where EM(i)
+∈ RLpatch
+×spatch
+and m(i)
+∈ Rspatch
+are learnable
+parameters.
+2) LLM-Based Codebook Generation: In conventional mas-
+sive MIMO systems, the discrete fourier transform (DFT)-
+based codebooks have been widely adopted due to their
+mathematical simplicity and uniform spatial coverage. These
+codebooks are constructed solely based on the antenna ar-
+ray geometry, assuming ideal linear structures and uniform
+phase progression across elements. While such predefined
+beamforming vectors provide tractable solutions for static,
+symmetrical deployments, they exhibit fundamental limitations
+in flexible and adaptable PASS.
+We propose an LLM-based codebook generation mechanism
+that leverages powerful multimodal alignment capabilities to
+dynamically synthesize pinching beamforming codewords tai-
+lored to the dynamic communication scenarios. Considering
+the coupled positions of PAs and CSI, we design an adaptive
+codebook generation and beam selection mechanism, which
+first declares the initial codebook consists of all pinching
+beamforming, and then, updates the initial one by the opti-
+mized PA positions and latest user locations to generate a
+learnable codebook. Specifically, the predefined codebook F is
+obtained by the pinching beamforming according to (5). Based
+on (5), codeword in the t-th time slot can be formulated as
+fn[X, t] =
+X
+l
+δl,k[t](hH
+k [X, t]G[X, t]), ∀t ∈ T = {1, 2, . . . , T}.
+(26)
+We can further derive F[t] = {fn[t]}N
+n=1 from fn ←
+Dθ( b
+B
+(i)
+P ). Through the codebook generation based on LLM,
+we can obtain the learnable codebook e
+F, consists of iter-
+ative updated pinching beamforming codewords, given by
+e
+F = {f1[T], f2[T], . . . , fN [T]}. And the optimal codeword
+f∗
+n and optimal pinching beamforming can be obtained after
+convergence. With the optimal pinching beamforming, the
+optimal transmit beamforming can be derived with the MRT
+technique according to (12), which is given by
+wMRT
+1 =
+p
+Pmax
+hH
+1 (x∗
+1)
+∥hH
+1 (x∗
+1)∥
+. (27)
+3) Performance Analysis: For single-user case, the reliabil-
+ity of the proposed LLM-enabled PASS is evaluated.
+Proposition 1. For single-user case, the outage probability
+is achievable at a high SNR by LLM-enabled PASS, which is
+smaller than that of the conventional massive MIMO system.
+Proof: With a given maximum achievable rate Rmax
+1 of
+user 1, define corresponding SNR threshold ϵ1 = 2Rmax
+1 − 1.
+The outage probability is
+Eoutage
+= E (R1 < Rmax
+1 ) = E (SNR1 < ϵ1) , (28)
+further formulated as
+Eoutage
+= E(δ1,1 = 0) + E
+
+hH
+1 Gw1
+2
+< ϵ1σ2
+, δ1,1 = 1
+
+.
+(29)
+Assume that the LoS probability decays exponentially with
+the distance between the user and the PA, i.e.,
+E(δ1,1 = 1) = e(−φ1 minl ∥ψU
+1 −ψPA
+1,l∥), (30)
+where φ1 is the blockage density parameter for a single user.
+Define dmin
+(y1) = minl ∥[x1, y1, 0] − [x1,l, 0, 0]∥. For a user
+7
+uniformly distributed along y1 ∈ [0, ymax
+], the average outage
+probability is
+Eoutage
+=
+1
+ymax
+Z ymax
+0
+h
+1 − e−φ1dmin
+(y1)
+i
+dy1
++
+1
+ymax
+Z
+S
+e−φ1dmin
+(y1)
+dy1,
+(31)
+where the integration set S =
+
+y1 : dmin
+(y1) ≥ τ1 , with
+τ1 =
+q
+η1P max
+ϵ1σ2 . When Pmax
+is sufficiently large, τ1 → 0, so
+the second term of (31) vanishes, and the outage probability
+simplifies to
+Eoutage
+≈ 1 −
+1
+ymax
+Z ymax
+0
+e−φ1dmin
+(y1)
+dy1. (32)
+As for conventional massive MIMO, a fixed antenna at
+position ψA,
+Eoutage
+conv ≈ 1 −
+1
+ymax
+Z ymax
+0
+e−φ1∥[x1,y1,0]−ψC ∥
+dy1. (33)
+Since dmin
+(y1) ≤ ∥[x1, y1, 0] − ψC∥ always holds with PA
+movement, it follows that
+Eoutage
+< Eoutage
+conv , (34)
+demonstrates that LLM-enabled PASS has the advantages that
+support flexible positions of PAs and dynamic movement of
+users simultaneously, leading to strictly lower outage proba-
+bility compared to conventional massive MIMO.
+The above proof provides theoretical evidence for the
+reliability gain of the proposed LLM-enabled PASS. Thus,
+the proposed LLM-enabled PASS outperforms conventional
+massive MIMO in terms of reliability.
+Lemma 1. For the single-user case, under the blockage model
+of the single-waveguide PASS configuration, assuming the user
+is uniformly distributed along y1 ∈ [0, ymax
+] and the PA can
+be optimally placed to minimize the distance to the user, the
+outage probability at high SNR is given by (32).
+Proof: The outage probability is defined as (28) and
+decomposed as (29). The probability of LoS, i.e., δ1,1 = 1,
+is modeled by exponential decay with the closest distance
+between PA and user as (30). For a user at [x1, y1, 0], the mini-
+mum distance is dmin
+(y1) due to optimal PA positions. At high
+SNR (Emax
+→ ∞), the SNR threshold τ1 =
+q
+η1Emax
+ϵ1σ2 → ∞,
+making it almost always possible to meet the SNR constraint
+whenever δ1,1 = 1. Thus, the second term in (29) vanishes
+and only the blockage event remains:
+Eoutage
+≈ Ey1
+h
+1 − e−φ1dmin
+(y1)
+i
+. (35)
+Taking the expectation over the uniform distribution of y1
+yields (36), where τ2 = max{0,
+q
+τ1
+2 − dmin2
+} and τ3 =
+min{
+q
+τ1
+2 − dmin2
+, ymax
+}. As SNR1 is high, τ2 → 0 and
+τ3 → ymax
+, the above equation is dominated by the second
+term, the third and fourth terms close to 0. Therefore, PASS
+can achieve the outage probability at the high SNR.
+Compared to the multi-user case, the single-user case sub-
+stantially reduces computational complexity, as there is no
+need to consider multi-user interference. The entire training
+process can produce optimal locations of PAs and optimal
+pinching beamforming with a single LLM inference, sup-
+porting real-time beam training in practical deployments. The
+computational complexity of the proposed LLM-based beam
+training is O(TNbatch
+
+NP (spatch
+)2
++ L
+
+).
+IV. BEAM TRAINING OF LLM-BASED PASS FOR
+MULTI-USER CASE
+In this section, we propose a multimodal-assisted beam
+training framework for PASS based on LLM with supervised
+end-to-end training. First, we design a multimodal feature
+extraction module to retrieve the information of the camera
+image, LiDAR, and GPS. Then, we generate an LLM-based
+codebook to select the best pinching beamforming for users
+and save it as the candidate pinching beamforming sets, which
+has the same process as the mentioned in Section III. We
+formulate the LLM-based pinching beamforming codebook
+generation and beam selection problem under system sum
+rate maximization problem to jointly optimize pinching beam-
+forming and transmit beamforming. To construct the training
+samples for beam training, the above problem is decomposed
+into two subproblems, i.e., Top-S selection problem and rate
+maximization problem. With the best selection from candidate
+sets, we further utilize the MMSE transmit beamforming
+strategy to explore the best transmit beamforming for users.
+For multi-user case, the proposed LLM-enabled beam training
+for PASS is also shown as Fig. 2.
+A. Problem Formulation
+To enhance probing performance and accurately capture
+channel characteristics under multi-user interference, digital
+beamforming is incorporated during the channel probing stage,
+enabling more effective signal separation and improved eval-
+uation of candidate pinching beamforming configurations. For
+multi-user case, since PAs are flexible along waveguides, the
+locations of PAs could significantly affect achievable data
+rates of users in the MIMO communication scenario. With
+the given ideal pinching beamforming codebook F∗
+, the LLM-
+based pinching beamforming codebook generation and beam
+selection problem under the system sum rate can be formulated
+as
+P1.0 : max
+Fθ(·),Dθ(·)
+X
+k∈K
+log2 (1 + SINRk(W, X)) , (37a)
+s.t. Rk ≥ Rmin
+k , k ∈ K, (37b)
+0 < αk < 1,
+K
+X
+k=1
+αk = 1, k ∈ K, (37c)
+X
+k∈K
+∥wk∥2
+2 ≤ Pmax, (37d)
+xn,l − xn,l−1 ≥ ∆, l ∈ L, n ∈ N, (37e)
+xn,l ∈ [0, xn,L], l ∈ L, n ∈ N, (37f)
+X̂ = Fθ(y1:T , F1:T , b
+B
+(i)
+P , W1:T ), (37g)
+{Ft, Wt} = Dθ(y1:T , F1:T , b
+B
+(i)
+P ), ∀t ∈ T , (37h)
+8
+Eoutage
+= 1 −
+1
+ymax
+Z ymax
+0
+e−φ1dmin
+(y1)
+dy1 +
+1
+ymax
+Z τ2
+0
+e−φ1dmin
+(y1)
+dy1 +
+1
+ymax
+Z ymax
+τ3
+e−φ1dmin
+(y1)
+dy1
+≈ 1 −
+1
+ymax
+Z ymax
+0
+e−φ1dmin
+(y1)
+dy1,
+(36)
+where constraint (37b) guarantees the minimum data rate of
+each user, constraint (37c) ensures the power allocation coef-
+ficient constraint and variation range for all users, constraint
+(37d) denotes the maximum transmit power of BS Pmax,
+constraint (37e) denotes the minimum antenna space ∆ to
+avoid mutual coupling, constraint (37f) limits the location of
+each PA to the maximum length of corresponding waveguide,
+constraint (37g) limits the best positions of PAs predicted and
+selected from the ideal pinching beamforming sets for users by
+LLM-based beam selection Fθ, and constraint (37h) means the
+pinching beamforming and transmit beamforming is processed
+by first LLM generation LLM. Different from the F mapping
+of beam selection in Section III, Fθ is the parametric mapping
+with learning parameter θ, because information of multiple
+users needs to be considered to mitigate inner interference
+among users exits in multi-user case. To further increase the
+sum rate, we aim to calculate the best transmit beamforming
+under MMSE strategy based on the best explored pinching
+beamforming X̂.
+B. Algorithm Design
+1) LLM Structure: The process begins with extracting and
+fusing multimodal features from camera images, LiDAR, and
+GPS data into high-dimensional tokens, which comprehen-
+sively characterize the surrounding environment. Leveraging
+these tokens, a supervised learning mechanism based on the
+first LLM is employed to generate the pinching beamforming
+codebook, which defines a sequence of candidate PA positions
+for effective spatial probing. The LLM-based beam selection
+based on the second LLM predicts the optimal pinching
+beam by mapping the structured tokens to beam indices,
+enabling robust adaptation to locations of users and channel
+state. Finally, given the predicted pinching beam, the MMSE
+transmit beamforming strategy is applied to determine the
+best transmit beamforming, thereby further enhancing beam
+training for users.
+2) LLM-Based Beam Selection: The LLM-based beam se-
+lection module forms the core of the LLM-enabled PASS,
+bridging high-level token inference with low-level physical
+reconfiguration. This module is designed to select the best
+predicted beam configurations by leveraging spatial-contextual
+information of tokens extracted by the pretrained LLM from
+camera images, historical locations of PAs, and users. To pre-
+dict the best beam, the last module of LLM-enabled PASS is
+LLM-based beam selection. The core idea behind this module
+is to couple high-level token inference with low-level physical
+layout reconfiguration of PASS. Specifically, a pretrained LLM
+learns the extracted spatial and scene-aware priors that enable
+the prediction of the selected beam based on user distribution,
+image inputs, and PA configurations. Meanwhile, the PA
+position ψPA
+n,l(X) is treated as a tunable physical variable
+that can be optimized to improve beam alignment and SINR.
+Different from traditional methods that rely on direct channel
+measurements or exhaustive beam training, we propose an
+LLM approach to predict the best beam directly using the
+pretrained LLM to tackle the non-convex P1.0, significantly
+reducing the overhead. From P1.0, the best codeword f∗
+n in the
+selected candidate pinching beamforming sets are necessary to
+maximize the beamforming gain, which can be denoted by
+Fsel = arg max ∥f∗
+n(t)wk∥2
+, (38)
+where wk is transmit beamforming for user k, dynamically
+adapted by instantaneous CSI. To address the above challenge,
+we construct the training samples by decomposing P1.0 in
+to two subsections. Since obtaining the optimal solution is
+intractable
+{X∗
+, W∗
+} = arg max
+Fθ(·),Dθ(·)
+X
+k∈K
+log2 (1 + SINRk(W, X)) ,
+(39)
+we reformulate the problem as a supervised learning problem,
+allowing the model to learn effective beamforming strategies
+from labelled data. The supervised learning training problem
+can be decomposed into two subproblems, i.e., Top-S selection
+problem and rate maximization problem.
+The Top-S selection problem aims to find the candidate
+pinching beamforming sets, which can be formulated as
+{Fc
+, Wc
+} = arg T OPS(∥fn(xn)wk∥2
+). Then, with the ex-
+plored {Fc
+, Xc
+} candidate pinching beamforming sets, we for-
+mulate the rate maximization problem, which can be reduced
+to
+P1.1 : min
+Fθ(·)
+∥X∗
+− X̂∥2
+, (40a)
+s.t. (37b)-(37h). (40b)
+We perform an end-to-end supervised training strategy for
+beam training process. First, we train the adapter modules
+of pretrained LLM while freezing original LLM parameters,
+enabling initial alignment between the multimodal-channel
+features and the high-dimensional mapping space for LLM.
+Next, we fine-tune the LLM using the MoE-LoRA, dynam-
+ically selecting subsets of parameters to efficiently capture
+tokens across multi-user communication scenarios. This two-
+step training significantly enhances beam selection capability
+and reduces the computational complexity. High-dimensional
+tokens b
+B
+(i)
+P and updated codeword fn codebook e
+F are config-
+ured as structured tokens to reflect both spatial and semantic
+multimodal cues by multi-head attention and linear layers,
+which are the inputs to the pretrained LLM, denoted by
+X = Softmax
+h
+Adapter(
+n
+{b
+B
+(i)
+P }, F1:T
+o
+)
+i
+, (41)
+9
+where Softmax[·] function maintains robust of the structured
+tokens, Adapter(·) is the combined function of multi-head and
+linear layers. The outputs of pretrained LLM are obtained by
+O(X) with the pretrained weight parameter a0.
+Further, the pretrained LLM is fine-tuned using a mixture of
+experts with low-rank adaptation (MoE-LoRA) to capture the
+relationships within these inputs effectively, which indicates
+the specialized alignment layers designed to match the seman-
+tic output of LLM to the beam selection task. The standard
+LoRA layers aim to get low-rank matrices, e.g., positions of
+PAs and transmit beamforming for users, which is tailored
+for joint pinching beamforming and transmit beamforming
+optimization. Specifically, we define the output probability
+distribution of the beam via LoRA layers as
+P(n, l, k|O(X); Θ) = LoRA(Transformers(O(X); Θ)), (42)
+where Transformers(·) function represents the inputs fine-
+tuned by the transformer layers, LoRA(·) function is the
+simplified-form function of beam selection via LoRA layers,
+Θ = {θ0, θ1, θ2, . . . , θk, . . . , θK} represents the parameter set
+of the fine-tuning LLM. To further predict optimal beam, the
+MoE layers are utilized to learn beam training and selection
+parameters. A gating network is then employed to select and
+combine different experts for beam training and selection,
+facilitating an aggregation mechanism for experts. The optimal
+predicted beam distribution probability can be written as (43),
+where MoE(·) function is the simplified-form distribution
+probability function of via MoE layers, rank(X) is the rank
+of X, ηMoE is hyperparameter of rank of X.
+For the rate maximization problem, the cross-entropy loss
+function is employed, which ensures the trade-off between
+training and computational complexity, and enhances the beam
+selection capability for PASS. This cross-entropy loss function
+can simultaneously optimize beam selection accuracy and PA
+position refinement during the LLM-based beam training for
+PASS, which is defined as follows.
+LOSSLLM =
+X
+k∈K
+θklossn(Z), (44)
+where lossk denotes the specific loss function for user k,
+linearly combined with corresponding weight θk. To balance
+the training across beam selection and selection effectively,
+we use the dynamic weight average algorithm to dynamically
+adjust every weight at every training epoch. With the best
+pinching beamforming, we use the MMSE to obtain the best
+transmit beamforming based on (14), given by
+Ŵ(X̂) = HH
+(X̂)(H(X̂)HH
+(X̂) + σ2
+Ik)−1
+√
+P. (45)
+The LLM-based optimal beam training algorithms for PASS
+are separated into two parts, i.e., inference and training, shown
+as Algorithm 1 and Algorithm 2.
+C. Computational Complexity Analysis
+The computational complexity of Algorithm 1 and Algo-
+rithm 2 is determined by the main modules: feature em-
+bedding, codebook update, LLM-based codeword selection,
+beamforming optimization, and PA position update.
+Algorithm 1 LLM-Based Beam Training Algorithm for PASS
+(Inference)
+Input: Initial codebook F, initial PA positions X(0)
+, multi-
+modal embedding sequence {e
+B
+(i)
+P }
+Output: The best beam selection Fsel, the best PA positions
+X̂ and transmit beamforming Ŵ
+1: Multimodal Feature Extraction:
+2: Extract multimodal features via token mapping: b
+B
+(i)
+P =
+e
+B
+(i)
+P · EM(i)
++ m(i)
+, ∀i = {1, 2, 3, 4}
+3: LLM-Based Codebook Generation:
+4: Update codewords based on PA configurations obtain (26)
+5: Transmit probing signal using the generated codebook and
+obtain (7)
+6: LLM-Based Beam Selection:
+7: Compute structured tokens for pretrained LLM: X =
+Softmax
+h
+Adapter(
+n
+{b
+B
+(i)
+P }, F1:T
+o
+)
+i
+8: Obtain Top-S candidate beams using (13)
+9: Estimate X̂ from (37g)
+10: For communication stage, obtain MMSE transmit beam-
+forming Ŵ by (45)
+11: return Best beam selection Fsel, PA positions X̂, and
+transmit beamforming Ŵ
+Algorithm 2 LLM-based Beam Training Algorithm for PASS
+(Training)
+Input: Same as Algorithm 1
+Output: Same as Algorithm 1
+1: for each batch do
+2: Execute Algorithm 1 for sampling
+3: MoE-LoRA Fine-tuning: Update layers using cross-
+entropy loss for beam selection, regression for PA
+location
+4: P(n, l, k|O(X); Θ) = LoRA(Transformers(O(X); Θ))
+5: Z(n, l, k|O(X); Θ) from (43)
+6: LOSSLLM =
+P
+k∈K aklossn(Z) converges
+7: end for
+8: return Final beam selection F̂, PA positions X̂, and
+transmit beamforming Ŵ
+1) Multimodal Feature Extraction: The extraction of
+tokens from K users and NP patches via the token mapping
+module incurs a complexity of O(NP (spatch
+)2
+) per iteration,
+where spatch
+denotes the feature dimension.
+2) LLM-Based Codebook Generation and Update: For
+each codeword fn, the update context involves summing over
+all relevant PAs and evaluating gradients concerning to the
+SINR. For a codebook size N and L PAs per waveguide, the
+complexity is O(NL) per iteration.
+3) LLM-Based Beam Selection: The complexity of the
+transformer-based LLM forward pass is O(NP (spatch
+)2
+), fol-
+lowed by a softmax in the codebook, which is O(N). When
+MoE/LoRA adapters are used, the cost of each layer in-
+creases as O(ENP (spatch
+)2
+), where E is the number of expert
+adapters, typically moderate E=4. The beamforming matrix
+W is updated by iterations. For K users and M = NL candi-
+10
+Z(n, l, k|O(X); Θ) = a0P(n, l, k|O(X); Θ) +
+rank(X)
+ηMoE
+X
+k∈K
+akMoE(hH
+k Gwk)P(n, l, k|O(X); Θ), (43)
+date PA positions, the complexity per update is O(K2
+LN) due
+to SINR evaluation across all user and pinching beamforming
+codeword sets. The PA position update shares a similar cost.
+5) Overall Complexity: Assuming T outer iterations
+and batch size Nbatch, the overall complexity per epoch is
+O(TNbatch
+
+NP (spatch
+)2
++ NL + K2
+LN
+
+). All major steps
+can be parallelized across codewords and users, and batched
+for GPU acceleration.
+V. SIMULATION RESULTS
+In this section, we present numerical simulations to evaluate
+the performance of the proposed LLM-enabled PASS frame-
+work. Unless otherwise specified, the simulation parameters
+are configured as follows. First, we describe the PASS con-
+figurations in communication scenarios. Then, we provide the
+LLM settings. Finally, we compare the proposed LLM-enabled
+PASS with the conventional massive MIMO based on LLM
+[27] and standard optimization-based PASS [22]. For simplic-
+ity, massive MIMO represents the LLM-based massive MIMO,
+PASS represents the standard optimization-based PASS, and
+LLM-PASS denotes the proposed LLM-enabled PASS. All
+simulations are conducted on an NVIDIA V100 GPU server.
+The LLM and multimodal encoder are implemented using
+PyTorch 2.0, YOLOv11, and GPT2.0. Training employs the
+AdamW optimizer with a batch size of 64, an initial learning
+rate of 2 × 10−5
+. Model selection is based on validation set
+loss, and early stopping is used to prevent overfitting.
+• PASS Configuration: The BS is equipped with N = 4
+waveguides, each supporting L = 16 reconfigurable
+pinching PAs and associated with a dedicated RF chain.
+In the coverage, K = 8 users are served simultaneously.
+All users are assumed to be located at ground level, with
+a height of zero. The user positions are uniformly dis-
+tributed within a spatial region defined by x ∈ [0, xmax
+]
+and y ∈ [0, ymax
+], where xmax
+= 30 meters and ymax
+=
+12 meters. Let D denote the total user deployment range
+along the x-axis, so that xmax
+∈ [0, dx
+0].
+All waveguides and PAs are mounted at a fixed height
+of d0 = 10 meters. The spacing between adjacent
+waveguides is set to dy
+0 = 3 meters, and the maximum
+length of each waveguide is xmax
+= 30 meters.
+For the channel and transmission settings, the maximum
+BS transmit power is P0 = 20 dBm, and the receiver
+noise power is σ2
+= −80 dBm. The carrier frequency
+is fc = 15 GHz, and the effective refractive index
+of the dielectric waveguide is neff = 1.4 [14]. The
+minimum required SINR for each user is set to 20 dB.
+These settings are used throughout all simulations unless
+explicitly noted otherwise.
+• LLM Setting: For the proposed LLM-based PASS frame-
+work, we employ a multi-modal LLM as the core in-
+ference engine. The LLM is pretrained GPT2 on Ima-
+geNet and further fine-tuned for the downstream beam
+training task. The model integrates multimodal features
+from camera images and temporal context from historical
+PA position and pinching beamforming. The pretrained
+LLM input at each time step includes a high-dimensional
+token via a YOLO-based encoder, i.e., YOLOv11, and a
+corresponding beam index [27], [28]. The hidden size and
+number of multi-head attention layers are set according
+to ablation results, with a typical configuration of 12
+transformer layers and a hidden dimension of 768.
+• Dataset: The dataset is built upon Scenario 8 of the
+DeepSense 6G dataset, which is partitioned into 70%
+for training, 10% for validation, and 20% for testing
+[31]. This scenario contains several data sequences, cor-
+responding to individual vehicle passes. Each sequence
+consists of a time-aligned camera image sequence and its
+associated beam index and power. During data collection,
+the BS synchronizes camera images and power measure-
+ments for all candidate beams at each time step. These
+multimodal data streams are aligned to enable frame-level
+beam selection and training. To prepare model inputs, we
+segment each data sequence into overlapping windows
+using a fixed sliding window size of 13. For each window,
+the input to the LLM encoder is {Bk}, k ∈ K during
+overall time slots T. During training, we use an obser-
+vation window of length T and set the model to predict
+optimal beams over a horizon of HF frames. Standard
+experiments use T = 80 for observation and HF = 5
+for selection, while few-shot scenarios use T = 30 and
+HF = 10.
+Fig. 3: Comparisons of convergence behaviors of the proposed
+LLM-PASS and LLM-based massive MIMO.
+Fig. 3 presents the convergence behaviors of the proposed
+LLM-PASS algorithm and the massive MIMO in terms of
+the training cross-entropy loss across 100 epochs. As depicted
+11
+in Fig. 3, the LLM-PASS exhibits a significantly faster con-
+vergence rate compared to massive MIMO. Specifically, the
+loss value of LLM-PASS decreases sharply within the first 30
+epochs, dropping from over 110 to below 20, and subsequently
+stabilizes at a lower stable value, which demonstrates the
+superior optimization efficiency and learning capability of the
+proposed LLM-PASS framework. At convergence, the loss
+for LLM-PASS not only achieves a lower value but also
+shows reduced variance, implying robust generalization and
+stability in training. It confirms that LLM-PASS can consis-
+tently outperform massive MIMO in both convergence speed
+and achievable minimum loss, verifying the efficiency and
+practicality of the proposed solution for real-world scenarios.
+Fig. 4: Comparisons of beam training Top-1 accuracy of LLM-
+PASS and PASS versus SINR.
+Fig. 4 illustrates the relationships between Top-1 accuracy
+performance of both the proposed LLM-PASS and the PASS
+and SINRs for beam training under various numbers of pinch-
+ing antennas L = {4, 8, 16, 32, 64}. It is evident from the
+results that, for each fixed value of L, the LLM-PASS consis-
+tently outperforms the PASS baseline across the entire SINR
+range. This demonstrates the effectiveness of leveraging LLM-
+driven codebook generation and beam training to improve
+beam selection under different channel conditions, especially
+poor channel conditions. At SINR = 5 dB and L = 32, the
+proposed LLM-PASS framework increases Top-1 accuracy by
+10.71%, compared to the PASS. In particular, the LLM-PASS
+method achieves Top-1 accuracy above 90% even with a low
+SINR with few PAs, while the conventional PASS requires sig-
+nificantly higher SINR or more PAs to reach similar accuracy.
+These results confirm that the proposed LLM-PASS is highly
+effective in practical scenarios, enabling robust and efficient
+beam training. This significant gain highlights the superiority
+of the LLM-driven PASS in low SINR and large-scale array.
+Fig. 5 compares the Top-1 accuracy of three frameworks
+with different SNRs for single-user case. The proposed LLM-
+PASS consistently outperforms both the massive MIMO and
+PASS baselines in both Top-1 accuracy at all SNR levels.
+Specifically, LLM-PASS achieves a notably higher Top-1 ac-
+Fig. 5: Comparisons of beam training Top-1 accuracy of three
+frameworks versus SNR.
+curacy at SINR = 20 dB, LLM-PASS achieves approximately
+95% Top-1 accuracy and achieves 15.16% and 10.47% gains,
+compared to massive MIMO and PASS, respectively. This
+substantial gain demonstrates the effectiveness of the LLM-
+PASS framework in exploiting semantic priors and spatial
+features to optimize beam training.
+Fig. 6: Comparisons of transmit power versus different mini-
+mum SINR.
+Fig. 6 illustrates the performance of the proposed LLM-
+PASS framework and the benchmark PASS and massive
+MIMO in terms of the transmit power, under varying minimum
+SINR requirements from 5 dB to 35 dB. We can see that the
+transmit power increases with the higher minimum SINR re-
+quirement. As expected, the transmit power for all frameworks
+increases monotonically with the minimum SINR requirement,
+owing to the need to maintain higher signal quality at UE. At
+the minimum SINR of 20 dB and L = 32, LLM-PASS reduces
+12
+transmit power by 75.2% and 17.33%, compared to massive
+MIMO and PASS, respectively. This significant reduction
+demonstrates the strong capability of LLM-PASS in opti-
+mizing both beam selection and antenna positioning, thereby
+enabling energy-efficient and robust mmWave transmission.
+Most importantly, these results prove that the proposed LLM-
+PASS not only outperforms both the conventional massive
+MIMO and PASS baselines in terms of transmit power, but
+also exhibits superior scalability as the antenna array size
+and SINR requirements increase, making it highly suitable for
+future green mmWave wireless networks.
+Fig. 7: Comparisons of sum rate versus different transmit
+power.
+Fig. 7 shows the achievable sum rate of three different
+frameworks under varying transmission power levels with
+two PA configurations. The achievable sum rate increases
+monotonically with transmission power, as expected from the
+fundamental Shannon capacity relationship. When transmis-
+sion power is 30 dBm and L = 32, the proposed LLM-
+PASS increases the achievable sum rate by 33.33% and
+57.14%, compared to PASS and massive MIMO, respectively.
+The performance gap between LLM-PASS and the baselines
+widens as the transmission power increases. This performance
+order is observed for both L = 16 and L = 32, confirming
+the superiority of the LLM-driven design in exploiting both
+spatial diversity and intelligent codebook optimization.
+Fig. 8 illustrates the beamforming gain achieved by three
+frameworks, the proposed LLM-PASS, PASS, and massive
+MIMO with UPA, as the number of PAs varies. In this case,
+the number of antennas in massive MIMO is same as the
+N × L. The proposed LLM-PASS approach achieves the
+highest beamforming gain across all configurations, with its
+beamforming gain increasing rapidly as the number of PAs
+per waveguide grows. When N = 4 and L = 32, LLM-
+PASS achieves a beamforming gain of over 50 dB, which
+increases this gain by 51.92% and 75.96% than PASS and the
+conventional massive MIMO, respectively. In stark contrast,
+the massive MIMO with UPA exhibits almost flat beamform-
+ing gain regardless of the number of PAs, remaining below
+Fig. 8: Comparisons of beamforming gain versus different
+numbers of PAs.
+15 dB even for large antenna arrays. This result underlines
+the advantages of PASS framework in fully leveraging the
+hardware potential and spatial degrees of freedom provided
+by dense antenna deployments.
+Fig. 9: Comparisons of minimum transmit power versus dif-
+ferent numbers of PAs.
+Fig. 9 illustrates the relationship between the minimum
+required transmit power and the number of PAs under differ-
+ent system configurations, including LLM-PASS (Pre-Fixed
+and Flexible), standard PASS (Pre-Fixed and Flexible), and
+conventional massive MIMO. It can be observed that as
+the number of PAs increases, the minimum transmit power
+required to satisfy the communication requirements consis-
+tently decreases across all schemes. This trend highlights the
+significant benefits of spatial diversity and increased degrees
+of freedom enabled by flexible PAs, which facilitate more
+efficient beamforming and reduced transmit power.
+13
+VI. CONCLUSION
+In this paper, a novel beam training framework for PASS
+empowered by multimodal sensing and LLM has been pro-
+posed in downlink massive MIMO communications. The mul-
+timodal sensing data is processed by a multimodal feature
+encoder to produce high-dimensional tokens for efficient envi-
+ronmental awareness. Based on LLM, the codebook generation
+and beam selection mechanism has been designed to signifi-
+cantly reduce beam training overheads. From the obtained to-
+kens, the pinching beamforming codebook has been generated
+to sample a set of pinching beamforming for sequential prob-
+ing. We have considered single-user and multi-user scenarios.
+For single-user case, the pinching beamforming codebook
+generation problem has been formulated to maximize beam-
+forming gain. Then, the optimal transmit beamforming has
+been obtained by MRT. For multi-user case, we have formu-
+lated a joint pinching beamforming codebook generation and
+beam selection problem to maximize the system sum rate with
+MMSE transmit beamforming strategy, which improves beam-
+forming gains and mitigates interference. Among each user’s
+Top-S candidate beams, the optimal combination has been
+explored as the training labels for effective training. Then, the
+LLM has been trained to minimize cross-entropy loss in the
+supervised end-to-end training mechanism. Simulations results
+have demonstrated that the superiority of the proposed LLM-
+enabled PASS framework. Specifically, in single-user case, the
+proposed method has attained over 95% Top-1 accuracy in
+beam selection and yielded a 51.92% increase in beamforming
+gain compared to conventional PASS. In multi-user case, the
+proposed LLM-enabled PASS has resulted in up to 57.14% and
+33.33% improvements in sum rate over LLM-based massive
+MIMO and conventional PASS. These results have confirmed
+the potential of leveraging LLMs for intelligent and adaptive
+beam management in future reconfigurable wireless networks.
+REFERENCES
+[1] Z. Yang, N. Wang, Y. Sun, Z. Ding, R. Schober, G. K. Karagiannidis,
+V. W. S. Wong, and O. A. Dobre, “Pinching antennas: Principles,
+applications and challenges,” arXiv preprint arXiv:2501.10753, 2025.
+[2] K.-K. Wong, K.-F. Tong, Z. Chu, and Y. Zhang, “A vision to smart
+radio environment: Surface wave communication superhighways,” IEEE
+Wireless Commun., vol. 28, no. 1, pp. 112–119, 2021.
+[3] R. W. Heath Jr and A. Lozano, Foundations of MIMO communication.
+Cambridge Univ. Press, 2018.
+[4] F. Rusek, D. Persson, B. K. Lau, E. G. Larsson, T. L. Marzetta,
+O. Edfors, and F. Tufvesson, “Scaling up MIMO: Opportunities and
+challenges with very large arrays,” IEEE Signal Process. Mag., vol. 30,
+no. 1, pp. 40–60, 2013.
+[5] Y. Liu, X. Liu, X. Mu, T. Hou, J. Xu, M. Di Renzo, and N. Al-Dhahir,
+“Reconfigurable intelligent surfaces: Principles and opportunities,” IEEE
+Commun. Surv. Tutor., vol. 23, no. 3, pp. 1546–1577, 2021.
+[6] W. Tang, M. Z. Chen, X. Chen, J. Y. Dai, Y. Han, M. Di Renzo,
+Y. Zeng, S. Jin, Q. Cheng, and T. J. Cui, “Wireless communications with
+reconfigurable intelligent surface: Path loss modeling and experimental
+measurement,” IEEE Trans. Wireless Commun., vol. 20, no. 1, pp. 421–
+439, 2021.
+[7] K.-K. Wong, A. Shojaeifard, K.-F. Tong, and Y. Zhang, “Fluid antenna
+systems,” IEEE Trans. Wireless Commun., vol. 20, no. 3, pp. 1950–1962,
+2021.
+[8] W. K. New, K.-K. Wong, H. Xu, C. Wang, F. R. Ghadi, J. Zhang,
+J. Rao, R. Murch, P. Ramı́rez-Espinosa, D. Morales-Jimenez, C.-B.
+Chae, and K.-F. Tong, “A tutorial on fluid antenna system for 6G
+networks: Encompassing communication theory, optimization methods
+and hardware designs,” IEEE Commun. Surv. Tutor., Early Access, 2024.
+[9] L. Zhu, W. Ma, and R. Zhang, “Movable antennas for wireless commu-
+nication: Opportunities and challenges,” IEEE Commun. Mag., vol. 62,
+no. 6, pp. 114–120, 2024.
+[10] L. Zhu, W. Ma, W. Mei, Y. Zeng, Q. Wu, B. Ning, Z. Xiao, X. Shao,
+J. Zhang, and R. Zhang, “A tutorial on movable antennas for wireless
+networks,” IEEE Commun. Surv. Tutor., Early Access, 2025.
+[11] H. O. Y. Suzuki and K. Kawai, “Pinching antenna - using a dielectric
+waveguide as an antenna,” NTT DOCOMO Technical Journal, vol. 23,
+no. 3, pp. 5–12, 2022.
+[12] Z. Ding, R. Schober, and H. V. Poor, “Flexible-antenna systems: A
+pinching-antenna perspective,” arXiv preprint arXiv:2412.02376, 2024.
+[13] Y. Liu, Z. Wang, X. Mu, C. Ouyang, X. Xu, and Z. Ding, “Pinching-
+antenna systems (PASS): Architecture designs, opportunities, and out-
+look,” arXiv preprint arXiv:2501.18409, 2025.
+[14] D. Gan, X. Xu, J. Zuo, X. Ge, and Y. Liu, “Joint beamforming for
+NOMA assisted pinching antenna systems (PASS),” arXiv preprint
+arXiv:2506.03063, 2025.
+[15] H. Liu, W. K. New, H. Xu, Z. Chu, K.-F. Tong, K.-K. Wong, and
+Y. Zhang, “Path loss and surface impedance models for surface wave-
+assisted wireless communication system,” IEEE Access, vol. 12, pp.
+125 786–125 799, 2024.
+[16] Z. Chu, K.-F. Tong, K.-K. Wong, C.-B. Chae, and C. H. Chan, “On
+propagation characteristics of reconfigurable surface wave platform:
+Simulation and experimental verification,” IEEE Access, vol. 12, pp.
+168 744–168 754, 2024.
+[17] Z. Wang, C. Ouyang, X. Mu, Y. Liu, and Z. Ding, “Modeling and
+beamforming optimization for pinching-antenna systems,” arXiv preprint
+arXiv:2502.05917, 2025.
+[18] X. Xu, X. Mu, Z. Wang, Y. Liu, and A. Nallanathan, “Pinching-antenna
+systems (PASS): Power radiation model and optimal beamforming
+design,” arXiv preprint arXiv:2505.00218, 2025.
+[19] C. Ouyang, Z. Wang, Y. Liu, and Z. Ding, “Array gain for pinching-
+antenna systems (PASS),” arXiv preprint arXiv:2501.05657, 2025.
+[20] Y. Xu, E. G. Larsson, E. A. Jorswieck, X. Li, S. Jin, and T.-H. Chang,
+“Distributed signal processing for extremely large-scale antenna array
+systems: State-of-the-art and future directions,” IEEE J. Sel. Top. Signal
+Process., vol. 19, no. 2, pp. 304–330, 2025.
+[21] Z. Ding and H. V. Poor, “LoS blockage in pinching-antenna systems:
+Curse or blessing?” arXiv preprint arXiv:2503.08554, 2025.
+[22] S. Lv, Y. Liu, and Z. Ding, “Beam training for pinching-antenna systems
+(PASS),” arXiv preprint arXiv:2502.05921, 2025.
+[23] C. Qi, K. Chen, O. A. Dobre, and G. Y. Li, “Hierarchical codebook-
+based multiuser beam training for millimeter wave massive MIMO,”
+IEEE Trans. Wireless Commun., vol. 19, no. 12, pp. 8142–8152, 2020.
+[24] C. Wu, C. You, Y. Liu, L. Chen, and S. Shi, “Two-stage hierarchical
+beam training for near-field communications,” IEEE Transactions on
+Vehicular Technology, vol. 73, no. 2, pp. 2032–2044, 2023.
+[25] J. Shao, J. Tong, Q. Wu, W. Guo, Z. Li, Z. Lin, and J. Zhang,
+“WirelessLLM: Empowering large language models towards wireless
+intelligence,” arXiv preprint arXiv:2405.17053, 2024.
+[26] F. Jiang, Y. Peng, L. Dong, K. Wang, K. Yang, C. Pan, D. Niyato,
+and O. A. Dobre, “Large language model enhanced multi-agent systems
+for 6G communications,” IEEE Wireless Commun., vol. 31, no. 6, pp.
+48–55, 2024.
+[27] C. Zheng, J. He, G. Cai, Z. Yu, and C. G. Kang, “BeamLLM: Vision-
+empowered mmWave beam prediction with large language models,”
+arXiv preprint arXiv:2503.10432, 2025.
+[28] H. Zhou, C. Hu, Y. Yuan, Y. Cui, Y. Jin, C. Chen, H. Wu, D. Yuan,
+L. Jiang, D. Wu et al., “Large language model (LLM) for telecommu-
+nications: A comprehensive survey on principles, key techniques, and
+opportunities,” IEEE Commun. Surv. Tutor., Early Access, 2024.
+[29] M. Alrabeiah and A. Alkhateeb, “Deep learning for mmwave beam and
+blockage prediction using sub-6 GHz channels,” IEEE Trans. Commun.,
+vol. 68, no. 9, pp. 5504–5518, 2020.
+[30] M. Sohan, T. Sai Ram, and C. V. Rami Reddy, “A review on yolov8
+and its advancements,” in International Conference on Data Intelligence
+and Cognitive Informatics. Springer, 2024, pp. 529–545.
+[31] A. Alkhateeb, G. Charan, T. Osman, A. Hredzak, J. Morais,
+U. Demirhan, and N. Srinivas, “Deepsense 6G: A large-scale real-world
+multi-modal sensing and communication dataset,” IEEE Commun. Mag.,
+vol. 61, no. 9, pp. 122–128, 2023.
+

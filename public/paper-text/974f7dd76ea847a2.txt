@@ -1,0 +1,1396 @@
+Journal of Communications and Information Networks Research paper
+LLM4CP: Adapting Large Language Models for
+Channel Prediction
+Boxun Liu, Xuanyu Liu, Shijian Gao, Xiang Cheng, Liuqing Yang
+Abstract— Channel prediction is an effective approach
+for reducing the feedback or estimation overhead in mas-
+sive multi-input multi-output (m-MIMO) systems. How-
+ever, existing channel prediction methods lack precision
+due to model mismatch errors or network generalization
+issues. Large language models (LLMs) have demonstrated
+powerful modeling and generalization abilities, and have
+been successfully applied to cross-modal tasks, including
+the time series analysis. Leveraging the expressive power
+of LLMs, we propose a pre-trained LLM-empowered
+channel prediction method (LLM4CP) to predict the fu-
+ture downlink channel state information (CSI) sequence
+based on the historical uplink CSI sequence. We fine-
+tune the network while freezing most of the parameters of
+the pre-trained LLM for better cross-modality knowledge
+transfer. To bridge the gap between the channel data and
+the feature space of the LLM, preprocessor, embedding,
+and output modules are specifically tailored by taking into
+account unique channel characteristics. Simulations vali-
+date that the proposed method achieves SOTA prediction
+performance on full-sample, few-shot, and generalization
+tests with low training and inference costs.
+Keywords— Channel prediction, massive multi-input
+multi-output (m-MIMO), large language models (LLMs),
+fine-tuning, time-series
+1 Introduction
+Massive multi-input multi-output (MIMO) technology is
+regarded as a core technology in the fifth-generation
+(5G) and beyond 5G mobile communication systems[1]
+for en-
+hancing the spectral efficiency (SE). Accurate channel state
+information (CSI) plays a fundamental role in facilitating
+m-MIMO related design, such as transceiver optimization[2]
+,
+adaptive modulation[3]
+, resource allocation[4]
+, and so on. Typ-
+ically, CSI is acquired through channel estimation[5,6]
+whose
+updating frequency is dictated by the channel coherence
+time. For mobility scenarios involving high-velocity users, the
+shortened channel coherence time significantly increases the
+overhead of channel estimation, thereby leading to an appre-
+ciable reduction in the system SE. Additionally, in frequency-
+division duplex (FDD) systems where channel reciprocity
+does not hold, the base station (BS) can only obtain downlink
+CSI through user feedback, resulting in increased overhead
+and delay.
+Channel prediction[7-9]
+is a promising technology to reduce
+the CSI acquisition overhead, which predicts future CSI based
+on historical CSI data. The historical CSI and the predicted
+CSI can either be in the same or different frequency bands,
+corresponding to frequency-division duplex (TDD) and FDD
+modes, respectively. For instance, in FDD systems, the down-
+link CSI can be inferred from previous uplink CSI, thereby
+avoiding the need for channel estimation and feedback. Ex-
+isting studies on channel prediction can be categorized into
+three types, i.e., model-based methods, deep learning-based
+methods, and hybrid (physics-informed deep learning-based)
+methods.
+For model-based methods, several parametric models have
+been investigated for temporal channel prediction, includ-
+ing the autoregressive (AR) model[10]
+, the sum-of-sinusoids
+model[11]
+, and the polynomial extrapolation model[12]
+. In Ref.
+[13], a Prony-based angular-delay domain (PAD) channel pre-
+diction algorithm was proposed by exploiting the high resolu-
+tion of multipath angle and delay in massive MIMO-OFDM
+systems. Additionally, a joint angle-delay-Doppler (JADD)
+CSI acquisition framework was designed[14]
+for FDD systems,
+utilizing the partial reciprocity between uplink and downlink
+channels. Nevertheless, the effectiveness of model-based ap-
+proaches is heavily dependent on the accuracy of the theoret-
+ical model, which can be challenging to fit into the complex
+multipath characteristics of the practical channel.
+Deep learning has demonstrated its powerful capabilities in
+automatically adapting to data distribution without prior as-
+sumptions. Recently, several classical neural networks[15-20]
+have been applied for channel prediction tasks. In Ref.
+[15], a multi-layer perceptron (MLP)-based channel predic-
+arXiv:2406.14440v1
+[eess.SP]
+20
+Jun
+2024
+2 Journal of Communications and Information Networks
+tion method demonstrates comparable performance to vec-
+tor Kalman filter (VKF)-based channel predictor. To bet-
+ter learn temporal variations, recurrent neural network[16]
+and
+long short-term memory (LSTM)[17]
+are applied to channel
+prediction. In addition, a transformer-based parallel channel
+prediction scheme[18]
+was proposed to avoid error propagation
+in the sequential CSI prediction process. In Ref. [19,20], con-
+volutional neural networks (CNN) and generative adversarial
+networks (GANs) are utilized for downlink CSI prediction by
+treating the prediction process as image processing. However,
+due to the lack of consideration for the unique structure of the
+channel, the above methods struggle to handle complex chan-
+nel prediction tasks and exhibit high complexity.
+Therefore, a few physics-informed deep learning-
+based[21,22]
+works have considered the unique characteristics
+of CSI, referred to as hybrid methods[23,24]
+. For instance,
+a 3-Dimensional (3D) complex CNN-based predictor[23]
+is
+utilized to capture temporal and spatial correlations based
+on angle-delay domain representation. In Ref. [24], a
+ConvLSTM-based spatio-temporal neural network (STNN)
+is proposed to parallel process high-dimensional spatial-
+temporal CSI. Nevertheless, the scalability of hybrid methods
+is relatively poor, requiring sufficient understanding of the
+channel structure.
+Despite significant progress achieved by deep learning-
+empowered methods, there are still some shortcomings lim-
+iting their application in practical scenarios. First, the predic-
+tive capability is constrained by the size of networks. Existing
+methods struggle to accurately model complex spatial, tempo-
+ral, and frequency relationships, especially for high-velocity
+scenarios and FDD systems. Secondly, in contrast to model-
+based approaches, deep learning-based methods exhibit poor
+generalization ability, requiring retraining when the CSI dis-
+tribution changes. Although a few studies aim to improve gen-
+eralization ability by meta-learning[25]
+or hypernetwork[26]
+,
+the additional adaptation stage or the hypernetwork branch
+increases the operational complexity. In summary, existing
+deep learning-empowered prediction models struggle to meet
+the requirements for high generalization performance and ac-
+curate prediction capabilities.
+Large language models (LLMs) have achieved tremendous
+success in the field of natural language processing (NLP)
+and have led to a new paradigm, namely, fine-tuning mod-
+els pre-trained on large-scale datasets for downstream tasks
+with few or zero labels. This provides a promising solu-
+tion to address the shortcomings of existing channel predic-
+tion schemes. However, previous downstream tasks were lim-
+ited to the field of NLP. Recently, several studies[27-31]
+have
+provided initial evidence of the powerful cross-modal trans-
+fer capabilities of pre-trained LLMs. For instance, Ref. [28]
+fine-tunes frozen pre-trained LLM on time series datasets and
+achieves state-of-the-art (SOTA) performance on main time
+series analysis tasks. In Ref. [30], a traffic prediction frame-
+work based on pre-trained LLM (TPLLM) is proposed with
+the low-rank adaptation (LoRA) fine-tuning approach. Still,
+existing cross-modal fine-tuning works mainly focused on
+temporal or spatio-temporal series prediction rather than chan-
+nel prediction tasks. Unlike time series forecasting tasks,
+there are certain difficulties in adapting LLM for channel
+prediction[32]
+. First, CSI is the high-dimensional structural
+data with the multi-path channel model rather than simple
+one-dimensional data, which increases the complexity of pro-
+cessing. Moreover, there is a huge domain gap between CSI
+and the natural language. In addition, for FDD channel pre-
+diction tasks, extrapolation is achieved in both the time and
+frequency domain, further increasing the difficulty.
+Unlike the existing approaches that designed entire net-
+works specifically for channel prediction tasks, in this paper,
+we attempt to adapt LLM for MISO-OFDM channel predic-
+tion to achieve improved predictive capability and generaliza-
+tion ability. Specifically, we build a channel prediction neural
+network based on pre-trained GPT-2 and fine-tune it to predict
+the future downlink CSI sequence based on the historical up-
+link CSI sequence. Unlike existing studies where LLMs are
+used for time series prediction, we fully consider the specific
+characteristics of the channel, and design preprocessor, em-
+bedding, and output modules to bridge the gap between CSI
+data and the LLM. In detail, considering multi-path effects,
+we process CSI from both the frequency and delay domain to
+extract the underlying physical propagation feature. To fully
+preserve the general knowledge in the pre-trained LLM, most
+of its parameters are frozen during training. Simulations eval-
+uate the proposed method for both the TDD and FDD channel
+prediction tasks and demonstrate its superiority among exist-
+ing baselines. The main contributions of our work are sum-
+marized as follows:
+• We propose a novel LLM-empowered channel predic-
+tion method (LLM4CP) for MISO-OFDM systems, i.e., fine-
+tuning pre-trained GPT-2 on channel prediction datasets. To
+the best of our knowledge, it is the first attempt to adapt pre-
+trained LLM for channel prediction.
+• In light of the unique channel characteristics, we design
+dedicated modules and processing to bridge the gap between
+channel data and the feature space of the LLM, thereby facil-
+itating cross-modality knowledge transfer.
+• Preliminary results validate the SOTA performance of
+the proposed method on TDD/FDD channel prediction tasks.
+In addition, it demonstrates superior few-shot and generaliza-
+tion prediction performance, as well as low training and infer-
+ence costs.
+Notation: (·)T, (·)H, (·)†, ∥ · ∥, and ∥ · ∥F denote the trans-
+pose, the conjugate transpose, pseudo-inverse, l2 norm, and
+Frobenius norm, respectively. ⊗ represents the Kronecker
+product operation. a[i] is the i-th element of a vector a and
+LLM4CP: Adapting Large Language Models for Channel Prediction 3
+𝑑h
+𝑑v
+𝑥
+𝑦
+𝑧
+𝑜
+θ
+φ
+Azimuth angle
+Elevation angle
+Figure 1 An illustration of the architecture of a dual-polarized UPA[13].
+A[i, j] denotes the element of a matrix or tensor A at the i-th
+row and the j-th column. A[:,i] denotes the i-th column of A.
+2 System Model
+We focus on a single-cell MISO-OFDM system compris-
+ing a base station (BS) and a mobile user. The BS is equipped
+with a dual-polarized uniform planar array (UPA) with Nt =
+Nh × Nv antennas, where Nh and Nv represent the number
+of antennas in the horizontal and vertical directions, respec-
+tively. The user is equipped with an omnidirectional antenna
+and it can be readily applied for cases with multiple antennas
+through parallel processing. The system is capable of operat-
+ing in both TDD and FDD modes.
+2.1 Channel Model
+For a given polarization, adopting the classical cluster-
+based multi-path channel model[33]
+, the downlink CSI be-
+tween BS and the user at time t and frequency f is
+h(t, f) =
+N
+∑
+n=1
+Mn
+∑
+m=1
+βn,mej[2π(υn,mt−fτn,m)+Φn,m]
+a(θn,m,ϕn,m),
+(1)
+where N and Mn are the number of clusters and paths in each
+cluster, respectively. βn,m, υn,m, τn,m, and Φn,m represent the
+complex path gain, Doppler frequency shift, delay, and ran-
+dom phase of the m-th path of the n-th cluster, respectively.
+Assuming the instantaneous speed of the mobile user at time t
+is v and the angle between the direction of the velocity vector
+and the path is φm,n. The Doppler frequency shift is derived
+as υn,m =
+vf cosφm,n
+2πc , where c represents the velocity of light. It
+is worth noting that the Doppler frequency shift caused by the
+user’s movement is the main factor contributing to the time
+variation of the channel. a(θn,m,ϕn,m) represents the steering
+vector of the corresponding path, where θn,m and ϕn,m denote
+the azimuth and elevation angles. Considering the structural
+characteristics of UPA as shown in Fig. 1, a(θn,m,ϕn,m) is
+derived as
+a(θn,m,ϕn,m) = ah(θn,m,ϕn,m)⊗av(θn,m), (2)
+where ah(θ,ϕ) and av(θ) are the horizontal and vertical
+steering vector, respectively. ah(θ,ϕ)[i] = e
+j2πifdh sin(ϕ)cos(θ)
+c
+and av(θ)[i] = e
+j2πifdv sin(θ)
+c , where dh with dv being the an-
+tenna spacing along the horizontal and vertical directions, re-
+spectively.
+2.2 Signal Model
+We consider a downlink MISO-OFDM signal transmission
+process, where Ks subcarriers are activated, with the k-th sub-
+carrier denoted as fk. According to Eq. (1), the downlink CSI
+at time t and the k-th subcarrier is hk = h(t, fk), which can be
+obtained through channel estimation or prediction. Consider-
+ing transmit precoding at the BS side, the received downlink
+signal of the k-th subcarrier at the user side is derived as
+yk = hH
+k wkxk +nk, (3)
+where nk is the additive white Gaussian noise (AWGN) with
+noise power σ2
+n and wk is the transmit precoder. The achiev-
+able SE[34]
+of the downlink transmission process is derived as
+R =
+Ks
+∑
+k=1
+log2
+
+1+
+|hH
+k wk|2
+σ2
+n
+
+. (4)
+To maximize the downlink transmission rate, the matched-
+filtering based precoding is applied as
+wk =
+hk
+∥hk∥
+. (5)
+It is worth noting that inaccurate hk will lead to mismatched
+wk, thereby impairing the SE.
+3 Problem Formulation for Channel
+Prediction
+In this section, we introduce a channel prediction-based
+transmission scheme and formulate a problem of inferring fu-
+ture downlink CSI based on historical uplink CSI.
+3.1 Channel Prediction-based Transmission
+Traditional downlink CSI acquisition schemes for TDD and
+FDD systems are illustrated in Fig. 2 (a) and (b), respectively.
+In TDD systems, thanks to channel reciprocity, the downlink
+CSI can be obtained at the BS side by channel estimation on
+4 Journal of Communications and Information Networks
+Channel
+Estimation
+P-slot UL pilots P-slot UL CSI
+Channel
+Prediction L-slot DL CSI
+Channel
+Estimation
+UL pilot UL/DL CSI
+Channel
+Estimation
+Send DL pilot DL CSI
+(At User)
+CSI Feedback
+to BS DL CSI
+(a)
+(b)
+(c)
+Figure 2 An illustration of three schemes for downlink CSI acquisition.
+(a) Traditional downlink CSI acquisition scheme for TDD systems; (b) Tra-
+ditional downlink CSI acquisition scheme for FDD systems; (c) Channel
+prediction-based downlink CSI acquisition for TDD/FDD systems.
+Frequency
+Time
+A B
+C D
+Historical Future
+Band 1
+Band 2
+Resource Block
+Frequency
+Time
+(a) (b)
+Figure 3 (a) Resource block (RB); (b) An illustration of channel prediction
+in the time-frequency domain.
+uplink pilots. In FDD systems where the frequency of the up-
+link and downlink channels differs, downlink CSI can only be
+estimated at the user side and then fed back to the BS. How-
+ever, there are some shortcomings in existing downlink CSI
+acquisition methods. First, the CSI estimation and feedback
+process incur additional computational and transmission time
+overhead, causing channel aging[18]
+in high dynamic scenar-
+ios. In addition, extra downlink pilots occupy some of the
+time-frequency resources, reducing the SE of FDD systems.
+Channel prediction-based transmission scheme provides a
+promising solution to address the above two drawbacks, as
+shown in Fig. 2 (c). Specifically, it predicts future down-
+link CSI sequences based on historical uplink CSI sequences,
+avoiding the overhead of downlink pilots and feedback delay.
+For further clarification, the time and frequency relationship
+between uplink and downlink CSI of the channel prediction-
+based scheme can be illustrated in Fig. 3 (b). Region A rep-
+resents the uplink CSI, while regions B and D correspond to
+the predicted downlink CSI under TDD and FDD modes, re-
+spectively. Each time-frequency region consists of multiple
+time-frequency resource blocks (RBs), and each RB contains
+a pilot, as shown in Fig. 3 (a). In the following channel pre-
+diction process, we only consider the CSI associated with the
+pilots’ positions, while CSI between pilots can be obtained
+through interpolation methods. We assume that the uplink and
+downlink links have the same bandwidth and each covers K
+resource blocks in the frequency domain. In the time domain,
+future L RBs are predicted based on historical P RBs. For sim-
+plicity, we denote the uplink and downlink CSI of each RB as
+hk,s
+u and hk,s
+d , where k and s represent the indices of RBs in
+the frequency domain and time domain, respectively.
+3.2 Problem Formulation
+We aim to accurately predict future downlink CSI of K ×L
+RBs based on historical CSI of K ×P RBs. The uplink CSI of
+K subcarriers at time i is represented in matrix form as
+Hi
+u = [h1,i
+u ,...,hK,i
+u ]H
+. (6)
+The downlink CSI can be obtained similarly as Hi
+d =
+[h1,i
+d ,...,hK,i
+d ]H. The normalized MSE (NMSE)[18]
+between
+predicted and actual downlink CSI is used to evaluate the pre-
+diction accuracy. Then the entire problem can be described as
+follows:
+min
+Ω
+NMSE = E
+(
+∑L
+i=1 ∥Ĥs+i
+d −Hs+i
+d ∥2
+F
+∑L
+i=1 ∥Hs+i
+d ∥2
+F
+)
+(7a)
+s.t. (Ĥs+1
+d ,...,Ĥs+L
+d ) = fΩ(Hs
+u,...,Hs−P+1
+u ), (7b)
+where Hi
+u, Ĥi
+d, and Hi
+d represent the estimated uplink CSI,
+predicted downlink CSI, and actual downlink CSI of RBs at
+time i, respectively. fΩ is the constructed mapping function
+and Ω is its variable parameters. In previous work, fΩ rep-
+resents either a parameterized model[10-12]
+or a deep learning
+network[18-20]
+. In this paper, we consider a novel pre-trained
+LLM-based channel prediction method to achieve higher pre-
+diction accuracy and generalization capability. Specifically,
+fΩ is the proposed LLM-based neural network and Ω rep-
+resents the trainable parameters. It is worth noting that the
+trained network is designed to handle the CSI prediction un-
+der two polarizations.
+4 LLM for Channel Prediction
+In this section, we propose an LLM-empowered MISO-
+OFDM channel prediction method, named LLM4CP, to pre-
+dict the future downlink CSI sequence based on the historical
+uplink CSI sequence. In order to adapt text-based pre-trained
+LLM to the complex matrix format of CSI data, specific mod-
+ules are designed for format conversion and feature extrac-
+tion, including preprocessor, embedding, backbone, and out-
+put. The network components shown in Fig. 4 and the training
+process are illustrated in detail below.
+4.1 Preprocessor Module
+Given the uplink CSI at time i as Hi
+u ∈ CK×Nt , directly ap-
+plying it to the network will bring significant complexity and
+LLM4CP: Adapting Large Language Models for Channel Prediction 5
+Preprocessor
+Historical CSI
+IDFT
+Embedding Frozen LLM
+Positional
+Embeddings
+Output
+Prediction
+CSI
+FC
+Rearrange
+Multi-head
+Attention
+Add
+&
+Layer
+Norm
+Feed
+Forward
+Add
+&
+Layer
+Norm
+Frozen GPT Layers
+CSI
+Attention
+CSI
+Attention
+Pre-trained Parameters
+FC
+Patching
+Norm
+Rearrange
+Norm
+Rearrange
+Patching
+× 𝑁1
+f
+t
+τ
+t
+f
+t
+Rearrange
+× 𝑁2
+× 𝑁𝐿
+Frequency
+domain
+Delay
+domain
+De-Norm
+Frozen
+Training
+Figure 4 An illustration of the network architecture of LLM4CP.
+training time, especially for a large number of antennas and
+subcarriers. Therefore, we parallelize the processing of an-
+tennas, i.e., predicting the CSI for each pair of transmitter and
+receiver antennas separately. For the j-th transmit antenna,
+the input sample of the network Hf ∈ CK×P is derived as
+Hf = [H1
+u [:, j],...,HP
+u [:, j]], (8)
+where P is the temporal length of historical CSI.
+Given that the delay domain, as referenced in Ref. [13], is
+the dual domain of the frequency domain, it serves to char-
+acterize the delay information of each multipath component,
+providing a more comprehensive perspective on frequency do-
+main information[23]
+. Consequently, we simultaneously offer
+a representation in the delay domain through inverse discrete
+Fourier transform (IDFT) as well.
+Hτ = F H
+K Hf , (9)
+where FK represents the K dimensional DFT matrix. Since
+neural networks generally deal with real numbers, we con-
+vert Hf and Hτ into real tensors Xf ∈ R2×K×P and Xτ ∈
+R2×K×P, respectively. To facilitate network training and con-
+vergence, we first normalize the input data as X̄f =
+Xf −µf
+σf
+and X̄τ = Xτ −µτ
+στ
+, where (µf , µτ ) and (σf , στ ) represent the
+mean value and standard deviation of a batch of corresponding
+domain input data. Then the tensors are rearranged to merge
+feature dimensions, i.e., X̃f ∈ R2K×P and X̃τ ∈ R2K×P.
+To capture the local temporal features and reduce compu-
+tational complexity, patching[35]
+operation along the temporal
+dimension is adopted, as shown in Fig. 5. Specifically, X̃f
+and X̃τ are grouped into non-overlapping patches of size N
+as the Xp
+f ∈ R2K×N×P′
+and Xp
+τ ∈ R2K×N×P′
+, where P′ = ⌈ P
+N ⌉
+is the number of patches. Zero-padding is applied to the last
+patch that is not fully filled.
+4.2 Embedding Module
+The embedding module is designed for preliminary feature
+extraction before LLM, including CSI attention and position
+2K
+P
+N
+2K
+P′
+Patching
+[2K, P]
+[2K, N, P′
+]
+Figure 5 An illustration of the patching operation.
+Conv
+ReLU
+Conv
+Global pooling
+FC
+ReLU
+FC
+Sigmoid
+input
+output
+[2K, N, P′
+]
+[2K, N, P′
+]
+[2K, N, P′
+]
+[2K, N, P′
+]
+[1, 1, P′
+]
+[1, 1, P′
+/r]
+[1, 1, P′
+/r]
+[1, 1, P′
+]
+[1, 1, P′
+]
+[2K, N, P′
+]
+·
+Channel-wise Multiplication
+Addition
+·
+SE
+block
+Figure 6 An illustration of the network structure and dimension changes of
+the CSI attention module. The network within the dashed box is the squeeze-
+and-excitation (SE) module.
+embedding. First, the patched tensors are processed by corre-
+sponding CSI attention modules, as detailed below.
+Inspired by Ref. [36], the CSI attention module is designed
+for feature analysis, as shown in Fig. 6. The dimensions of
+each tensor during processing are described. For simplicity,
+we use Xi ∈ R2K×N×P′
+and Xo ∈ R2K×N×P′
+to represent the
+input and output tensors of the proposed CSI attention mod-
+ule, respectively. First, the feature map is obtained as
+X fm
+= Conv(ReLU(Conv(Xi
+))) ∈ R2K×N×P′
+, (10)
+where Conv(·) represents the 2D convolution operator and
+ReLU(·) represents the ReLU[37]
+activation function. The
+convolution layers extract temporal and frequency features
+6 Journal of Communications and Information Networks
+within each patch and integrate features across different
+patches. Then X fm is passed through the SE block, which
+compromises squeeze and excitation parts, to obtain weights
+for different patches, i.e.,
+XSE
+= SE(X fm
+) ∈ R1×1×P′
+. (11)
+For the squeeze part, the global average pooling is first applied
+to generate channel-wise statistics XGAP ∈ R1×1×P′
+and
+XGAP
+[i] =
+1
+2K ×P′
+2K
+∑
+j=1
+P′
+∑
+k=1
+X fm
+[j,k,i]. (12)
+For the excitation part, two fully connected (FC) layers are
+adopted to model the correlation between different patches.
+To reduce computational complexity, the first FC layer shrinks
+the patch dimension size from P′ to P′/r with r ≥ 1, followed
+by a ReLU operation Then, the second FC layer expands the
+patch dimension to P′. Following this, the sigmoid function
+is utilized to generate the attention weight tensor XSE, with
+each element falling within the range [0,1]. The scale opera-
+tion weights each patch with XSE and obtains scaled features
+XSca ∈ R2K×N×P′
+, where
+XSca
+[:,:,i] = XSE
+[i]×X fm
+[:,:,i]. (13)
+Then the residual connection is established as
+Xo
+= XSca
++Xi
+. (14)
+It is worth noting that the CSI attention module can be con-
+catenated multiple times to enhance feature extraction effec-
+tiveness. The processed Xp
+f and Xp
+τ are added as
+XCA
+= CA(N1)
+(Xp
+f )+CA(N2)
+(Xp
+τ ), (15)
+where CAN
+represents the CSI attention module cascaded N
+times. To adapt to the input format of LLM, XCA is first rear-
+ranged to X̃CA ∈ R2KN×P′
+and then mapped to X̄CA ∈ RF×P′
+with a single FC layer, where F is the feature dimension of
+the pre-trained LLM. To incorporate positional information,
+non-learnable positional encoding[38]
+XPE ∈ RF×P′
+is intro-
+duced to enable the network to distinguish between patches at
+different positions. Its structure is shown as
+XPE
+(2i, j) = sin
+
+j
+10000
+2i
+F
+
+, (16)
+and
+XPE
+(2i+1, j) = cos
+
+j
+10000
+2i
+F
+
+, (17)
+Finally, the embedding XEB ∈ RF×P′
+is obtained as
+XEB
+= X̄CA
++XPE
+. (18)
+4.3 Backbone Network
+Recent studies[28,30]
+have revealed that pre-trained LLMs
+can be fine-tuned for cross-modal downstream tasks, includ-
+ing time series analysis. In other words, during the pre-
+training process on extensive textual data, LLM has acquired
+general knowledge[28]
+. Inspired by this, we attempt to lever-
+age the universal modeling capability of LLMs for channel
+prediction tasks. However, the pre-trained LLM cannot di-
+rectly process non-linguistic data due to the significant dispar-
+ity between textual and CSI information. Therefore, similar to
+how text is preprocessed into tokens by the tokenizer, we ob-
+tain the embeddings of CSI data using the proposed preproces-
+sor and embedding module. The preprocessed CSI “tokens”
+are then fed into the backbone of the LLM, i.e.,
+XLLM
+= LLM(XEB
+) ∈ RF×P′
+, (19)
+where LLM(·) denotes backbone networks of the LLM.
+Without loss of generality, GPT-2[39]
+is chosen as the LLM
+backbone in this work. The backbone of GPT-2 is com-
+posed of a learnable positional embedding layer and stacked
+transformer decoders[38]
+, where the number of stacks and fea-
+ture dimensions can be flexibly adjusted according to the re-
+quirements. Each layer consists of self-attention layers, feed-
+forward layers, addition, and layer normalization, as shown in
+Fig. 4. During the training process, self-attention and feed-
+forward layers are frozen to retain universal knowledge, while
+addition, layer normalization, and positional embedding are
+fine-tuned for adapting the LLM to the channel prediction
+task. It is worth noting that in the proposed method, the GPT-
+2 backbone can be flexibly replaced with other LLM, such
+as Llama[40]
+. The selection of the type and size of the LLM
+needs to consider the trade-off between training costs and per-
+formance.
+4.4 Output Module
+The output is designed to convert the output features of the
+LLM into the final prediction results. First, two FC layers are
+adopted to transform the dimension of XLLM
+X̂ = FC(FC(XLLM
+)) ∈ R2K×L
+, (20)
+where FC(·) represents the FC layer and L is the prediction
+length. Then, X̂ is rearranged to Xre ∈ R2×K×L, where the
+first and the second dimension respectively correspond to the
+real part and the imaginary part. Then Xre is de-normalized
+LLM4CP: Adapting Large Language Models for Channel Prediction 7
+to generate the final output of the network, i.e.,
+Xde
+= σf Xre
++ µf , (21)
+and the final prediction result Ĥf ∈ CK×L is obtained as
+Ĥf = Xde
+[1,:,:]+ jXde
+[2,:,:], (22)
+where j =
+√
+−1 represents the imaginary unit.
+4.5 Training Configuration
+The proposed neural network is initially trained on chan-
+nel prediction datasets and then applied for testing. In the
+training phase, the ground truth of the predicted CSI Ĥf is
+available. Then we obtain the ground truth of the network
+output as Xgt ∈ R2×K×L. The normalized mean square error
+(NMSE)[23]
+is adopted as the loss function to minimize the
+prediction error, i.e.,
+Loss =
+∥Xde −Xgt∥2
+F
+∥Xgt∥2
+F
+. (23)
+In addition, the validation loss also adopts the same loss func-
+tion. It is worth noting that the self-attention and feed-forward
+layers of the pre-trained GPT-2 are frozen, while the other pa-
+rameters of the network are trainable, as shown in Figure 4.
+Since the former includes the main parameters of the network,
+the number of trainable parameters is relatively small, which
+will be explained in detail in Section 5.2.6. The model with
+the smallest validation loss is saved for the testing phase.
+5 Experiments
+In this section, we first illustrate the simulation settings
+and then evaluate the prediction performance of the proposed
+LLM4CP method.1
+5.1 Simulation Setup
+5.1.1 Dataset
+We adopt the widely used channel generator QuaDRiGa[41]
+to simulate time-varying CSI datasets compliant with 3GPP
+standards[33]
+. We consider a MISO-OFDM system, where a
+BS is equipped with a dual-polarized UPA with Nh = Nv = 4
+and a user is equipped with a single omnidirectional antenna.
+The antenna spacing is half of the wavelength at the center fre-
+quency. We suppose the bandwidth of both the uplink and the
+downlink channels is 8.64 MHz and covers K = 48 RBs, i.e.,
+the frequency interval of pilots is 180 kHz. For both the TDD
+1The code is publicly available at https://github.com/liuboxun/LLM4CP
+Table 1 Hyper-parameters for network training
+Parameter Value
+Batch size 512
+Epochs 500
+Optimizer Adam (betas=(0.9, 0.999))
+Starting learning rate 0.001
+Learning rate decay rate 0.1 per 150 epochs
+and FDD modes, we set the center frequency of the uplink
+channel as 2.4 GHz. For FDD modes, the uplink and down-
+link channels are adjacent. We predict future L = 4 RBs based
+on historical P = 16 RBs and set the time interval of pilots as
+0.5 ms. We consider the 3GPP Urban Macro (UMa) channel
+model[33]
+and non-line-of-sight (NLOS) scenarios. The num-
+ber of clusters is 21 and the number of paths per cluster is 20.
+The initial position of the user is randomized and the motion
+trajectory is set as linear type. The training dataset and val-
+idation dataset respectively contain 8000 and 1000 samples,
+with user velocities uniformly distributed between 10 and 100
+km/h. The testing dataset contains 10 velocities ranging from
+10 km/h to 100 km/h, with 1000 samples for each velocity.
+5.1.2 Baselines
+To validate the superiority of the proposed method, sev-
+eral model-based and deep learning-based channel prediction
+methods are implemented as baselines.
+• PAD[13]
+: PAD is an advanced model-based channel pre-
+diction method to overcome the curse of mobility for TDD
+systems. In this approach, the order of the predictor is set as
+N = 8, and historical 2N −1 = 15 CSI samples are utilized for
+parameter calculation[13]
+.
+• RNN[16]
+: RNN is a classical neural network for series
+processing and has been adopted for channel prediction tasks.
+In experiments, the number of RNN layers is set as 4.
+• LSTM[17]
+: LSTM is designed with memory cells and
+multiplicative gates to deal with long-term dependency. An
+LSTM-based predictor with 4 LSTM layers is applied.
+• GRU[42]
+: Gate recurrent unit (GRU)[42]
+is a variant of
+LSTM to address the vanishing gradient problem. Similarly,
+the number of GRU layers is set as 4 for channel prediction.
+• CNN[19]
+: In Ref. [19], a CNN-based predictor is pro-
+posed for FDD systems, treating the prediction process of
+time-frequency CSI data as a two-dimensional image process-
+ing task. This CNN model consists of ten convolutional lay-
+ers, with a convolution kernel size of 3×3.
+• Transformer[18]
+: In Ref. [18], a transformer-based par-
+allel channel predictor is proposed for TDD systems to avoid
+error propagation problems. Additionally, it is used as a basis
+for comparison.
+• No prediction: For the case of no prediction, we directly
+take the value of the future downlink L CSI as the value of the
+8 Journal of Communications and Information Networks
+latest uplink CSI to illustrate the severity of channel aging.
+To ensure fairness, the above deep learning-based methods
+process antenna dimensions in parallel and adopt NMSE as
+the loss function for training. Since deep learning-based ap-
+proaches do not rely on prior assumptions, all schemes except
+for PAD are applied to both TDD and FDD modes.
+5.1.3 Network and Training Parameters
+In the simulation, we adopt N1 = N2 = 4 CSI attention
+module for frequency and delay domain data processing. For
+patching, the size of patches is set as N = 4, and historical
+CSI is grouped into P′ = P/N = 4 non-overlapping patches.
+For the SE block, the value of the reduction ratio is set as 2
+and the convolution kernel size is set as 3×3 for all convolu-
+tion layers. The smallest version[38]
+of GPT-2 with F = 768
+feature dimension is adopted, the first NL = 6 layers of which
+are deployed. Several hyper-parameters for model training are
+illustrated in Table 1.
+5.1.4 Performance Metric
+In order to comprehensively evaluate the performance of
+the proposed scheme, we adopt three performance metrics,
+namely NMSE, SE, and bit error rate (BER).
+• NMSE: As shown in Eq. (7a), NMSE is a widely
+used[23]
+performance metric to directly characterize the accu-
+racy of channel prediction. Therefore, NMSE is adopted as a
+major metric in our experiments.
+• SE: SE is an important metric that reveals the achievable
+rate of the system, reflecting the effectiveness of communica-
+tion. It is calculated by Eq. (4), where hk is the actual CSI
+and wk is obtained as Eq. (5) with predicted hk. The commu-
+nication SNR is defined as 1/σ2
+n and set as 10dB.
+• BER: BER describes the communication reliability at
+a certain transmission rate. During the simulation, 4-QAM
+(quadrature amplitude modulation) is adopted and the com-
+munication SNR is set as 10 dB.
+5.2 Performance Evaluation
+5.2.1 Performance Under Varying Velocities
+For TDD systems, we compare the NMSE performance of
+the proposed LLM4CP with baselines among different user
+velocities, as shown in Fig. 7. It can be observed that as the
+user velocity increases, the NMSE of all baselines gradually
+increases. This is due to that as the user velocity increases, the
+CSI changes rapidly with a shorter channel coherence time,
+resulting in increased prediction difficulty. Directly adopting
+the latest CSI as the predicted CSI will bring huge prediction
+errors, especially for highly dynamic scenes. The proposed
+10 20 30 40 50 60 70 80 90 100
+Speed (km/h)
+10-2
+10-1
+100
+NMSE
+No Prediction
+PAD
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 7 The NMSE performance of LLM4CP and other baselines versus
+different user velocities for TDD systems.
+10 20 30 40 50 60 70 80 90 100
+Speed (km/h)
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+NMSE
+No Prediction
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 8 The NMSE performance of LLM4CP and other baselines versus
+different user velocities for FDD systems.
+method consistently outperforms other baselines among test-
+ing velocities and demonstrates its high prediction accuracy.
+For FDD systems, the NMSE performance among different
+user velocities is given in Fig. 8. Due to the frequency gap
+between the uplink and downlink channels, the no-prediction
+scheme is unacceptable for the FDD mode. LLM4CP shows
+obvious advantages under all user velocities. It is worth noting
+that compared with TDD systems, the superiority of LLM4CP
+is greater in FDD systems, thanks to its powerful ability to
+model complex time-frequency relationships.
+In addition, to evaluate the communication effectiveness
+and reliability of these methods, both the SE and BER per-
+formance are presented for TDD and FDD systems, as shown
+in Table. 2 and 3, respectively. The maximum achievable SE
+is obtained with perfect CSI. Both the SE and BER have been
+averaged over all test speeds. Compared with TDD mode, the
+performance of all baselines in FDD mode shows an overall
+decrease due to the greater difficulty of prediction. Neverthe-
+less, the proposed method achieves SOTA SE and BER per-
+LLM4CP: Adapting Large Language Models for Channel Prediction 9
+Table 2 The SE and BER performance of LLM4CP and other baselines for TDD systems. (Maximum achievable SE: 7.33 bps/Hz)
+Metric No Prediction PAD RNN LSTM GRU CNN Transformer LLM4CP
+SE (bps/Hz) 6.238 7.007 6.692 6.816 6.772 6.992 6.963 7.036
+BER 0.1259 0.0050 0.0208 0.0148 0.0189 0.0065 0.0081 0.0039
+Table 3 The SE and BER performance of LLM4CP and other baselines for FDD systems. (Maximum achievable SE: 7.33 bps/Hz)
+Metric No Prediction RNN LSTM GRU CNN Transformer LLM4CP
+SE (bps/Hz) 4.992 5.336 5.306 5.292 4.119 5.754 6.303
+BER 0.3189 0.1313 0.1303 0.1315 0.2832 0.0807 0.0347
+0 5 10 15 20 25
+SNR (dB)
+10-1
+100
+NMSE
+PAD
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 9 The NMSE performance versus SNR of nosiy historical CSI for
+TDD systems.
+formance for both the TDD and FDD modes.
+5.2.2 Robustness Against Noise
+Due to the inaccuracy of channel estimation, the predictor’s
+robustness against noise is crucial, that is, predicting future
+CSI based on noisy historical CSI. In Fig. 9 and 10, the NMSE
+of these methods with noisy historical CSI is provided for both
+the TDD and FDD systems. Specifically, in the testing phase,
+the historical CSI data is added by Gaussian white noise with
+variance σ2
+n and SNR is defined as 1/σ2
+n . To enhance the ro-
+bustness, during the training phase, noise with SNR uniformly
+distributed between 0 and 25dB is added to all baselines. It
+can be observed that for all schemes, lower SNR results in
+higher prediction NMSE. The proposed method exhibits the
+lowest NMSE at most SNRs, indicating its high robustness
+performance against CSI noise.
+5.2.3 Few-shot Prediction
+To reduce the cost of CSI data collection and network train-
+ing, few-shot prediction is crucial for the rapid deployment
+of deep learning-based models. In this part, we evaluate the
+few-shot learning ability of the proposed methods, where only
+10% of the dataset is utilized for network training.
+0 5 10 15 20 25
+SNR (dB)
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+1.1
+NMSE
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 10 The NMSE performance versus SNR of nosiy historical CSI for
+FDD systems.
+In Fig.11, the few-shot performance of the proposed
+LLM4CP and other baselines for TDD systems is illustrated.
+The powerful few-shot learning capability of LLM enables the
+proposed method to perform well even with limited training
+samples. When compared to full-sample training, as demon-
+strated in Fig. 7, the advantages of LLM4CP over other base-
+lines are more evident in few-shot prediction scenarios. In
+Fig. 12, the few-shot performance for FDD systems is also
+given. Even though FDD channel prediction is more difficult,
+the proposed method maintains its advantages at most speeds.
+5.2.4 Generalization Experiments
+Generalization ability is crucial for model deployment in
+real-world scenarios, where well-trained models are applied
+to new scenarios with few-shot or even zero-shot training.
+In Fig. 13, considering TDD systems, we directly apply the
+model trained in the Uma scenario to the 3GPP Urban Micro
+(UMi) scenario[33]
+without additional training process, while
+keeping the other settings unchanged. The proposed model
+surpasses other baselines in terms of NMSE metric, demon-
+strating its strong generalization capability across different
+channel distributions. Furthermore, we consider the model’s
+cross-frequency generalization capability, which is important
+for practical multi-band communication systems. Specifically,
+10 Journal of Communications and Information Networks
+Table 4 Results of ablation experiments.
+LLM4CP w/o delay domain w/o CSI attention w/o patching w/o LLM
+NMSE 0.043 0.045 0.053 0.043 0.049
+SE (bps/Hz) 7.073 7.051 7.036 7.066 7.036
+BER 0.0031 0.0036 0.0049 0.0036 0.0048
+Table 5 Network parameters (training parameters/total parameters) and the training/interference cost per batch.
+PAD RNN LSTM GRU CNN Transformer LLM4CP
+Network parameters (M) 0/0 0.30/0.30 1.13/1.13 0.86/0.86 3.14/3.14 1.76/1.76 1.73/82.87
+Training time (ms) 0 4.59 7.40 5.88 2.03 21.84 6.84
+Interference time (ms) 31.96 3.55 5.19 4.02 0.52 18.35 5.84
+10 20 30 40 50 60 70 80 90 100
+Speed (km/h)
+10-2
+10-1
+100
+NMSE
+No Prediction
+PAD
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 11 The NMSE performance of LLM4CP and other baselines versus
+different user velocities for TDD systems (Few-shot: 10% training dataset).
+we apply the model trained at 2.4 GHz TDD systems to 4.9
+GHz TDD systems with few-shot and zero-shot training. In
+Fig. 14, all deep learning-based baselines show poor zero-shot
+learning capabilities due to the channel’s striking frequency
+selectivity. Nevertheless, as the number of training sam-
+ples increases, the prediction NMSE of the proposed scheme
+drops significantly and surpasses other schemes. The pro-
+posed LLM4CP method achieves great NMSE performance at
+the new frequency with only a few training samples, demon-
+strating its strong frequency generalization ability.
+5.2.5 Ablation Experiments
+To validate the effectiveness of several specific modules,
+the ablation experiment is conducted by removing relevant
+modules, as shown in Table 4. The NMSE, SE, and BER
+performance for TDD systems are given and averaged over
+all testing speeds. For LLM4CP without delay domain pro-
+cessing, the subsequent network of the delay domain trans-
+formation is removed. For LLM4CP without CSI attention
+modules, the patched tensors of both the frequency and the
+delay domain are directly added for the following processing.
+For LLM4CP without patching, the output of the preproces-
+10 20 30 40 50 60 70 80 90 100
+Speed (km/h)
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+NMSE
+No Prediction
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 12 The NMSE performance of LLM4CP and other baselines versus
+different user velocities for FDD systems (Few-shot: 10% training dataset).
+sor is directly input into CSI attention modules. For LLM4CP
+without LLM, the frozen LLM is removed while other parts
+remain unchanged. Observably, the removal of any of these
+four modules results in a loss of performance, indicating the
+necessity of these modules for high predictive accuracy.
+5.2.6 Training and Inference Cost
+We compare the model training and inference cost of the
+proposed method with other baselines to assess the difficulty
+of deploying the model in practical scenarios, as shown in Ta-
+ble 5. All experiments are conducted on the same machine
+with 4 Intel Xeon Platinum 8358P CPUs, 4 NVIDIA GeForce
+RTX4090 GPUs, and 188 GB of RAM. Since PAD is a model-
+based method, the number of its model parameters is rela-
+tively small to neglect and the training process is not required.
+However, it takes the longest inference time due to the high
+processing complexity. Although LLM4CP has large total pa-
+rameters, the actual trainable parameters are similar to those
+of other deep learning-based models since most parameters in
+the LLM are frozen. It is worth noting that LLM’s inference
+time is much shorter than that of the Transformer thanks to in-
+ference acceleration specific to the GPT model. Therefore, the
+LLM4CP: Adapting Large Language Models for Channel Prediction 11
+Table 6 The NMSE performance, network parameters, and interference time of LLM4CP with different numbers of GPT-2 layers. (LLM4CP (n) represents
+the proposed method with n GPT-2 layers.)
+NMSE Network parameters (M) Interference time (ms)
+LLM4CP (2) 0.0626 1.72/54.49 3.67
+LLM4CP (4) 0.0568 1.73/68.66 5.02
+LLM4CP (6) 0.0509 1.73/82.87 5.81
+LLM4CP (8) 0.0610 1.74/97.01 6.77
+10 20 30 40 50 60 70 80 90 100
+Speed (km/h)
+10-2
+10-1
+100
+NMSE
+No Prediction
+PAD
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 13 The zero-shot generalization performance for the TDD systems
+in UMi scenario.
+proposed LLM4CP has the potential to serve real-time chan-
+nel prediction.
+In addition, we comprehensively evaluated the impact of
+selecting different numbers of GPT-2 layers on channel pre-
+diction performance, parameters cost, and inference time, as
+shown in Table 6. The relevant experimental results are ob-
+tained under the TDD few-shot prediction settings with 10%
+training dataset, where NMSE is the average across different
+speeds. The network parameters and inference time are both
+increased with the number of GPT-2 layers. It is worth not-
+ing that the proposed model with 6 GPT-2 layers performs the
+best within the testing range, indicating that having more lay-
+ers does not necessarily favor prediction. In practical deploy-
+ment, the selection of the type and size of the LLM backbone
+needs to consider both the requirements for prediction accu-
+racy and the constraints of device storage and computational
+resources.
+6 Conclusions and Future Work
+In this paper, we have proposed an LLM-empowered chan-
+nel prediction method, which fine-tunes pre-trained GPT-2 for
+MISO-OFDM channel prediction tasks. It predicts the future
+downlink CSI sequence based on the historical uplink CSI se-
+quence and can be applied for both the TDD and FDD sys-
+tems. To account for channel characteristics, we have tailored
+10 20 30 40 50 60 70 80 90 100
+The number of training samples
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+NMSE
+No Prediction
+PAD
+RNN
+LSTM
+GRU
+CNN
+Transformer
+LLM4CP
+Figure 14 The cross-frequency generalization performance versus different
+training samples for the TDD systems.
+preprocessor, embedding, and output modules to bridge the
+gap between CSI data and LLM, with the aim of fully leverag-
+ing the transfer knowledge across models from the pre-trained
+LLM. Preliminary simulations validate its superiority over ex-
+isting model-based and deep learning-based channel predic-
+tion methods in full-sample, few-shot, and generalization tests
+with acceptable training and inference costs.
+In the future, we plan to explore more comprehensive ex-
+perimental setups and validate the proposed method using a
+more realistic and challenging CSI dataset. Additionally, we
+will incorporate link-level simulation with channel coding and
+evaluate the frame error rate (FER) of the system.
+References
+[1] CHENG X, ZHANG H, ZHANG J, et al. Intelligent multi-
+modal sensing-communication integration: synesthesia of ma-
+chines[J]. IEEE Communications Surveys & Tutorials, 2024,
+26(1): 258-301.
+[2] ZHANG H, GAO S, CHENG X, et al. Integrated sens-
+ing and communications towards proactive beamforming in
+mmWave V2I via multi-modal feature fusion (MMFF)[J].
+IEEE Transactions on Wireless Communications, early access,
+doi: 10.1109/TWC.2024.3401686.
+[3] CHUNG S T, GOLDSMITH A J. Degrees of freedom in adap-
+tive modulation: a unified view[J]. IEEE Transactions on Com-
+munications, 2001, 49(9): 1561-1571.
+12 Journal of Communications and Information Networks
+[4] Sadr S, Anpalagan A, Raahemifar K. Radio resource alloca-
+tion algorithms for the downlink of multiuser OFDM commu-
+nication systems[J]. IEEE communications surveys & tutori-
+als, 2009, 11(3): 92-106.
+[5] GAO S, CHENG X, YANG L. Estimating doubly-selective
+channels for hybrid mmWave massive MIMO systems: a
+doubly-sparse approach[J]. IEEE Transactions on Wireless
+Communications, 2020, 19(9): 5703-5715.
+[6] MA X, GIANNAKIS G B, OHNO S. Optimal training for
+block transmissions over doubly selective wireless fading
+channels[J]. IEEE Transactions on Signal Processing, 2003,
+51(5): 1351-1366.
+[7] ROTTENBERG F, CHOI T, LUO P, et al. Performance anal-
+ysis of channel extrapolation in FDD massive MIMO sys-
+tems[J]. IEEE Transactions on Wireless Communications,
+2020, 19(4): 2728-2741.
+[8] CHOI T, ROTTENBERG F, GOMEZ-PONCE J, et al. Exper-
+imental investigation of frequency domain channel extrapo-
+lation in massive MIMO systems for zero-feedback FDD[J].
+IEEE Transactions on Wireless Communications, 2020, 20(1):
+710-725.
+[9] ARNOLD M, DÖRNER S, CAMMERER S, et al. Towards
+practical FDD massive MIMO: CSI extrapolation driven by
+deep learning and actual channel measurements[C]//2019 53rd
+Asilomar Conference on Signals, Systems, and Computers.
+IEEE, 2019: 1972-1976.
+[10] TRUONG K T, HEATH R W. Effects of channel aging in mas-
+sive MIMO systems[J]. Journal of Communications and Net-
+works, 2013, 15(4): 338-351.
+[11] WONG I C, EVANS B L. Joint channel estimation and pre-
+diction for OFDM systems[C]//GLOBECOM’05. IEEE Global
+Telecommunications Conference, 2005. IEEE, 2005, 4: 5 pp.-
+2259.
+[12] SHEN Z, ANDREWS J G, EVANS B L. Short range wire-
+less channel prediction using local information[C]//The Thrity-
+Seventh Asilomar Conference on Signals, Systems & Comput-
+ers, 2003. IEEE, 2003, 1: 1147-1151.
+[13] YIN H, WANG H, LIU Y, et al. Addressing the curse of mo-
+bility in massive MIMO with prony-based angular-delay do-
+main channel predictions[J]. IEEE Journal on Selected Areas
+in Communications, 2020, 38(12): 2903-2917.
+[14] QIN Z, YIN H, CAO Y, et al. A partial reciprocity-based chan-
+nel prediction framework for FDD massive MIMO with high
+mobility[J]. IEEE Transactions on Wireless Communications,
+2022, 21(11): 9638-9652.
+[15] KIM H, KIM S, LEE H, et al. Massive MIMO channel predic-
+tion: kalman filtering vs. machine learning[J]. IEEE Transac-
+tions on Communications, 2020, 69(1): 518-528.
+[16] JIANG W, SCHOTTEN H D. Neural network-based fading
+channel prediction: a comprehensive overview[J]. IEEE Ac-
+cess, 2019, 7: 118112-118124.
+[17] JIANG W, SCHOTTEN H D. Deep learning for fading chan-
+nel prediction[J]. IEEE Open Journal of the Communications
+Society, 2020, 1: 320-332.
+[18] JIANG H, CUI M, NG D W K, et al. Accurate channel pre-
+diction based on transformer: making mobility negligible[J].
+IEEE Journal on Selected Areas in Communications, 2022,
+40(9): 2717-2732.
+[19] SAFARI M S, POURAHMADI V, SODAGARI S. Deep
+UL2DL: Data-driven channel knowledge transfer from uplink
+to downlink[J]. IEEE Open Journal of Vehicular Technology,
+2019, 1: 29-44.
+[20] ZHANG Z, ZHANG Y, ZHANG J, et al. Adversarial training-
+aided time-varying channel prediction for TDD/FDD sys-
+tems[J]. China Communications, 2023, 20(6): 100-115.
+[21] FAN S, XU W, XIE R, et al. Deep CSI compression for dual-
+polarized massive MIMO channels with disentangled repre-
+sentation learning[J]. IEEE Transactions on Communications,
+2024.
+[22] GAO S, CHENG X, FANG L, et al. Model enhanced learn-
+ing based detectors (Me-LeaD) for wideband multi-user 1-bit
+mmWave communications[J]. IEEE Transactions on Wireless
+Communications, 2021, 20(7): 4646-4656.
+[23] BURGHAL D, LI Y, MADADI P, et al. Enhanced AI based
+CSI prediction solutions for massive MIMO in 5G and 6G sys-
+tems[J]. IEEE Access, 2023.
+[24] LIU G, HU Z, WANG L, et al. Spatio-temporal neural network
+for channel prediction in massive MIMO-OFDM systems[J].
+IEEE Transactions on Communications, 2022, 70(12): 8003-
+8016.
+[25] KIM H, CHOI J, LOVE D J. Massive MIMO channel predic-
+tion via meta-learning and deep denoising: Is a small dataset
+enough?[J]. IEEE Transactions on Wireless Communications,
+2023.
+[26] LIU G, HU Z, WANG L, et al. A hypernetwork based frame-
+work for non-stationary channel prediction[J]. IEEE Transac-
+tions on Vehicular Technology, 2024.
+[27] SU J, JIANG C, JIN X, et al. Large language models for
+forecasting and anomaly detection: a systematic literature re-
+view[J]. arXiv preprint arXiv:2402.10350, 2024.
+[28] ZHOU T, NIU P, SUN L, et al. One fits all: Power general
+time series analysis by pretrained lm[J]. Advances in neural
+information processing systems, 2023, 36: 43322-43355.
+[29] JIN M, WANG S, MA L, et al. Time-llm: Time series fore-
+casting by reprogramming large language models[J]. arXiv
+preprint arXiv:2310.01728, 2023.
+[30] REN Y, CHEN Y, LIU S, et al. TPLLM: a traffic predic-
+tion framework based on pretrained large language models[J].
+arXiv preprint arXiv:2403.02221, 2024.
+[31] LIANG Y, WEN H, NIE Y, et al. Foundation models for
+time series analysis: a tutorial and survey[J]. arXiv preprint
+arXiv:2403.14735, 2024.
+[32] ZHOU H, HU C, YUAN Y, et al. Large language model
+(LLM) for telecommunications: a comprehensive survey on
+principles, key techniques, and opportunities[J]. arXiv preprint
+arXiv:2405.10825, 2024.
+[33] 3GPP RADIO ACCESS NETWORK WORKING GROUP.
+Study on channel model for frequencies from 0.5 to 100 GHz
+(Release 15)[R]. 3GPP TR 38.901, 2018.
+LLM4CP: Adapting Large Language Models for Channel Prediction 13
+[34] MARZETTA T L, LARSSON E G, YANG H. Fundamentals
+of massive MIMO[M]. Cambridge University Press, 2016.
+[35] NIE Y, NGUYEN N H, SINTHONG P, et al. A time series is
+worth 64 words: long-term forecasting with transformers[J].
+arXiv preprint arXiv:2211.14730, 2022.
+[36] HU J, SHEN L, SUN G. Squeeze-and-excitation net-
+works[C]//Proceedings of the IEEE conference on computer
+vision and pattern recognition. 2018: 7132-7141.
+[37] NAIR V, HINTON G E. Rectified linear units improve re-
+stricted boltzmann machines[C]//Proceedings of the 27th in-
+ternational conference on machine learning (ICML-10). 2010:
+807-814.
+[38] VASWANI A, SHAZEER N, PARMAR N, et al. Attention
+is all you need[J]. Advances in neural information processing
+systems, 2017, 30.
+[39] RADFORD A, WU J, CHILD R, et al. Language models are
+unsupervised multitask learners[J]. OpenAI blog, 2019, 1(8):
+9.
+[40] TOUVRON H, MARTIN L, STONE K, et al. Llama 2:
+Open foundation and fine-tuned chat models[J]. arXiv preprint
+arXiv:2307.09288, 2023.
+[41] JAECKEL S, RASCHKOWSKI L, BÖRNER K, et al.
+QuaDRiGa: A 3-D multi-cell channel model with time evo-
+lution for enabling virtual field trials[J]. IEEE Transactions on
+antennas and propagation, 2014, 62(6): 3242-3256.
+[42] CHO K, VAN MERRIËNBOER B, GULCEHRE C, et
+al. Learning phrase representations using RNN encoder-
+decoder for statistical machine translation[J]. arXiv preprint
+arXiv:1406.1078, 2014.
+

@@ -1,0 +1,1521 @@
+Spiking Neural Networks for
+Detecting Satellite Internet of
+Things Signals
+KOSTA DAKIC , Graduate Student Member, IEEE
+RMIT University, Melbourne, VIC, Australia
+BASSEL AL HOMSSI , Member, IEEE
+University of New South Wales, Canberra, ACT, Australia
+SUMEET WALIA , Member, IEEE
+AKRAM AL-HOURANI , Senior Member, IEEE
+RMIT University, Melbourne, VIC, Australia
+With the rapid growth of Internet of Things (IoT) networks, ubiq-
+uitous coverage is becoming increasingly necessary. Low earth orbit
+(LEO) satellite constellations for the IoT have been proposed to pro-
+vide coverage to regions where terrestrial systems cannot. However,
+LEO constellations for uplink communications are severely limited by
+the high density of user devices, which causes a high level of cochannel
+interference. This research presents a framework that utilizes spiking
+neural networks (SNNs) to detect IoT signals in the presence of uplink
+interference. The key advantage of SNNs is the extremely low power
+consumption relative to traditional deep learning (DL) networks.
+The performance of the spiking-based neural network detectors is
+compared against state-of-the-art DL networks and the conventional
+matched filter detector. Results indicate that both DL and SNN-based
+receivers surpass the matched filter detector in interference-heavy
+scenarios, due to their capacity to effectively distinguish target sig-
+nals amid cochannel interference. Moreover, our work highlights the
+ultralow power consumption of SNNs compared to other DL methods
+for signal detection. The strong detection performance and low power
+consumption of SNNs make them particularly suitable for onboard
+signal detection in IoT LEO satellites, especially in high interference
+conditions.
+Manuscript received 13 June 2023; revised 27 September 2023; accepted
+9 November 2023. Date of publication 20 November 2023; date of current
+version 9 February 2024.
+DOI. No. 10.1109/TAES.2023.3334216
+Refereeing of this contribution was handled by J. Choi.
+This work was supported by Australian Government Research Training
+Program Scholarship.
+Authors’ addresses: Kosta Dakic, Sumeet Walia, and Akram Al-
+Hourani are with the School of Engineering, RMIT University,
+Melbourne, VIC 3000, Australia, E-mail: (kosta.dakic@ieee.org;
+sumeet.walia@rmit.edu.au; akram.hourani@rmit.edu.au); Bassel Al
+Homssi is with the School of Engineering and Technology, Uni-
+versity of New South Wales, Canberra, ACT 2610, Australia, E-
+mail: (b.al_homssi@adfa.edu.au). (Corresponding authors: Kosta Dakic;
+Akram Al-Hourani.)
+0018-9251 © 2023 IEEE
+I. INTRODUCTION
+Internet of Things (IoT) use cases are growing at an
+unprecedented rate, where terrestrial networks are unable
+to supply coverage for applications like smart farming and
+parcel tracking in rural remote areas, and areas with extreme
+environments [1]. To accommodate the growing need for
+global coverage, low earth orbit (LEO) satellite constella-
+tions have been of great interest to the research community
+and industry alike [2] where many large companies, such as
+OneWeb, SpaceX, and Amazon [3], [4], [5], are currently
+deploying mega satellite constellations. For an alternative
+method to provide global coverage, geosynchronous orbit
+(GEO) satellites could also be used. However, LEO satellite
+links have a lower overall propagation delay and a lower
+propagation loss relative to GEO links [6]. Moreover, GEO
+satellites require a higher cost for deployment, and a typi-
+cal GEO link requires large transmit/receive antennas and
+stronger transmit power, which makes them inadequate for
+networks constrained with low cost and low energy such as
+IoT networks.
+However, LEO satellite networks suffer from high
+Doppler due to the satellite motion relative to the ground
+user as well as a high level of cochannel interference.
+The high level of interference is caused by other devices
+operating in the same time–frequency resources due to
+the wide coverage area of the satellite. High interference
+in multiple access LEO networks is caused by a large
+number of cochannel transmissions, particularly in shared
+bands such as industrial, scientific, and medical band [7],
+which is open to the general public for transmission and
+does not require paid licensing. The devices in these bands
+lack standardization and coordination, which exacerbates
+interference [2]. In these interference-limited scenarios,
+typical detection (demodulation) methods result in a high
+symbol error rate (SER). To mitigate cochannel interfer-
+ence, methods such as frequency reuse, dynamic spectrum
+allocation, and beam multiplexing techniques are typically
+used. However, the levels of interference remain significant.
+To tackle the elevated SER due to cochannel interference,
+deep learning (DL) signal detection methods have been
+suggested in [8], [9], and [10] for effective signal detection
+in scenarios dominated by interference.
+Generic DL methods such as the simple artificial neu-
+ral network (ANN) and the convolutional neural network
+(CNN) have shown strong performance in various appli-
+cations ranging from natural language processing [11] to
+image classification [12]. However, they consume a sub-
+stantial amount of power depending on the size of the
+architecture [13]. Due to the large power consumption,
+generic DL networks are typically designed to perform
+localized computing tasks, i.e., edge computing, and thus
+do not suit resource-limited devices. Conversely, the human
+brain can process complicated dynamic events at only an
+average of 20-W power [14]. Traditional processing such
+as the largest neural network (NN) model, dubbed the
+Megatron–Turing natural language generation model with
+530 billion parameters [15] uses multiple high-end GPUs
+1224 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+that consume many orders of magnitude more power than
+the brain. Furthermore, an NN with 530 billion parameters
+is much less complex than the human brain, which has
+around 100 billion neurons and 100 trillion synapses. To
+emulate the behavior of a single biological neuron, a five-
+to-eight-layer NN with hundreds of neurons per layer is
+required according to Beniaguev et al. [16]. Consequently,
+the third generation of NN models takes inspiration from
+the spiking behavior in human brains. Accordingly, the
+spiking neural network (SNN) is set to dramatically reduce
+power consumption [17] by encoding data with intermittent
+spiking that only produces an output when the input exceeds
+a certain threshold. This means that SNNs only consume
+powerwhenthereisanevent(i.e.,aspike)attheneuron,thus
+raising the level of efficiency closer to that of the biological
+brain. Due to the exceptional energy efficiency of the SNN
+relative to conventional DL networks, an SNN-based IoT
+signal detector would be ideal for a satellite receiver due
+to its limited power resources. In addition, SNNs can offer
+lower latency due to their event-driven nature, as well as
+higher robustness to noise compared to conventional DL
+networks [18].
+In this article, we demonstrate the performance of
+spiking models and their applicability to modern commu-
+nications systems, specifically for chirp signal detection,
+which we believe is a foundational aspect of communication
+that inherently contributes to reliability. While various NN
+architectures have been explored for signal detection in
+terrestrial networks, to the best of our knowledge, this is
+the first study that delves into the application of SNNs
+for satellite IoT (S-IoT) signal detection. Given the unique
+challenges posed by S-IoT systems, such as high cochannel
+interference and power constraints [19], SNNs, with their
+ultralow power consumption and efficient signal processing
+capabilities, present a promising solution. After highlight-
+ing the challenges of high cochannel interference in S-IoT
+systems, it is essential to underscore the significance of
+synchronization in addressing these issues. The synchro-
+nization scheme we developed for SNN detection is pivotal
+in ensuring accurate signal detection in an S-IoT context.
+The synchronization method ensures the alignment of the
+received signal with the expected timing and frequency
+characteristics, paving the way for more reliable and ef-
+ficient detection of uplink IoT signals in a LEO satellite
+scenario.
+We present a comparison of traditional detection, con-
+ventionalDLmodels,andspikingmodelsforsatelliteuplink
+signal detection of devices that utilize the chirp-based mod-
+ulation scheme. As a practical implementation, we consider
+the LoRa modulation scheme, which is a popular chirp-
+based modulation and a technology of interest in terrestrial
+and S-IoT networks. Nevertheless, the proposed detector,
+based on an NN architecture, can be adapted to various sig-
+nal types as it can accept different sequences, such as other
+time-sampled signals, as input. The comparison evaluates
+the performance of how conventional and spiking models
+can improve the SER in an environment with high levels
+of cochannel interference. Our study significantly reduces
+the power consumption of SNNs for signal detection in
+S-IoT scenarios compared to conventional methods. This
+reduction has multiple real-world impacts: it lowers op-
+erating and hardware costs for satellite providers, extends
+satellite lifespan due to more efficient power use, decreases
+environmental impact through reduced space debris, and
+fosters innovation in energy-efficient computing. Overall,
+implementing SNNs could revolutionize the satellite com-
+munication industry and stimulate broader technological
+advancements. In addition, the performance assessment
+relies on the emulation of a LEO satellite constellation
+with ground users that employ a chirp signal modulation
+scheme, where emulation of the chirp signal is performed
+with a MATLAB-scripted emulator [20], [21] developed
+earlier by our research team. The results show a consid-
+erable improvement in the SER of conventional DL and
+spiking-based signal detectors compared to traditional non-
+coherent detection in the uplink of a LEO constellation. The
+contribution of this work is summarized as follows.
+1) It highlights the performance benefit of using
+spiking-based/DL networks for accurate signal de-
+tectioninanenvironmentwithahighlevelofcochan-
+nel interference.
+2) It demonstrates the applicability of power-efficient
+spiking-based networks in detecting uplink IoT sig-
+nals in a LEO satellite scenario with high cochannel
+interference levels.
+3) It assesses the power efficiency performance of spik-
+ing networks based on neuromorphic hardware rela-
+tive to conventional DL models running on standard
+hardware.
+4) It develops a synchronization scheme that is novel in
+the S-IoT context.
+5) It tests the idea from [8], which shows a hybrid
+network that switches between the conventional
+matched filter and DL signal detection based on
+the inferred interference level. The aim is to further
+increase the performance of the spiking-based re-
+ceiversbyhybridizingthenetworkwithconventional
+detection techniques.
+The rest of this article is organized as follows. In
+SectionII,wegivesomerelatedworks.InSectionIII,wede-
+scribe the SNN and provide some literature relating to SNNs
+and communication. In Section IV, we detail the system
+model for emulating a LEO constellation for uplink trans-
+mission. We describe the geometric model, which covers
+the satellite constellation, satellite beam footprint, and the
+distribution of the user devices. Furthermore, we discuss the
+wireless access model and the channel. Section V describes
+the spiking-based detection networks used in this article. In
+Section VI, we cover the physical layer of chirp-based mod-
+ulation (LoRa). We introduce our proposed synchronization
+method in Section VII. We show and discuss the results in
+Section VIII. Finally, Section IX concludes this article.
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1225
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+II. RELATED WORKS
+In the realm of S-IoT, understanding and enhancing
+LEOIoTnetworkuplinkperformanceisparamount.Central
+to this challenge is the issue of cochannel interference. This
+section reviews pivotal research in this domain, paving the
+way for our exploration into SNNs.
+The uplink performance of LEO IoT networks has been
+analyzed using stochastic geometry in [22] and simulation
+in [23]. In these research works, cochannel interference
+is concluded to heavily limit the performance. To combat
+the performance degradation arising from cochannel in-
+terference, many interference mitigation techniques have
+been studied in past research works. One method is to
+use coordinated multiple-access techniques, i.e., scheduling
+similar to cellular networks [24]. However, using coordi-
+nated multiple-access techniques is difficult to implement
+in LEO satellite constellations given the high Doppler shift
+as well as the higher propagation delay compared to con-
+ventional terrestrial networks. Other interference mitigation
+approaches such as cognitive radio (CR) [25] have been uti-
+lized; however, CR is not ideal for low-power user devices
+due to the extra power needed for spectrum sensing.
+One prominent technology that is positioned for the
+S-IoT is chirp-base modulation. The performance of LoRa
+(as the implementation of chirp-based modulation) under
+interference conditions has been investigated in multiple
+studies, such as in [22] and [26]. While the traditional
+detection of LoRa shows some robustness to interference,
+the network cannot be directly scaled to practical satellite
+scenarios given typical traditional noncoherent detector re-
+ceivers. An uplink LEO satellite communication scenario
+is an example of a high interference environment, where
+the satellite receiver has to deal with a high number of
+radio frames, due to its inherent large swath of cover-
+age. An IoT-over-satellite scenario concentrating on LoRa
+modulation is explored in [27], where it is concluded that
+high volumes of LoRa traffic significantly deteriorate the
+system’s performance. Yang et al. [28] propose a folded
+chirp shift keying (FCSK) system that, like LoRa, employs
+chirp-based modulation for transmitting low-bit-rate data.
+Although their approach demonstrates enhanced resilience
+to Doppler effects, FCSK’s detection error rate is inferior
+to that of LoRa. This is primarily attributed to FCSK’s
+variable chirp rate, which renders it more vulnerable to
+interference from other chirp rates. Nonetheless, receivers
+need to be significantly redesigned such that they can deal
+with non-Gaussian impairments.
+DL holds significant potential as a tool for signal de-
+tection in wireless communication, as underscored by a
+seminalpaperin[9]. The capabilityofsignaldetectioninthe
+presence of cochannel interference is further demonstrated
+in [8] and [10]. In the domain of wireless communication,
+DL has been adeptly employed to fortify interference mit-
+igation algorithms and amplify overall performance [29].
+Another application of DL tools is shown in [30], which
+leverages DL networks to identify wireless devices using
+chirp signal processing. However, DL as a tool for signal
+detection has not been extensively showcased in an S-IoT
+scenario. Onboard a satellite, a DL receiver has been shown
+in [31]; however, the work focuses on high-throughput
+transmissions and the nonlinear impairments produced by
+the hardware. While conventional DL works well at de-
+tecting signals with non-Gaussian noise, the high power
+requirements of complex DL models are not ideal for use
+in systems with limited power availability such as onboard
+processors in LEO satellites. A spiking-based system would
+reduce the energy requirements while still providing high-
+performance characteristics for signal detection [17].
+III. SPIKING NEURAL NETWORKS
+An advantage that SNNs have over generic NNs is their
+addition of a spatiotemporal dimension in the spike trains
+instead of single-element vectors used in NNs that carry
+the weights and biases. The spike trains allow the SNN to
+be effective at carrying a lot of information while using
+fewer neurons relative to generic NNs [32]. As a result,
+an SNN would perform particularly strongly at processing
+temporally rich data streams, such as wireless signals [33].
+Also, the SNN network is only energized when the spikes
+are generated/received, unlike typical NNs where the entire
+network needs to be continuously run for every new input.
+These advantages have been used for several previous
+research works in communications such as in automatic
+modulation classification (AMC) [34], where the authors
+efficiently perform AMC on RF domain data using an SNN
+and improve memory utilization. Heavily related research
+works in [35] and [36] showcase neuromorphic sensing and
+communications, where they demonstrate an SNN transmit-
+ter and receiver for energy-efficient communications. How-
+ever, the papers do not look into satellite applications and
+also do not compare the energy efficiency of spiking-based
+networks with the conventional NN. Research work on us-
+ing SNNs for signal detection is proposed in [37] to improve
+human body communication by harnessing the aforemen-
+tionedlowpowerconsumptionandsuperiorperformanceon
+spatiotemporal data of the SNN. Another research work for
+detecting signals with SNNs is demonstrated in [38], where
+anSNNisusedfordetectingradarsignals.Notwithstanding,
+to the best of our knowledge, there has not been any research
+work showing the prospect of SNNs for the signal detection
+of uplink for IoT-over-satellite communications. The prime
+benefit of an SNN-based receiver would be its ability to
+deal with non-Gaussian interference while simultaneously
+exhibiting low power consumption.
+The spiking neuron is heavily inspired by biologi-
+cally plausible neuron models such as the Hodgkin–Huxley
+model [39]. However, while the Hodgkin–Huxley model is
+accurate, it is difficult to compute due to their nonlinear be-
+havior, fine temporal resolution, and the complex differen-
+tial equations needed to describe them [40]. Consequently,
+leaky integrate-and-fire (LIF) neuron models can be used
+instead. The LIF neuron model takes the sum of weighted
+input pulses, which, in turn, are integrated over time with
+a certain exponential decay, i.e., leakage. An illustration
+1226 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 1. (a)–(c) Illustration of the LIF neuron model.
+is shown in Fig. 1(a) showing that a membrane potential
+is accumulated from the input current Iin. If the integrated
+value exceeds a chosen threshold Vth, then the LIF neuron
+will fire a voltage spike κ(t). The relationship between the
+output κ and the voltageV (t) can be represented as follows:
+κ(t) = u (V (t) − Vth) (1)
+where u(.) is the Heaviside step function. When a spike is
+triggered, the membrane potential should be reset. Next, the
+illustration in Fig. 1(b) shows the equivalent Lapicque RC
+circuit, which is composed of the membrane capacitance C
+and the membrane resistance R. The circuit can be mathe-
+matically modeled as follows:
+RC
+dV (t)
+dt
+= −V (t) + Iin(t)R (2)
+where the solution to the differential equation is [41]
+V (t) =
+R
+RC
+ ∞
+0
+exp
+
+−
+q
+RC
+
+I(t − q) dq. (3)
+Finally, Fig. 1(c) shows how each connection to the neuron
+body accumulates outputs; then, κ(t) generates a voltage
+spike. Ultimately, the temporal information of the spiking
+data carries the learned attribute from the input to the output
+of the SNN. The temporal information of the spiking data
+evolves as the network learns.
+IV. SYSTEM MODEL
+The simulation model developed in this work emulates
+randomly distributed ground IoT devices that operate using
+the chirp modulation scheme. Each ground IoT device is
+configured to connect to the nearest satellite if the device
+lies within the satellite’s footprint, where each satellite is
+part of a large constellation. The satellites are simulated
+to orbit a perfectly spherical earth as an approximation.
+The model assumes that all IoT devices use chirp-based
+modulation without loss of generality, which is performed
+using a MATLAB scripted emulator [21] to generate the
+Fig. 2. Walker delta orbit simulation using 384 satellites with an orbital
+inclination of 53◦
+.
+chirp-based signals. Note that for this work, we utilize the
+LoRa physical layer; however, the framework can support
+other physical layer technologies, and LoRa is used as
+an example. The following sections further describe the
+geometric model and the channel model.
+A. Geometric Model
+We consider a practical satellite constellation for this
+work, where the Walker delta constellation is utilized. The
+Walker delta constellation is used to demonstrate practical
+network performance as the constellation is adopted by
+large satellite constellation companies, such as Starlink [4].
+The Walker delta constellation is described by parameters
+h, i, N, P, and F, where h is the altitude of the satellite, i is
+the satellite orbital inclination angle, N is the total number
+of satellites, P is the number of orbital planes, and F is
+the phasing parameter used to describe the phase difference
+between satellites in consecutive orbital planes. Each orbital
+plane has an equal number of satellites N/P, where the
+satellites are uniformly spaced. A snapshot of an example
+of a Walker delta constellation in the simulation is shown
+in Fig. 2. For the user to be able to communicate with the
+satellite, it needs to lie within the satellite footprint. For a
+simplified conical antenna pattern, the footprint is governed
+by the satellite effective beamwidth [42], denoted as ψ,
+whichdictatesthefootprintprojectionontheearth’ssurface.
+The satellite’s footprint is represented as a perfect spherical
+cap, defined by an earth-centered zenith angle, assuming
+that the satellites consistently point in their nadir direction.
+The earth-centered zenith angle is denoted as ϕ, as indicated
+in Fig. 3. Using simple geometric reasoning, the area of the
+spherical cap of the beam is calculated as follows:
+Afp = 2πR2
+e (1 − cos ϕ) (4)
+and the earth-centered zenith angle is calculated using the
+law of sines as follows [43]:
+ϕ = asin
+
+1
+α
+sin
+ψ
+2
+
+−
+ψ
+2
+(5)
+where α = Re/R, Re is earth’s average radius, R = Re + h,
+and h is the satellite altitude above the earth’s mean sea
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1227
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 3. LEO satellite scenario showing the concept of earth-centered
+zenith angle ϕ and the satellite beamwidth ψ.
+level. The satellite’s effective beamwidth is
+ψ = min
+
+ψs, 2asin
+
+αsin
+ψt
+2
+
+(6)
+where ψs and ψt are the beamwidths of the satellite and
+the ground user, respectively. However, in our case, we
+consider the beamwidth of the user to be equal to π. In
+a realistic scenario, the link between the ground-based IoT
+device and the satellite is limited by ψt [42]. In our analysis,
+we considered an isotropic case. As such, the maximum
+effective beamwidth is
+ψmax = 2asinα. (7)
+Moreover, the earth-centered zenith angle when the
+beamwidth is maximum can be calculated as follows:
+ϕmax = acosα. (8)
+Then, a spherical cap perimeter is drawn around each
+satellite footprint to define the boundary, where if a user
+device is located within the footprint, it is considered active
+(connected state). The footprint radius of each satellite is
+calculated as follows:
+Rfp = Reϕ. (9)
+For defining the perimeter of the footprint, the latitude and
+longitude of the footprint boundary need to be calculated
+with the heading formulas [44] as follows:
+φfp = asin (sin φsat cos ϕ + cos φsat sin ϕ cos θ) (10)
+and the longitude
+ρfp = ρsat + atan2(sin θ sin ϕ cos φsat,
+cos ϕ − sin φsat sin φfp) (11)
+where θ is an array from 0 to 2π with 360 elements, and
+φsat and ρsat are the latitude and longitude of the satellite’s
+subpoint,respectively.Asatellitesubpointreferstothepoint
+on the earth’s surface directly below a satellite in orbit. An
+illustration of the geometry of a LEO satellite is shown in
+Fig. 3.
+Fig. 4. Simulation snapshot showing the distribution of user devices
+and the satellite footprint. The red line from the ground user to the
+satellite indicates that even though the user is not being served by the
+satellite with the link, it still contributes to the interference.
+In the context of this study, we have adopted the homo-
+geneous Poisson point process to model the distribution of
+userdevicesacrosstheearth’ssurface.Undertheparameters
+of this model, the density of devices, symbolized by λ, is
+defined as Dλo, where D signifies the spatial duty cycle of
+active devices per unit time, and λo represents the overall
+density of devices.
+An essential aspect to note is that in scenarios involving
+a high number of users and satellites, a single user can be
+situated within the footprints of multiple satellites. In such
+cases, these users can potentially contribute to interference
+across all the satellites they are linked to. Fig. 4 provides an
+illustrativerepresentationofthisconcept,showingarandom
+distribution of users along with the respective links to the
+satellite from active users.
+B. IoT Access System
+For this research work, we are interested in the per-
+formance of signal detection in a satellite scenario where
+received signals are prone to cochannel interference from
+uncoordinated signal transmissions. One popular access
+system, dubbed pure-ALOHA, does not take into consid-
+eration any scheduling or whether another device is trans-
+mitting. As such, pure-ALOHA tends to allow for signal
+collisions that compromise the signal receiver to accurately
+detect the signal. In addition, pure-ALOHA does not take
+into account the availability of a satellite; thus, packets can
+be lost. However, we only care about signal detection in
+a satellite scenario, so we put more emphasis on detection
+rather than satellite availability. Nevertheless, the advan-
+tage of pure-ALOHA is its simplicity; it requires a low
+overhead, which allows for less power consumption and,
+therefore, a longer battery life for IoT devices. Accordingly,
+we assume a pure-ALOHA access model for this research
+work, where each device uses the same channel resources
+and transmits them as soon as the data are available. As an
+alternative, scheduled ALOHA could be used, where each
+user device would require a synchronized clock to regulate
+the transmission times in a periodical or event-triggered
+1228 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 5. Illustration of the pure-ALOHA access model used for
+IoT-over-satellite.
+manner. Another option is slotted ALOHA, where each
+station can transmit at any time, but transmissions are
+divided into time slots. This also helps to reduce collisions
+and improve network efficiency, but to a lesser extent than
+scheduled ALOHA. However, both scheduled and slotted
+ALOHA require additional overhead for coordinating the
+transmissions and use additional power as a consequence.
+An illustration of the pure-ALOHA access model is shown
+in Fig. 5.
+C. Channel Model
+The transmitted raw I/Q signal at the satellite receiver
+is formulated as
+y(t) = g{xi(t)} +
+j=i
+g{xj (t)}
+interference
++n(t) (12)
+where xi(t) is the raw I/Q signal transmitted from the target
+user denoted by the subscript i, where the power of xi(t) is
+the equivalent isotropically radiated power (EIRP), xj (t)
+is the raw I/Q signal from an interfering device j, g{.}
+represents the channel function that accounts for both the
+fading and Doppler shift, and n(t) ∼ CN (0, 1) is the com-
+plex zero-mean additive white Gaussian noise (AWGN).
+The largest portion of the satellite link is under free-
+space conditions, and only a small portion undergoes excess
+path loss such as fading due to near-ground clutter. The
+fading is also contributed by the rain and atmospheric
+absorption depending on the operating frequency. In ad-
+dition, LEO satellites orbit earth at high speeds causing
+high Doppler shifts. Furthermore, a random phase shift is
+considered in this research work as perfect phase estimation
+at the receiver is difficult to achieve in an IoT packet for
+LEO satellite uplink. This is because LEO satellites have
+a relatively fast orbital velocity and a low altitude, which
+results in a rapidly changing Doppler shift and a high signal
+attenuation due to atmospheric absorption and scattering.
+In addition, cochannel interference can make it difficult for
+the receiver to estimate the phase of the transmitted signal.1
+Hence, the channel is modeled as follows:
+g{x(t)} =
+
+Pr
+No
+x(t) exp( j2πν(t) + jφs) (13)
+1It is worth noting that there are already existing commercial systems and
+solutions that facilitate IoT communication over satellite, even with these
+constraints [45], [46].
+where No is the noise power spectral density, ν(t) is the
+Doppler frequency shift, and φs represents the phase shift
+of the signal. To calculate the received power at the satellite
+receiver, we first need to get the EIRP, which is represented
+as follows:
+EIRP[dB] = Pt[dB] + Gt[dB] (14)
+whereGt isthetransmitterantennagainandPt isthetransmit
+power. Note that we assume no cable losses for this work.
+The received power Pr(ϕ, ψ) is then obtained as follows:
+Pr(ϕ, ψ)[dBm] = EIRP[dB] + Gr(ψ)[dB]
+− l(ϕ)[dB] − η(ϕ)[dB]
+Path−loss
+(15)
+where Gr(ψ) is the satellite antenna gain, l(ϕ) is the free-
+space path loss, and η(ϕ) is the excess path loss. The satellite
+employs a simplified ideal directional antenna with a fixed
+gain G(ψ) obtained as follows [22]:
+Gr(ψ) =
+spherical area
+spherical cap area
+=
+4πRe
+2
+2πRe
+2
+
+1 − cosψ
+2
+ =
+2
+1 − cosψ
+2
+. (16)
+Since typical IoT devices operate near the L-band [23]
+the excess path-loss model is adopted from [47]. This model
+assumes a two-state channel; 1) line-of-sight (LoS) and 2)
+non-line-of-sight (nLoS) states are assumed. Accordingly,
+theexcesspathlossindecibelsismodeledasamixednormal
+random variable as follows:
+η(ϕ)[dB] ∼ pLoS(ϕ)N (μLoS, σ2
+LoS)
++ pnLoS(ϕ)N (μnLoS, σ2
+nLoS) (17)
+where pLoS(ϕ) = exp(−β sin ϕ/[cos ϕ − α]) [48] is the
+probability that the link is in the LoS state. Note that
+{β, μLoS, σLoS, μnLoS, σnLoS} are propagation parameters
+that depend on the ground device’s environment [47]. On
+the other hand, the free-space path loss only depends on the
+operating frequency and the distance between the ground
+device and the receiving satellite and is given as follows:
+l(ϕ) =
+
+4πd(ϕ) fc
+c
+2
+(18)
+where c is the speed of light and fc is the carrier frequency.
+The distance between the ground device and satellite is a
+function of the zenith angle and is formulated using the
+cosine rule as
+d(ϕ) =
+
+R2
+e + R2 − 2ReR cos ϕ. (19)
+The Doppler shift ν(t) in (13) due to the motion of the
+satellite is calculated based on the change of the satellite’s
+distance over time relative to the ground user as follows:
+ν(t) = −
+fc
+c
+d
+dt
+d(t) (20)
+where d/dt is the differentiation concerning time, and
+d/dt d(t) is the velocity of the receiver satellite relative
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1229
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+to the ground device. The maximum Doppler shift νmax
+can be analytically modeled based on the derivation of
+the satellite’s earth-centered zenith angle relative to time
+multipliedbythederivationoftheslantdistancebetweenthe
+ground user and the satellite relative to the earth-centered
+zenith angle2
+νmax = ±
+fc
+c
+dϕ
+dt
+×
+dd(ϕ)
+dϕ
+= ±
+fc
+c
+ω
+ReR sin ϕmax
+
+R2
+e + R2 − 2ReR cos ϕmax
+(21)
+where fc is the center frequency, c is the speed of light, and
+ω is the angular velocity of the satellite.
+V. SPIKING-BASED DETECTION NETWORKS
+The main contribution of this article is to present novel
+spiking-based receivers in a practical S-IoT scenario. In
+the following section, we discuss the spiking-based NN
+receivers used in this article: 1) SNN; 2) convolutional
+SNN (CSNN); and 3) HybNet that was adopted from [8]
+to use spiking-based networks instead of conventional DL
+networks.
+A. SNN Detector
+To implement the SNN, we utilize an open-source
+Python library (SnnTorch [40]), which encodes the input
+data into a spike train to accommodate spiking-based net-
+works. The encoding is done in our work via constant
+current injection, where each data sample is treated as a
+constant current input over each time step, where 50 time
+steps are used. The encoding of the input can treat static data
+as a direct current (dc) input and consistently feed the same
+features to the input layer of the SNN at each time interval.
+However, other popular examples of encoding the input data
+include rate encoding, latency encoding, and delta modu-
+lation. These methods could be utilized to further extort
+temporal information for SNNs [49]. Decoding the output
+from spikes to real numbers is done by a process called
+spike decoding. Examples of decoding methods include rate
+decoding and latency decoding. A more expansive analysis
+of different encoding and decoding strategies can be found
+in [40]. For this work, mean squared error (MSE) count loss
+is employed, which, in effect, is rate decoding. MSE count
+loss was used as it demonstrated desirable performance
+when training the network. The membrane potential of the
+correct class is encouraged to increase the number of spikes,
+while the incorrect classes are encouraged to reduce the total
+spike count over time for each neuron to achieve high-level
+performance [50]. In addition to the SNN, a second network
+based on the CNN called the CSNN is also investigated
+to combine the superior feature extraction and the power
+efficiency of the CNN relative to other DL networks, such as
+the ANN [51], with the ultralow power consumption of the
+SNN. A CSNN performs convolution operations on spikes
+2Note that this model does not take into account the earth’s movement and
+assumes that the earth is a perfect sphere.
+(or events) generated by individual neurons instead of tra-
+ditional continuous-valued activations. The convolutional
+filters in a CSNN are designed to detect specific temporal
+patterns in the spike sequences. This allows CSNNs to
+process spatiotemporal data effectively and learn to extract
+relevant features from input stimuli.
+A challenge in SNNs is the “dead neuron problem” as
+highlighted in [40], which markedly reduces performance
+due to the nondifferentiability of spikes. The “dead neuron
+problem” occurs when the membrane potential is 0; thus,
+the neuron does not fire and, therefore, does not contribute
+to the loss function in the training stage. The issue of
+the nondifferentiability of the neuron can be addressed by
+smoothing out the Heaviside step function in (1) with the
+sigmoid function σ (x), which is known as the surrogate gra-
+dient approach [52]. Smoothing out the Heaviside function
+with the sigmoid function can override the derivative of the
+Heaviside function, which is the Dirac delta function. The
+smoothed-out Dirac delta function would then take time to
+fall to 0, therefore contributing to the training loss function.
+The use of surrogate gradient descent algorithms in SNNs
+caneffectivelyaddressthedeadneuronproblembyallowing
+for gradient-based optimization and weight updates, even if
+some neurons are not generating spikes.
+The two spiking-based networks mentioned above
+(SNN and CSNN) are also compared to the conventional
+ANN and CNN with the same dimensions as the spiking-
+based network counterpart. The same dimensions are used
+for a fair comparison between the spiking-based networks
+and conventional DL networks. A summary of the networks
+used in this work is summarized in Table I. Note that some
+changes could be made to the network parameters to further
+increase the performance. Nevertheless, the dimensions
+chosen for this work showed solid performance, and the
+purpose of this work is not to showcase ideal network
+dimensions.
+B. HybNet
+To further improve the error rate detection performance
+ofthespiking-basedreceiversinnoise-limitedscenarios,we
+extend the idea from [8], which proposes the HybNet archi-
+tecture. In this work, we adapt the HybNet architecture to
+the spiking-based networks so that it switches between two
+different detection branches: 1) a spiking-based network (in
+our case, we select the CSNN due to its strong performance
+and lower power consumption compared to the ANN, CNN,
+and SNN, as seen in Section VIII-A), and 2) a traditional
+matched filter detector (in our case, we utilize noncoherent
+detection). The advantage of utilizing the HybNet architec-
+ture is that in noise-limited scenarios, the matched filter
+path is chosen by the supervisor switching network to
+detect the signal. Conversely, when the receiving signals
+are interference limited, detection using the spiking-based
+network is chosen by the supervisor switching network.
+Note that this supervisor switching network is trained with
+a CSNN network, which we dub as the selector CSNN, and
+the network structure is listed in Table II.
+1230 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+TABLE I
+Network Summary
+TABLE II
+Selector CSNN
+Fig. 6. Illustration of the HybNet architecture used in this article.
+To train the selector network, each target chirp-based
+symbol is cropped and labeled either as: 1) minimal inter-
+ference or 2) interference limited. When the target symbol
+power is higher than the interference signal power (i.e., sig-
+nal to interference ratio (SIR) > 0 dB), the symbol is labeled
+as “minimal interference.” Alternatively, if the power of the
+interfering transmissions is larger or the same as the power
+of the target signal, the symbol is labeled as “interference
+limited.” Note that the SIR threshold is a hyperparameter
+that can be adjusted to improve the performance of the
+selector network. However, in our tests, setting the threshold
+parameter at 0 dB had the best performance outcome. When
+this signal is passed into the selector CSNN, the signal is
+passed to be detected by the noncoherent detector (outlined
+in Section VI-B) if it is classified as “minimal interference,”
+and if it is classified as “interference limited,” then the
+symbol is detected by the CSNN in this work. An illustration
+of the utilized switching architecture is shown in Fig. 6.
+C. Dataset Creation and Training
+To ensure the desired performance of the DL/spiking-
+based receivers, the networks need to be trained on a dataset
+that contains emulated signals that exhibit the behavior of
+the received chirp-based IoT uplink signals in a practical
+LEO satellite scenario. For creating the dataset for training
+the DL/spiking-based receiver networks for signal detec-
+tion, chirp I/Q signals are emulated, where the signals in
+the dataset are generated in our satellite scenario emulator.
+Each satellite is designated an empty 1-D vector with a
+length determined by the time step dt of the simulation.
+Next, the satellite’s empty vector is populated with signals
+from the active ground user devices within its coverage area.
+Each signal contains an n-length random symbol sequence
+M = {m1, m2, . . ., mn} that has a controlled transmit power
+pTx and has a random time offset τ. Every transmitted signal
+is impaired by the emulated ground-to-satellite channel
+effects, which are described in Section IV-C. In addition,
+a randomly chosen target signal is chosen as the target
+signal and is appended with a preamble for synchronization
+using the developed method detailed in Section VII. After
+synchronization, the target signal is normalized by dividing
+by the target signal power ps, which is estimated from the
+preamble. The normalization is shown mathematically as
+follows:
+rnorm(t) =
+r(t)
+√
+ps
+. (22)
+The reason for normalizing the signal power to ps = 1 is
+to maintain a uniform magnitude of the target signal power
+during the training of the receiver. This is because scaling
+the input has been proven to improve performance [8], [53].
+Finally, each symbol is cropped out and is represented as
+follows:
+Yk = |y(t)S∗
+k (t)| (23)
+where y(t) denotes the received multiple frequency-shift
+keying (MFSK) chirp-based signal and Sk (t) is the MFSK
+reference signal with frequency shift kf ; this is the same
+equation as in (25) without the argmax function.3
+Each
+training symbol is then labeled and can be represented as
+follows:
+T = {(Y1, m1), (Y2, m2), . . ., (Yk, mk )} (24)
+3Note that the input to the SNN and DL detectors is time invariant.
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1231
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 7. Snapshot of a three-symbol wide spectrogram of an example
+chirp-based signal with interference for another chirp-based signal. The
+interference signal is time-shifted by τ, has a Doppler shift of I, and the
+target signal has a Doppler shift of s.
+where m is the symbol label. An illustration of an example
+chirp signal is shown in Fig. 7.
+To train the selector CSNN, the same dataset that was
+used to train the DL/spiking-based receivers is utilized.
+However, only two labels were used: minimal interference
+or interference limited. The labeling procedure is described
+in Section V-B.
+VI. CHIRP-BASED SIGNAL EMULATION
+For this work, we incorporate the LoRa modulation
+techniqueasanexampleofamodulationtechniqueduetoits
+widespread use for satellite and terrestrial applications [54].
+We utilize the LoRa MATLAB emulator [21] developed
+earlier by our team, which consists of two components:
+1) signal generator and 2) conventional detector based on
+noncoherent detection. Note that, for this work, there is no
+additional error correction involved, just the generation of
+a chirp-based packet with a random symbol payload and a
+receiver that detects the payload packet with a noncoherent
+receiver compared with the developed DL/spiking-based
+receiver. Signal detection performance with error correction
+would decrease the error rate. As such, in this article, we
+show signal detection performance without error correction
+as the lower bound.
+A. LoRa Modulation
+LoRa uses the chirp spread spectrum technique [20]
+to modulate the transmitted symbols. This is achieved by
+shifting the start of the chirp according to the transmitted
+symbol value, and then, the frequency is cyclically swept
+within a given bandwidth B. According to the LoRaWAN
+specifications, only a few discrete values of the bandwidth
+are permitted, where B ∈ {125, 250, 500} kHz. Another pa-
+rameter that controls the chirp rate of each symbol is called
+the spreading factor (SF), which is also restricted in the
+LoRaWAN specifications to SF ∈ {7, 8, 9, 10, 11, 12}. The
+chirp slope, in the context of frequency modulation, is rep-
+resented as the second derivative of the phase with respect
+to time. For LoRa modulation schemes, this relationship
+can be expressed as d2
+φ
+dt2 = B
+Tchirp
+, where Tchirp is the time of
+the chirp. In addition, the SF defines the number of possible
+values that can be encoded by the symbol, which is given
+by M = 2SF
+.
+B. LoRa Detection
+The detection of a LoRa signal involves a two-step
+process. In the first step, the signal is dechirped by mixing
+the LoRa signal with an inverted chirp. The dechirping
+process converts the LoRa signal into an MFSK signal,
+which is a modulation type that encodes symbols with M
+equally spaced frequency tones. The second step can then be
+detected using either conventional coherent or noncoherent
+detection methods. The coherent detection method based on
+matched filtering is proven to be an optimal detector under
+AWGNchannelconditions[55] andisalsoshowntoachieve
+better performance compared to the noncoherent detector in
+the presence of LoRa-on-LoRa interference [26]. However,
+coherent detection requires perfect synchronization in both
+time and frequency [55] for coherent detection to perform
+well [56]. Therefore, coherent detection is not appropriate
+for a LEO satellite communication scenario due to the
+high Doppler frequency shift on the transmitted signal.
+Consequently, we use noncoherent detection in this article.
+To describe noncoherent detection, the square-law (en-
+velope) matched filter detector can be used [55]. The signal
+is mixed with (i.e., mathematically multiplied by) by the
+conjugate of all the possible realizations of the chirp-based
+signal, and the maximum magnitude denotes the symbol
+estimate m̂ncoh as follows:
+m̂ncoh = argmaxk|y(t)S∗
+k (t)| (25)
+where y(t) denotes the received MFSK chirp-based sig-
+nal and Sk (t) is the MFSK reference signal with fre-
+quency shift kf , represented as zk (t) = exp( j2πkft)
+and k is an integer representing all symbol possibilities
+k = {0, 1, . . ., M − 1}. f is the frequency step between
+the MFSK shifts where the frequency step for chirp-based
+symbols is equal to the symbol rate B/M.
+VII. FRAME SYNCHRONIZATION
+In the context of applying SNN and CSNN for S-IoT sig-
+nal detection, frame synchronization is pivotal. The design
+of our synchronization method is tailored to be compatible
+with the characteristics of these NN detectors to enable them
+to effectively process and detect signals in the presence of
+interference and Doppler shifts.
+The preamble in the IoT frame serves a dual purpose:
+it allows the detector to find the start of the chirp but also
+provides a reference point to compensate for the Doppler
+offset. Given the pronounced Doppler shifts in LEO orbits,
+our synchronization method, inspired by range Doppler
+matched filtering in radar signal processing [57], is designed
+to allow for accurate signal detection. By matching the
+ideal templates of the known preamble, each with a slightly
+different Doppler shift, we ensure that the SNN and CSNN
+can adaptively respond to varying Doppler conditions. Note
+1232 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 8. Plot of the median frequency synchronization error against
+different EIRP values. The spatial duty cycle D was chosen as 1 × 10−6.
+that this preamble, devoid of payload data, is a sequence of
+symbols appended at the frame’s beginning. Mathemati-
+cally, the time-domain signal of preamble templates with
+different Doppler shifts can be expressed as follows:
+K = xpre exp( j2πκ(t)) (26)
+where xpre is the ideal preamble template and κ(t) is the
+vector of different Doppler shifts. We first perform a coarse
+search with a Doppler frequency shift spacing of 100 Hz,
+which is denoted as ηc. Then, when the best match is found,
+a fine search is performed around the best candidate with a
+frequency spacing of 1 Hz, which is denoted as ηf . We make
+K ∈ M × N matrix, where N is the number of temporal
+samples in the signal and M is the resolution of the search
+space. The resolution for the coarse search is equal to the
+length of κ(t), which can be obtained as
+Mc = κlen = 2
+νmax
+ηc
+(27)
+where νmax is the maximum Doppler shift [calculated
+with (21)]. The resolution of the fine search is taken as
+Mf = 2ηc. (28)
+Then, to create a 2-D time–frequency plot of the similarity
+values, we employ a 2-D cross-correlation as follows:
+C(k, l) =
+M−1
+m=0
+N−1
+n=0
+K(m, n)y∗
+(m − k, n − l) (29)
+where y∗
+(.) corresponds to the complex conjugate of the
+received signal vector, and y is a P × Q matrix, where P
+is equal to Mc when performing coarse search and P is
+equal to Mf when performing the fine search. Q is equal to
+the number of temporal samples in xpre. Matched filtering
+in this way would yield a 2-D array of similarity values
+where the maximum value is taken to be the best match.
+Finding the best match after the fine search would give an
+accurate time and frequency synchronization with the target
+IoT packet. The performance of the frame synchronization
+method is shown in Fig. 8, where the synchronization ac-
+curacy decreases as the EIRP decreases due to the lower
+signal-to-noise ratio.
+TABLE III
+Simulation Parameters
+VIII. RESULTS AND DISCUSSION
+In this section, we provide Monte Carlo simulation
+results of the emulated satellite system, where the simula-
+tion parameters are listed in Table III. Chirp-based signals
+are emulated and passed through the simulated ground-to-
+satellite channel, where the spatial duty cycle D dictates the
+number of transmissions sent each second. The spatial duty
+cycle D was arbitrarily chosen as 1 × 10−6
+; it allows for
+a balance between interference-limited and noise-limited
+scenarios experienced by the satellite receivers. Bear in
+mind that to create accurate signals, an oversampled signal
+vector is constructed by sampling at fs = 1 MHz. Each
+transmitted chirp-based signal is impaired by the emulated
+ground-to-satellite channel. After all the signals from the
+active devices within a satellite footprint at a certain pe-
+riod are superimposed onto the signal vector. The vector
+is downsampled to twice the Nyquist sampling frequency
+of fs = 250 kHz to increase robustness against noise and
+Doppler. Note that, for this work, we emulate LoRa signals
+with SF = 7 and B = 125 kHz. A higher SF can be trained
+on; however, this would increase the training dataset size
+so that for every increment of SF, the size of the training
+dataset can be cumulatively doubled. This increase in the
+dataset size is needed to support the additional numbers of
+symbol values a symbol can encode, which is equal to 2SF
+.
+Furthermore, a more complex DL network would also be
+required. The CNN and ANN are trained using stochastic
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1233
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 9. Plot of the average SER against different EIRPs, where plots are
+shown with a spatial duty cycle D of 1e-6%. Manual Doppler
+compensation and synchronization are also performed using the
+preamble.
+gradient descent with momentum over 50 epochs with a
+learning rate of 1e−3
+and a mini-batch size of 256. On
+the other hand, the SNN, CSNN, and selector CSNN are
+trained with a batch size of 128, with the Adam optimizer
+and a learning rate of 5e−4
+over 50 epochs. Be aware that
+while these hyperparameters are effective for training, they
+may not represent the absolute optimum. Minor adjust-
+ments could potentially lead to marginal improvements in
+performance. The hyperparameters were chosen after per-
+forming manual optimization, and the parameters showed
+desirable performance of the networks. Note that the SER
+is plotted against the EIRP to provide a comprehensive
+view of system performance concerning the transmitter’s
+effective power output [58]. The SER quantifies the per-
+formance of a digital communication link by measuring
+the probability of a transmitted symbol being incorrectly
+detected at the receiver. Mathematically, the SER is defined
+as Number of incorrectly detected symbols
+Total number of transmitted symbols
+.
+To demonstrate the effectiveness of the DL and spiking
+networks for signal detection in a practical scenario, the
+SER performance is shown in Fig. 9. It is also observed that
+a CNN appears to deliver better results when compared to
+the SNN and the CSNN on the specific task of stochastic
+data classification. This is consistent with the recognized
+strengths of CNNs in such tasks. However, it is worth
+noting that this does not invalidate the potential and the
+utility of SNNs and CSNNs. The nature of spiking-based
+networks inherently lends to differences in performance,
+which is further discussed in Section VIII-A. Moreover,
+their strength lies in certain applications, such as low-power
+devices and real-time processing, where their event-driven
+nature and sparsity of spikes can be exploited for more
+efficient computation. Further research and refinement of
+these spiking-based networks can reveal their true potential
+in various application scenarios.
+Fig. 10 illustrates the performance comparison between
+our developed spiking-based architectures, NN-based mod-
+els, and the noncoherent detector. For this representation,
+we have assumed ideal Doppler compensation, bypassing
+our proposed synchronization technique. This setup accen-
+tuates the performance disparity between the traditional and
+Fig. 10. Plot of the average SER against different EIRPs, where plots
+are shown with a spatial duty cycle D of 1e-6% with compensated
+Doppler.
+Fig. 11. Plot of the average SER against different spatial duty cycles D,
+where the EIRP is fixed at 10 dBW. Manual Doppler compensation and
+synchronization are also performed using the preamble.4
+spiking-based detectors, showcasing outcomes in the most
+favorable scenarios.
+Synchronization in time and Doppler compensation is
+performed using the time–frequency matched-filter syn-
+chronization method discussed in Section VII. In addition,
+the signal is normalized to the average power of the pream-
+ble. The SER curve decreases as the EIRP increases, for
+both noncoherent and the DL/spiking-based receivers as
+the system moves from noise limited to interference limited.
+DL and spiking-based methods outperform noncoherent re-
+ceivers in regions with plateauing SER, where interference
+is the limiting factor.
+TheSERperformanceisalsorecordedasthespatialduty
+cycle D increases and is shown in Fig. 11. From this plot, the
+performance improvement is evident between conventional
+detectionandDL/spiking-baseddetectionasthespatialduty
+cycle increases. The improvement comes from the ability of
+DL and spiking-based networks to correctly detect symbols
+in the presence of cochannel interference.
+From the SER performance plots, we can see that the
+CNN has the highest performance compared to the other
+4Note that as the spatial duty cycle increases, more interference is present
+in the channel due to the higher density of devices per square kilometer.
+Since we test over a wide range of spatial duty cycles, the plot shows both
+the performance in a noise-biased environment and the performance in an
+interference-biased environment.
+1234 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+TABLE IV
+Energy Consumption
+networks discussed in this work. This is expected as CNNs
+historically possess greater performance than ANNs in fea-
+ture detection tasks, while the spiking-based networks are
+newer and typically do not perform as well as CNNs at clas-
+sification tasks. However, the spiking-based networks still
+outperform conventional detection and have ultralow power
+consumption, which is further analyzed in Section VIII-A.
+A. Energy Consumption
+To demonstrate the advantages of spiking-based learn-
+ing against conventional learning in terms of power effi-
+ciency, benchmarks for energy per detection are recorded.
+The energy is recorded using the KerasSpiking Python
+package from Nengo [59]. The following assumptions are
+made when estimating the energy used by the proposed
+model on a particular device.
+1) The energy consumption approximation is calcu-
+lated based on the energy used per operation, where
+the sources for the GPU [60] and Loihi [61] are used.
+2) Overhead is also not considered such as the energy
+required to transfer the data to be classified by the
+network. Only the energy consumption of the com-
+ponents in each network is considered.
+From Table IV, the spiking-based networks use a few
+orders of magnitude less power per detection compared to
+their conventional DL network counterparts. The dramatic
+reduction in energy consumption observed from SNN to
+CSNN and then to selector CSNN can be attributed to the in-
+herent efficiencies of spiking-based networks. Specifically,
+CSNNs, being convolutional, can exploit spatial hierarchies
+in data, leading to fewer operations and thus less energy
+consumption [62]. The selector CSNN is smaller than the
+CSNN detector network as it only has a binary classification
+output, hence why the energy consumption is the lowest.
+The spiking-based network’s edge over its conventional
+counterpartsalsospringsfromitsreactiveoperationalmode,
+only activating when inputs surpass a certain threshold.
+This functionality results in efficient energy utilization,
+a critical attribute in the energy-constrained environment
+of LEO satellites. Moreover, the ability of spiking-based
+networks to handle temporal dynamics facilitates the pro-
+cessingofreal-timeorstreamingdata,typicallyexperienced
+in satellite communication systems. Conventional DL net-
+works generally require a complete data batch for process-
+ing, potentially causing delays in real-time scenarios. In
+essence, the selection of spiking-based networks over DL
+networks for LEO scenarios goes beyond mere substitution.
+It entails choosing an architecture better suited to meet
+the unique challenges presented by such environments, de-
+spite acknowledging the associated complexities of training
+spiking-based networks and the lack of established training
+methodologies.
+Neuromorphic hardware, like Loihi [61], inherently
+supports parallelism. Just as the human brain processes
+information through billions of neurons working simultane-
+ously, neuromorphic chips are designed to handle multiple
+neural computations concurrently. This parallel processing
+capability allows them to mimic biological neural systems
+closely, leading to rapid data processing with minimal en-
+ergy consumption. The architecture of neuromorphic chips,
+with interconnected spiking neurons, facilitates this par-
+allelism, making them particularly well suited for SNNs.
+These results reinforce the idea that a spiking network
+could be used for signal detection, particularly in resource-
+constrained applications such as in a LEO satellite.
+Note that we do not show the energy consumption of
+spiking-based networks on traditional “nonspiking” hard-
+wareplatformsinTableIVduetotheinherentinefficiencies.
+The true potential of the energy efficiency of spiking-based
+networks manifests predominantly on neuromorphic sys-
+tems. These neuromorphic platforms are characterized by
+a notably higher core count than their conventional coun-
+terparts, a feature essential for capitalizing on the inherent
+parallelism of spiking networks. As a result, they can oper-
+ate at a markedly reduced energy expenditure per inference
+relative to classical ANNs and CNNs [40]. When consider-
+ing traditional hardware, the deployment of spiking-based
+networks does not confer any energy benefits, leading to
+their omission from energy consumption metrics on such
+systems. On a related note, standard CNNs and ANNs lack
+direct compatibility with specific neuromorphic processors,
+rendering energy consumption comparisons nonviable.
+While we evaluate the power consumption across GPU
+and Loihi platforms, it is important to recognize that the en-
+ergy efficiency of these computational units can be swayed
+by factors such as manufacturing techniques. Drawing di-
+rect comparisons between analog systems like SNNs and
+digital ones like ANNs and CNNs presents inherent chal-
+lenges due to their operational and design differences. An
+analytical quantification of the computational complexity
+between SNNs and traditional networks is intricate, given
+their unique operational characteristics.
+B. HybNet Performance
+The performance of the HybNet architecture is shown
+in Fig. 12. From the plot, HybNet switches between using
+noncoherent detection in noise-limited scenarios and being
+detected with the CSNN in interference scenarios. The
+switching then allows for an average decrease in the SER
+relative to both the CSNN and noncoherent detection tech-
+niques. However, at the transition between noise limited and
+interference limited, the selector CSNN fails to correctly
+classify which detection pathway is more efficient. Note
+that we assume perfect Doppler compensation, omitting the
+use of our proposed synchronization method. This approach
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1235
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Fig. 12. Plot of the performance of the HybNet framework, where plots
+are shown with a spatial duty cycle D of 7e-7% with compensated
+Doppler.
+highlights a more pronounced performance difference be-
+tween conventional and spiking-based detectors, presenting
+the results under optimal conditions.
+IX. CONCLUSION
+In this article, we presented a spiking-network-based
+receiver for detecting IoT signals in an S-IoT uplink sce-
+nario. For the receiver, we investigated the SNN and the
+CSNN and compared the error rate performance against
+conventional ANN and CNN receivers, as well as con-
+ventional noncoherent detection. The findings reveal that
+both spiking-based and DL receivers exhibit resilience to
+cochannel interference. Notably, the spiking-based net-
+works display impressive detection performance in high
+interference scenarios, while consuming several orders of
+magnitude less power per detection than traditional ANN
+and CNN receivers. Particularly, the CSNN stands out in
+terms of energy efficiency, offering a compelling advantage
+for applications where power conservation is paramount.
+To further improve the detection performance of the spik-
+ing networks, we adopt the HybNet framework from our
+previous work to switch between the traditional detection
+methods and the spiking-based receiver.
+REFERENCES
+[1] M. Centenaro, C. E. Costa, F. Granelli, C. Sacchi, and L. Vangelista,
+“A survey on technologies, standards and open challenges in satellite
+IoT,”IEEECommun.Surv.Tuts.,vol.23,no.3,pp. 1693–1720,Third
+Quarter 2021.
+[2] B. Al Homssi et al., “Next generation mega satellite networks for
+access equality: Opportunities, challenges, and performance,” IEEE
+Commun. Mag., vol. 60, no. 4, pp. 18–24, Apr. 2022.
+[3] Oneweb, 2022. Accessed: Mar. 28, 2022. [Online]. Available: https:
+//oneweb.net/
+[4] Starlink, 2022. Accessed: Mar. 28, 2022. [Online]. Available: https:
+//www.starlink.com/
+[5] Federal Communications Commission, “FCC authorizes Kuiper
+satellite constellation,” 2020. Accessed: Mar. 28, 2022. [Online].
+Available: https://www.fcc.gov/document/fcc-authorizes-kuiper-
+satellite-constellation
+[6] Z. Qu, G. Zhang, H. Cao, and J. Xie, “LEO satellite constellation for
+Internet of Things,” IEEE Access, vol. 5, pp. 18391–18401, 2017.
+[7] B. Al Homssi et al., “Free spectrum for IoT: How much can it take,”
+in Proc. IEEE Int. Conf. Commun. Workshops, 2018, pp. 1–6.
+[8] K. Dakic, B. Al Homssi, M. Lech, and A. Al-Hourani, “HybNet: A
+hybrid deep learning-matched filter approach for IoT signal detec-
+tion,” IEEE Trans. Mach. Learn. Commun. Netw., vol. 1, pp. 18–30,
+2023.
+[9] H. Ye, G. Y. Li, and B.-H. Juang, “Power of deep learning for channel
+estimation and signal detection in OFDM systems,” IEEE Wireless
+Commun. Lett., vol. 7, no. 1, pp. 114–117, Feb. 2018.
+[10] A. A. Tesfay, S. Kharbech, E. P. Simon, and L. Clavier, “Signal
+denoising and detection for uplink in LoRa networks based on
+Bayesian-optimized deep neural networks,” IEEE Commun. Lett.,
+vol. 27, no. 1, pp. 214–218, Jan. 2023.
+[11] T. Young, D. Hazarika, S. Poria, and E. Cambria, “Recent trends
+in deep learning based natural language processing,” IEEE Comput.
+Intell. Mag., vol. 13, no. 3, pp. 55–75, Aug. 2018.
+[12] A. Krizhevsky, I. Sutskever, and G. E. Hinton, “ImageNet classifi-
+cation with deep convolutional neural networks,” Commun. ACM,
+vol. 60, pp. 84–90, May 2017.
+[13] T.-J.Yang,Y.-H.Chen,J.Emer,andV.Sze,“Amethodtoestimatethe
+energy consumption of deep neural networks,” in Proc. 51st Asilomar
+Conf. Signals Syst. Comput., 2017, pp. 1916–1920.
+[14] A. Mehonic and A. J. Kenyon, “Brain-inspired computing needs a
+master plan,” Nature, vol. 604, no. 7905, pp. 255–260, 2022.
+[15] S. Smith et al., “Using DeepSpeed and Megatron to train Megatron-
+turing NLG 530B, a large-scale generative language model,” 2022,
+arXiv:2201.11990.
+[16] D. Beniaguev, I. Segev, and M. London, “Single cortical neu-
+rons as deep artificial neural networks,” Neuron, vol. 109, no. 17,
+pp. 2727–2739, 2021.
+[17] W. Maass, “Networks of spiking neurons: The third generation of
+neural network models,” Neural Netw., vol. 10, no. 9, pp. 1659–1671,
+1997.
+[18] M. Pfeiffer and T. Pfeil, “Deep learning with spiking neurons: Oppor-
+tunities and challenges,” Front. Neurosci., vol. 12, 2018, Art. no. 774.
+[19] Z. Lin, M. Lin, B. Champagne, W.-P. Zhu, and N. Al-
+Dhahir, “Secrecy-energy efficient hybrid beamforming for satellite-
+terrestrialintegrated networks,”IEEE Trans.Commun.,vol.69,no.9,
+pp. 6345–6360, Sep. 2021.
+[20] B. Al Homssi, K. Dakic, S. Maselli, H. Wolf, S. Kandeepan, and A.
+Al-Hourani, “IoT network design using open-source LoRa coverage
+emulator,” IEEE Access, vol. 9, pp. 53636–53646, 2021.
+[21] B. A. Homssi and A. Al-Hourani, “LoRa Matlab emulator,”
+Data retrieved from AURIN, 2020. [Online]. Available: https://au.
+mathworks.com/matlabcentral/fileexchange/81166-loramatlab
+[22] C. C. Chan, B. Al Homssi, and A. Al-Hourani, “A stochastic ge-
+ometry approach for analyzing uplink performance for IoT-over-
+satellite,” in Proc. IEEE Int. Conf. Commun., 2022, pp. 1–6.
+[23] C. C. Chan, A. Al-Hourani, J. Choi, K. M. Gomez, and S. Kan-
+deepan, “Performance modeling framework for IoT-over-satellite
+using shared radio spectrum,” Remote Sens., vol. 12, no. 10, 2020,
+Art. no. 1666.
+[24] R. Irmer et al., “Coordinated multipoint: Concepts, performance, and
+field trial results,” IEEE Commun. Mag., vol. 49, no. 2, pp. 102–111,
+Feb. 2011.
+[25] E. Biglieri, “An overview of cognitive radio for satellite communi-
+cations,” in Proc. IEEE 1st AESS Eur. Conf. Satell. Telecommun.,
+2012, pp. 1–3.
+[26] O. Afisiadis, S. Li, A. Burg, and A. Balatsoukas-Stimming, “On the
+advantage of coherent LoRa detection in the presence of interfer-
+ence,” IEEE Internet Things J., vol. 8, no. 14, pp. 11581–11593,
+2021, doi: 10.1109/JIOT.2021.3058792.
+[27] C. C. Chan, B. Al Homssi, and A. Al-Hourani, “Performance evalua-
+tion of random access methods for IoT-over-satellite,” Remote Sens.,
+vol. 14, no. 17, 2022, Art. no. 4232.
+[28] C. Yang, M. Wang, L. Zheng, and G. Zhou, “Folded chirp-rate shift
+keying modulation for LEO satellite IoT,” IEEE Access, vol. 7,
+pp. 99451–99461, 2019.
+[29] H. Sun, X. Chen, Q. Shi, M. Hong, X. Fu, and N. D. Sidiropoulos,
+“Learning to optimize: Training deep neural networks for interfer-
+ence management,” IEEE Trans. Signal Process., vol. 66, no. 20,
+pp. 5438–5453, Oct. 2018.
+1236 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+[30] G. Baldini and C. Gentile, “Transient-based Internet of Things emit-
+ter identification using convolutional neural networks and optimized
+general linear chirplet transform,” IEEE Commun. Lett., vol. 24,
+no. 7, pp. 1482–1486, Jul. 2020.
+[31] Y. Zhang et al., “Deep neural network-based receiver for next-
+generation LEO satellite communications,” IEEE Access, vol. 8,
+pp. 222109–222116, 2020.
+[32] M. Chen, U. Challita, W. Saad, C. Yin, and M. Debbah, “Artificial
+neural networks-based machine learning for wireless networks: A
+tutorial,” IEEE Commun. Surv. Tuts., vol. 21, no. 4, pp. 3039–3071,
+Fourth Quarter 2019.
+[33] B. Al Homssi et al., “Artificial intelligence techniques for next-
+generation massive satellite networks,” IEEE Commun. Mag., early
+access, doi: 10.1109/MCOM.004.2300277.
+[34] E. J. Knoblock and H. R. Bahrami, “Investigation of spiking neural
+networks for modulation recognition using spike-timing-dependent
+plasticity,” in Proc. IEEE Cogn. Commun. Aerosp. Appl. Workshop,
+2019, pp. 1–5.
+[35] J. Chen, N. Skatchkovsky, and O. Simeone, “Neuromorphic wireless
+cognition: Event-driven semantic communications for remote infer-
+ence,” IEEE Trans. Cogn. Commun. Netw., vol. 9, no. 2, pp. 252–265,
+Apr. 2023.
+[36] J. Chen, N. Skatchkovsky, and O. Simeone, “Neuromorphic inte-
+grated sensing and communications,” IEEE Wireless Commun. Lett.,
+vol. 12, no. 3, pp. 476–480, Mar. 2023.
+[37] T. Kang et al., “Spiking neural networks-inspired signal detection
+based on measured body channel response,” IEEE Trans. Instrum.
+Meas., vol. 71, 2022, Art. no. 2512816.
+[38] J. Chen, N. Skatchkovsky, and O. Simeone, “Neuromor-
+phic integrated sensing and communications,” IEEE Wire-
+less Commun. Letters, vol. 12, no. 3, pp. 476–480, 2023,
+doi: 10.1109/LWC.2022.3231388.
+[39] A. L. Hodgkin and A. F. Huxley, “A quantitative description of
+membrane current and its application to conduction and excitation
+in nerve,” J. Physiol., vol. 117, no. 4, pp. 500–544, 1952.
+[40] J. K. Eshraghian et al., “Training spiking neural networks us-
+ing lessons from deep learning,” Proc. IEEE, vol. 111, no. 9,
+pp. 1016–1054, Sep. 2023.
+[41] W. Gerstner, W. M. Kistler, R. Naud, and L. Paninski, Neuronal Dy-
+namics: From Single Neurons to Networks and Models of Cognition.
+Cambridge, U.K.: Cambridge Univ. Press, 2014.
+[42] B. A. Homssi and A. Al-Hourani, “Optimal beamwidth and altitude
+for maximal uplink coverage in satellite networks,” IEEE Wireless
+Commun. Lett., vol. 11, no. 4, pp. 771–775, Apr. 2022.
+[43] A. Al-Hourani, “A tractable approach for predicting pass duration
+in dense satellite networks,” IEEE Commun. Lett., vol. 25, no. 8,
+pp. 2698–2702, Aug. 2021.
+[44] J. P. Snyder, Map Projections—A Working Manual, vol. 1395. Wash-
+ington, DC, USA: US Government Printing Office, 1987.
+[45] Fleet, 2022. Accessed: Sep. 8, 2023. [Online]. Available: https://
+fleetspace.com/
+[46] myriota, 2022. Accessed: Sep. 8, 2023. [Online]. Available: https:
+//myriota.com/
+[47] A.Al-HouraniandI.Guvenc,“Onmodelingsatellite-to-groundpath-
+loss in urban environments,” IEEE Commun. Lett., vol. 25, no. 3,
+pp. 696–700, Mar. 2021.
+[48] B. A. Homssi and A. Al-Hourani, “Modeling uplink coverage perfor-
+mance in hybrid satellite-terrestrial networks,” IEEE Commun. Lett.,
+vol. 25, no. 10, pp. 3239–3243, Oct. 2021.
+[49] A. Henkes, J. K. Eshraghian, and H. Wessels, “Spiking neural net-
+work for nonlinear regression,” 2022, arXiv:2210.03515.
+[50] S. Shrestha and G. Orchard, “SLAYER: Spike layer error reas-
+signment in time,” Adv. Neural Inf. Process. Syst., S. Bengio,
+H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and
+R. Garnett, Eds., Curran Associates, Inc., vol. 31, 2018. [On-
+line]. Available: https://proceedings.neurips.cc/paper_files/paper/
+2018/file/82f2b308c3b01637c607ce05f52a2fed-Paper.pdf
+[51] T. O’Shea and J. Hoydis, “An introduction to deep learning for the
+physical layer,” IEEE Trans. Cogn. Commun. Netw., vol. 3, no. 4,
+pp. 563–575, Dec. 2017.
+[52] E. O. Neftci, H. Mostafa, and F. Zenke, “Surrogate gradient learning
+in spiking neural networks: Bringing the power of gradient-based
+optimization to spiking neural networks,” IEEE Signal Process.
+Mag., vol. 36, no. 6, pp. 51–63, Nov. 2019.
+[53] L. Huang, J. Qin, Y. Zhou, F. Zhu, L. Liu, and L. Shao, “Normal-
+ization techniques in training DNNs: Methodology, analysis and
+application,” IEEE Trans. Pattern Anal. Mach. Intell., vol. 45, no. 8,
+pp. 10173–10196, 2023, doi: 10.1109/TPAMI.2023.3250241.
+[54] G. Colavolpe, T. Foggi, M. Ricciulli, Y. Zanettini, and J.-P. Mediano-
+Alameda, “Reception of LoRa signals from LEO satellites,” IEEE
+Trans. Aerosp. Electron. Syst., vol. 55, no. 6, pp. 3587–3602,
+Dec. 2019.
+[55] M. K. Simon and M.-S. Alouini, Digital Communication Over Fad-
+ing Channels, vol. 95. Hoboken, NJ, USA: Wiley, 2005.
+[56] K. Dakic, B. Al Homssi, A. Al-Hourani, and M. Lech, “LoRa signal
+demodulationusingdeeplearning,atime-domainapproach,”inProc.
+IEEE 93rd Veh. Technol. Conf., 2021, pp. 1–6.
+[57] C. Cook, Radar Signals: An Introduction to Theory and Application.
+Amsterdam, The Netherlands: Elsevier, 2012.
+[58] G. Maral, M. Bousquet, and Z. Sun, Satellite Communications
+Systems: Systems, Techniques and Technology. Hoboken, NJ, USA:
+Wiley, 2020.
+[59] KerasSpiking, “Estimating model energy,” 2022. Accessed: Oct.
+27, 2022. [Online]. Available: https://www.nengo.ai/keras-spiking/
+examples/model-energy.html
+[60] B. Degnan, B. Marr, and J. Hasler, “Assessing trends in performance
+per watt for signal processing applications,” IEEE Trans. Very Large
+Scale Integr. (VLSI) Syst., vol. 24, no. 1, pp. 58–66, Jan. 2016.
+[61] M. Davies et al., “Loihi: A neuromorphic manycore processor with
+on-chip learning,” IEEE Micro, vol. 38, no. 1, pp. 82–99, Jan./Feb.
+2018.
+[62] J. Gu et al., “Recent advances in convolutional neural networks,”
+Pattern Recognit., vol. 77, pp. 354–377, 2018.
+Kosta Dakic (Graduate Student Member, IEEE)
+received the B.Eng. degree in electrical and elec-
+tronic engineering in 2019 from RMIT Univer-
+sity, Melbourne, VIC, Australia, where he is
+currently working toward the Ph.D. degree in
+electrical and electronic engineering.
+His research interests include artificial intel-
+ligence in terrestrial and nonterrestrial wireless
+communications.
+Bassel Al Homssi (Member, IEEE) received
+the B.Sc. and M.Sc. degrees in electrical engi-
+neering from the American University of Shar-
+jah, Sharjah, United Arab Emirates, in 2014
+and 2016, respectively, the master’s degree in
+telecommunications from the University of Mel-
+bourne, Melbourne, VIC, Australia, in 2017,
+and the Ph.D. degree in electrical and electronic
+engineering from RMIT University, Melbourne,
+in 2020.
+He is a currently a Lecturer of Intelligent
+Space Systems with the University of New South Wales, Canberra, ACT,
+Australia. His current research interests include application of artificial
+intelligence for next-generation satellite constellations.
+DAKIC ET AL.: SPIKING NEURAL NETWORKS FOR DETECTING SATELLITE INTERNET OF THINGS SIGNALS 1237
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+Sumeet Walia (Member, IEEE) Ph.D. degree
+in electronic materials from RMIT University,
+Melbourne, VIC, AU, Australia, in 2013. He is
+a Professor (School of Engineering) at RMIT
+University, Melbourne, Victoria, AU, Australia.
+He leads a Research Group that focuses on dis-
+covering and manipulating fundamental prop-
+erties of materials for applications across en-
+ergy, nano/optoelectronics, sensors, and health
+care. He has a demonstrated track of creating
+bespoke need-based multidisciplinary teams to
+solve critical technological bottlenecks. He has coauthored more than 130
+peer reviewed publications, including authoritative reviews in prestigious
+journals, a named inventor on 11 patents and Editor for two books for
+CRC Press. He partners with several cross-sector industry to translate
+fundamental discoveries into the real world. He is also an Avid Contributor
+in enhancing Equity, Diversity, Inclusion, and Access in STEM.
+Dr. Walia chairs the National Equity, Diversity and Inclusion Committee
+of Science and Technology Australia. He is part of Advisory Board of
+the Victorian Government and the Australian Academy of Technology
+and Engineering. His scientific and leadership contributions have been
+recognized through several national and international awards, including
+the Eureka Prize for Science leadership and the MIT Technology Review’s
+Top Ten Innovators in APAC.
+Akram Al-Hourani (Senior Member, IEEE)
+received the Ph.D. degree in wireless communi-
+cation from RMIT University, Melbourne VIC,
+Australia, in 2016.
+He is currently an Associate Professor and
+theTelecommunicationProgramManager(mas-
+ter’s) with the School of Engineering, RMIT
+University. He was an R&D Program Manager
+in the Satellite and Telecommunication Industry,
+where he directed industry projects valued at
+more than $120 million. With his expertise, he
+is involved in multiple research and industry projects related to satellite
+communications, synthetic aperture radar, and artificial intelligence in
+wireless communications. As the Lead Investigator, he played a crucial
+role in delivering the largest open Internet of Things (IoT) network in
+Victoria in collaboration with five local governments, the Northern Mel-
+bourne Smart Cities Network. He has contributed to more than 106 journal
+articles and conference proceedings. His research interests include satellite
+communications, radar systems, unmanned aerial vehicle communication
+systems, signal processing/machine learning, and stochastic geometry.
+Dr. Al-Hourani is a recipient of the Technology Awards for Excellence
+2020 from the Municipal Association of Victoria and the Smart Cities
+Award for 2020 from the IoT Alliance Australia. He was awarded the
+IEEE Sensors Council Paper Award for his contribution in hand-gesture
+recognition using neural networks. He is ranked in the top 2% of scientists
+worldwide according to Stanford University’s latest rankings, in both
+the Career-Long and Single-Year Impact categories. He is an Associate
+Editor for multiple high-impact journals, including IEEE TRANSACTIONS
+OF AEROSPACE AND ELECTRONICS, IEEE OPEN JOURNAL OF THE COM-
+MUNICATION SOCIETY, and Frontiers in Space Technologies. He is also an
+Editor for Remote Sensing.
+1238 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 60, NO. 1 FEBRUARY 2024
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:34:20 UTC from IEEE Xplore. Restrictions apply.
+

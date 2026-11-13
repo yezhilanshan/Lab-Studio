@@ -1,0 +1,1064 @@
+Talk is Not Always Cheap: Promoting Wireless Sensing Models
+with Text Prompts
+Zhenkui Yang1, Zeyi Huang2, Ge Wang1, Han Ding1, Tony Xiao Han3, Fei Wang1∗
+1 Xi’an Jiaotong University 2 University of Wisconsin - Madison 3 Huawei Technologies Ltd.
+zkyang@stu.xjtu.edu.cn,zeyihuang@cs.wisc.edu,tony.hanxiao@huawei.com,{gewang,dinghan,feynmanw}@xjtu.edu.cn
+Abstract
+Wireless signal-based human sensing technologies, such as WiFi,
+millimeter-wave (mmWave) radar, and Radio Frequency Identifi-
+cation (RFID), enable the detection and interpretation of human
+presence, posture, and activities, thereby providing critical support
+for applications in public security, healthcare, and smart environ-
+ments. These technologies exhibit notable advantages due to their
+non-contact operation and environmental adaptability; however,
+existing systems often fail to leverage the textual information in-
+herent in datasets. To address this, we propose an innovative text-
+enhanced wireless sensing framework, WiTalk, that seamlessly
+integrates semantic knowledge through three hierarchical prompt
+strategies—label-only, brief description, and detailed action descrip-
+tion—without requiring architectural modifications or incurring
+additional data costs. We rigorously validate this framework across
+three public benchmark datasets: XRF55 for human action recog-
+nition (HAR), and WiFiTAL and XRFV2 for WiFi temporal action
+localization (TAL). Experimental results demonstrate significant
+performance improvements: on XRF55, accuracy for WiFi, RFID,
+and mmWave increases by 3.9%, 2.59%, and 0.46%, respectively; on
+WiFiTAL, the average performance of WiFiTAD improves by 4.98%;
+and on XRFV2, the mean average precision gains across various
+methods range from 4.02% to 13.68%. Our codes have been included
+in https://github.com/yangzhenkui/WiTalk.
+CCS Concepts
+• Human-centered computing → Ubiquitous and mobile com-
+puting systems and tools.
+Keywords
+Wireless sensing, Human action recognition, Temporal action lo-
+calization, Language assistant, Prompts
+ACM Reference Format:
+Zhenkui Yang1, Zeyi Huang2, Ge Wang1, Han Ding1, Tony Xiao Han3,
+Fei Wang1. 2025. Talk is Not Always Cheap: Promoting Wireless Sensing
+Models with Text Prompts. In Proceedings of In Proceedings of the ACM
+International Conference on XX (ACM XX 2025). ACM, New York, NY, USA,
+10 pages. https://doi.org/XXXXXXX.XXXXXXX
+∗Ongoing porject, Fei Wang is the corresponding author.
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.
+ACM XX 2025, Woodstock, NY
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 978-1-4503-XXXX-X/2025/04
+https://doi.org/XXXXXXX.XXXXXXX
+Figure 1: WiTalk transforms raw motion labels into hier-
+archical semantic representations. By leveraging large lan-
+guage models (LLMs), these enriched annotations enhance
+the performance of wireless sensing models for training and
+inference, enabling robust action recognition through inte-
+grated contextual semantics.
+1 Introduction
+Human sensing, the capability to capture and interpret information
+about human presence, posture, or activities, serves as a founda-
+tional element for applications in public security, healthcare, smart
+homes, and human-computer interaction. Among various human
+sensing modalities, wireless signal-based approaches—particularly
+those utilizing Wi-Fi, millimeter-wave (mmWave) radar, and radio
+frequency identification (RFID) signals—have attracted considerable
+attention owing to their non-contact operation and strong resilience
+to environmental factors like lighting conditions and physical ob-
+structions. In contrast, vision-based systems are constrained by
+privacy concerns and the need for a clear line of sight [41], while
+wearable sensors require user compliance and ongoing mainte-
+nance [18], both of which fall short of the advantages offered by
+wireless sensing, which leverages ubiquitous wireless signals for
+passive detection. This characteristic makes wireless sensing par-
+ticularly well-suited for real-world deployment.
+arXiv:2504.14621v2
+[cs.CV]
+22
+Apr
+2025
+ACM XX 2025, June 03–05, 2025, Woodstock, NY Yang et al.
+Current research in wireless sensing often integrates multiple
+modalities, such as video, inertial measurement units (IMUs), and
+images, to enhance the expressive power of wireless signals. For
+instance, XRFV2 [14] combines Wi-Fi signals with IMU data, em-
+ploying the XRFMamba network to capture long-term dependencies
+for action localization and summarization. Similarly, MM-Fi [41]
+introduces the first multi-modal, non-intrusive 4D human dataset,
+comprising over 320,000 frames across five modalities, supporting
+tasks like action recognition and pose estimation. TS2ACT [38]
+leverages semantically rich label text to generate an augmented im-
+age dataset, achieving few-shot human activity recognition (HAR)
+through cross-modal co-learning, with performance approaching
+or surpassing fully supervised methods. However, the indepen-
+dent collection of these multi-modal datasets increases costs and
+introduces challenges related to time synchronization and spatial
+calibration. Ensuring data consistency requires precise timestamp
+alignment and sensor positioning, often necessitating additional
+hardware. This leads to complex experimental setups, amplifying
+technical difficulties and workload.
+Existing wireless sensing models predominantly focus on single-
+modal processing or vision-RF fusion, with text typically relegated
+to static labels rather than serving as a dynamic input to shape
+feature learning [14, 37]. However, initial efforts have highlighted
+text’s potential. For example, TS2ACT and mmCLIP utilize text
+prompts to enable few-shot and zero-shot recognition, significantly
+improving data efficiency and model generalizability. Additionally,
+in more recent work, Wi-Chat [45] has preliminarily demonstrated
+the potential of integrating large language models (LLMs) with
+channel state information (CSI) signals, achieving zero-shot action
+recognition through prompt engineering, though this approach
+remains in its early stages. More notably, textual label data are
+inherently present in every dataset, with near-zero acquisition costs,
+offering a clear advantage over the complex collection processes
+required for Wi-Fi signals or IMU data. This underutilized potential
+has inspired our research.
+Our work introduces an innovative approach, WiTalk, which sig-
+nificantly enhances human sensing capabilities based on wireless
+signals by seamlessly integrating a text branch into existing models.
+This method taps into the latent value of textual labels in datasets,
+improving the performance of wireless sensing models through
+feature fusion without altering their original architectures. Experi-
+mental results demonstrate that WiTalk achieves substantial perfor-
+mance gains across multiple datasets (XRF55 [31], XRFV2 [14], and
+WiFiTAL [16]), fully validating its effectiveness. Specifically, on the
+XRF55 dataset, the incorporation of the text modality boosts accu-
+racy by 3.9%, 2.59%, and 0.46% for Wi-Fi, RFID, and millimeter-wave
+signals, respectively. On the WiFiTAL dataset, the WiFiTAD method
+with the text branch achieves an average performance improvement
+of 4.98%. On the XRFV2 dataset, various methods incorporating the
+text branch show average mAP improvements ranging from 4.02%
+to 13.68%. These advancements underscore the critical role of the
+text branch in enhancing wireless action recognition. In summary,
+our contributions can be highlighted in the following two aspects:
+• We propose a method to enhance wireless sensing models us-
+ing text labels from existing datasets, incurring no additional
+cost.
+• We designed three hierarchical text prompt strategies with
+progressive semantic richness and systematically validated
+their performance in Wi-Fi, RFID, and mmWave action recog-
+nition and temporal action localization tasks across three
+large-scale public datasets.
+2 Related Work
+2.1 Wireless Sensing
+Wireless sensing leverages wireless signals such as Wi-Fi, mmWave,
+and RFID to achieve human activity recognition and related tasks.
+Compared to camera-based solutions, wireless sensing demon-
+strates significant advantages in indoor environments due to its
+ability to penetrate occlusions and preserve privacy.
+Wi-Fi Sensing: Wi-Fi signals, ubiquitous in indoor environ-
+ments, are widely leveraged for human sensing research due to
+their reflective properties. A comprehensive survey [32] systemat-
+ically categorizes Wi-Fi sensing techniques, encompassing appli-
+cations such as indoor localization[27], identity recognition[29],
+pose estimation [33, 40, 48], action recognition[46] and health
+monitoring[43]. The mainstream approach employs Channel State
+Information (CSI) to capture fine-grained signal variations for ac-
+tivity recognition. These studies highlight the immense potential
+of Wi-Fi sensing in non-intrusive perception, laying a robust foun-
+dation for further theoretical and practical advancements.
+mmWave Sensing: mmWave signals enable high-resolution
+human motion recognition. EI [10] combined Channel Impulse Re-
+sponse with Convolutional Neural Networks to achieve 65% activ-
+ity recognition accuracy, while SPARCS [20] reached over 90% F1
+scores through micro-Doppler spectrum analysis. RadHAR [24]
+and m-Activity [35] achieved recognition accuracies of 90.47%
+and 93.25%, respectively, using point clouds, with real-time perfor-
+mance at 91.52 frames per second. PALMAR [2] achieved 91.88%
+accuracy in multi-person activity tracking using clustering and
+domain adaptation techniques. In gesture recognition, Soli [9] pio-
+neered fine-grained gesture recognition with 92.1% accuracy, while
+RFWash [13] controlled gesture error rates below 8% for hand hy-
+giene monitoring. For handwriting tracking, mTrack [36] achieved
+sub-millimeter (<8 mm) tracking errors, and mmWrite [22] and
+mmKey [8] reached 95% accuracy in character recognition tasks.
+EgoHand [17] utilizes mmWave as a head-mounted wearable de-
+vice for hand keypoint detection and hand gesture recognition,
+supporting VR and human-computer interaction scenarios.
+RFID Sensing: RFID enables passive HAR via signal reflections
+for indoor positioning and gesture recognition. LANDMARC [11]
+uses reference tags for accurate, cost-effective indoor localization
+with active RFID. TagoramRT [42] tracks mobile tags with high
+precision using phase values and a virtual antenna array. RFnet
+[6] employs CNN to recognize gestures and identities from RFID
+time-series signals, excelling in smart homes without heavy prepro-
+cessing. LoDiHAR [25] offers a low-cost, distributed HAR system,
+using phase extraction and a GAN-Transformer model to achieve
+94.9% accuracy for eight activities at 10% of COTS RFID costs.
+In this paper, we leverage the Wi-Fi modality from the XRF55,
+WiFiTAL, and XRFV2 datasets to perform HAR and TAL tasks.
+Additionally, we utilize the mmWave and RFID modalities from the
+XRF55 dataset to further conduct HAR tasks.
+Talk is Not Always Cheap: Promoting Wireless Sensing Models with Text Prompts ACM XX 2025, June 03–05, 2025, Woodstock, NY
+(a) Human-Induced Multipath Effects (b) RFID System Operation Principle (c) FMCW Operation
+Figure 2: The figure illustrates three fundamental signal propagation and sensing mechanisms used in wireless sensing systems;
+(a) Human-Induced Multipath Effects: Movement of the human body causes dynamic changes in multipath propagation, leading
+to variations in signal paths and reflections that can be captured by sensing systems; (b) RFID System Operation Principle:
+The RFID reader emits an wireless signal that is reflected back by the passive tag via backscatter communication. The signal’s
+changes encode positional or identity information; (c) FMCW Operation: Frequency-Modulated Continuous Wave (FMCW)
+radar transmits chirp signals with linearly varying frequencies. The time delay between transmitted and received signals
+induces a frequency shift, which can be used to estimate target distance and motion through range-Doppler analysis.
+2.2 Language-Guided Action Understanding
+In recent years, an increasing number of studies have explored the
+integration of textual information using LLMs and prompt learning,
+providing new insights into wireless sensing tasks.
+For example, Action-GPT [12] proposes a plug-and-play frame-
+work that uses LLMs to generate fine-grained action descriptions,
+enhancing the semantic alignment between text and motion repre-
+sentations. This framework supports a variety of model architec-
+tures and enables zero-shot motion generation. PLAR [34] leverages
+multiple forms of prompts—including optical flow, vision mod-
+els, and learnable prompts—to guide action recognition in videos,
+achieving notable accuracy improvements on datasets such as
+Okutamam (3.17–10.2%). ActionPrompt [47] introduces an Action
+Prompt Module that embeds textual labels and mines pose patterns
+to improve 2D-to-3D human pose estimation. STALE [19] applies
+vision-language prompting to zero-shot temporal action detection,
+mitigating error propagation between proposal and classification
+stages. Meanwhile, mmCLIP [4] extends this paradigm to mmWave
+signals by aligning them with textual semantics, enabling zero-shot
+human activity recognition in the wireless sensing domain.
+Despite these advances, previous work has not explored the
+direct integration of textual semantics into wireless sensing sys-
+tems—particularly without reliance on visual modalities or addi-
+tional physical sensors.
+3 Preliminary
+Wireless sensing leverages the intrinsic properties of wireless sig-
+nals, such as reflection, penetration, and multipath propagation, to
+enable non-intrusive perception tasks like human action recogni-
+tion and temporal action localization. Unlike vision-based methods,
+wireless sensing operates effectively through occlusions and in
+varying lighting conditions, while preserving privacy by avoiding
+direct imaging.
+Principle of WiFi-Based Human Motion Sensing. Wi-Fi
+devices compliant with IEEE 802.11n/ac standards are generally
+equipped with multiple transmit and receive antennas, supporting
+Multiple-Input Multiple-Output (MIMO) technology. Each antenna
+pair between transmitter and receiver forms a MIMO channel com-
+prising multiple subcarriers. These devices actively monitor the
+channel conditions to fine-tune transmission power and data rates,
+ensuring efficient use of the channel capacity. CSI describes chan-
+nel characteristics, capturing each subcarrier’s frequency response
+of each subcarrier for every transmit-receive antenna pair. Dur-
+ing Wi-Fi signal propagation, the received signal results from the
+constructive and destructive interference of multipath signals scat-
+tered by walls and surrounding objects. Human motions, such as
+hand movements, perturb the signal propagation paths, altering
+existing multipath effects or introducing new ones, as illustrated
+in Figure 2a, which depicts the multipath effects of Wi-Fi signals.
+These changes are reflected in the CSI values and can be leveraged
+to detect and recognize human actions, such as gestures or posture
+changes.
+Let 𝑀𝑇 represent the number of transmit antennas, 𝑀𝑅 repre-
+sent the number of receive antennas, and 𝑆𝑐 represent the number
+of OFDM subcarriers[3]. Define 𝑋𝑖 and 𝑌𝑖 as the 𝑀𝑇 -dimensional
+transmitted signal vector and 𝑀𝑅-dimensional received signal vec-
+tor, respectively, for subcarrier 𝑖, and 𝑁𝑖 as the 𝑀𝑅-dimensional
+noise vector. The MIMO system can be expressed by the following
+equation:
+𝑌𝑖 = 𝐻𝑖𝑋𝑖 + 𝑁𝑖 𝑖 ∈ [1,𝑆𝑐] (1)
+where the 𝑀𝑅 × 𝑀𝑇 -dimensional matrix 𝐻𝑖 represents the CSI for
+subcarrier 𝑖. Wi-Fi devices estimate 𝐻𝑖 by periodically transmitting
+known OFDM symbol preambles. As a human moves within the sig-
+nal coverage area, variations in multipath effects cause fluctuations
+in CSI, capturing signal changes induced by motion and facilitating
+action detection.
+ACM XX 2025, June 03–05, 2025, Woodstock, NY Yang et al.
+RFID Sensing Using Backscatter Communication. RFID-
+based sensing leverages backscatter communication to enable inter-
+action between a reader and passive tags, as illustrated in Figure 2b.
+The reader transmits Continuous Waves (CW) via the forward link,
+embedding commands such as Query or ACK to interrogate the tag.
+The passive tag, which does not possess an active radio transmitter,
+modulates its identification data (e.g., tag ID or response) onto the
+backscattered CW through the reverse link by varying its antenna
+impedance. This modulation process is powered by energy har-
+vested from the incident CW[7]. The received power at the reader,
+denoted as 𝑃𝑟𝑥 , is determined by the radar equation, accounting
+for the two-way signal propagation:
+𝑃𝑟𝑥 = 𝑃𝑡𝑥𝐺𝑡𝑥𝐺𝑟𝑥𝐺2
+𝑡𝑎𝑔
+
+𝜆
+4𝜋𝑑
+4
+(2)
+where 𝑃𝑡𝑥 is the transmitted power, 𝐺𝑡𝑥 and 𝐺𝑟𝑥 are the transmit
+and receive antenna gains of the reader, respectively, 𝐺2
+𝑡𝑎𝑔 reflects
+the tag’s antenna gain for both forward and reverse signal paths.,
+𝜆 is the wavelength of the CW, and 𝑑 is the distance between the
+reader and the tag. The term
+
+𝜆
+4𝜋𝑑
+4
+reflects the two-way free-space
+path loss, as the signal travels from the reader to the tag and back.
+In addition to the tag’s identification data, the backscattered signal
+encapsulates environmental information through variations in 𝑃𝑟𝑥 .
+Perturbations in 𝑃𝑟𝑥 , induced by human presence or movement,
+alter the signal’s propagation path (e.g., via multipath effects or
+shadowing), enabling action recognition. By analyzing these varia-
+tions, RFID sensing systems can detect and classify human activities
+in the deployment area.
+mmWave-Based Human Motion Sensing. mmWave radar
+employs Frequency Modulated Continuous Wave (FMCW) technol-
+ogy to enable human motion sensing. As depicted in Figure 2c, the
+radar transmits a chirp signal with a linearly increasing frequency
+over time (illustrated by the orange dashed line 𝑓𝑥 (𝑡)). Upon re-
+flection from a human body, the received signal (green solid line
+𝑓𝑦 (𝑡)) exhibits a frequency shift Δ𝑓 due to the Time-of-Flight (TOF).
+By mixing the transmitted and received signals, an Intermediate
+Frequency (IF) signal is obtained[1]. Applying a Fast Fourier Trans-
+form (FFT) to the IF signal allows the frequency offset Δ𝑓 to be
+used for calculating the target distance:
+𝑅 =
+𝑐 · Δ𝑓 · 𝑇𝑐
+2𝐵
+(3)
+where 𝑐 is the speed of light, 𝐵 is the frequency modulation band-
+width, and 𝑇𝑐 is the chirp duration[39].
+Across consecutive chirp cycles (e.g., sweep 1 and sweep 2 in
+the Figure 2c), human motion induces a Doppler effect, resulting
+in phase variations between adjacent chirps. A secondary FFT is
+performed to extract the Doppler shift and compute the velocity:
+𝑣 =
+𝜆 · 𝜔
+4𝜋𝑇𝑐
+(4)
+where 𝜆 is the wavelength of the millimeter wave, and 𝜔 is the
+phase change rate. By integrating distance and Doppler data, the
+target angle can be further estimated using phase differences across
+an antenna array. The elevation angle 𝜑 is determined from the
+phase difference 𝜔𝑧 between vertically aligned antennas, while the
+azimuth angle 𝜃 is derived from the phase difference 𝜔𝑥 between
+Figure 3: Overview of the WiTalk. Wireless signals are pro-
+cessed by a Wireless Encoder, while motion labels are en-
+hanced by an LLMs Assistant and encoded into text embed-
+dings. These embeddings are stored in JSON format, refined
+via an Attention Module, and fused with wireless features in
+the Sensing Model to perform downstream tasks.
+horizontally aligned antennas:
+𝜑 = sin−1
+𝜔𝑧
+𝜋
+
+(5)
+𝜃 = sin−1
+
+𝜔𝑥
+cos𝜑 · 𝜋
+
+(6)
+Finally, the three-dimensional position of human joints is recon-
+structed by converting from spherical to Cartesian coordinates:
+𝑥 = 𝑅 cos𝜑 sin𝜃 (7)
+𝑧 = 𝑅 sin𝜑 (8)
+𝑦 =
+√︁
+𝑅2 − 𝑥2 − 𝑧2 (9)
+This process enables high-precision capture and real-time analysis
+of subtle human movements.
+These wireless signal characteristics form the technical founda-
+tion of our approach, supporting wireless sensing-based human
+activity recognition and temporal action localization.
+4 Methods
+In this paper, we introduce a novel textual branch framework to
+improve wireless sensing-based action recognition (e.g., Wi-Fi,
+mmWave, RFID) by integrating multimodal fusion with textual
+semantics. Conventional wireless sensing models predominantly
+depend on spatiotemporal signal features, which restricts their abil-
+ity to capture semantic context. To overcome this limitation, our
+framework incorporates a complementary textual modality, utiliz-
+ing representations generated by LLMs to enrich the recognition
+process with deeper semantic understanding.
+4.1 Pipeline
+The proposed WiTalk architecture is illustrated in Figure 3, which
+depicts the information processing pipeline from input to output.
+Initially, we construct a contextual learning template (shown in
+Figure 1) to standardize textual label processing across datasets.
+Talk is Not Always Cheap: Promoting Wireless Sensing Models with Text Prompts ACM XX 2025, June 03–05, 2025, Woodstock, NY
+These text labels are then semantically enhanced through LLMs.
+Subsequently, a text encoder transforms the enhanced textual la-
+bels into initial text feature vectors, which are further refined via
+an attention mechanism to improve their semantic expressiveness.
+These processed text feature vectors are then integrated with wire-
+less signal feature vectors through weighted feature fusion. Finally,
+the fused feature vectors are fed into the sensing model to sup-
+port downstream tasks and enable the training and optimization of
+multimodal action recognition.
+Notably, text labels are encoded once and stored as key-value
+pairs in JSON files for efficient retrieval.
+4.2 Textual Prompts
+4.2.1 Textual Feature Extraction and Label Processing. The textual
+branch begins with the extraction of textual features and processing
+of action labels, forming the cornerstone of our multimodal frame-
+work. To achieve this, we first define a contextual learning tem-
+plate to standardize the integration of textual labels across diverse
+datasets. This template provides a structured format that enriches
+raw action labels (e.g., "running," "walking") with consistent con-
+textual cues, ensuring uniformity and adaptability in subsequent
+processing steps. The labels, paired with the contextual template,
+are then fed into an LLMs to perform semantic enhancement. This
+step leverages the LLM’s natural language understanding capabili-
+ties to generate semantically enriched representations that capture
+deeper meanings and relationships beyond the original labels.
+Next, the enhanced textual representations are processed by a
+text encoder, which transforms them into dense feature vectors.
+This encoding step converts the semantically augmented text into a
+numerical format suitable for downstream tasks, typically yielding
+vectors with a fixed dimensionality (e.g., 512 or 4096, depending on
+the encoder’s configuration).
+4.2.2 Multi-Head Self-Attention Optimization. To enhance the se-
+mantic expressiveness of 𝑇init, particularly when multiple descrip-
+tions are involved (𝐿 > 1), we employ a Multi-Head Self-Attention
+(MHSA) mechanism. MHSA splits the input features into multi-
+ple subspaces and computes attention weights in parallel within
+each subspace, effectively capturing semantic relationships and
+contextual dependencies among descriptions. Specifically, MHSA
+first projects 𝑇init into Query, Key, and Value vectors via linear
+transformations. For each head ℎ, the scaled dot-product attention
+is computed as:
+Attention(𝑄ℎ, 𝐾ℎ,𝑉ℎ) = Softmax
+𝑄ℎ𝐾⊤
+ℎ
+√︁
+𝑑𝑘
+!
+𝑉ℎ (10)
+where 𝑄ℎ = 𝑇init𝑊
+𝑄
+ℎ
+, 𝐾ℎ = 𝑇init𝑊 𝐾
+ℎ
+, and 𝑉ℎ = 𝑇init𝑊𝑉
+ℎ
+are the
+Query, Key, and Value vectors for theℎ-th head, with𝑊
+𝑄
+ℎ
+,𝑊 𝐾
+ℎ
+,𝑊𝑉
+ℎ
+∈
+R𝐶×𝑑𝑘 as learnable projection matrices and 𝑑𝑘 as the dimension
+per head. The outputs of all heads are then concatenated and trans-
+formed:
+MHSA(𝑇init) = Concat(head1, head2, . . . , head𝐻 )𝑊𝑂
+(11)
+where 𝑊𝑂 ∈ R𝐻𝑑𝑘 ×𝐶 is the output projection matrix, yielding the
+enhanced representation:
+𝑇att = MHSA(𝑇init) +𝑇init (12)
+Inspired by mmCLIP, our approach leverages the MHSA mecha-
+nism to process the enhanced text features, further improving their
+contextual coherence and semantic richness. Subsequently, we con-
+catenate 𝑇att with 𝑇init to form 𝑇combined ∈ R𝐵×(𝐿+1)×𝐶, thereby
+enhancing the robustness and contextual awareness of the textual
+features.
+4.2.3 Multimodal Fusion. To imbue wireless signal features with
+semantic attributes, this section employs a weighted feature fusion
+approach to integrate textual and wireless signal features, with
+wireless signal features assigned a weight of 0.9 and text features a
+weight of 0.1. This weighting strategy underscores the primary role
+of wireless signal features in capturing spatiotemporal information
+for action recognition, while text features provide supplementary
+semantic support. The resulting fused feature vectors are then
+fed into a sensing model, providing robust support for various
+downstream tasks and enhancing performance in applications such
+as action recognition.
+4.3 Loss Function
+4.3.1 Loss Function for TAL. In Temporal Action Localization (TAL),
+the loss function optimizes both action classification and boundary
+localization. Features processed by a backbone network form a pyra-
+mid (𝑓1, 𝑓2, . . . , 𝑓𝐾 ), with each level 𝑓𝑖 feeding into two branches
+for classification and localization predictions. The total loss is:
+𝐿 =
+𝐾
+∑︁
+𝑖=1
+𝛼1𝐿Cls,𝑖 + 𝛼2𝐿Loc,𝑖
+
+(13)
+where 𝐿Cls,𝑖 uses Focal Loss for classification, and 𝐿Loc,𝑖 employs
+a specialized loss for localization. Weights 𝛼1 = 1 and 𝛼2 = 1000
+balance the two terms for effective training.
+4.3.2 Loss Function for HAR. For Human Activity Recognition
+(HAR), Cross-Entropy Loss is used to assess multi-class classifica-
+tion performance. Given predicted probabilities ˆ
+𝑦𝑖 and true labels
+𝑦𝑖, the loss is:
+𝐿 =
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+𝐶
+∑︁
+𝑐=1
+−𝑦𝑖,𝑐 log ˆ
+𝑦𝑖,𝑐 (14)
+where 𝑁 is the sample size, 𝐶 is the number of classes, 𝑦𝑖,𝑐 is the
+one-hot encoded label, and ˆ
+𝑦𝑖,𝑐 is the predicted probability. This
+loss enhances classification accuracy for HAR’s temporal data.
+5 Evaluation
+5.1 Datasets
+5.1.1 XRF55 Dataset. XRF55 comprises 42.9K samples from 39 sub-
+jects performing 55 indoor actions across five categories (Human-
+Object Interaction, Human-Human Interaction, Fitness, Body Mo-
+tion, and Human-Computer Interaction). Data was collected in four
+scenes using Wi-Fi (Intel 5300 NIC, 200 Hz, 30 OFDM subcarriers),
+RFID (Impinj R420, 30 Hz), and mmWave radar (TI IWR6843ISK, 20
+Hz), alongside synchronized Kinect videos. The dataset includes
+30.0K training and 12.9K test samples, recorded in a rectangular
+sensing area with a 5-second action window, totaling 59h35min of
+multi-modal data. XRF55 was officially split with a 7:3 ratio into
+the training and testing sets.
+ACM XX 2025, June 03–05, 2025, Woodstock, NY Yang et al.
+5.1.2 WiFiTAL Dataset. WiFiTAL consists of 553 untrimmed CSI
+recordings from three volunteers performing seven daily activities
+(walking, running, jumping, waving, falling, sitting, and standing).
+Data was collected in a 7𝑚×12𝑚×2.5𝑚 empty office environment
+using a single-antenna Intel 5300 NIC pair (TX/RX) operating on 30
+OFDM sub-channels, sampled at 100 Hz. The dataset contains 2,114
+temporally segmented and annotated activity instances. WiFiTAL
+was officially split with a 7:3 ratio into the training and testing sets.
+5.1.3 XRFV2 Dataset. XRFV2 dataset contains synchronized mul-
+timodal recordings of 853 valid action sequences performed by 16
+volunteers. Each volunteer conducted multiple variants of prede-
+fined action sequences across three indoor scenes (bedroom, study
+room, dining room), totaling 16 hours and 16 minutes of annotated
+data. The dataset includes Channel State Information (CSI) sampled
+from one transmitter (single antenna, 200 packets per second on
+channel 128 at 5.64 GHz) and three receivers (each with three anten-
+nas, capturing CSI on 30 OFDM subcarriers), along with IMU data
+from wearable devices and RGB+D+IR videos. XRFV2 was officially
+split into training and testing sets with an 8:2 ratio, yielding 682
+training and 171 testing sequences.
+5.2 Metrics
+5.2.1 Evaluation Metrics for HAR. Human Action Recognition
+(HAR) performance is typically measured using classification accu-
+racy, which quantifies the proportion of correctly predicted actions
+among all action instances. Accuracy is computed as follows:
+Accuracy =
+Í𝑁
+𝑖=1 𝐼 (𝑦𝑖 = ˆ
+𝑦𝑖)
+𝑁
+(15)
+where 𝑁 denotes the total number of action instances, 𝑦𝑖 and ˆ
+𝑦𝑖
+represent the ground-truth and predicted action labels respectively,
+and 𝐼 is an indicator function outputting 1 if 𝑦𝑖 = ˆ
+𝑦𝑖, and 0 other-
+wise.
+Higher accuracy values indicate better recognition capability
+and reliability of the model.
+5.2.2 Evaluation Metrics for TAL. Temporal Action Localization
+(TAL) performance is primarily evaluated using temporal Intersec-
+tion over Union (tIoU), extending Intersection over Union (IoU)
+from image detection to the temporal domain. Specifically, tIoU
+measures temporal overlap between predicted and ground-truth
+action segments:
+𝑇𝐼 = max(0, min(𝑡𝑒, ˆ
+𝑡𝑒) − max(𝑡𝑠, ˆ
+𝑡𝑠))
+𝑇𝑈 = max(𝑡𝑒, ˆ
+𝑡𝑒) − min(𝑡𝑠, ˆ
+𝑡𝑠)
+tIoU =
+𝑇𝐼
+𝑇𝑈
+(16)
+where 𝑡𝑠, 𝑡𝑒 and ˆ
+𝑡𝑠, ˆ
+𝑡𝑒 denote the start and end times of ground-truth
+and predicted segments, respectively.
+Predictions are deemed accurate when their tIoU scores surpass a
+designated cutoff (e.g., 0.5). To assess performance in greater detail,
+the Average Precision at threshold 𝑡 (AP@t) is calculated using the
+following expression:
+𝐴𝑃@𝑡 =
+Í𝑁
+𝑖=1 𝐼 (tIoU𝑖 ≥ 𝑡)
+𝑁
+(17)
+where 𝑁 represents the total count of actions, and 𝐼 serves as a
+binary indicator that yields 1 if tIoU𝑖 ≥ 𝑡, and 0 otherwise.
+Ultimately, the mean Average Precision (mAP) is derived by com-
+puting the mean of AP@t across various tIoU thresholds, offering
+a holistic evaluation of the TAL model’s precision and resilience.
+5.3 Implementation Details
+5.3.1 Experiments on the XRF55 Dataset. For the experiments on
+the XRF55 dataset, the parameter settings adhered to the original
+paper. The batch size was set to 55, with a total of 200 training
+epochs. The initial learning rate was 0.0001, decaying by a factor of
+0.5 every 40 epochs, and the Adam optimizer was employed. The
+training durations for each modality were as follows: approximately
+8 hours for the WIF modality, 5 hours for the mmWave modality,
+and 3 hours for the RFID modality.
+5.3.2 Experiments on the WiFiTAL Dataset. For the experiments
+on the WiFiTAL dataset, the Adam optimizer was used with an
+initial learning rate of 4e-5 and a weight decay coefficient of 1e-3.
+The batch size was set to 6, and training spanned 40 epochs. with
+the total time from training to inference being approximately 6
+hours. All other parameters remained consistent with the original
+paper.
+5.3.3 Experiments on the XRFV2 Dataset. For the experiments on
+the XRFV2 dataset, the parameter settings largely follow those of
+the original paper. The batch size was set to 16, and all methods
+utilized the AdamW optimizer, with training conducted on a single
+Nvidia 3090 GPU for 80 epochs. The initial learning rate was set
+to 4e-5, decaying by a factor of 0.5 every 30 epochs. The Mamba
+version used was 1.0.1, and the causal_conv1d version was 1.0.0.
+The time required for each method, from training to inference,
+ranged approximately between 10 and 25 hours, varying depending
+on the specific method but consistently falling within this range.
+To ensure fairness, all experiments across each dataset in this
+paper were conducted under unified parameter settings.
+5.4 Results
+All results in this section are derived from text features encoded
+using the CLIP encoder, a choice that ensures high reliability and
+consistency during multimodal fusion.
+Experimental results show that our proposed method achieves
+significant performance improvements across multiple datasets
+, validating its versatility and practicality. Here, 𝑊 denotes the
+performance of the original wireless-only method, while 𝑊 + 𝑇
+represents the performance after integrating the text branch.
+On the XRF55 dataset, Table 1 indicates that incorporating the
+text modality improves the accuracy of Wi-Fi, RFID, and mmWave
+by 3.9%, 2.59%, and 0.46%, respectively. These improvements, ob-
+served across heterogeneous wireless modalities, indicate that se-
+mantic textual prompts can complement different signal types effec-
+tively, regardless of their frequency band or sensing characteristics.
+On the WiFiTAL dataset, Table 2 reveals that the WiFiTAD model,
+after integrating the text branch, achieves mAP improvements rang-
+ing from 3.81% to 5.88% across various tIoU thresholds, with an
+average gain of 4.98%, underscoring its stable and reliable enhance-
+ment in temporal tasks.
+Talk is Not Always Cheap: Promoting Wireless Sensing Models with Text Prompts ACM XX 2025, June 03–05, 2025, Woodstock, NY
+0 10 20 30 40 50 60
+Time (s)
+WiFiTAD+T
+WiFiTAD
+XRFMamba+T
+XRFMamba
+Groundtruth
+Sit down Read a book Pour water Take medicine Lie down Use phone Get up
+Pour water
+0.78
+Use phone
+0.88
+Lie down
+0.76
+Sit down
+0.66
+Get up
+0.80
+Lie down
+0.83
+Sit down
+0.86
+Pour water
+0.47
+Get up
+0.37
+Pour water
+0.52
+Lie down
+0.87
+Sit down
+0.80
+Use phone
+0.79
+Get up
+0.75
+Take medicine
+0.61
+Pour water
+0.42
+Lie down
+0.73
+Use phone
+0.67
+Take medicine
+0.64
+Get up
+0.54
+Sit down
+0.64
+Figure 4: Visualization examples of the performance of XRFMamba and WiFiTAD on the XRFV2 dataset, where results marked
+with +T denote those obtained after incorporating the text modality.
+Table 1: Accuracy Comparison of DML Across Modalities on
+XRF55
+Model Modal
+Accuracy
+Wi-Fi RFID mmWave
+DML [31]
+W 87.26 56.82 86.88
+W+T 91.16 59.41 87.34
+Δ ↑ 3.9 2.59 0.46
+Table 2: Performance Comparison of WiFiTAD Across Modal-
+ities on WiFiTAL
+Model Modal
+mAP @ tIoU
+Avg
+0.3 0.4 0.5 0.6 0.7
+WiFiTAD [16]
+W 79.31 74.91 69.82 61.56 45.96 66.31
+W+T 83.12 80.79 75.62 66.18 50.72 71.29
+Δ ↑ 3.81 5.88 5.80 4.62 4.76 4.98
+On the XRFV2 dataset, Table 3 demonstrates that evaluations of
+various methods using the original paper’s code (e.g., XRFMamba,
+WiFiTAD, and UWiFiAction) show the text modality boosts mAP
+by an average of 4.02% to 13.68%, with particularly notable gains in
+TriDet and XRFMamba at 13.68% and 13.19%, respectively.
+These experimental results strongly substantiate the critical role
+of the text branch in enhancing wireless signal-based action recog-
+nition capabilities. Furthermore, Figure 4 provides intuitive visual-
+ization examples, showcasing the performance improvements of
+the XRFMamba and WiFiTAD methods on the XRFV2 dataset after
+integrating the text branch.
+5.5 Ablation Study
+The key to text-augmented wireless sensing lies in aligning sig-
+nal features with semantic descriptions. To this end, we conduct
+a systematic evaluation of the effects of prompt engineering and
+Table 3: Performance Comparison of Methods on XRFV2
+Model Modal
+mAP @ tIoU
+Avg
+0.5 0.55 0.6 0.65 0.7
+TemporalMaxer [26]
+W 44.62 40.38 33.75 28.43 21.74 33.78
+W + T 55.48 48.71 41.23 32.55 22.52 40.10
+Δ ↑ 10.86 8.33 7.48 4.12 0.78 6.32
+ActionFormer [44]
+W 55.59 51.48 45.51 37.72 25.40 43.14
+W + T 65.07 59.96 51.48 42.06 31.18 49.95
+Δ ↑ 9.48 8.48 5.97 4.34 5.78 6.81
+TriDet [23]
+W 47.68 44.18 37.94 27.00 19.30 35.22
+W + T 62.94 58.00 51.37 41.81 30.39 48.90
+Δ ↑ 15.26 13.82 13.43 14.81 11.09 13.68
+WiFiTAD [16]
+W 62.90 58.97 53.47 45.87 36.56 51.55
+W + T 67.41 64.12 59.00 49.90 40.15 56.12
+Δ ↑ 4.51 5.15 5.53 4.03 3.59 4.57
+UWiFiAction [30]
+W 43.05 39.89 34.20 27.59 22.13 33.37
+W + T 48.02 43.54 37.69 32.44 25.27 37.39
+Δ ↑ 4.97 3.65 3.49 4.85 3.14 4.02
+ActionMamba [5]
+W 70.97 68.55 63.96 58.26 47.65 61.88
+W + T 75.54 73.56 69.28 63.00 55.09 67.29
+Δ ↑ 4.57 5.01 5.32 4.74 7.44 5.42
+XRFMamba [14]
+W 65.40 60.51 54.67 47.75 34.70 52.61
+W + T 72.95 70.74 67.61 63.43 54.25 65.80
+Δ ↑ 7.55 10.23 12.94 15.68 19.55 13.19
+embedding model selection, comparing three advanced text en-
+coders: CLIP-ViT-Large-Patch14 (CLIP)[21], LLaMA-2-7B-Chat-HF
+(LLaMA)[28], and Text-Embedding-V3 (Qwen)[15], with three prompt
+strategies: TLE (Tag-Label Encoding), TCE (Tag-Context Enhance-
+ment), and TDE (Tag-Description Elaboration). Notably, the base-
+lines reported in the tables refer to the original method without
+text augmentation.
+ACM XX 2025, June 03–05, 2025, Woodstock, NY Yang et al.
+Table 4: Action Classification Accuracy Comparison of Em-
+bedding Models and Prompt Strategies on XRF55 Dataset
+Embedding
+Model
+Text
+Strategy
+Accuracy
+Wi-Fi RFID mmWave
+baseline - 87.26 56.82 86.88
+CLIP
+TLE 87.99 55.16 86.91
+TCE 91.16 59.41 87.34
+TDE 88.61 60.13 87.77
+Qwen
+TLE 87.70 58.43 86.28
+TCE 87.61 58.96 87.19
+TDE 87.93 53.26 87.67
+LLaMA
+TLE 88.21 52.94 86.45
+TCE 89.22 50.98 88.78
+TDE 87.66 53.62 87.38
+Table 5: Effect of Textual Embedding Strategies on WiFiTAD’s
+mAP Across tIoU Thresholds on WiFiTAL
+Embedding
+Model
+Text
+Strategy
+mAP @ tIoU
+Avg
+0.3 0.4 0.5 0.6 0.7
+baseline - 79.31 74.91 69.82 61.56 45.96 66.31
+CLIP
+TLE 80.32 78.29 74.18 66.78 48.06 69.73
+TCE 83.12 80.79 75.62 66.18 50.7271.29
+TDE 84.2381.9275.04 66.24 44.97 70.48
+Qwen
+TLE 77.11 74.80 71.26 61.28 44.10 65.71
+TCE 77.86 75.35 71.43 64.62 44.29 66.71
+TDE 79.74 76.03 71.29 64.76 47.91 67.95
+LLaMA
+TLE 77.54 73.92 70.45 64.67 47.93 66.90
+TCE 83.17 79.58 72.88 64.55 45.97 69.23
+TDE 81.96 77.63 75.7169.4250.53 71.05
+On the XRF55 dataset, Table 4 demonstrates that CLIP and
+LLaMA achieve superior performance for Wi-Fi and mmWave
+modalities. However, LLaMA’s RFID accuracy falls below the base-
+line, likely because its dialogue-oriented embeddings struggle to
+capture RFID’s action-specific patterns. On the WiFiTAL dataset,
+Table 5 indicates CLIP with TCE achieves the highest average mAP
+of 71.29%, with TDE excelling at higher tIoU thresholds. On the
+XRFV2 dataset, Table 6 reveals CLIP with TCE reaches an aver-
+age mAP of 65.80%, outperforming Qwen and LLaMA. Overall,
+CLIP proves most robust, with TCE and TDE enhancing semantic
+expressiveness.
+On XRFV2, Qwen’s TCE and TDE score only 9.36% and 11.62%
+respectively, and LLaMA’s TCE is 13.74%. This weaker performance
+may arise from a mismatch with the dataset’s semantic needs. Qwen,
+designed for general text, struggles with action-specific semantics,
+while LLaMA’s dialogue focus limits its alignment with wireless
+signal spatiotemporal features.
+Table 6: Effect of Textual Embedding Strategies on XRF-
+Mamba’s mAP Across tIoU Thresholds on XRFV2
+Embedding
+Model
+Text
+Strategy
+mAP @ tIoU
+Avg
+0.5 0.55 0.6 0.65 0.7
+baseline - 65.40 60.51 54.67 47.75 34.70 52.61
+CLIP
+TLE 66.33 61.22 54.98 47.22 37.93 53.54
+TCE 72.95 70.74 67.61 63.43 54.25 65.80
+TDE 69.33 66.87 59.77 51.85 43.24 58.21
+Qwen
+TLE 65.24 62.34 56.97 49.15 39.49 54.64
+TCE 16.65 13.21 9.97 4.54 2.42 9.36
+TDE 21.34 15.79 10.28 6.64 4.05 11.62
+LLaMA
+TLE 64.08 59.00 52.86 47.59 39.15 52.54
+TCE 21.18 17.37 13.48 9.71 6.95 13.74
+TDE 63.32 58.64 52.09 44.17 36.10 50.86
+6 Discussion and Limitation
+This paper validates the potential of integrating a text branch into
+a wireless signal-based human sensing framework for applications
+in HAR and TAL tasks. However, this approach still exhibits several
+notable limitations. Firstly, the performance improvements brought
+by the text branch vary inconsistently across different types of
+wireless signals and datasets. For instance, on the XRF55 dataset,
+the accuracy of Wi-Fi signals improved by 3.9%, whereas mmWave
+signals saw only a marginal increase of 0.46%. This suggests that
+the enhancement effect of text features may be constrained by the
+characteristics of the signal modality, depending on data quality
+and signal type in specific scenarios. Secondly, the method heavily
+relies on the quality of text descriptions and the expressive capacity
+of the embedding model. If the semantic richness of the text prompt
+is insufficient the full guiding potential of this approach may not be
+realized. The design of an optimal prompt strategy requires further
+exploration and refinement.
+Moreover, the underlying mechanism by which encoded text
+features enhance the precision of wireless sensing remains unclear.
+For example, the CLIP model, trained solely on text and image
+data without exposure to wireless signals, can still significantly
+boost wireless sensing performance—an intriguing phenomenon
+that warrants deeper investigation.
+7 Conclusion
+In this work, we introduce a novel framework that enhances wire-
+less signal-based human sensing by integrating a textual branch,
+leveraging text semantics to improve signal processing. When inte-
+grated with existing models, our framework achieves performance
+gains without requiring structural changes, highlighting the frame-
+work’s flexibility. Evaluations show that combining advanced em-
+bedding models with detailed text descriptions yields optimal re-
+sults, laying a foundation for text-augmented wireless sensing.
+Our findings reveal text semantics as a low-cost, effective com-
+plement to wireless signals, linking signal processing to contextual
+understanding. This advance extends wireless signal-based percep-
+tion and supports privacy-preserving multimedia systems.
+Talk is Not Always Cheap: Promoting Wireless Sensing Models with Text Prompts ACM XX 2025, June 03–05, 2025, Woodstock, NY
+References
+[1] Fadel M. Adib, Zachary Kabelac, Dina Katabi, and Rob Miller. 2014. 3D Tracking
+via Body Radio Reflections. In Symposium on Networked Systems Design and
+Implementation.
+[2] Mohammad Arif Ul Alam, Md. Mahmudur Rahman, and Jared Q. Widberg. 2021.
+PALMAR: Towards Adaptive Multi-inhabitant Activity Recognition in Point-
+Cloud Technology. IEEE INFOCOM 2021 - IEEE Conference on Computer Commu-
+nications (2021), 1–10.
+[3] Kamran Ali, Alex X. Liu, Wen Wang, and Muhammad Shahzad. 2015. Keystroke
+Recognition Using WiFi Signals. Proceedings of the 21st Annual International
+Conference on Mobile Computing and Networking (2015).
+[4] Qiming Cao, Hongfei Xue, Tianci Liu, Xingchen Wang, Haoyu Wang, Xincheng
+Zhang, and Lu Su. 2024. mmCLIP: Boosting mmWave-based Zero-shot HAR via
+Signal-Text Alignment. In ACM International Conference on Embedded Networked
+Sensor Systems.
+[5] Guo Chen, Yifei Huang, Jilan Xu, Baoqi Pei, Zhe Chen, Zhiqi Li, Jiahao Wang, Kun-
+chang Li, Tong Lu, and Limin Wang. 2024. Video mamba suite: State space model
+as a versatile alternative for video understanding. arXiv preprint arXiv:2403.09626
+(2024).
+[6] Han Ding, Lei Guo, Cui Zhao, Fei Wang, Ge Wang, Zhiping Jiang, Wei Xi, and
+Jizhong Zhao. 2020. RFnet: Automatic gesture recognition and human identifica-
+tion using time series RFID signals. Mobile Networks and Applications 25 (2020),
+2240–2253.
+[7] Han Ding, Chen Qian, Jinsong Han, Ge Wang, Wei Xi, Kun Zhao, and Jizhong
+Zhao. 2017. RFIPad: Enabling Cost-Efficient and Device-Free In-air Handwrit-
+ing Using Passive Tags. 2017 IEEE 37th International Conference on Distributed
+Computing Systems (ICDCS) (2017), 447–457.
+[8] Student Member Ieee Yuqian Hu, Senior Member Ieee Beibei Wang, Senior
+Member Ieee Chenshu Wu, and Fellow Ieee K. J. Ray Liu. 2021. mmKey: Universal
+Virtual Keyboard Using A Single Millimeter-Wave Radio. IEEE Internet of Things
+Journal 9 (2021), 510–524.
+[9] Dr. V. Ilango and Anupama P Jose. 2018. Soli (Omnipresent Gesture Sensing with
+Millimeter Wave Radar).
+[10] Wenjun Jiang, Chenglin Miao, Fenglong Ma, Shuochao Yao, Yaqing Wang, Ye
+Yuan, Hongfei Xue, Chen Song, Xin Ma, Dimitrios Koutsonikolas, Wenyao Xu,
+and Lu Su. 2018. Towards Environment Independent Device Free Human Activity
+Recognition. Proceedings of the 24th Annual International Conference on Mobile
+Computing and Networking (2018).
+[11] Xuejing Jiang, Ye Liu, and Xiaolei Wang. 2009. An Enhanced Approach of Indoor
+Location Sensing Using Active RFID. 2009 WASE International Conference on
+Information Engineering 1 (2009), 169–172.
+[12] Sai Shashank Kalakonda, Shubh Maheshwari, and Ravi Kiran Sarvadevabhatla.
+2023. Action-gpt: Leveraging large-scale language models for improved and gen-
+eralized action generation. In 2023 IEEE International Conference on Multimedia
+and Expo (ICME). IEEE, 31–36.
+[13] Abdelwahed Khamis, Branislav Kusy, Chun Tung Chou, Mary-Louise McLaws,
+and Wen Hu. 2020. RFWash: a weakly supervised tracking of hand hygiene
+technique. Proceedings of the 18th Conference on Embedded Networked Sensor
+Systems (2020).
+[14] Bo Lan, Pei Li, Jiaxi Yin, Yunpeng Song, Ge Wang, Han Ding, Jinsong Han, and Fei
+Wang. 2025. XRF V2: A Dataset for Action Summarization with Wi-Fi Signals, and
+IMUs in Phones, Watches, Earbuds, and Glasses. arXiv preprint arXiv:2501.19034
+(2025).
+[15] Zehan Li, Xin Zhang, Yanzhao Zhang, Dingkun Long, Pengjun Xie, and Meishan
+Zhang. 2023. Towards general text embeddings with multi-stage contrastive
+learning. arXiv preprint arXiv:2308.03281 (2023).
+[16] Zhendong Liu, Le Zhang, Bing Li, Yingjie Zhou, Zhenghua Chen, and Ce Zhu.
+2025. WiFi CSI Based Temporal Activity Detection via Dual Pyramid Network.
+In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 39. 550–558.
+[17] Yizhe Lv, Tingting Zhang, Yunpeng Song, Han Ding, Jinsong Han, and Fei Wang.
+2025. EgoHand: Ego-centric Hand Pose Estimation and Gesture Recognition with
+Head-mounted Millimeter-wave Radar and IMUs. arXiv preprint arXiv:2501.13805
+(2025).
+[18] Seungwhan Moon, Andrea Madotto, Zhaojiang Lin, Aparajita Saraf, Amy Bear-
+man, and Babak Damavandi. 2023. IMU2CLIP: Language-grounded Motion Sensor
+Translation with Multimodal Contrastive Learning. In Conference on Empirical
+Methods in Natural Language Processing.
+[19] Sauradip Nag, Xiatian Zhu, Yi-Zhe Song, and Tao Xiang. 2022. Zero-shot tempo-
+ral action detection via vision-language prompting. In European conference on
+computer vision. Springer, 681–697.
+[20] Jacopo Pegoraro, Jesús Omar Lacruz, Michele Rossi, and Joerg Widmer. 2022.
+SPARCS: A Sparse Recovery Approach for Integrated Communication and Human
+Sensing in mmWave Systems. 2022 21st ACM/IEEE International Conference on
+Information Processing in Sensor Networks (IPSN) (2022), 79–91.
+[21] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh,
+Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark,
+et al. 2021. Learning transferable visual models from natural language supervision.
+In International conference on machine learning. PmLR, 8748–8763.
+[22] Sai Deepika Regani, Chenshu Wu, Beibei Wang, Min Wu, and K. J. Ray Liu. 2021.
+mmWrite: Passive Handwriting Tracking Using a Single Millimeter-Wave Radio.
+IEEE Internet of Things Journal 8 (2021), 13291–13305.
+[23] Dingfeng Shi, Yujie Zhong, Qiong Cao, Lin Ma, Jia Li, and Dacheng Tao. 2023.
+Tridet: Temporal action detection with relative boundary modeling. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 18857–
+18866.
+[24] Akash Deep Singh, Sandeep Singh Sandha, Luis Garcia, and Mani B. Srivastava.
+2019. RadHAR: Human Activity Recognition from Point Clouds Generated
+through a Millimeter-wave Radar. Proceedings of the 3rd ACM Workshop on
+Millimeter-wave Networks and Sensing Systems (2019).
+[25] Xiaoqi Sun, Yanwen Wang, Chenwei Zhang, Zheng Wang, Xiaokang Shi, and
+Yuanqing Zheng. 2024. LoDiHAR: A Low-Cost Distributed Human Activity
+Recognition System Based on RFID. In 2024 21st Annual IEEE International Con-
+ference on Sensing, Communication, and Networking (SECON). IEEE, 1–9.
+[26] Tuan N Tang, Kwonyoung Kim, and Kwanghoon Sohn. 2023. Temporalmaxer:
+Maximize temporal context with only max pooling for temporal action localiza-
+tion. arXiv preprint arXiv:2303.09055 (2023).
+[27] Christian C. J. M. Tiberius and Edward Verbree. 2004. GNSS positioning accuracy
+and availability within Location Based Services: The advantages of combined
+GPS-Galileo positioning.
+[28] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yas-
+mine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhos-
+ale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv
+preprint arXiv:2307.09288 (2023).
+[29] Cristian Turetta, Florenc Demrozi, Philipp H. Kindt, Alejandro Masrur, and
+Graziano Pravadelli. 2022. Practical identity recognition using WiFi’s Chan-
+nel State Information. 2022 Design, Automation & Test in Europe Conference &
+Exhibition (DATE) (2022), 76–79.
+[30] Fei Wang, Yiao Gao, Bo Lan, Han Ding, Jingang Shi, and Jinsong Han. 2023.
+U-Shape Networks Are Unified Backbones for Human Action Understanding
+From Wi-Fi Signals. IEEE Internet of Things Journal 11, 6 (2023), 10020–10030.
+[31] Fei Wang, Yizhe Lv, Mengdie Zhu, Han Ding, and Jinsong Han. 2024. XRF55:
+A Radio Frequency Dataset for Human Indoor Action Analysis. Proceedings of
+the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 8, 1 (2024),
+1–34.
+[32] Fei Wang, Tingting Zhang, Bintong Zhao, Libao Xing, Tiantian Wang, Han
+Ding, and Tony Xiao Han. 2025. A Survey on Wi-Fi Sensing Generalizability:
+Taxonomy, Techniques, Datasets, and Future Research Prospects. arXiv preprint
+arXiv:2503.08008 (2025).
+[33] Fei Wang, Sanping Zhou, Stanislav Panev, Jinsong Han, and Dong Huang. 2019.
+Person-in-WiFi: Fine-Grained Person Perception Using WiFi. 2019 IEEE/CVF
+International Conference on Computer Vision (ICCV) (2019), 5451–5460.
+[34] Xijun Wang, Ruiqi Xian, Tianrui Guan, and Dinesh Manocha. 2023. PLAR: Prompt
+Learning for Action Recognition. arXiv e-prints (2023), arXiv–2305.
+[35] Yuheng Wang, Haipeng Liu, Kening Cui, Anfu Zhou, Wensheng Li, and Huadong
+Ma. 2021. m-Activity: Accurate and Real-Time Human Activity Recognition Via
+Millimeter Wave Radar. ICASSP 2021 - 2021 IEEE International Conference on
+Acoustics, Speech and Signal Processing (ICASSP) (2021), 8298–8302.
+[36] Teng Wei and Xinyu Zhang. 2015. mTrack: High-Precision Passive Tracking
+Using Millimeter Wave Radios. Proceedings of the 21st Annual International
+Conference on Mobile Computing and Networking (2015).
+[37] Yuxuan Weng, Guoquan Wu, Tianyue Zheng, Yanbing Yang, and Jun Luo. 2024.
+Large Model for Small Data: Foundation Model for Cross-Modal RF Human
+Activity Recognition. ArXiv abs/2410.19766 (2024).
+[38] Kang Xia, Wenzhong Li, Shiwei Gan, and Sanglu Lu. 2023. TS2ACT: Few-Shot
+Human Activity Sensing with Cross-Modal Co-Learning. Proc. ACM Interact.
+Mob. Wearable Ubiquitous Technol. 7 (2023), 188:1–188:22.
+[39] Hongfei Xue, Yan Ju, Chenglin Miao, Yijiang Wang, Shiyang Wang, Aidong
+Zhang, and Lu Su. 2021. mmMesh: towards 3D real-time dynamic human mesh
+construction using millimeter-wave. Proceedings of the 19th Annual International
+Conference on Mobile Systems, Applications, and Services (2021).
+[40] Kangwei Yan, Fei Wang, Bo Qian, Han Ding, Jinsong Han, and Xing Wei. 2024.
+Person-in-wifi 3d: End-to-end multi-person 3d pose estimation with wi-fi. In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+969–978.
+[41] Jianfei Yang, He Huang, Yunjiao Zhou, Xinyan Chen, Yuecong Xu, Shenghai Yuan,
+Han Zou, Chris Xiaoxuan Lu, and Lihua Xie. 2023. MM-Fi: Multi-Modal Non-
+Intrusive 4D Human Dataset for Versatile Wireless Sensing. ArXiv abs/2305.10345
+(2023).
+[42] Lei Yang, Yekui Chen, Xiangyang Li, Chaowei Xiao, Mo Li, and Yunhao Liu.
+2014. Tagoram: real-time tracking of mobile RFID tags to high precision using
+COTS devices. Proceedings of the 20th annual international conference on Mobile
+computing and networking (2014).
+[43] Zheng Yang, Yi Zhang, and Qian Zhang. 2023. Rethinking Fall Detection With
+Wi-Fi. IEEE Transactions on Mobile Computing 22 (2023), 6126–6143.
+ACM XX 2025, June 03–05, 2025, Woodstock, NY Yang et al.
+[44] Chen-Lin Zhang, Jianxin Wu, and Yin Li. 2022. Actionformer: Localizing moments
+of actions with transformers. In European Conference on Computer Vision. Springer,
+492–510.
+[45] Haopeng Zhang, Yili Ren, Haohan Yuan, Jingzhe Zhang, and Yitong Shen. 2025.
+Wi-Chat: Large Language Model Powered Wi-Fi Sensing. ArXiv abs/2502.12421
+(2025).
+[46] Yi Zhang, Yue Zheng, Kun Qian, Guidong Zhang, Yunhao Liu, Chenshu Wu, and
+Zheng Yang. 2021. Widar3.0: Zero-Effort Cross-Domain Gesture Recognition
+With Wi-Fi. IEEE Transactions on Pattern Analysis and Machine Intelligence 44
+(2021), 8671–8688.
+[47] Hongwei Zheng, Han Li, Bowen Shi, Wenrui Dai, Botao Wang, Yu Sun, Min
+Guo, and Hongkai Xiong. 2023. Actionprompt: Action-guided 3d human pose
+estimation with text and pose prompting. In 2023 IEEE International Conference
+on Multimedia and Expo (ICME). IEEE, 2657–2662.
+[48] Yunjiao Zhou, He Huang, Shenghai Yuan, Han Zou, Lihua Xie, and Jianfei Yang.
+2023. MetaFi++: WiFi-Enabled Transformer-Based Human Pose Estimation for
+Metaverse Avatar Simulation. IEEE Internet of Things Journal 10 (2023), 14128–
+14136.
+

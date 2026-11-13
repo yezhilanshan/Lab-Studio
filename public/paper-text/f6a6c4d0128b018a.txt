@@ -1,0 +1,1281 @@
+SAFformer: Improving Spiking Transformer via Active Predictive Filtering
+Zequan Xie1
+, Weiming Zeng2
+, Yunhua Chen1∗
+, Sichang Lin1
+, Tongyang Chen1
+and Jinsheng
+Xiao3
+1
+School of Computer Science and Technology, Guangdong University of Technology, Guangzhou, China
+2
+Faculty of Science, Hong Kong Baptist University, China
+3
+School of Electronic Information, Wuhan University, China
+2112405284@mail2.gdut.edu.cn, 23267062@life.hkbu.edu.hk, yhchen@gdut.edu.cn, fatc811@163.com,
+chentongyang@mails.gdut.edu.cn, xiaojs@whu.edu.cn
+Abstract
+Spiking Neural Networks (SNNs) offer notable ad-
+vantages in biological plausibility and energy ef-
+ficiency, making them promising candidates for
+building low-power Transformers. However, exist-
+ing Spiking Transformers largely adhere to a pas-
+sive reactive paradigm, which struggles to focus
+on task-relevant information and incurs substan-
+tial computational overhead when processing re-
+dundant visual data. To overcome this fundamen-
+tal yet underexplored limitation, we propose SAF-
+former, a novel Spiking Transformer architecture
+based on an active predictive filtering paradigm. In-
+spired by the brain’s predictive coding mechanism,
+SAFformer actively suppresses predictable signals
+and focuses on salient visual features. Extensive
+experiments show that SAFformer establishes new
+state-of-the-art performance on CIFAR-10/100 and
+CIFAR10-DVS. Remarkably, on ImageNet-1K, it
+achieves 80.44% Top-1 accuracy with only 26.58M
+parameters and an energy consumption of 5.88 mJ,
+demonstrating an exceptional balance between ac-
+curacy and efficiency.
+1 Introduction
+Spiking neural networks (SNNs) are regarded as the third
+generation neural network models[Maass, 1997]. Their
+event-driven and sparse computing characteristics have
+demonstrated great potential in the field of artificial in-
+telligence, especially in the small-scale edge computing
+scenarios[Guo et al., 2022]. Unlike artificial neural networks
+(ANNs) that perform intensive computations at each infer-
+ence step, SNNs transmit information asynchronously, with
+spiking neurons consuming energy only when receiving or
+emitting spikes[Eshraghian et al., 2023]. In recent years, the
+integration of SNNs with the powerful Transformer architec-
+ture has shown great promise, paving the way for a new gen-
+eration of visual models that achieve high performance with
+improved energy efficiency.
+Despite this promise, a fundamental limitation persists in
+the design of existing Spiking Transformers. Whether in
+∗
+Corresponding authors.
+Figure 1: Comparison of our SAFformer with other Spiking Trans-
+formers on ImageNet-1k with an input resolution of 224 × 224.
+early direct-conversion attention mechanisms or later linear-
+complexity variants like QK-Attention[Zhang et al., 2024],
+the information selection process universally follows a ”Pas-
+sive Reactive” paradigm. This model involves indiscrimi-
+nate and costly processing of all information, followed by a
+post-hoc filtering step that relies solely on the fixed thresh-
+old of spiking neurons[Guo et al., 2025; Chen et al., 2024].
+Crucially, it lacks the ability to dynamically adjust its com-
+putational scope based on the input global context. Con-
+sequently, when faced with simple images containing large
+amounts of redundant background, the model still wastes sig-
+nificant computational resources on irrelevant regions. This
+paradigm runs counter to the highly efficient information pro-
+cessing mechanisms of the biological brain.
+In contrast, the predictive filtering mechanism inherent
+in the visual system enables the brain to utilize top-down
+feedback signals to modulate the activity of lower-level
+neurons[Crassidis and Markley, 1997; Rao and Ballard,
+1999]. It actively suppresses predictable, redundant informa-
+tion and only forwards significant prediction errors for sub-
+sequent processing, thereby achieving extreme energy effi-
+ciency. Specifically, higher-level cortical areas (e.g. V4, IT)
+arXiv:2605.08270v2
+[cs.CV]
+12
+Jun
+2026
+form a holistic prediction of the scene based on prior expe-
+rience and send these predictive signals down to lower-level
+areas (e.g. V1, V2)[Friston, 2009]. The lower-level cortex
+then compares this prediction with the actual visual input, and
+only the significant discrepancies are propagated upward as
+feedback signals, as illustrated in Fig. 3(b).
+Beyond the self-attention module, the MLP layer in the
+Transformer architecture, as an important part of network fea-
+ture enhancement, is also a centralized area for computation
+and parameters. Vanilla Spiking MLPs, typically direct con-
+versions of their ANN counterparts, suffer from two major
+flaws. First, they are spatially blind. Their 1×1 convolu-
+tional structure can only mix information along the channel
+dimension[Wang et al., 2024] and is entirely incapable of per-
+ceiving or utilizing the local spatial context of tokens. Sec-
+ond, their feature transformation is static and homogeneous,
+applying an identical, unconditional transformation to all spa-
+tial locations[Chen et al., 2026b]. This inefficient processing
+model contradicts the principle of the visual cortex, which ad-
+justs its processing intensity based on predictive information.
+To systematically address these challenges, we draw inspi-
+ration from the brain’s active prediction mechanism to pro-
+pose SAFformer, a novel Spiking Transformer architecture
+that operates on the principle of Active Predictive Filtering.
+By incorporating two synergistic, bio-inspired innovations,
+SAFformer shifts the paradigm from passive reaction to ac-
+tive prediction. Our contributions are as follows:
+1) We propose the Spiking Active Predictive Filtering At-
+tention(SAF), a new sparse spiking self-attention mechanism,
+as shown in Fig. 2. It introduces a lightweight Spiking Spar-
+sity Guidance Module (SGM) to actively predict the saliency
+distribution of the input, thereby prospectively focusing at-
+tention resources on key spatial locations and realizing active
+predictive filtering.
+2) We propose the Spiking Multi-scale Adaptive Gated
+(SMAG) network to replace the vanilla SMLP. SMAG per-
+ceives local spatial context through a decoupled, multi-scale
+gating mechanism, achieving more refined extraction and se-
+lection of predictive features while significantly reducing the
+number of parameters.
+3) Comprehensive experiments demonstrate that our archi-
+tecture outperforms or matches SOTA Spiking Transformers
+on various datasets, with an excellent balance of efficiency
+and performance, as shown in Fig. 1. Notably, we achieve
+SOTA accuracies of 97.50% on CIFAR-10 and 83.38% on
+CIFAR-100, setting a new benchmark for the SNN field.1
+2 Related Work
+2.1 Spiking Neural Networks
+Spiking Neural Networks (SNNs) are widely recognized as
+the third generation of neural network models, with their de-
+sign inspired by the information processing mechanisms of
+the biological brain. Unlike traditional ANNs, SNNs com-
+municate by transmitting binary spikes, mimicking the firing
+of biological neurons[Duan et al., 2023]. When the mem-
+brane potential of a spiking neuron exceeds a certain thresh-
+old, it fires a spike, represented as ’1’; otherwise, it remains
+1
+The full version is available at https://arxiv.org/abs/2605.08270.
+silent, represented as ’0’[Yao et al., 2024b]. This event-
+driven mechanism facilitates sparse synaptic operations and
+avoids costly multiply-accumulate (MAC) operations[Chen
+et al., 2026a], thereby significantly enhancing the energy ef-
+ficiency of these models. SNNs are primarily trained using
+two methods: ANN-to-SNN conversion and direct training
+with surrogate gradients[Di Yu et al., 2024]. ANN-to-SNN
+conversion involves training an ANN and then converting it
+to a corresponding quantized SNN version. Direct training,
+on the other hand, employs a surrogate function to approxi-
+mate the spike firing process during backpropagation[Yao et
+al., 2024b]. The effectiveness of direct training in handling
+temporal data has made it a preferred choice in SNN research.
+However, conventional direct training methods require
+substantial GPU memory due to the simulation of multiple
+timesteps[Luo et al., 2024; Qiu et al., 2025]. To address
+the challenge of long training times, Yao introduced a novel
+direct training method called Spike Firing Approximation
+(SFA)[Yao et al., 2025]. This method uses quantized mem-
+brane potentials as activation values during the training phase
+and converts these values into spike sequences during infer-
+ence, thereby reducing training duration. It has been demon-
+strated that SFA can reduce training time by at least 4.1×.
+2.2 Spiking Vision Transformers
+The Transformer, with its powerful sequence modeling ca-
+pabilities and self-attention mechanism, has become a main-
+stream backbone in the field of computer vision[Dosovitskiy
+et al., 2020]. However, its quadratic computational complex-
+ity and significant memory footprint limit its application in
+power-sensitive and resource-constrained scenarios[Xiao et
+al., 2026]. Combining the powerful capabilities of the Trans-
+former with the low-power and event-driven characteristics of
+SNNs has become an active research direction.
+Spikformer[Zhou et al., 2023] pioneered spiking self-
+attention computation, establishing the first spiking ViT.
+Spikingformer[Zhou et al., 2026] further enhanced the
+SNN compatibility of the model by designing a pre-
+activation residual connection. To achieve a fully spike-
+driven architecture, Spike-driven Transformer[Yao et al.,
+2023] implemented the Hadamard product in its self-attention
+module, becoming the first directly trained, fully spike-
+driven transformer model. To reduce temporal complexity,
+QKFormer[Zhang et al., 2024] proposed using only Q and
+K for self-attention computation, becoming the first spiking
+Transformer with a linear-complexity self-attention module.
+Additionally, OST[Song et al., 2024] compresses the time do-
+main into 1 to enhance the training speed. To fully address the
+issue of over-allocating attention, SpiLiFormer[Zheng et al.,
+2025] introduced a lateral inhibition mechanism to simulate
+the inhibitory-excitation interaction process.
+3 Methods
+In this section, we first introduce the spiking neuron model we
+used. Next, we present the SAFformer architecture, which
+includes a novel spiking active predictive filtering attention
+mechanism and a multi-scale gated feedforward network.
+Continuous value input Binary spike input
+(a) Vanilla Self-Attention (VSA) (b) Spiking Self-Attention (SSA)
+Linear Linear
+Linear
+Softmax
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+...
+Scale
+Linear
+BN
+Linear
+BN
+Linear
+BN
+Spiking Neuron Matrix Multiplication Matrix Mask
+Row Summation DWConv Depthwise Convolution SGM Spiking Sparse Guidance Module
+(c) Spiking Active Predictive Filtering (SAF)
+Binary spike input
+SGM
+...
+...
+...
+...
+...
+...
+Linear
+BN
+DWConv
+Linear
+BN
+DWConv
+...
+...
+...
+...
+...
+...
+...
+Mask
+9
+6
+7
+4
+...
+2
+Figure 2: Comparison of three self-attention paradigms. (a)VSA employs floating-point matrix multiplication to evaluate the spatial cor-
+relations between Q and K with quadratic computational complexity. (b)SSA transforms the floating-point operations in VSA into spiking
+computations, maintaining the same complexity as VSA. (c)SAF introduces a predictive filtering paradigm. It maintains linear complexity by
+using SGM to predict and sparsify significance scores from Q, which then act upon K element-wise.
+3.1 Preliminary
+In this paper, we use the widely adopted LIF model [Guo et
+al., 2024], which can be described by the following formula:
+U[t] = βH[t − 1] + X[t], (1)
+S[t] = Hea(U[t] − Vth), (2)
+H[t] =
+
+U[t] · (1 − S[t]) + Vreset · S[t], hard reset,
+U[t] − Vth · S[t], soft reset,
+(3)
+where t is the time step, U[t] is the membrane potential, the
+spatial input X[t] is extracted from the original spike se-
+quence via Conv or Linear layers, and the temporal input
+βH[t − 1] comes from the decayed membrane potential of
+the previous time step, β is the leak factor. S[t] is the output
+spike, and H[t] is the membrane potential after firing. Hea(·)
+is the Heaviside step function, where Hea(x) = 1 if x ≥ 0.
+When U[t] exceeds the threshold Vth, the spiking neuron fires
+a spike, and the membrane potential is reset to Vreset.
+3.2 Overall Architecture
+The overall architecture of SAFformer is shown in Fig. 3(a),
+which consists of three stages. The number of blocks (SAF-
+former blocks or Spikformer blocks) in each stage is repre-
+sented as N1, N2, and N3, respectively. The input data is
+represented as I ∈ RT ×Cin×H×W
+, where Cin = 3 for static
+image data and Cin = 2 for neuromorphic data. In the first
+stage, a patch size of 4 × 4 is utilized. A Patch Embedding
+module converts the input into a spike sequence and maps the
+feature of each patch to an initial channel dimension C, re-
+ducing the number of tokens to H
+4 × W
+4 .The transformed fea-
+tures are then processed through SAF and SMAG. The pro-
+cessing mechanism in the second stage is similar, but with a
+patch size of 2 × 2, an expanded channel dimension of 2C,
+and a reduced token count of H
+8 × W
+8 . The third stage is
+the deep stage, where we continue to use a 2 × 2 patch size,
+expand the channel dimension to 4C, and reduce the token
+count to H
+16 × W
+16 .
+3.3 Spiking Active Predictive Filtering(SAF)
+We propose Spiking Active Predictive Filtering Attention
+(SAF), whose detailed structure is shown in Fig. 3(c). The
+core idea of SAF lies in that it no longer calculates the pair-
+wise relationships between tokens. Instead, it employs a
+lightweight guidance module to predict the most information-
+dense regions and dynamically focuses computational re-
+sources on them. Considering that the intrinsic low-pass fil-
+tering characteristics of spiking neurons can attenuate high-
+frequency signals[Yao et al., 2024a; Fang et al., 2025], we
+introduce a depthwise separable convolution (DWConv) into
+the generation paths of the spike matrices Q and K. This is
+to better preserve local details crucial in the shallow stages of
+the network. For a given input spike sequence X ∈ RN×C
+,
+where N is the number of tokens and C is the channel dimen-
+sion, the generation is formulated as:
+Q = SN (BN (DWConv (XWQ))) , (4)
+K = SN (BN (DWConv (XWK))) , (5)
+where WQ and WK represent the linear projections of the
+input spike sequence X, and SN(·) is the spiking activation
+function. Then, we obtain the initial saliency score for each
+token by summing over the channel dimension of Q:
+At =
+C
+X
+i=0
+Qi,j (6)
+To actively filter redundant information and adaptively ad-
+just the computational load based on content complexity, we
+develop a lightweight and learnable module, named Spiking
+Input Stage 1 Stage 2 Stage 3
+(a) The framework of SAFformer
+(c) Spiking Active Predictive Filtering Attention (SAF) (d) Spiking Multi-scale Adaptive Gated Network (SMAG)
+Patch
+Embeding
+DownSampling
+SAF
+Attention
+SMAG
+SAFformer
+blocks
+SAFformer
+blocks
+SAF
+Attention
+SMAG
+DownSampling
+SSA
+Classification
+head
+Spikformer
+blocks
+SMAG
+(b) Predictive Coding in Visual Cortex
+Spike input N×1 N×1
+SGM
+Mask
+N×C
+Linear
+Linear
+BN
+DWConv
+Linear
+BN
+DWConv
+Linear
+Mean
+N
+Spiking Sparse Guidance Module
+Element-wise Multiplication
+Row Summation
+c
+Matrix Token
+PConv Partial Convolution
+Concat
+Spike input
+Split
+Split
+c
+PWConv
+BN
+PConv BN
+PWConv
+BN
+DWConv
+BN
+DWConv
+c
+N×C
+Linear
+BN
+Figure 3: (a) The architecture of SAFformer. We propose the SAFformer block, which consists of SAF Attention and SMAG. (b) An
+illustration of the predictive coding mechanism in visual cortex. (c) and (d) illustrate the workflows of SAF Attention and SMAG.
+Algorithm 1 Spiking Sparsity Guidance Module (SGM)
+Input: X ∈ RT ×B×C×N
+▷ Input spike sequence
+Output: Dynamic k ▷ The number of tokens to keep
+1: F ← Linear1(X) ▷ Project to hidden space
+2: F ← ReLU(F)
+3: Graw ← Linear2(F) ▷ Generate guidance scores
+4: Graw ← SN(Graw) ▷ Shape: T × B × 1 × N
+5: Gflat ← Flatten(Graw) ▷ Generate a vector of shape
+6: p ← 1
+T BN
+P
+t,b,n
+Gflat[i] ▷ Global sparsity ratio
+7: Dynamic k ← ⌊N · p⌋ ▷ Global scaling factor,where N
+is the token count
+8: return Dynamic k
+Sparsity Guidance Module (SGM). It dynamically predict a
+suitable attention matrix sparsity level, k, based on the global
+information of the input. In Algorithm 1, we detail the full
+process of generatingdynamic k using SGM.
+With the dynamic k generated by SGM, a masking opera-
+tion is performed on At to create a binary mask matrix Mk:
+(Mk)i =
+
+1, if (At)i ∈ Topk(At, k)
+0, otherwise
+(7)
+where Top-K(·, k) denotes the selection of the k largest ele-
+ments from the vector.
+Finally, the mask Mk is applied to the saliency scores, and
+the result is multiplied element-wise with K in a Hadamard
+product:
+SAF(Q, K) = K · SN(Mk ⊙ At) (8)
+Theoretical Analysis
+To formally analyze the fundamental differences in informa-
+tion processing across attention mechanisms, we introduce
+information flow graph[Ahlswede et al., 2000] as a unified
+analytical framework.
+An information flow graph is a weighted directed graph
+G = (V, E, W), where the vertex set V = {v1, . . . , vN } rep-
+resents the input tokens, a directed edge (vj, vi) ∈ E signifies
+an information flow from token j to token i, and the weight
+function W : E → R assigns a weight wij to each edge. The
+output representation yi for token i is a weighted combination
+of information from its inbound neighbors:
+yi = f
+
+
+X
+vj ∈In(vi)
+wij · Info(vj)
+
+ (9)
+where In(vi) is the set of inbound neighbors of vi, Info(vj) is
+the information carried by token vj, and f(·) is a non-linear
+activation function.
+Proposition 1. The computational paradigm of SSA is
+equivalent to performing a relational aggregation operation
+on a dense, fully-connected graph.
+Proof. The output yi of SSA is determined by the equation:
+yi = f
+
+
+N
+X
+j=1
+⟨Qi, Kj⟩ · Vj
+
+ (10)
+where Qi, Kj, Vj are the Query,Key,Value vectors derived
+from tokens i and j. The summation
+PN
+j=1 iterates over all
+input tokens vj for any given output yi. This implies that for
+any pair of vertices (vi, vj), an information flow path, i.e., a
+directed edge (vj, vi), exists. Therefore, the graph is a com-
+plete graph where the edge set is E = V × V .
+And the weight of an edge (vj, vi), denoted wi, j, is given
+by the inner product ⟨Qi, Kj⟩. This weight is a binary re-
+lational function R(Qi, Kj) that quantifies the pairwise re-
+lation between vertices vi and vj. The final output yi is a
+weighted sum of the Value information vj from all vertices in
+the graph. This process, which gathers information from the
+entire graph, is a quintessential aggregation operation.
+Proposition 2. The computational paradigm of SAF is
+equivalent to performing a node-wise filtering operation on
+a dynamically sparse subgraph.
+Proof. The output yi of SAF can be represented as:
+yi = f (Mk)i ·
+C
+X
+c=1
+Qc,i · Ki
+!
+(11)
+where qi, ki are derived from token i, and (Mk)i is a dy-
+namic mask. The computation of yi depends solely on its
+own derivatives, implying that no cross-vertex edges exist.
+The information flow graph thus consists only of self-loops.
+However, not all vertices participate in the computation. A
+global selection function Ψ(X, k), realized by the SGM, first
+identifies an active vertex subset Vactive ⊆ V .
+Vactive = {vi ∈ V | i ∈ Topk({
+X
+c
+Qc,j}N
+j=1, k)} (12)
+where |Vactive| = k. The effective computation graph G′
+is
+thus a dynamic sparse subgraph consisting only of the ver-
+tices in Vactive.
+For any active vertex vi ∈ Vactive, the weight of its self-
+loop, wii, is determined by a unary saliency function S(vi)
+which is computed as
+PC
+c=1 Qc,i. This weight is a function
+of the vertex’s intrinsic properties, not its relation to others.
+The output yi is a scaled version of the vertex’s own infor-
+mation Ki, which constitutes a filtering operation. Since the
+selection of the subgraph is dynamically determined by the
+global input X, the process is an active adaptive filtering.
+SAF facilitates a paradigm shift in spiking self-attention,
+from relational aggregation to dynamic adaptive filtering, of-
+fering a new perspective for building efficient and powerful
+attention mechanisms in Spiking Neural Networks.
+3.4 Spiking Multi-scale Adaptive Gated
+Network(SMAG)
+Spiking MLP is a key part of the Spiking Transformer for im-
+proving feature representation. However, the commonly used
+SMLP with wide intermediate channels has the disadvantages
+of excessive parameter quantity and spatial blind viewing[Qiu
+et al., 2024], which violates the principle of active predictive
+filtering that we pursue.
+Therefore, we propose a novel feedforward network, the
+Spiking Multi-scale Adaptive Gated Network (SMAG), to
+replace the vanilla SMLP, as illustrated in Fig. 3(d).
+SMAG performs feature transformation in a refine-and-gate
+paradigm, enhancing performance while reducing the bur-
+den of processing redundant information. Specifically, we
+first introduce a partial convolution[Chen et al., 2023] to a
+fraction of the channels of the input spike features X ∈
+RT ×B×C×H×W
+. This operation injects valuable local spa-
+tial priors into the feature maps at a minimal computational
+cost. Subsequently, the features are decoupled into three in-
+dependent functional paths as follows:
+X′
+= SN (BN (W1PConv(X))) , (13)
+[X′
+1, X′
+2, X′
+3] = X′
+. (14)
+where PConv(·) is the partial convolution operation, and
+[, ] denotes the channel-wise splitting, and W1 represents
+a pointwise convolution. PConv effectively introduces lo-
+cal context, which provides a foundation for generating
+more context-aware gating signals by initially filtering and
+strengthening a subset of features. Then, X′
+1 and X′
+2 serve as
+gating signals, while X′
+3 acts as the main path. A multi-scale
+dynamic gating mechanism is introduced to capture spatial
+patterns at multiple scales:
+G′
+1 = SN (BN (DWConv3×3 (X′
+1))) , (15)
+G′
+2 = SN (BN (DWConv7×7 (X′
+2))) , (16)
+X′
+gated = Concat(G1, G2) ⊙ X′
+3. (17)
+where DWConv3×3 and DWConv7×7 are depthwise con-
+volutions with kernel sizes of 3 and 7, respectively. They
+learn spatial filters independently for each channel, signif-
+icantly reducing parameters and computational complexity
+compared to standard convolutions, while effectively captur-
+ing channel-specific spatial patterns. The parallel design of
+3x3 and 7x7 kernels enables the gating signals to perceive
+both fine-grained details and broader regional context simul-
+taneously. Finally, through the element-wise gating multi-
+plication, active suppression and enhancement of the content
+stream are achieved.
+Theoretically, SMAG has significantly fewer parameters
+than vanilla SMLP. Moreover, compared to the two identical
+linear transformations in SMLP, the dynamic gating mecha-
+nism of SMAG endows the network with the ability to adap-
+tively select and modulate feature channels based on the input
+content. This allows the model to focus more on critical in-
+formation and suppress redundancy, thereby improving the
+discriminability of features.
+Methods Type Architecture
+Param Time Power Top-1
+(M) Step (mJ) Acc(%)
+DeiT[Touvron et al., 2021] ANN DeiT-S 22.00 1 21.20 79.80
+ANN DeiT-B 86.59 1 80.50 81.80
+MST[Wang et al., 2023] A2S Swin Transformer-T 28.50 512 - 78.51
+STA[Hwang et al., 2024] A2S ViT-B/32 86.00 32 - 78.72
+Spikformer[Zhou et al., 2023] SNN Spikformer-8-384 16.81 4×1 7.73 70.24
+SNN Spikformer-8-512 29.68 4×1 11.58 73.38
+S-Transformer v2[Yao et al., 2024b] SNN S-Transformer v2-8-384 15.10 4×1 16.70 74.10
+SNN S-Transformer v2-8-512 31.30 4×1 32.80 77.20
+Max-Former[Fang et al., 2025] SNN Max-10-384 16.23 4×1 4.89 77.82
+SNN Max-10-512 28.65 4×1 7.49 79.86
+MSViT[Hua et al., 2025] SNN MSViT-10-384 17.69 4×1 16.65 80.09
+SNN MSViT-10-512 30.23 4×1 24.74 82.96
+E-SpikeFormer[Yao et al., 2025] SNN E-SpikeFormer-S 10.00 1×4 3.00 78.50
+SNN E-SpikeFormer-M 19.00 1×4 5.90 79.80
+QSD-Transformer[Qiu et al., 2025] SNN S-Transformer v2-T†
+1.80 1×4 2.50 77.50
+SNN S-Transformer v2-M†
+3.90 1×4 5.70 78.90
+SAFformer
+SNN SAFformer-10-384 15.12 1×4 3.75 79.19
+SNN SAFformer-10-512 26.58 1×4 5.88 80.44± 0.24
+Table 1: Evaluation on ImageNet. All models default to an input size of 224 × 224. We have reformatted the time steps of all directly trained
+SNNs into the T × D format, where T is the number of time steps, and D is the upper limit of integer activation during training. D ≥ 1
+signifies the use of the SFA direct training method. The † symbol indicates the use of knowledge distillation.
+Method
+CIFAR10 CIFAR100 CIFAR10-DVS DVS128
+Param Acc Param Acc Param Acc Param Acc
+FSTA-SNN[Yu et al., 2025] 11.30 96.52 11.30 80.42 11.20 82.7 - -
+STAA-SNN[Zhang et al., 2025] - 97.14 - 82.05 - 82.1 - 98.6
+Spikformer[Zhou et al., 2023] 9.32 95.51 9.32 78.21 2.57 80.9 2.57 98.3
+S-Transformer[Yao et al., 2023] 10.28 95.60 10.28 78.40 2.57 80.0 2.57 99.3
+QKFormer[Zhang et al., 2024] 6.74 96.18 6.74 81.15 1.50 84.0 1.50 98.6
+MSViT[Hua et al., 2025] 7.59 96.53 7.59 81.98 1.67 84.0 1.67 98.8
+Max-Former[Fang et al., 2025] 6.57 97.04 6.60 82.65 1.45 84.2 1.45 98.6
+SAFformer 6.31 97.50 6.34 83.38 1.50 85.0 1.50 99.0
+Table 2: Comparison on CIFAR10, CIFAR100, DVS128, and CIFAR10-DVS.
+4 Experiments
+In this section, we conduct a comprehensive set of ex-
+periments to evaluate our proposed method, comparing it
+with other recent state-of-the-art architectures on several
+widely-used benchmarks. We evaluate our model on vari-
+ous datasets, including the static datasets including CIFAR-
+10/100[Krizhevsky et al., 2009] and ImageNet[Deng et al.,
+2009], as well as neuromorphic datasets CIFAR10-DVS[Li
+et al., 2017] and DVS128Gesture[Amir et al., 2017].
+4.1 Results on ImageNet-1K Classification
+Experimental Setup on ImageNet-1K. The input image
+size is set to 224 × 224. For model training, we employ the
+SFA direct training method[Yao et al., 2025] with the virtual
+timestep D set to 4. We use the AdamW optimizer with a
+base learning rate of 6 × 10−4
+, where the actual learning rate
+is calculated by multiplying the base rate by the batch size
+divided by 256. Training is conducted for 200 epochs with
+a batch size of 512, distributed across 6 NVIDIA RTX 3090
+SAF SMAG Param(M) Top-1 Acc(%)
+baseline 6.74 79.79
+✓ 6.77 80.42(+0.63)
+✓ 6.32 83.07(+3.28)
+✓ ✓ 6.34 83.38(+3.59)
+Table 3: Ablation study of SAFformer on CIFAR100.
+GPUs. Throughout the process, we apply standard data aug-
+mentation techniques, including RandAugment[Cubuk et al.,
+2020], mixup, and random erasing. The number of blocks in
+the three stages is set to {1, 2, 7}, respectively.
+Primary Results on ImageNet-1K. The experimental re-
+sults are shown in Table 1. Compared with the di-
+rect training method of vanilla time steps, our SAFformer
+(26.58M, 80.44%) achieves a 2.24% higher accuracy than S-
+Transformer v2 (31.30M, 77.20%) while reducing the num-
+ber of parameters by approximately 15.1%. Compared with
+the direct training method of SFA, under the same virtual time
+step D = 4, our model has a 0.64% higher accuracy rate and
+similar energy consumption compared with E-SpikeFormer.
+Compared to the latest Max-Former (28.65M, 79.86%), SAF-
+former achieves a 0.58% performance improvement with
+fewer parameters and lower energy consumption. Without
+considering knowledge distillation, our model achieves com-
+parable accuracy and efficiency to SOTA models in the SNN
+domain on ImageNet-1K.
+4.2 Results on CIFAR and Neuromorphic Datasets
+CIFAR Classification. On CIFAR datasets, SAFformer is
+trained for 400 epochs with a batch size of 64, and the vir-
+tual timestep D is set to 4. We use the AdamW optimizer
+with a learning rate of 1 × 10−3
+. The SAFformer consists
+of 4 blocks, distributed across the three stages as {1, 1, 2}.
+The results are shown in Table 2. On CIFAR10, our model
+achieves 97.50% accuracy with 6.31M parameters, surpass-
+ing all previous models including Max-Former (97.04%) and
+STAA-SNN (97.14%). On the more challenging CIFAR100
+dataset, SAFformer achieves an accuracy of 83.38%, which
+is also significantly higher than the previous SOTA models
+Max-Former (82.65%) and STAA-SNN (82.05%).
+Neuromorphic Classification. The neuromorphic datasets
+use a SAFformer with 1.50M parameters, configured with
+a {0, 1, 1} block distribution across its three stages and a
+timestep of 16. The training process for DVS128Gesture
+involves 200 epochs, while for CIFAR10-DVS it is 106
+epochs. On CIFAR10-DVS, our model achieves an accuracy
+of 85.0%, significantly outperforming QKFormer (84.0%)
+and Max-Former (84.2%) to establish a new state-of-the-
+art. On the DVS128 Gesture recognition task, SAFformer
+achieves an accuracy of 99.0%, demonstrating highly com-
+petitive performance.
+Figure 4: Ablation study on SGM, analyzing its impact on training
+time and energy consumption across different model scales.
+4.3 Ablation Study
+We conduct ablation studies on CIFAR100 to analyze the ef-
+fectiveness of each module, with all experiments following
+the training details described in Section 4.2 unless otherwise
+specified. The experimental results are presented in Table 3.
+The results show that each component contributes positively
+to the final performance. Specifically, SAF has improved its
+Methods Param(M) Top-1 Acc(%)
+w/o depthwise conv 6.77 80.42
+w/o partial conv 6.23 82.51
+w/o multi-scale 6.36 83.15
+SMAG(ours) 6.34 83.38
+Table 4: Ablation study on the components of the SMAG module.
+accuracy by 0.63% with almost no increase in the number of
+parameters by dynamically predict the tokens with the richest
+information. Furthermore, substituting the SMLP with our
+SMAG yields a substantial 3.28% accuracy gain while simul-
+taneously reducing the parameter count by 0.42M. The best
+performance is achieved when both SAF and SMAG mod-
+ules are combined, demonstrating that they are effective and
+complementary.
+Effectiveness of the SGM Module in SAF. The effective-
+ness of the SGM module is validated in Fig. 4. We use a
+SAFformer without any filtering mechanism as the baseline.
+The ”w/o SGM” version removes SGM and uses a fixed Top-
+K ratio instead. For the 27M model, SGM reduces energy
+consumption by approximately 27% compared to the base-
+line and accelerates training time by 8%. Our SAFformer
+(15.12M, 3.75mJ,79.19%) outperforms the Fixed Top-k base-
+line (15.08M, 4.12mJ, 78.71%), which demonstrates SGM’s
+effective efficiency and accuracy. While the training time
+is slightly longer for the smaller 15M model due to relative
+overhead, the substantial energy savings in all scenarios con-
+firm the superior efficiency of our active predictive approach.
+Component Analysis of the SMAG Module. We analyzed
+the contribution of each key design in SMAG through a step-
+by-step ablation, with results in Table 4. When we remove
+the multi-scale design of SMAG, the model’s performance
+drops to 83.15%. Further removing the partial convolution
+reduces accuracy to 82.51%. Completely eliminating spatial
+awareness by replacing all depthwise convolutions with 1×1
+convolutions causes the most significant performance degra-
+dation, with accuracy falling to 80.42%. These results clearly
+demonstrate that the superiority of SMAG stems from the
+synergistic combination of its spatial awareness, local prior
+injection, and multi-scale gating.
+5 Conclusion
+In this paper, we have delved into the inherent Passive Re-
+active limitation in existing Spiking Transformers. Drawing
+inspiration from the brain’s predictive coding theory, we pro-
+posed SAFformer. It actively predicts and filters redundant
+information, guiding the model to focus its computational
+resources on salient features while preserving more high-
+frequency information. We introduced a new self-attention
+mechanism, SAF, which actively predicts global saliency via
+a lightweight guidance module to dynamically focus attention
+resources on key regions. Furthermore, we proposed SMAG
+to replace the vanilla SMLP. It leverages a decoupled, multi-
+scale gating mechanism to overcome homogeneous trans-
+formation and parameter redundancy. Experimental results
+demonstrate that SAFformer achieves state-of-the-art perfor-
+mance on CIFAR-10/100 and CIFAR10-DVS datasets while
+maintaining low energy consumption.
+Acknowledgments
+This work was supported by the Natural Sci-
+ence Foundation of Guangdong Province, China
+(No.2025A1515012243) and the Guangdong S&T pro-
+gramme, China (No.2025A1010010002).
+References
+[Ahlswede et al., 2000] Rudolf Ahlswede, Ning Cai, S-YR
+Li, and Raymond W Yeung. Network information flow.
+IEEE Transactions on information theory, 46(4):1204–
+1216, 2000.
+[Amir et al., 2017] Arnon Amir, Brian Taba, David Berg,
+Timothy Melano, Jeffrey McKinstry, Carmelo Di Nolfo,
+Tapan Nayak, Alexander Andreopoulos, Guillaume Gar-
+reau, Marcela Mendoza, et al. A low power, fully event-
+based gesture recognition system. In Proceedings of the
+IEEE conference on computer vision and pattern recogni-
+tion, pages 7243–7252, 2017.
+[Chen et al., 2023] Jierun Chen, Shiu-hong Kao, Hao He,
+Weipeng Zhuo, Song Wen, Chul-Ho Lee, and S-H Gary
+Chan. Run, don’t walk: chasing higher flops for faster
+neural networks. In Proceedings of the IEEE/CVF con-
+ference on computer vision and pattern recognition, pages
+12021–12031, 2023.
+[Chen et al., 2024] Yunhua Chen, Ren Feng, Zhimin Xiong,
+Jinsheng Xiao, and Jian K Liu. High-performance deep
+spiking neural networks via at-most-two-spike exponential
+coding. Neural Networks, 176:106346, 2024.
+[Chen et al., 2026a] Yunhua Chen, Zequan Xie, Jinyu
+Zhong, Pinghua Chen, and Jinsheng Xiao. Sqkformer:
+Spiking sparse qkformer with adaptive batch normaliza-
+tion for membrane potential. Neurocomputing, page
+132666, 2026.
+[Chen et al., 2026b] Yunhua Chen, Jinyu Zhong, Yihao Guo,
+Zequan Xie, Jinsheng Xiao, and Pinghua Chen. C3net: A
+cross-modal collaborative calibration of features for object
+detection using frames and events. Neural Networks, page
+108651, 2026.
+[Crassidis and Markley, 1997] John L Crassidis and F Lan-
+dis Markley. Predictive filtering for nonlinear systems.
+Journal of Guidance, Control, and Dynamics, 20(3):566–
+572, 1997.
+[Cubuk et al., 2020] Ekin D Cubuk, Barret Zoph, Jonathon
+Shlens, and Quoc V Le. Randaugment: Practical auto-
+mated data augmentation with a reduced search space. In
+Proceedings of the IEEE/CVF conference on computer vi-
+sion and pattern recognition workshops, pages 702–703,
+2020.
+[Deng et al., 2009] Jia Deng, Wei Dong, Richard Socher, Li-
+Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale
+hierarchical image database. In 2009 IEEE conference on
+computer vision and pattern recognition, pages 248–255.
+Ieee, 2009.
+[Di Yu et al., 2024] Xin Du Di Yu, Linshan Jiang, Wentao
+Tong, and Shuiguang Deng. Ec-snn: Splitting deep spiking
+neural networks for edge devices. In Proceedings of the
+Thirty-Third International Joint Conference on Artificial
+Intelligence, 2024.
+[Dosovitskiy et al., 2020] Alexey Dosovitskiy, Lucas Beyer,
+Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai,
+Thomas Unterthiner, Mostafa Dehghani, Matthias Min-
+derer, Georg Heigold, Sylvain Gelly, et al. An image is
+worth 16x16 words: Transformers for image recognition
+at scale. arXiv preprint arXiv:2010.11929, 2020.
+[Duan et al., 2023] Peiqi Duan, Yi Ma, Xinyu Zhou, Xinyu
+Shi, Zihao W Wang, Tiejun Huang, and Boxin Shi. Neu-
+rozoom: Denoising and super resolving neuromorphic
+events and spikes. IEEE Transactions on Pattern Analy-
+sis and Machine Intelligence, 45(12):15219–15232, 2023.
+[Eshraghian et al., 2023] Jason K Eshraghian, Max Ward,
+Emre O Neftci, Xinxin Wang, Gregor Lenz, Girish
+Dwivedi, Mohammed Bennamoun, Doo Seok Jeong, and
+Wei D Lu. Training spiking neural networks using
+lessons from deep learning. Proceedings of the IEEE,
+111(9):1016–1054, 2023.
+[Fang et al., 2025] Yuetong Fang, Deming Zhou, Ziqing
+Wang, Hongwei Ren, ZeCui Zeng, Lusong Li, Shibo
+Zhou, and Renjing Xu. Spiking transformers need high
+frequency information. arXiv preprint arXiv:2505.18608,
+2025.
+[Friston, 2009] Karl Friston. The free-energy principle: a
+rough guide to the brain? Trends in cognitive sciences,
+13(7):293–301, 2009.
+[Guo et al., 2022] Yufei Guo, Liwen Zhang, Yuanpei Chen,
+Xinyi Tong, Xiaode Liu, YingLei Wang, Xuhui Huang,
+and Zhe Ma. Real spike: Learning real-valued spikes for
+spiking neural networks. In European conference on com-
+puter vision, pages 52–68. Springer, 2022.
+[Guo et al., 2024] Yufei Guo, Yuanpei Chen, Xiaode Liu,
+Weihang Peng, Yuhan Zhang, Xuhui Huang, and Zhe Ma.
+Ternary spike: Learning ternary spikes for spiking neural
+networks. In Proceedings of the AAAI conference on arti-
+ficial intelligence, volume 38, pages 12244–12252, 2024.
+[Guo et al., 2025] Yufei Guo, Xiaode Liu, Yuanpei Chen,
+Weihang Peng, Yuhan Zhang, and Zhe Ma. Spiking trans-
+former: Introducing accurate addition-only spiking self-
+attention for transformer. In Proceedings of the Computer
+Vision and Pattern Recognition Conference, pages 24398–
+24408, 2025.
+[Hua et al., 2025] Wei Hua, Chenlin Zhou, Jibin Wu, Yan-
+song Chua, and Yangyang Shu. Msvit: Improving spik-
+ing vision transformer using multi-scale attention fusion.
+arXiv preprint arXiv:2505.14719, 2025.
+[Hwang et al., 2024] Sangwoo Hwang, Seunghyun Lee, Da-
+hoon Park, Donghun Lee, and Jaeha Kung. Spikedatten-
+tion: Training-free and fully spike-driven transformer-to-
+snn conversion with winner-oriented spike shift for soft-
+max operation. Advances in Neural Information Process-
+ing Systems, 37:67422–67445, 2024.
+[Krizhevsky et al., 2009] Alex Krizhevsky, Geoffrey Hinton,
+et al. Learning multiple layers of features from tiny im-
+ages. 2009.
+[Li et al., 2017] Hongmin Li, Hanchao Liu, Xiangyang Ji,
+Guoqi Li, and Luping Shi. Cifar10-dvs: an event-stream
+dataset for object classification. Frontiers in neuroscience,
+11:309, 2017.
+[Luo et al., 2024] Xinhao Luo, Man Yao, Yuhong Chou,
+Bo Xu, and Guoqi Li. Integer-valued training and
+spike-driven inference spiking neural network for high-
+performance and energy-efficient object detection. In Eu-
+ropean Conference on Computer Vision, pages 253–272.
+Springer, 2024.
+[Maass, 1997] Wolfgang Maass. Networks of spiking neu-
+rons: the third generation of neural network models. Neu-
+ral networks, 10(9):1659–1671, 1997.
+[Qiu et al., 2024] Xuerui Qiu, Rui-Jie Zhu, Yuhong Chou,
+Zhaorui Wang, Liang-jian Deng, and Guoqi Li. Gated at-
+tention coding for training high-performance and efficient
+spiking neural networks. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, volume 38, pages 601–
+610, 2024.
+[Qiu et al., 2025] Xuerui Qiu, Malu Zhang, Jieyuan Zhang,
+Wenjie Wei, Honglin Cao, Junsheng Guo, Rui-Jie Zhu, Yi-
+meng Shan, Yang Yang, and Haizhou Li. Quantized spike-
+driven transformer. arXiv preprint arXiv:2501.13492,
+2025.
+[Rao and Ballard, 1999] Rajesh PN Rao and Dana H Ballard.
+Predictive coding in the visual cortex: a functional in-
+terpretation of some extra-classical receptive-field effects.
+Nature neuroscience, 2(1):79–87, 1999.
+[Song et al., 2024] Xiaotian Song, Andy Song, Rong Xiao,
+and Yanan Sun. One-step spiking transformer with a lin-
+ear complexity. In Proceedings of the Thirty-Third Inter-
+national Joint Conference on Artificial Intelligence, pages
+3142–3150, 2024.
+[Touvron et al., 2021] Hugo Touvron, Matthieu Cord,
+Matthijs Douze, Francisco Massa, Alexandre Sablay-
+rolles, and Hervé Jégou. Training data-efficient image
+transformers & distillation through attention. In In-
+ternational conference on machine learning, pages
+10347–10357. PMLR, 2021.
+[Wang et al., 2023] Ziqing Wang, Yuetong Fang, Jiahang
+Cao, Qiang Zhang, Zhongrui Wang, and Renjing Xu.
+Masked spiking transformer. In Proceedings of the
+IEEE/CVF International Conference on Computer Vision,
+pages 1761–1771, 2023.
+[Wang et al., 2024] Yan Wang, Yusen Li, Gang Wang, and
+Xiaoguang Liu. Multi-scale attention network for single
+image super-resolution. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 5950–5960, 2024.
+[Xiao et al., 2026] Jinsheng Xiao, Hao Ma, Ruidi Chen,
+Xingyu Gao, Hailong Shi, and Zhongyuan Wang. Stkps-
+net: Spatio-temporal key patch selection network for few
+shot anomalous action recognition. IEEE Transactions on
+Information Forensics and Security, 21:827–838, 2026.
+[Yao et al., 2023] Man Yao, Jiakui Hu, Zhaokun Zhou,
+Li Yuan, Yonghong Tian, Bo Xu, and Guoqi Li. Spike-
+driven transformer. Advances in neural information pro-
+cessing systems, 36:64043–64058, 2023.
+[Yao et al., 2024a] Man Yao, Jiakui Hu, Tianxiang Hu, Yifan
+Xu, Zhaokun Zhou, Yonghong Tian, Bo Xu, and Guoqi Li.
+Spike-driven transformer v2: Meta spiking neural network
+architecture inspiring the design of next-generation neuro-
+morphic chips. arXiv preprint arXiv:2404.03663, 2024.
+[Yao et al., 2024b] Man Yao, Ole Richter, Guangshe Zhao,
+Ning Qiao, Yannan Xing, Dingheng Wang, Tianxiang
+Hu, Wei Fang, Tugba Demirci, Michele De Marchi,
+et al. Spike-based dynamic computing with asynchronous
+sensing-computing neuromorphic chip. Nature Communi-
+cations, 15(1):4464, 2024.
+[Yao et al., 2025] Man Yao, Xuerui Qiu, Tianxiang Hu, Ji-
+akui Hu, Yuhong Chou, Keyu Tian, Jianxing Liao, Luziwei
+Leng, Bo Xu, and Guoqi Li. Scaling spike-driven trans-
+former with efficient spike firing approximation training.
+IEEE Transactions on Pattern Analysis and Machine In-
+telligence, 2025.
+[Yu et al., 2025] Kairong Yu, Tianqing Zhang, Hongwei
+Wang, and Qi Xu. Fsta-snn: Frequency-based spatial-
+temporal attention module for spiking neural networks. In
+Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 39, pages 22227–22235, 2025.
+[Zhang et al., 2024] Han Zhang, Zhaokun Zhou, Liutao Yu,
+Liwei Huang, Xiaopeng Fan, Li Yuan, Zhengyu Ma, Hui-
+hui Zhou, Yonghong Tian, et al. Qkformer: Hierarchi-
+cal spiking transformer using qk attention. Advances in
+Neural Information Processing Systems, 37:13074–13098,
+2024.
+[Zhang et al., 2025] Tianqing Zhang, Kairong Yu, Xian
+Zhong, Hongwei Wang, Qi Xu, and Qiang Zhang. Staa-
+snn: Spatial-temporal attention aggregator for spiking neu-
+ral networks. In Proceedings of the Computer Vision
+and Pattern Recognition Conference, pages 13959–13969,
+2025.
+[Zheng et al., 2025] Zeqi Zheng, Yanchen Huang, Yingchao
+Yu, Zizheng Zhu, Junfeng Tang, Zhaofei Yu, and Yaochu
+Jin. Spiliformer: Enhancing spiking transformers with lat-
+eral inhibition. arXiv preprint arXiv:2503.15986, 2025.
+[Zhou et al., 2023] Zhaokun Zhou, Yuesheng Zhu, Chao
+He, Yaowei Wang, Shuicheng Yan, Yonghong Tian, and
+Li Yuan. Spikformer: When spiking neural network meets
+transformer. In ICLR, 2023.
+[Zhou et al., 2026] Chenlin Zhou, Liutao Yu, Zhaokun
+Zhou, Han Zhang, Jiaqi Wang, Huihui Zhou, Zhengyu
+Ma, and Yonghong Tian. Spikingformer: A key founda-
+tion model for spiking neural networks. In Proceedings of
+the AAAI Conference on Artificial Intelligence, volume 40,
+pages 2236–2244, 2026.
+A Energy Consumption Calculation
+This section elaborates in detail the methods we use to evalu-
+ate the energy consumption of the SAFformer model. When
+assessing energy consumption, we follow the most commonly
+used energy consumption evaluation method in the SNN field.
+We mainly focus on the energy consumption of key opera-
+tions in the computing process (such as multiplication and
+accumulation operations MAC and accumulation operations
+AC), and ignore some overhead related to hardware manu-
+facturing, data loading and storage. We assume that all op-
+erations are based on 32-bit floating-point precision and re-
+fer to widely used industry benchmarks to set energy con-
+sumption parameters. At the 45nm technology node, the
+energy consumption for MAC operation is approximately
+EMAC = 4.6pJ, while the energy consumption for AC op-
+eration is approximately EAC = 0.9pJ. For specific ANNs
+and SNNs, the energy consumption calculation formulas are
+as follows:
+EANN =O2
+× Cin × Cout × k2
+× EMAC, (18)
+ESNN =(T × D) × fr × O2
+× Cin (19)
+× Cout × k2
+× EAC,
+where O is the output feature map size, Cin and Cout are
+the number of input and output channels, k is the kernel size,
+fr is the average spike firing rate, T is the number of time
+steps, and D is the virtual time step. Suppose the common
+direct training method is used, then D = 1. Due to the homo-
+geneity of convolution, the following BN and linear scaling
+transformations can be equivalently fused into the convolu-
+tional layer, and a bias is added during deployment. There-
+fore, when calculating the theoretical energy consumption,
+the energy consumption of the BN layer can be ignored. We
+use EANN for the first convolutional layer of the encoder,
+and ESNN for the remaining parts. The fewer the spikes, the
+sparser the computation.
+B SGReN Parameter Analysis
+To more clearly demonstrate the advantages of the SMAG
+module we proposed in terms of computational efficiency,
+this section will conduct a detailed comparison of the number
+of parameters and FLOPs between SMAG and the vanilla 1
+× 1 convolution-based spiking MLP (SMLP). For a fair com-
+parison, we assume that both have an input and output chan-
+nel count of C. A typical SMLP structure includes two 1×1
+convolutional layers, a BN layer, and an activation function.
+Since the parameters of the BN layer and activation function
+are negligible, we only consider the convolutional layers in
+our calculation. Following the common setup for SNN-based
+Transformers, the expansion ratio of the SMLP is Rmlp = 4,
+making the hidden layer channel count 4C. The total param-
+eter count PSMLP is easily derived as 8C2
+. The structure of
+SMAG is more complex, including partial convolution, 1×1
+convolution, and depthwise separable convolution. First, we
+use a 3×3 kernel with a stride of 1 to perform partial convo-
+lution on C
+4 of the channels:
+PP Conv = 3 × 3 ×
+C
+4
+×
+C
+4
+, (20)
+then we use a point-wise convolution to expand the channels
+to 4C, followed by channel splitting. Features are extracted
+using depthwise convolution with kernel sizes of 3 × 3 and
+7 × 7 respectively. The number of parameters of the deep
+convolution is:
+PDW Conv3×3
+= 3 × 3 × C × 1, (21)
+PDW Conv7×7
+= 7 × 7 × C × 1, (22)
+finally, a point-wise convolution is used to restore the chan-
+nels to C. The total parameter count for the two point-wise
+convolutions is Ppwconv = 6C2
+. Thus, the parameter count
+for SMAG is:
+PSMAG = PP Conv + PDW Conv + PP W Conv
+= 6.5625C2
++ 58C.
+(23)
+According to the theory of time complexity , when C is
+large, the complexity is determined by the term with the high-
+est power. Assuming the embedding dimension is consistent
+with QKFormer at 384 for the CIFAR dataset, the parame-
+ter count in the FFN stage can be reduced by approximately
+16.08%. The parameter count of SMAG is lower than that
+of the vanilla SMLP structure, mainly due to the high com-
+putational efficiency of depth-separable convolution in spa-
+tial feature extraction and the savings in computational load
+by partial convolution. Compared with SMLP, the SMAG
+reduces the number of parameters while achieving more di-
+verse and numerous convolution, making feature extraction
+more refined and deeper.
+C Frequency Analysis
+Figure 5: Fourier spectrum of Spiking Neurons, Spiking Depth-Wise
+Convolution and Spiking Max-Pooling.
+We conducted Fourier spectrum analysis on the feature
+maps after different operations, as shown in Fig. 5. It can
+be seen that the spectral energy of spiking neurons (LIFs)
+is highly concentrated in the central low-frequency region
+and rapidly decays as the frequency increases. This indicates
+that relying solely on spiking neurons can lead to significant
+loss of high-frequency information (such as edges and tex-
+tures), thereby limiting the model’s feature extraction ability
+at the shallow stage. In contrast, DWConv exhibits a more
+dispersed spectral response, especially retaining strong en-
+ergy in the high-frequency regions far from the center. This
+means that DWConv can effectively capture and convey high-
+frequency details.
+Based on the above observations, we strategically intro-
+duced DWConv and Max-Pooling in the Query/Key genera-
+tion path of SAF Attention and in the Patch Embedding mod-
+ule. This design compensates for the intrinsic low-pass fil-
+tering characteristic of spiking neurons, actively preserving
+critical high-frequency visual cues at early network stages.
+D Ablation Stduy
+D.1 The effects of each component of SAF
+Linear DWConv SGM Params(M) Accuracy(%)
+✓ 6.74 82.95
+✓ ✓ 6.76 83.01
+✓ ✓ 6.74 83.10
+✓ ✓ ✓ 6.77 83.38
+Table 5: Ablation study of each component in the SAF module.
+To thoroughly investigate the individual contributions of
+each design component in SAF Attention, we conducted a
+progressive ablation study on CIFAR100. As shown in Ta-
+ble 5, the baseline adopts conventional linear projections for
+Query/Key generation and discards the SGM module. In-
+troducing depthwise separable convolution after Linear im-
+proves accuracy by 0.06%, corroborating the efficacy of DW-
+Conv in preserving high-frequency local cues. Equipping the
+baseline with SGM alone yields a 0.15% gain. When DW-
+Conv and SGM are integrated simultaneously, the model at-
+tains the peak accuracy of 83.38%, surpassing the baseline by
+0.43%. This enhancement exceeds the naive summation of
+the two independent improvements, underscoring the greater
+significance of the SAF attention mechanism within the over-
+all architecture.
+D.2 Different Kernel Size of DWConv on SMAG
+3+5 5+7 3+7
+Kernel Size
+82.5
+82.8
+83.1
+83.4
+CIFAR100
+82.78%
+82.87%
+83.38%
+CIFAR100
+CIFAR10
+97.0
+97.2
+97.4
+97.6
+CIFAR10
+97.2%
+97.46%
+97.5%
+Figure 6: Ablation study on different kernel sizes of DWConv in the
+SMAG module.
+We conducted an ablation study on the optimal convolution
+kernel combination of multi-scale gated branches in SMAG.
+We compared three different configurations: 3 × 3 + 5 × 5,
+5 × 5 + 7 × 7, and 3 × 3 + 7 × 7. All experiments were con-
+ducted on the CIFAR10 and CIFAR100 datasets. As shown
+in Fig. 6, the combination of 3 + 7 achieved the best perfor-
+mance on both datasets. The 3×3 kernel focuses on capturing
+fine local details, whears the 7 × 7 kernel is responsible for
+perceiving the broader regional context. This large span scale
+combination enables SMAG to take into account both local
+and global information simultaneously, generating the most
+discriminative and robust gating signals, thereby maximizing
+the effect of feature refinement.
+D.3 Generalizability and Modularity
+To demonstrate the transformative potential and generaliz-
+ability of our SAF and SMAG modules, we integrated them
+into existing SOTA Spiking Transformers, SDT and QK-
+Former. As shown in Table 6, replacing the native atten-
+tion in QKFormer with our SAF alone improves accuracy
+from 96.18% to 96.51%. These results unequivocally confirm
+SAF’s role as a universal plug-and-play mechanism, enhanc-
+ing various SNN backbones.
+Model SAF Acc(%) SMAG Acc(%)
+SDT ✓ 96.10 ✓ 97.28
+QKFormer ✓ 96.51 ✓ 97.25
+SAFformer ✓ 96.72 ✓ 97.31
+Table 6: Applicability and modularity of SAF and SMAG on other
+SNN models (CIFAR-10).
+D.4 Effectiveness of SGM and Visualization
+The effectiveness of the SGM module is validated in Fig-
+ure 4. Compared to a static sparse version (Fixed Top-K with
+K = 0.6), our SGM-enabled SAF achieves lower energy con-
+sumption across all scales. For the 27M model, SGM reduces
+energy by ∼27% and accelerates training by 8%.
+Figure 7: Visualization of attention heatmaps on ImageNet-1k.
+SAFformer precisely focuses on foreground objects and suppresses
+redundant background computation compared to Fixed Top-K and
+QKFormer.
+As shown in Figure 7, SAFformer’s attention is more re-
+fined. Quantitative statistics across 200 epochs on ImageNet-
+1K further reveal SGM’s adaptive behavior: the average pre-
+dicted k value decreases from 0.5182 in Stage 1 to 0.4421 in
+Stage 2, reflecting SGM’s ability to narrow attention as fea-
+ture abstraction increases.
+D.5 Comparison with Mainstream ANN Models
+We further compare SAFformer with recent lightweight ANN
+models from 2024-2025. As shown in Table 7, our model
+achieves a superior accuracy-efficiency tradeoff. While mod-
+els like CrossFormer++-T and SpectFormer-S achieve high
+accuracy, SAFformer significantly reduces energy consump-
+tion to only 5.88mJ.
+Model Param(M) Power(mJ) Acc(%)
+CrossFormer++-T 27.80 13.34 81.50
+SpectFormer-S 32.56 30.36 81.70
+SAFformer 26.58 5.88 80.44±0.24
+Table 7: Comparison with mainstream ANN methods on ImageNet.
+E Further Discussion on Proposition 2
+To gain a deeper understanding of the theoretical implications
+of Proposition 2, we contrast our Active Predictive Filter-
+ing paradigm with the Passive Reactive Sparsity inherent
+in conventional Spiking Transformers. While both lead to
+sparse spike activity, the underlying computational logic and
+information-theoretic motivations are fundamentally distinct.
+Externalization of Filtering Decisions. In standard SNNs
+(e.g., Spikformer or standard SSA), sparsity is a passive
+byproduct of local signal strength. A neuron fires only when
+its accumulated membrane potential exceeds a fixed thresh-
+old Vth. This is a “compute-first, filter-later” process where
+the filtering decision is internal to the data path. In contrast,
+as formalized in Proposition 2, SAF decouples the saliency
+evaluation from the information filtering. The introduction
+of a global selection function Ψ(X, k), realized by the SGM,
+represents an externalized decision-making mechanism. The
+SGM acts as a “meta-controller” that observes the global con-
+text X to predict the optimal computation graph before heavy
+neuronal integration occurs. This mirrors the top-down mod-
+ulation in the biological visual system, where higher-level ex-
+pectations proactively prime specific neural circuits.
+Topological Reconfiguration of Information Flow.
+Proposition 2 defines the SAF computation on a dynamically
+selected sparse subgraph G′
+. This is a crucial distinction from
+fixed-topology sparse Transformers. In our framework, the
+graph’s topology—the set of active vertices Vactive—is not
+static but is proactively reconfigured for every input. For
+“simple” images with redundant backgrounds, the SGM pre-
+dicts a smaller k, effectively pruning the majority of the graph
+and focusing computational resources exclusively on the ob-
+ject of interest. For “complex” scenes, k is adaptively in-
+creased. This content-dependent graph reconstruction allows
+SAFformer to maintain a high information bottleneck for
+noise while ensuring sufficient bandwidth for salient “predic-
+tion errors.”
+Synergy between Contextualization and Saliency. The
+proof of Proposition 2 relies on the unary saliency function
+S(vi). Crucially, vi is not a raw token but a contextualized
+representation enhanced by depthwise convolutions. This ar-
+chitectural choice ensures that the “filtering” is guided by
+high-level spatial information (e.g., edges, textures) rather
+than just pixel-wise intensity. By proving that SAF operates
+as a node-wise filter on a predicted subgraph, we establish a
+theoretical foundation for its superior energy efficiency: com-
+putation is only expended on nodes that have been “autho-
+rized” by the SGM’s global prediction.
+In summary, Proposition 2 clarifies that SAF’s sparsity is a
+deliberate, learned strategy derived from context, rather than
+a reactive consequence of weak activations. This paradigm
+shift from “passive thresholding” to “active predictive filter-
+ing” is the core driver behind SAFformer’s performance and
+extreme energy efficiency.
+

@@ -1,0 +1,662 @@
+SpikeWFM: Spiking-Aided Wireless Foundation
+Model for Robust Channel Prediction
+1st
+Liwen Jing†
+Pengcheng Laboratory
+Shenzhen, China
+jinglw@pcl.ac.cn
+2nd
+Yisha Lu†
+Pengcheng Laboratory
+Shenzhen, China
+luyisha@sztu.edu.cn
+3rd
+Tingting Yang*
+Pengcheng Laboratory
+Shenzhen, China
+yangtt@pcl.ac.cn
+4th
+Li Sun
+Pengcheng Laboratory
+Shenzhen, China
+sunl03@pcl.ac.cn
+5th
+Yuxuan Shi
+Pengcheng Laboratory
+Shenzhen, China
+shiyx01@pcl.ac.cn
+6th
+Yuwei Wang
+Pengcheng Laboratory
+Shenzhen, China
+wangyw03@pcl.ac.cn
+7th
+Mengfan Zheng
+Pengcheng Laboratory
+Shenzhen, China
+zhengmf01@pcl.ac.cn
+8th
+Leiyang Xu
+Pengcheng Laboratory
+Shenzhen, China
+xuly@pcl.ac.cn
+Abstract—This paper proposes SpikeWFM, a novel hybrid
+architecture that integrates spiking neural networks (SNNs) with
+conventional artificial neural network (ANN)-based transform-
+ers for wireless foundation models (WFMs). Inspired by the
+noise-robust and energy-efficient information processing in the
+human brain, SpikeWFM aims to enhance the resilience of
+WFMs against noise and interference while maintaining strong
+generalization capabilities across diverse wireless scenarios.
+Drawing from the success of large language models, WFMs
+leverage self-supervised pre-training on large-scale datasets
+spanning various wireless environments to learn a unified embed-
+ding that supports a wide range of downstream tasks, including
+channel prediction, channel estimation, beam predition, posi-
+tioning and etc. Such models typically outperform task-specific
+designs and exhibit superior adaptability to unseen conditions.
+However, existing WFMs remain vulnerable to realistic noise and
+interference in practical wireless systems.
+To address this limitation, we incorporate spiking neurons into
+the transformer-based WFM architecture. We provide a brief
+theoretical analysis demonstrating how the SNN-ANN hybrid
+effectively mitigates noise and interference through temporal
+sparsity and event-driven processing. Experimental results show
+that SpikeWFM consistently outperforms conventional ANN-
+based WFMs in both pre-training convergence and channel
+prediction accuracy. Additional results on communication and
+sensing tasks will be presented in the full journal version of this
+work.
+Index Terms—wireless foundation model, channel prediction,
+spiking neural network
+I. INTRODUCTION AND RELATED WORK
+The vision of sixth-generation (6G) wireless systems cen-
+ters on the profound convergence of communication, sensing,
+and pervasive intelligence. This integration is poised to enable
+groundbreaking applications, including low-altitude aerial net-
+works, embodied intelligent agents, and autonomous Vehicle-
+to-Everything (V2X) ecosystems. As 3GPP advances toward
+an AI-native air interface in Releases 18–20, there is an
+This work is supported by Mobile Information Networks-National Science
+and Technology Major Project (Project No. 2025ZD1304900). † These
+authors contributed equally: Liwen Jing and Yisha Lu. * Correspondence
+to: Tingting Yang.
+urgent need for scalable neural architectures that overcome the
+constraints of traditional task-specific deep learning models.
+While such models have shown success in isolated tasks
+like channel prediction, beam prediction, CSI compression,
+etc. [1], [2], they are typically hand-engineered for fixed
+configurations and struggle to generalize across the highly
+dynamic, non-stationary, and interference-rich environments
+of real-world 6G deployments. To address these scalabil-
+ity and generalization bottlenecks, the paradigm of wireless
+foundation models, also referred to as Big AI Models for
+wireless networks, has gained significant traction [3]. By
+conducting large-scale self-supervised pre-training on mas-
+sive and diverse wireless datasets, WFMs learn universal
+embeddings that can support a wide array of downstream
+tasks, such as channel prediction, beam management, sensing,
+and ISAC, through lightweight fine-tuning or even zero-shot
+inference [3]. Existing approaches in this domain generally
+follow two complementary technical trajectories. The first
+leverages cross-modal transfer from pre-trained large language
+models (LLMs) or vision models. Prominent examples include
+ChannelGPT, which embeds environment intelligence to gen-
+erate digital twin channels for 6G pervasive intelligence [4],
+LVM4CSI that directly applies frozen large vision models to
+CSI-related tasks without task-specific fine-tuning [5], as well
+as MUSE-FM for multi-task environment-aware modeling [6],
+LLM-based beam prediction [7], and other adaptations such
+as LLM4WM [8]. The second trajectory emphasizes native
+wireless pre-training on raw physical-layer data, exemplified
+by WirelessGPT [9], WiFo [10], WirelessJEPA [11], WiCC-
+Net [12] and BERT-inspired architectures for massive MIMO
+CSI prediction [13]. Recent discussions further underscore the
+evolution of LLMs in wireless systems from mere adaptation
+toward higher levels of autonomy [14].
+Notwithstanding their strong zero-shot and few-shot capa-
+bilities, the majority of current WFMs are built upon standard
+artificial neural networks with continuous activation functions.
+In practical 6G scenarios characterized by hardware impair-
+ments, high-power interference, and low signal-to-noise ratio
+arXiv:2606.00120v1
+[eess.SP]
+28
+May
+2026
+(SNR) conditions, these models frequently experience no-
+table performance degradation. Continuous activations (e.g.,
+ReLU) tend to introduce a non-zero noise floor, resulting
+in representation drift and cumulative DC bias across deep
+layers. Additionally, the substantial computational and energy
+demands of Transformer-based backbones pose significant
+challenges for deployment on energy-constrained edge devices
+and mobile terminals.
+Spiking Neural Networks present a compelling bio-inspired
+alternative by mimicking the event-driven, sparse, and energy-
+efficient processing mechanisms of the human brain. Through
+discrete spatio-temporal spike encoding, SNNs inherently
+function as a “noise gate,” whereby the desired signal inte-
+grates linearly over time while stochastic noise and interfer-
+ence accumulate sub-linearly, thereby offering robust inter-
+ference suppression [15], [16]. An early hybrid effort, SWS-
+Net [17], demonstrated the potential of lightweight ANN-
+SNN architectures for WiFi-based indoor sensing; however, it
+remains confined to task-specific applications within localized
+domains.
+In this paper, we make a significant step forward by propos-
+ing SpikeWFM, a hybrid spiking-aided wireless foundation
+model. Distinct from prior task-specific hybrids, SpikeWFM
+integrates Leaky Integrate-and-Fire (LIF) neurons directly into
+a large-scale Transformer backbone. This design extends the
+localized noise resilience and temporal sparsity of SNNs into
+a scalable, generalizable representation learning framework
+suitable for diverse and noisy wireless environments. To the
+best of our knowledge, SpikeWFM represents the first SNN-
+Transformer hybrid developed as a universal wireless founda-
+tion model. The main contributions of this work are fourfold:
+(1) Novel Hybrid Architecture: We propose SpikeWFM, the
+first wireless foundation model that integrates spiking neurons
+into a Transformer backbone, combining high-capacity self-
+attention with bio-inspired noise resilience. (2) Theoretical
+Robustness and Generalization: We provide a theoretical
+analysis demonstrating that spiking neurons achieve linear
+SNR gains and act as a structural Information Bottleneck (IB),
+which enhances generalization by constraining representation
+entropy and suppressing environment-specific noise. (3) Supe-
+rior Performance and Generalization: Experiments show that
+SpikeWFM outperforms Transformers in convergence speed
+and channel prediction accuracy, especially exhibiting strong
+zero-shot generalization in unseen environments.
+II. SYSTEM MODEL AND PRELIMINARY
+We consider a wideband MIMO-OFDM uplink communi-
+cation scenario, where a Base Station (BS) equipped with
+a large-scale antenna array of Nr elements serves a user
+equipment (UE) featuring Nt antennas. The wireless channel
+is characterized by its frequency-selective and time-varying
+nature. Specifically, the received signal at the BS in the fre-
+quency domain, corresponding to the k-th subcarrier and the
+m-th OFDM symbol, is expressed as Ym,k = Hm,kXm,k +
+Nm,k. Here, Hm,k ∈ CNr×Nt
+denotes the complex-valued
+frequency-response matrix.
+In practical deployments, due to the inherent constraints of
+pilot-assisted channel estimation, such as limited pilot over-
+head, hardware impairments, and non-ideal synchronization,
+the base station (BS) cannot obtain perfect channel state
+information (CSI). Instead, it acquires only a coarse and
+imperfect channel estimate:
+H̃m,k = Hm,k + Em,k (1)
+where Em,k represents the aggregate estimation error, which
+encapsulates additive white Gaussian noise (AWGN) at the
+receiver and residual multi-user interference from adjacent
+cells.
+To facilitate effective processing by high-capacity founda-
+tion models, the complete CSI tensor H̃ ∈ CM×K×Nr
+is first
+organized and then partitioned into N distinct spatio-temporal
+patches. Each patch, representing a local slice of the channel’s
+delay-doppler-angular profile, is flattened and projected into a
+latent space via a trainable linear operator Wemb ∈ Rd×Lelem
+.
+Following this high-dimensional embedding stage, the latent
+representation of a single CSI token can be abstractly modeled
+as a composite signal within the d-dimensional feature space:
+x = s + n, s ∈ Rd
+, n ∼ N(0, σ2
+nI) (2)
+In this formulation, s signifies the invariant channel seman-
+tics, such as the underlying multipath geometry and stable
+scattering clusters, while n represents the embedding-space
+noise induced by the raw estimation error Em,k. The primary
+objective of the proposed Spike-WFM framework is to design
+an operator that extracts a robust feature f(x), maximizing
+the mutual information with the semantic component s while
+effectively suppressing the stochastic and detrimental pertur-
+bation n.
+III. ROBUSTNESS AND GENERALIZATION ANALYSIS
+Conventional wireless foundation models predominantly
+utilize continuous Feed-Forward Networks (FFNs) with Rec-
+tified Linear Unit (ReLU) activations. We now provide a theo-
+retical demonstration of why Spike-WFM, powered by Leaky
+LIF neurons, offers inherently superior noise resilience and
+cross-environment generalization compared to its continuous
+counterparts.
+A. The DC Bias Problem in Continuous FFNs
+In standard Transformer-based architectures, the hidden
+activation for the i-th dimension is typically computed as yi =
+max(0, wT
+i x+bi). In low-SNR environments, the meaningful
+signal component µz,i = wT
+i s is frequently overwhelmed by
+the noise component zn,i = wT
+i n, where zn,i ∼ N(0, σ2
+W )
+assuming normalized weights. When the input becomes noise-
+dominated (i.e., µz,i → 0), the expected output of the neuron
+does not vanish. Instead, the mathematical expectation of the
+activation is the mean of a rectified Gaussian distribution:
+E[yi] ≈
+Z ∞
+0
+z ·
+1
+√
+2πσW
+e
+− z2
+2σ2
+W dz =
+σW
+√
+2π
+(3)
+This non-zero value σW
+√
+2π
+constitutes a systemic Direct Cur-
+rent (DC) bias. In deep hierarchical architectures, this bias
+does not remain isolated; it accumulates across L successive
+layers, resulting in ”representation drift.” This phenomenon
+occurs when the cumulative noise floor gradually saturates
+the dynamic range of the neurons, eventually leading to rep-
+resentation collapse where the model loses its discriminative
+power. Consequently, ReLU-based WFMs often struggle to
+distinguish subtle, high-frequency scattering components from
+the pervasive environmental noise.
+B. LIF-driven Spatio-Temporal Noise Gating
+Spike-WFM effectively addresses the DC bias issue by
+substituting ReLU with LIF neurons, which integrate feature
+information over T discrete simulation steps. The membrane
+potential Vi(t) of the neuron evolves according to the follow-
+ing temporal dynamics:
+Vi(t) = τVi(t − 1) + zi(t) − Si(t − 1)Vth (4)
+where τ ∈ (0, 1] represents the leak factor and Vth denotes
+the firing threshold. By interpreting the integration process as
+a coherent temporal accumulation of the same CSI token, the
+signal component
+P
+µz,i grows linearly with the time window
+T. In contrast, the stochastic noise component zn,i(t) behaves
+as a random walk. For a leak factor τ ≈ 1, the internal SNR
+after T steps, SNRint, can be derived as:
+SNRint =
+(E[
+PT
+t=1 zi(t)])2
+Var(
+PT
+t=1 zi(t))
+=
+(Tµz,i)2
+Tσ2
+W
+= T · SNRin (5)
+This linear gain in SNR (by a factor of T) enables the
+neuron to accumulate evidence of weak channel features that
+would otherwise be lost. Crucially, by carefully calibrating
+Vth > E[Vi(T)|s = 0], the LIF neuron functions as a non-
+linear spatio-temporal gate. Sub-threshold noise fluctuations
+are naturally dissipated by the leak factor τ over time, effec-
+tively neutralizing the systemic DC bias. Only those features
+exhibiting sufficient spatio-temporal consistency can trigger
+a discrete spike Si(t) = 1, yielding a sparse and inherently
+denoised representation.
+C. Generalization via Structural Information Bottleneck
+The generation of binary spike trains S ∈ {0, 1}D
+imposes
+a structural Information Bottleneck (IB) that significantly
+enhances the model’s generalization to unseen wireless en-
+vironments. According to the IB principle, an optimal model
+seeks to compress the input representation by minimizing the
+mutual information I(X; S) while retaining predictive power
+by maximizing I(S; Y ). The discrete and sparse nature of
+spikes imposes a hard limit on the channel capacity of the
+representation:
+I(X; S) ≤ H(S) ≤
+D
+X
+i=1
+Hb(pi) (6)
+where Hb(pi) = −pi log pi −(1−pi) log(1−pi) is the binary
+entropy associated with the firing probability pi. In Spike-
+WFM, the gating effect drives pi toward 0 for dimensions
+dominated by noise, while robust semantic features drive pi
+toward 1. This resulting bi-modal distribution of firing prob-
+abilities significantly lowers the total representation entropy
+H(S) compared to continuous, high-variance activations.
+Applying the PAC-Bayesian framework for generalization,
+the gap between training and testing error ∆R is bounded
+by O(
+p
+I(X; S)/Ntrain). By structurally constraining the
+flow of information through sparse spiking patterns, Spike-
+WFM prevents the model from ”memorizing” environment-
+specific noise or site-specific multipath artifacts (overfitting).
+This ensures superior zero-shot performance when the model
+is deployed across diverse and previously unobserved wireless
+channel realizations.
+IV. PROPOSED SPIKE-WFM ARCHITECTURE
+The Spike-WFM architecture is specifically engineered to
+extract robust channel representations from high-dimensional,
+noisy CSI tensors. As illustrated in the detailed schematic in
+Fig. 1, the model pipeline is organized into three core func-
+tional modules: a 3D spatio-temporal-frequency embedding
+layer, a hybrid spiking transformer backbone, and a task-
+specific prediction head.
+Fig. 1. SpikeWFM Model Architecture: From 3D CSI partitioning to spiking
+latent representation and downstream reconstruction.
+A. Spatio-Temporal Tokenization and 3D Embedding
+To fully preserve the intricate multi-dimensional correla-
+tions inherent in MIMO-OFDM signals, the input CSI matrix
+H̃ is first partitioned into non-overlapping 3D patches that
+span the time, frequency, and antenna dimensions. Each
+3D patch is flattened into a compact vector tn ∈ RLelem
+,
+where Lelem is set to 336 in our configuration to balance
+granularity and complexity. These vectors are then projected
+into a high-dimensional dmodel-dimensional embedding space
+(dmodel = 640) via a trainable linear layer Wproj.
+To maintain the global coordinate context within the 3D
+CSI grid, we utilize a decoupled 3D positional embedding
+mechanism. Recognizing that the physical properties of the
+time, frequency, and antenna domains differ significantly, our
+model learns three independent sets of embeddings. These are
+concatenated along the feature dimension to form the final
+encoding:
+Epos = [Embt(idxt) ∥ Embf (idxf ) ∥ Emba(idxa)] (7)
+where ∥ denotes the concatenation operation, with sub-
+dimensions allocated to sum up to dmodel. The indices
+idxt, idxf , idxa correspond to the patch’s coordinates in the
+respective domains. The resulting input to the transformer
+backbone is then normalized: x0 = LayerNorm(Wprojtn +
+Epos).
+B. Hybrid Spiking Foundation Backbone
+The backbone of Spike-WFM consists of N = 16 stacked
+hybrid encoder layers, designed for deep feature extraction.
+Each layer combines the global dependency modeling of
+Multi-Head Self-Attention (MHSA) with the noise-resilient
+properties of a Spiking Feed-Forward Network (SFFN).
+The SFFN module is the critical component where con-
+ventional ReLU is replaced by LIF neurons to introduce bio-
+inspired temporal integration. For a given hidden state h, the
+transformation within the foundation backbone is defined as
+follows:
+z = LayerNorm(Wfc1h) (8)
+V (t) = τV (t − 1) + z(t), s(t) = H(V (t) − Vth) (9)
+In this process, V (t) tracks the membrane potential, τ = 5.0
+acts as the decay factor to regulate information leakage, and
+H(·) is the Heaviside step function that governs spike genera-
+tion. The resulting spike output s(t) is subsequently projected
+back to the original model dimension through Wfc2. This
+spiking mechanism functions as a rigorous filter, effectively
+blocking low-amplitude noise components that fail to reach
+the threshold Vth = 1.5, thereby ensuring a sparse and robust
+latent representation.
+C. Downstream Channel Prediction Head
+To adapt the pre-trained foundation backbone for the spe-
+cific task of channel prediction, we append a specialized
+transformer-based head. The latent features emerging from the
+backbone are first projected into a dedicated prediction space
+with dimension dpred = 512. We also introduce 1D sinusoidal
+positional encodings at this stage to further emphasize the
+sequential dependencies required for accurate forecasting or
+interpolation.
+The prediction head is composed of K = 3 Custom Spiking
+Encoder layers. While these layers maintain the MHSA-
+SFFN structural paradigm, they are specifically optimized
+for sequence-to-sequence regression. Notably, to ensure stable
+temporal dynamics and consistent feature distributions during
+the fine-tuning phase, the SFFN within the prediction head
+utilizes 1D Batch Normalization instead of Layer Normaliza-
+tion prior to the LIF integration.
+Finally, the processed tokens are passed to a linear decoder
+for CSI reconstruction:
+Ĥpred = Wdecxfinal + bdec (10)
+where Wdec maps the dpred hidden features back to the
+physical CSI dimension (Lelem = 336). By building upon the
+noise-suppression capabilities of the backbone, the prediction
+head can reconstruct the target CSI with high fidelity, even in
+the presence of severe interference.
+V. EXPERIMENTS
+In this section, we evaluate the proposed SpikeWFM
+through a four-part experimental framework. First, we estab-
+lish a high-fidelity simulation environment using the Deep-
+MIMO dataset with a robust scenario-wise data allocation.
+Second, we analyze the foundation backbone’s convergence
+and noise-filtering efficacy during self-supervised pre-training.
+Finally, we benchmark both in-domain and cross-domain
+prediction performance against traditional and ANN-based
+methods across varying SNR levels.
+A. Experiments Setups
+We conduct extensive simulations using the DeepMIMO
+dataset to evaluate the performance of the proposed
+SpikeWFM. The system considers a wideband MIMO-OFDM
+uplink scenario operating at a carrier frequency of 3.5 GHz.
+The base station (BS) and user equipment (UE) are both
+equipped with a 2- Uniform Linear Arrays (ULAs) with
+a half-wavelength spacing. To capture intricate channel dy-
+namics, we utilize 612 subcarriers with a spacing of 30
+kHz. The temporal dimension is configured with n = 4
+segments, resulting in 14 × 4 OFDM symbols per realization.
+The user speed is randomly sampled within the range of
+0.1 to 5.0 m/s, and each channel is generated considering
+25 distinct propagation paths to reflect realistic multipath
+scattering environments.
+The hybrid spiking foundation backbone is pre-trained
+using CSI data aggregated from seven diverse city scenarios.
+To maintain balanced environmental coverage, we implement
+a scenario-wise sample allocation, where each city scenario
+contributes 1,500 samples for training and 500 for validation,
+resulting in a comprehensive pre-training dataset of 14,000
+samples in total. Raw CSI tensors are partitioned into non-
+overlapping 3D patches and projected into a 640-dimensional
+embedding space.To cater to diverse application scenarios
+with varying latency and performance requirements, we have
+developed three versions of the foundation model with 3.5M,
+20M, and 80M parameters. In this paper, we select the 80M
+parameter version as the primary backbone to rigorously
+evaluate the effectiveness of the Spike-WFM architecture. We
+employ the Adam optimizer with an initial learning rate of
+5 × 10−5
+and a StepLR scheduler. The backbone is trained
+for 200 epochs with an early stopping patience of 20.
+For the downstream channel prediction tasks (both In-
+Domain and Cross-Domain), the pre-trained backbone is
+frozen as a feature extractor. For In-Domain tasks, the training
+set comprises 22,800 samples aggregated from 7 cities, with
+5,700 samples each for validation and testing; for Cross-
+Domain tasks, the training set also contains 22,800 samples
+from 7 cities, while validation and testing sets consist of 4,800
+samples each from 3 unseen cities, ensuring all scenarios
+consistently adhere to a 12:3:3 allocation ratio. The prediction
+head, consisting of 3 spiking encoder layers, is optimized
+using NMSE Loss and the Adam optimizer (learning rate:
+3×10−4
+) for a maximum of 50 epochs with an early stopping
+patience of 5, emphasizing the efficiency of the lightweight
+downstream model.
+B. Analysis of Spiking-Aided Foundation Backbone
+As illustrated in Fig. 2, we evaluate the representation
+learning capability of SpikeWFM through its convergence be-
+havior. Both the spiking-aided backbone and the Transformer
+exhibit a rapid decrease in reconstruction error during the
+initial stages.
+Fig. 2. Comparison of pre-training validation loss (NMSE). We compare
+the proposed SpikeWFM against a conventional ReLU-based Transformer
+baseline using a self-supervised masked autoencoding (MAE) strategy (mask
+ratio = 0.75). The SpikeWFM integrates spiking mechanisms via LIF neurons
+(τ = 5.0, Vth = 1.0, ATan surrogate gradient) to reconstruct the complete
+CSI tensor from sparse observations.
+Notably, SpikeWFM demonstrates superior convergence
+efficiency, reaching a stable performance plateau significantly
+faster than the ANN-based baseline. This rapid adaptation
+suggests that the discrete spiking mechanism effectively iden-
+tifies and prioritizes dominant multipath features in the CSI
+data.
+From a physiological perspective, the LIF neurons in
+SpikeWFM function as a temporal ”noise gate.” By integrat-
+ing consistent signal components while dissipating stochastic
+perturbations through the leak factor, the model triggers spikes
+only when the membrane potential exceeds the threshold. This
+mechanism filters out low-amplitude interference, yielding
+a sparse and robust latent representation early in the pre-
+training phase. Although the ReLU-based Transformer even-
+tually reaches a marginally lower validation loss, its trajectory
+is characterized by more pronounced fluctuations and delayed
+convergence compared to the stability offered by the spiking
+neurons.
+Fig. 3. In-domain channel prediction performance under varying noise
+intensities. We evaluate the NMSE of SpikeWFM across SINR levels from
+−8 dB to 8 dB. During downstream training, the model is exposed to random
+noise within this range to enhance robust representation learning, while its
+performance is validated under fixed noise levels. Note that SpikeWFM
+performs prediction without requiring explicit SNR values as input.
+C. In-Domain Prediction Performance
+We evaluate the channel prediction accuracy of SpikeWFM
+across a range of SINR levels from −8 dB to 8 dB. As
+illustrated in Fig. 3, SpikeWFM consistently maintains a
+leading edge in prediction accuracy compared to traditional
+signal processing and deep learning benchmarks. A key ob-
+servation is that the model achieves its optimal performance at
+approximately 4 dB, where the spiking mechanism effectively
+balances noise suppression and feature preservation.However,
+two specific boundary phenomena merit further technical
+discussion. At the extreme low SNR of −8 dB, the vanilla
+Transformer baseline exhibits a marginal advantage over
+SpikeWFM. This can be attributed to the ”purity bias” of
+our foundation backbone, which was pre-trained solely on a
+masking objective without noise intervention, thus optimizing
+the latent space for structural completion rather than extreme
+denoising. In such high-interference scenarios, the discrete
+firing threshold of LIF neurons may inadvertently suppress
+faint but critical signal components that the Transformer’s
+continuous activations can still partially recover.As the SINR
+improves beyond −4 dB, SpikeWFM quickly surpasses all
+baselines, demonstrating a much flatter and more stable per-
+formance slope. Interestingly, both AI-based models show a
+slight loss increase at 8 dB compared to 4 dB. This suggests a
+subtle distribution shift; since the downstream model is trained
+with stochastic noise injection between −8 dB and 8 dB, the
+”too clean” environment at 8 dB deviates from the noise-
+inclusive distribution learned during fine-tuning.
+D. Cross-Domain Generalization Analysis
+To evaluate the universal applicability of the proposed
+foundation model, we conduct a cross-domain generaliza-
+tion analysis by testing on three independent city scenarios
+that were entirely excluded from both the pre-training and
+downstream training phases. Specifically, the model is trained
+on data from seven diverse cities with stochastic noise in-
+jection ranging from −8 dB to 8 dB, and then evaluated
+on the remaining three unseen cities to assess its zero-shot
+Fig. 4. Cross-domain channel prediction performance across unseen envi-
+ronments. We evaluate the generalization capability of SpikeWFM on three
+independent city scenarios that were entirely excluded from both pre-training
+and downstream training phases. The NMSE is measured across SINR levels
+from −8 dB to 8 dB. During fine-tuning, the model is trained on seven
+different cities with stochastic noise injection to learn environment-agnostic
+representations, while testing is conducted under fixed noise levels without
+explicit SNR priors.
+transferability across different geographical multipath profiles.
+As illustrated in Fig. 4, SpikeWFM maintains a consistent
+performance advantage in the majority of SINR conditions,
+proving that the learned spiking representations are effectively
+environment-agnostic.In the extreme low-SNR regime (−8
+dB), the vanilla Transformer baseline exhibits a marginal lead,
+which reinforces our observation of a ”purity bias” inherited
+from the foundation backbone pre-trained solely on masking
+objectives. In such scenarios, the discrete firing threshold of
+LIF neurons may suppress faint signal components heavily
+corrupted by noise in an unfamiliar domain. However, as the
+SINR improves beyond −4 dB, SpikeWFM quickly surpasses
+the Transformer-based baseline, demonstrating a flatter and
+more stable NMSE trajectory. Similar to the in-domain results,
+both AI-native models show slight performance saturation at
+8 dB due to the distribution shift from the noisy training
+environment to the nearly ideal test conditions.
+VI. CONCLUSION AND FUTURE WORK
+In this paper, we proposed SpikeWFM, a novel spiking-
+aided foundation model for robust channel prediction in future
+6G networks. By integrating LIF neurons into a hybrid SNN-
+ANN Transformer architecture, we successfully addressed the
+challenges of systemic DC bias and representation drift inher-
+ent in conventional continuous backbones. Our experimental
+results demonstrate that the proposed spiking-aided temporal
+integration effectively functions as a noise gate, enabling the
+model to extract denoised and discriminative channel seman-
+tics even in extreme low-SNR regimes. Extensive evaluations
+on the DeepMIMO dataset show that SpikeWFM significantly
+outperforms traditional signal processing benchmarks and
+ANN-based models in both in-domain accuracy and cross-
+domain generalization, particularly highlighting its capability
+to capture environment-agnostic features across diverse city
+scenarios.
+Future work will focus on expanding the utility of the pre-
+trained spiking foundation backbone to a broader range of
+downstream tasks. Specifically, we aim to extend SpikeWFM
+to support high-precision channel estimation and wireless
+localization, leveraging the SNN’s superior spatio-temporal
+resolution to resolve fine-grained multipath components in
+complex environments. Furthermore, we intend to investigate
+more robust pre-training paradigms to further bridge the
+performance gap in extreme edge-case scenarios and enhance
+the model’s adaptability across the full dynamic range of
+interference levels, without compromising its independence
+from explicit SNR priors.
+REFERENCES
+[1] Y. Wang, L. Sun, Q. Du, and M. Elkashlan, “Pilot-free ofdm transmis-
+sion for vehicular communications with asymmetric constellation and
+two-stage receiver,” IEEE Transactions on Vehicular Technology, 2025.
+[2] ——, “Ps-net: Position-based precoding with sensing assistance for
+mimo downlink transmission,” IEEE Transactions on Communications,
+vol. 73, no. 8, pp. 6410–6422, 2025.
+[3] Z. Chen, Z. Zhang, and Z. Yang, “Big ai models for 6g wireless
+networks: Opportunities, challenges, and research directions,” IEEE
+wireless communications, vol. 31, no. 5, pp. 164–172, 2024.
+[4] L. Yu, L. Shi, J. Zhang, Z. Zhang, Y. Zhang, and G. Liu, “Channel-
+gpt: A large model toward real-world channel foundation model for
+6g environment intelligence communication,” IEEE Communications
+Magazine, vol. 63, no. 10, pp. 68–74, 2025.
+[5] J. Guo, P. Jiang, C.-K. Wen, S. Jin, and J. Zhang, “Lvm4csi: Enabling
+direct application of pre-trained large vision models for wireless channel
+tasks,” arXiv preprint arXiv:2507.05121, 2025.
+[6] T. Zheng, J. Guo, L. Dai, S. Jin, and J. Zhang, “Muse-fm: Multi-task
+environment-aware foundation model for wireless communications,”
+arXiv preprint arXiv:2509.01967, 2025.
+[7] Y. Sheng, K. Huang, L. Liang, P. Liu, S. Jin, and G. Y. Li, “Beam
+prediction based on large language models,” IEEE Wireless Communi-
+cations Letters, 2025.
+[8] X. Liu, S. Gao, B. Liu, X. Cheng, and L. Yang, “Llm4wm: Adapting llm
+for wireless multi-tasking,” IEEE Transactions on Machine Learning in
+Communications and Networking, 2025.
+[9] T. Yang, P. Zhang, M. Zheng, Y. Shi, L. Jing, J. Huang, and N. Li,
+“Wirelessgpt: A generative foundation model for multi-task integrated
+sensing and communication,” IEEE Journal on Selected Areas in
+Communications, 2025.
+[10] X. Liu, S. Gao, B. Liu, X. Cheng, and L. Yang, “Wifo-cf: Wireless
+foundation model for csi feedback,” arXiv preprint arXiv:2508.04068,
+2025.
+[11] V. Chu, O. Mashaal, and H. Abou-Zeid, “Wirelessjepa: A multi-antenna
+foundation model using spatio-temporal wireless latent predictions,”
+arXiv preprint arXiv:2601.20190, 2026.
+[12] L. Jing, T. Yang, H. Zhang, Y. Shi, C. Zhang, and B. Zhang, “Signal
+compression for wireless communication and sensing: A general ap-
+proach utilizing pretrained wireless foundation models,” IEEE Trans-
+actions on Mobile Computing, 2026.
+[13] F. O. Catak, M. Kuzlu, and U. Cali, “Bert4mimo: A foundation model
+using bert architecture for massive mimo channel state information
+prediction,” arXiv preprint arXiv:2501.01802, 2025.
+[14] L. Liang, H. Ye, Y. Sheng, O. Wang, J. Wang, S. Jin, and G. Y. Li,
+“Large language models for wireless communications: From adaptation
+to autonomy,” IEEE Communications Magazine, 2026.
+[15] D. Auge, J. Hille, E. Mueller, and A. Knoll, “A survey of encoding
+techniques for signal processing in spiking neural networks,” Neural
+Processing Letters, vol. 53, no. 6, pp. 4693–4710, 2021.
+[16] Y. Liu, Z. Qin, and G. Y. Li, “Energy-efficient distributed spiking neural
+network for wireless edge intelligence,” IEEE Transactions on Wireless
+Communications, vol. 23, no. 9, pp. 10 683–10 697, 2024.
+[17] Y. Lu, L. Jing, J. Zheng, and B. Zhang, “Spiking-aided neural architec-
+ture for efficient and robust wifi sensing,” in Proceedings of the AAAI
+Conference on Artificial Intelligence, vol. 40, no. 29, 2026, pp. 24 106–
+24 114.
+

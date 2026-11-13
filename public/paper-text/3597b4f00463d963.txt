@@ -1,0 +1,1245 @@
+Received 31 January 2025; revised 6 May 2025; accepted 23 June 2025.
+Date of publication 3 July 2025; date of current version 24 July 2025.
+The associate editor coordinating the review of this article and approving it for publication was H. Ko.
+Digital Object Identifier 10.1109/TMLCN.2025.3585845
+LLM4WM: Adapting LLM for
+Wireless Multi-Tasking
+XUANYU LIU 1 (Graduate Student Member, IEEE), SHIJIAN GAO 2 (Member, IEEE),
+BOXUN LIU 1 (Graduate Student Member, IEEE), XIANG CHENG 1 (Fellow, IEEE),
+AND LIUQING YANG 2,3,4,5 (Fellow, IEEE)
+1State Key Laboratory of Advanced Optical Communication Systems and Networks, School of Electronics, Peking University,
+Beijing 100871, China
+2Internet of Things Thrust, The Hong Kong University of Science and Technology (Guangzhou), Guangzhou 511400, China
+3Intelligent Transportation Thrust, The Hong Kong University of Science and Technology (Guangzhou), Guangzhou 511400, China
+4Department of Electronic and Computer Engineering, The Hong Kong University of Science and Technology, Hong Kong, SAR, China
+5Department of Civil and Environmental Engineering, The Hong Kong University of Science and Technology, Hong Kong, SAR, China
+CORRESPONDING AUTHOR: X. CHENG (xiangcheng@pku.edu.cn)
+This work was supported in part by the National Natural Science Foundation of China under Grant 62125101, Grant 62341101, and
+Grant 62401488; in part by the New Cornerstone Science Foundation through the Xplorer Prize, Guangzhou-[The Hong Kong University of
+Science and Technology (HKUST)] (GZ) Joint Funding Scheme, under Grant 2025A03J3878; in part by Guangdong Provincial Key
+Laboratory of Integrated Communication, Sensing and Computation for Ubiquitous Internet of Things, under Grant 2023B1212010007; in
+part by the Natural Science Foundation of China Project under Grant U23A20339; in part by Guangzhou Municipal Science and Technology
+Project under Grant 2023A03J0011; and in part by Guangdong Provincial Project under Grant 2023ZDZX1037 and Grant 2023ZT10X009.
+ABSTRACT The wireless channel is fundamental to communication, encompassing numerous tasks
+collectively referred to as channel-associated tasks. These tasks can leverage joint learning based on
+channel characteristics to share representations and enhance system design. To capitalize on this advantage,
+LLM4WM is proposed—a large language model (LLM) multi-task fine-tuning framework specifically
+tailored for channel-associated tasks. This framework utilizes a Mixture of Experts with Low-Rank Adap-
+tation (MoE-LoRA) approach for multi-task fine-tuning, enabling the transfer of the pre-trained LLM’s
+general knowledge to these tasks. Given the unique characteristics of wireless channel data, preprocessing
+modules, adapter modules, and multi-task output layers are designed to align the channel data with the
+LLM’s semantic feature space. Experiments on a channel-associated multi-task dataset demonstrate that
+LLM4WM outperforms existing methodologies in both full-sample and few-shot evaluations, owing to its
+robust multi-task joint modeling and transfer learning capabilities.
+INDEX TERMS Large language models, mixture of experts, low-rank adaptation, multi-task learning,
+wireless multi-tasking, transfer learning.
+I. INTRODUCTION
+THE wireless channel plays a critical role in deter-
+mining the quality and reliability of communication.
+To achieve low latency and high reliability, millimeter-wave
+(mmWave) and Multiple-Input Multiple-Output (MIMO)
+technologies are among the most promising solutions [1],
+[2], [3]. Maximizing the benefits of these technologies relies
+heavily on accurate channel estimation [4]. However, this task
+becomes increasingly challenging as the number of antennas
+grows and environmental dynamics become more complex.
+Understanding the wireless channel’s characteristics—such
+as fading, interference, and multipath propagation—is crucial
+for optimizing communication performance, and also sup-
+ports other related technologies, such as the design of
+integrated sensing and communications (ISAC) systems [5].
+Fortunately, artificial intelligence (AI) has significantly
+improved channel estimation accuracy, fostering optimism
+for the practical implementation of advanced wireless appli-
+cations [6], [7], [8]. AI also enhances various communi-
+cation tasks, including channel prediction, beamforming,
+and positioning, demonstrating notable effectiveness and
+robustness.
+Although AI has demonstrated significant potential in
+communication systems, existing AI-powered communication
+VOLUME 3, 2025
+2025 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License.
+For more information, see https://creativecommons.org/licenses/by/4.0/
+835
+FIGURE 1. An illustration highlighting the differences in the workflows between a small-model-based distributed modeling and a
+large-model-based joint modeling.
+methods still encounter several issues. First, AI approaches
+often require large amounts of high-quality data, and col-
+lecting such datasets can impose substantial communication
+overhead on the system. Additionally, due to generalization
+issues, AI models need to be retrained in response to dynamic
+changes in the environment, further increasing the communi-
+cation burden. Furthermore, existing AI methods frequently
+struggle in complex and highly dynamic scenarios, often due
+to the limited scale of the models.
+To address these challenges, [9] proposed that multi-modal
+sensing could effectively capture the propagation charac-
+teristics of the wireless channel, a concept summarized as
+the Synesthesia of Machines (SoM). This approach aims to
+optimize communication systems by leveraging multi-modal
+sensing to enhance their design and performance [10], [11].
+Another potential optimization approach is the introduc-
+tion of multi-task learning (MTL). Given that the wireless
+channel is a critical component of the wireless communica-
+tion process, and many communication tasks focus on the
+extraction and utilization of channel features under various
+conditions, jointly learning these channel-associated tasks
+can yield significant training benefits by extracting shared
+channel representations across tasks. For instance, in [12],
+the joint training and inference of direct channel and cas-
+caded channel estimation in reconfigurable intelligent surface
+systems were proposed, effectively reducing pilot overhead
+and improving model performance. While effective to some
+extent, these methods encounter limitations. In particular,
+sharing representations across tasks can lead to performance
+trade-offs, where enhancing one task may degrade another.
+Moreover, the limited model capacity restricts scalability to
+more diversified tasks, as current approaches are typically
+constrained to pairs of similar tasks.
+Recently, Large language models (LLMs) have become
+powerful learners adept at handling multiple tasks, demon-
+strating remarkable reasoning capabilities and generalization
+across various domains, including natural language process-
+ing (NLP) [13], healthcare [14], law [15], and finance [16].
+The GPT-4 has shown outstanding performance in NLP tasks,
+while TTM [17] has also demonstrated remarkable few-shot
+and zero-shot learning abilities in time series processing
+tasks, meaning it can generalize to new tasks with only
+a few or even no task-specific training samples. Inspired
+by these successes, there is growing interest in leveraging
+pre-trained large models for cross-domain tasks, including
+channel-associated tasks in wireless communication. For
+instance, an LLM-empowered channel prediction method
+LLM4CP was proposed in [18], achieving greatly improved
+few-shot generalization ability. Reference [19] similarly
+exploits the strong predictive capacity of pre-trained large
+models, achieving competitive performance in the beam
+prediction task. However, these approaches are limited to
+single-task settings and fall short of harnessing the native
+multi-task potential of pre-trained large models. Our objec-
+tive is to enhance multiple channel-associated tasks in wire-
+less communication using LLMs, which poses challenges
+such as effectively transferring cross-domain knowledge
+and managing task diversity. We address these challenges
+through the MoE-LoRA fine-tuning method [20], designed
+for multi-task scenarios, while noting that recent work has
+not sufficiently considered the specific relationships between
+channel-associated tasks, which may limit the model’s capac-
+ity to acquire general representations.
+Specifically, we propose a wireless multi-task fine-tuning
+framework leveraging pre-trained LLMs, which is success-
+fully applied to the channel-associated multi-tasks. Unlike
+previous MTL approaches that rely on shared bottom layers,
+we freeze most of the large model’s parameters and introduce
+MoE-LoRA for wireless multi-task fine-tuning. On the one
+hand, tasks can share experts’ weight, which helps the net-
+work learn common knowledge across tasks, while on the
+other hand, the independence of experts and the gating mech-
+anism ensure the differentiation of task-specific features.
+Additionally, we incorporate multi-task adapter modules at
+both the input and output layers of the LLM to ensure align-
+ment between the feature space of communication tasks and
+836 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+the semantic space of the pre-trained LLM. We also design
+a pre-processing method and corresponding output header
+for each task to enhance our framework further, optimizing
+the model’s overall performance and adaptability.1 The core
+contributions of this paper are summarized below:
+• LLM4WM is introduced as a novel method that lever-
+ages LLM to facilitate wireless multi-tasking. This
+approach represents a pioneering effort in fine-tuning
+LLM using MoE-LoRA to extract a joint representation
+tailored for wireless multi-task scenarios, establishing a
+new standard in this area of research.
+• To ensure effective cross-domain alignment, a cus-
+tomized pre-processing method and corresponding
+output header have been developed for each task.
+Additionally, multi-task adapters are created to bridge
+the gap between the LLM’s semantic feature space and
+the specific feature space of wireless tasks, enhancing
+adaptability and performance.
+• The model exhibits excellent performance on a range of
+wireless communication tasks, including channel esti-
+mation, channel prediction, localization enhancement,
+and beam management. Furthermore, it exhibits impres-
+sive generalization capabilities, highlighting robustness
+and versatility for diverse applications in the wireless
+domain.
+Notation: (·)H , |·| and ∥ · ∥ denote the conjugate transpose,
+determinant and l2 norm, respectively. a[i] is the i-th element
+of a vector a and M[i, j] denotes the element of matrix or
+tensor M at the i-th row and the j-th column. The slicing
+operation M[s1 : e1 : i1, s2 : e2 : i2] is used to extract a
+submatrix or sub-tensor from M. Here, s1 and s2 represent
+the starting indices, e1 and e2 denote the ending indices, and
+i1 and i2 are the step sizes that determine the interval between
+selected indices. If either i1 or i2 equals 1, the step size can be
+omitted for simplicity. E{·} denotes the statistical expectation
+of the enclosed variable or expression.
+II. RELATED WORKS
+A. AI FOR WIRELESS COMMUNICATIONS PHYSICAL
+LAYER
+Benefiting from its powerful representational capabilities,
+AI has demonstrated outstanding performance across various
+tasks in the physical layer of wireless communications [21],
+[22], [23]. In scenarios with severe interference or highly
+dynamic environments, traditional model-based approaches
+often struggle to maintain communication quality due to
+limited modeling accuracy and their inability to capture
+complex environmental dynamics. In contrast, AI-driven
+methods, which rely on data-driven learning, significantly
+enhance performance under such challenging conditions.
+However, existing lightweight AI models often suffer from
+poor generalization and limited task universality, hindering
+their practical deployment.
+1Simulation codes are provided to reproduce the results presented in this
+paper: https://github.com/xuanyv/LLM4WM
+B. MULTI-TASK LEARNING IN WIRELESS
+COMMUNICATIONS
+MTL effectively captures task relatedness and enables
+the learning of shared representations across tasks,
+thereby improving both task-specific performance and
+generalization. This capability has led to its widespread adop-
+tion in computer vision [24] and natural language processing.
+Similarly, wireless communication tasks exhibit varying
+degrees of inter-task correlation that can be exploited. For
+example, in [25], two key tasks of wireless signal recog-
+nition, signal classification, and modulation recognition,
+were jointly trained to achieve performance gains through
+task synergy. Nevertheless, existing MTL efforts in wireless
+communication mainly focus on closely related tasks and
+struggle to generalize across tasks with weak or negligible
+correlations [26]. As a result, most prior works are limited in
+scale, often involving only two tasks [12], which restricts the
+full potential of MTL. To address this, we consider six diverse
+yet channel-associated tasks that vary in both data structure
+and task formats, creating a sufficiently challenging setting.
+By leveraging the strong modeling capacity of large models,
+we successfully achieve joint learning across all six tasks and
+observe significant multi-task synergy gains.
+C. LLM FOR WIRELESS COMMUNICATIONS
+LLMs have emerged as transformative tools across numerous
+domains. Leveraging LLMs to enhance wireless communica-
+tion systems has become an increasingly prominent area of
+research [27], [28], [29], [30]. On one hand, prompt-based
+methods apply LLMs to language-oriented tasks such as
+software log analysis [31], and transceiver configuration [32].
+On the other hand, fine-tuning techniques have been
+employed to adapt LLMs for non-language-oriented tasks.
+For instance, NetLLM [33] fine-tunes Llama2 with LoRA to
+perform network-layer tasks effectively. However, NetLLM
+treats each task independently without leveraging inter-
+task correlations, leading to suboptimal performance and
+increased training costs. Recent works have also begun to
+explore the use of LLMs in physical layer tasks, which
+impose stricter latency constraints and pose greater semantic
+gaps from language models [18], [19]. In [34], an LLM-
+based MTL framework is proposed for physical-layer tasks,
+but their method ignores task relationships, which degrades
+performance. To address these shortcomings, we propose a
+carefully designed MoE-LoRA-based multi-task fine-tuning
+framework that mitigates task interference and effectively
+harnesses multi-task synergy.
+III. SYSTEM DESCRIPTION
+A dual-frequency communication system operating at sub-
+6G and mmWave frequencies is considered, which consists
+of one base station (BS) and one user equipment (UE). Both
+the BS and UE are equipped with transceivers for both fre-
+quency bands, with multiple-input single-output (MISO) and
+orthogonal frequency division multiplexing (OFDM) tech-
+nologies applied to each. The sub-6G and mmWave antennas
+VOLUME 3, 2025 837
+are co-located and aligned, with similar apertures, enabling
+them to share spatial features. For clarity, we use ˜
+(·) notation,
+such as x̃, to denote parameters related to the sub-6G system.
+In mmWave band, the BS adopts an analog beamforming
+architecture and features Nt antennas arranged in a uniform
+linear array (ULA) configuration, while in the sub-6G band,
+it utilizes a fully digital beamforming architecture with Ñt
+ULA antennas. The UE is equipped with an omnidirectional
+antenna for both frequency links and can accommodate mul-
+tiple antennas through parallel processing.
+A. CHANNEL MODEL
+For both sub-6G and mmWave channels, the classical
+cluster-based multipath channel model is utilized to describe
+the downlink and uplink CSI between the BS and user at
+time t and frequency f :
+h(t, f ) =
+N
+X
+n=1
+Pn
+X
+p=1
+βn,pej[2π(υn,pt−f τn,p)+8n,p]
+a(θn,p). (1)
+In this context, N and Pn are the number of clusters and
+paths in each cluster, respectively. βn,p, υn,p, τn,p, and 8n,p
+represent the complex path gain, doppler frequency shift,
+delay, and random phase, respectively. a(θn,p) represents the
+steering vector of the corresponding path, where θn,p denote
+the azimuth angles of departure (AoD). Considering the struc-
+tural characteristics of ULA, the expression for a(θn,p) is
+derived as:
+a(θn,p) = [1, ej
+2πfdv sin(θn,p)
+c , . . . , ej
+2π(Nt −1)fdv sin(θn,p)
+c ]. (2)
+Here, dv represents the antenna spacing in the vertical
+direction.
+B. SIGNAL MODEL
+For the mmWave links, we consider a downlink MISO-
+OFDM signal transmission process, where K subcarriers are
+activated, with the k-th subcarrier denoted as fk. According
+to Eq. (1), the downlink CSI at time t and the k-th subcarrier
+is ht,k = h(t, fk), which can be obtained through channel
+estimation or prediction. Considering transmit precoding at
+the BS side, the received downlink mmWave signal of the
+time t and k-th subcarrier at the user side is derived as:
+yt,k = hH
+t,kwtxt,k + nt,k, (3)
+where wt ∈ RNv×1 is the beam vector which is selected
+from predefined codebooks W, i.e. wt ∈ W. And nt,k is
+the additive white Gaussian noise (AWGN). The achievable
+spectral efficiency (SE) [35] of the downlink transmission
+process is derived as:
+Rt =
+Ks
+X
+k=1
+log2 1 +
+|hH
+t,kwt|2
+σ2
+n
+!
+. (4)
+Through beam training, all beam vectors are traversed from
+the codebook, and the one with the highest SE is selected
+as the optimal beam vector, which can be formulated as:
+w∗
+t = arg max
+wt ∈W
+Rt. (5)
+Similarly, the sub-6G downlink signal transmission pro-
+cess also adopts MISO-OFDM, and it has the same transmis-
+sion expression as the mmWave link, which will be omitted
+here for brevity. However, the sub-6G link employs digital
+precoding, so the uplink channel at the pilot positions is
+estimated using the Least Squares (LS) method as follows:
+h̃LS(t, fk) = ỹt,k/x̃t,k, (6)
+where x̃t,k and ỹt,k represent the uplink pilot signal sent by
+the user and the signal received by the BS, respectively. Then,
+to maximize the system SE, the matched filtering-based pre-
+coding is applied as follows:
+w̃∗
+t,k =
+h̃LS(t, fk)
+∥h̃LS(t, fk)∥
+, (7)
+where w̃∗
+t,k represents the beam vectors of time t and the k-th
+subcarrier at sub-6G link. Notably, the effectiveness of w̃∗
+t,k
+depends on the accuracy of h̃LS(t, fk). Specifically, inaccurate
+h̃LS(t, fk) will lead to mismatched w̃∗
+t,k with the actual h̃(t, fk),
+reducing the received signal-to-noise ratio (SNR) and thereby
+impairing the SE. Therefore, accurate CSI is vital for improv-
+ing the SE of the system.
+IV. TASK DESCRIPTION
+To achieve higher SE in the sub-6G frequency band, accurate
+channel matrix estimation from pilot signals is essential [6].
+Research has focused on enhancing pilot-based channel
+estimation for massive antenna arrays and addressing chan-
+nel aging in high mobility scenarios through time-domain
+prediction [22]. Additionally, some studies reduce pilot over-
+head by extrapolating in the frequency domain [23]. In the
+mmWave frequency band, the increased number of antennas
+necessitates improved beam scanning efficiency. Researchers
+utilize the spatial correlation between frequency bands to
+estimate optimal mmWave beams based on the sub-6G chan-
+nel matrix [36]. Parameters like user distance xd and path
+loss xpl are also critical for configuring communication
+links, with some works estimating these factors from chan-
+nel data [37], [38]. Although the objectives and optimization
+methods of these tasks differ, they all leverage characteristics
+of sub-6 GHz channels. Moreover, BS often needs to perform
+these tasks simultaneously for efficient communication sys-
+tem operation. Thus, designing a unified network to address
+these tasks concurrently is essential.
+We categorize these tasks into three classes: channel
+reconstruction, beam management, and radio environment
+mining. To enhance clarity and understanding, we define
+T = {CE, CP, PF, BF, DE, PE} as the task set. The detailed
+descriptions are presented in Table 1.
+Each task corresponds to a dataset Dn = {XI
+n , XL
+n }, where
+XI
+n represents the input samples for the task n and XL
+n repre-
+sents the labels for the task n. All tasks can be formulated in
+the following form:
+max
+n
+Scoren = E
+n
+fevaln (XL
+n , XO
+n )
+o
+(8a)
+s.t. XO
+n = fn (XI
+n), n ∈ T , (8b)
+838 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+TABLE 1. Symbol definitions and descriptions.
+where fevaln and fn are the evaluation function and the
+constructed mapping function for the task n, respectively.
+XO
+n represent the output results of the model for the task n.
+Fig. 1 illustrates the complete workflow of the system.
+Detailed descriptions of the specific sub-tasks will follow.
+A. CHANNEL RECONSTRUCTION: INTERPOLATION
+AND PREDICTION
+Channel reconstruction tasks typically aim to use known
+channel matrices to predict or interpolate the target channel
+matrices. The model is expected to capture the inter-domain
+correlations of the channel matrix across time, frequency, and
+antenna domains. So the channel matrix H considered herein
+includes three dimensions: time, frequency, and space, and
+can be expressed as follows:
+H[i, j, :] = h(i1t, f1 + (j − 1)1f ), (9)
+where 1t, 1f , and f1 denote the time interval, frequency
+interval, and the lowest frequency point in the frequency
+domain, respectively. To maintain notational conciseness,
+we begin by specifying the default index lists corresponding
+to each dimension of the channel matrix, namely, t =
+[1 : T̃], k = [1 : K̃], and n = [1 : Ñt], with T̃ being
+the total number of timestamps, and K̃ being the number of
+OFDM symbols.
+For the channel estimation task, a comb-type pilot pat-
+tern is used, featuring continuous pilots in the time-domain
+resource blocks (RBs) and a discrete arrangement in the
+frequency-domain RBs. The network is tasked with learning
+the channel characteristics across various frequency points
+and interpolating the missing channels at the absent frequency
+points. Consequently, XI
+CE and XL
+CE are defined as follows:
+XI
+CE = fslice(H, t, ′
+k, n), (10a)
+XL
+CE = fslice(H, t, k, n), (10b)
+′
+k = [1 : K̃ : K̃/npilot]. (10c)
+Here, npilot denotes the number of pilots, which is typically
+set such that K̃/npilot = 8.
+For the channel prediction task, we considered two sce-
+narios: time-domain prediction and frequency-domain pre-
+diction, both of which help reduce the overhead of pilots.
+XI
+CP and XL
+CP for the time-domain prediction task are defined
+as:
+XI
+CP = fslice(H, t, k, n), (11a)
+XL
+CP = fslice(H, ′
+t, k, n), (11b)
+′
+t = [T̃ + 1 : T̃ + P̃], (11c)
+where P̃ represents the length of future moments to be pre-
+dicted. Similarly, for the frequency-domain prediction task,
+XI
+PF and XL
+PF are defined as:
+XI
+PF = fslice(H, t, ′
+k, n), (12a)
+XL
+PF = fslice(H, t, ′′
+k , n), (12b)
+′
+k = [1 : K̃/2], (12c)
+′′
+k = [K̃/2 + 1 : K̃]. (12d)
+B. BEAM MANAGEMENT: SUB-6G AIDED BEAMFORMING
+Beamforming requires accurate acquisition of the optimal
+weight vector wt based on the codebook W ∈ RNt ×Nc , where
+Nc is the codebook size. To achieve higher spatial resolution,
+a super-resolution Discrete Fourier Transform (DFT) code-
+book is applied, which implies that Nc > Nt. Since the main
+paths in the sub-6G and mmWave bands are often highly
+correlated under Line-of-Sight (LoS) conditions, leveraging
+sub-6 GHz to assist mmWave beamforming is highly bene-
+ficial, while also reducing the pilot overhead for mmWave
+beamforming. The IBF and LBF for sub-6G aided beamform-
+ing task can be defined as:
+XI
+BF = fslice(H, 1, k, n), (13a)
+XL
+BF = w∗
+t . (13b)
+C. RADIO ENVIRONMENT MINING: DISTANCE
+ESTIMATION AND PATH LOSS ESTIMATION
+Due to the abundant environmental information present in
+the acquired channel data, such as the multipath components
+reflecting the density of surrounding buildings, and the delay
+indicating the distance to the target, the task of radio envi-
+ronment mining aims to leverage the estimated channel to
+extract environmental information, such as the distance xd
+from the UE to the BS and the path loss xpl of the main
+path. This extracted information can be utilized to adjust
+the configuration of the communication system, ultimately
+improving communication quality. Thus, XI
+DE and XL
+DE for
+distance estimation task can be defined as:
+XI
+DE = fslice(H, 1, k, n), (14a)
+XL
+DE = xd . (14b)
+Similarly, XI
+PE and XL
+PE for path loss estimation task can be
+defined as:
+XI
+PE = fslice(H, 1, k, n), (15a)
+XL
+PE = xpl. (15b)
+V. LLM FOR WIRELESS CHANNEL-ASSOCIATED TASKS
+All of these tasks mentioned above are fundamentally rooted
+in the wireless channel, suggesting that wireless MTL can
+significantly enhance the model’s capacity to extract channel
+representations that generalize well. This, in turn, would
+VOLUME 3, 2025 839
+FIGURE 2. The proposed LLM4WM is composed of four main modules: (i) pre-process module; (ii) multi-task adapter module;
+(iii) backbone LLM module fine-tuned with MoE-LoRA; (iv) multi-task output module.
+improve the performance of each individual task. To leverage
+this potential, we propose a multi-task method for wireless
+channel applications, empowered by LLM, which we refer
+to as LLM4WM. This approach integrates the learning of
+these tasks within a unified network framework based on
+LLM. The network components are shown in Fig. 2. Below,
+a thorough description of the network components and the
+training process for LLM4WM is provided.
+A. PREPROCESSOR MODULE
+Since the required channel characteristics for each task
+are different, a unified preprocessing approach is not con-
+ducive to fully utilizing the unique characteristics of each
+task. Therefore, a corresponding preprocessing function is
+designed for each task to preprocess the input data, and the
+preprocessing process for the task n can be expressed as:
+Xpre
+n = fpre,n(XI
+n), (16)
+where X
+pre
+n denotes the preprocessed data, and fpre,n(·)
+denotes the preprocessing operation for task n. Specifically,
+the preprocessing operation for the channel reconstruction
+tasks is tokenizing the CSI at each moment, that is, flat-
+tening the spatial and frequency features of the CSI as
+follows:
+Xpre
+n = Flatten(XI
+n, 2), (17)
+where the Flatten(X, i) operation denotes the process of flat-
+tening the i-th dimension of the tensor X, along with all
+subsequent dimensions, into a single dimension. For tasks
+such as beamforming, distance estimation, and path loss esti-
+mation that require channel angle features, the CSI data will
+undergo domain transformation to convert the spatial domain
+CSI to angle domain CSI, i.e.,
+Xpre
+n = XI
+nFÑn
+, (18)
+where FÑt
+is an Ñt-dimensional DFT matrix.
+FIGURE 3. An illustration of the multi-task adapter module.
+B. MULTI-TASK ADAPTER MODULE
+We extend the conventional use of adapter modules, which
+incorporate a small number of trainable parameters, enabling
+the model to preserve its existing modeling and generalization
+capabilities while adapting to a specific domain [39], [40].
+However, it is primarily designed for single-task scenarios
+and lacks the ability to facilitate transfer generalization across
+multiple tasks simultaneously.
+Unlike existing single-task adapters, the multi-task adapter
+modules function by parallelizing multiple individual
+adapters to simultaneously address various tasks. The fea-
+tures output by each adapter are then jointly fed into the LLM
+for multi-task learning. This design fully leverages the gen-
+eralization and multi-task learning capabilities of the LLM,
+while the joint adaptation approach also simplifies the train-
+ing process of the network. Each individual adapter within the
+module is assigned to a specific task, performing task align-
+ment operations. This alignment includes both dimensional
+alignment and intrinsic representation alignment. As shown
+in Fig. 3, its main components include a linear alignment
+layer, residual feature extraction networks, and an activation
+function. In the individual adapter Adapterin
+n for task n,
+840 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+FIGURE 4. An illustration of the MoE-LoRA fine-tuning method.
+the linear alignment layer aims to align the semantic feature
+space and task feature space in terms of dimensions and get
+the feature map as:
+Xf
+n = Linear(Xpre
+n ) ∈ RL×Dllm , (19)
+where L and Dllm denote the token length of LLM’s input
+and LLM’s hidden dimension, respectively. Since the pre-
+processed features are two-dimensional data, the Linear(·)
+operation includes at least two fully connected operations,
+which linearly map the first and second dimensions to the
+specified dimensions. Then the residual feature extraction
+networks and the activation function would act on X
+f
+n to
+obtain feature maps with aligned semantic features as:
+Xa
+n = Res(GELU(Res(Xf
+n))) ∈ RL×Dllm , (20)
+where the Res(·) operation includes Na,i Res-blocks. And
+each Res-block contains two 1-dimensional convolution ker-
+nels and an activation function ReLU(·). The convolution
+kernel size is 3, and the stride is 1. The GELU(·) function
+is a smooth, differentiable approximation of the ReLU(·)
+function [41]. The above steps can be simplified as:
+Xa
+n = Adapterin
+n (Xpre
+n ). (21)
+C. MIXTURE-OF-LoRA BASED FINE-TUNING
+The backbone LLM module is essential for processing the
+representations extracted by the adapters. To improve the
+pre-trained LLM’s performance on wireless channel tasks,
+we efficiently fine-tune its parameters using MoE-LoRA,
+as shown in Fig. 4. This fine-tuning combines LoRA and MoE
+principles to enhance efficiency by selectively activating
+subsets of parameters. First, we outline the standard LoRA
+fine-tuning process, which trains two low-rank matrices in the
+model’s feed-forward network and is tailored for single-task
+fine-tuning.
+Assume the pre-trained weights are W0 ∈ Rdout×din ,
+where din is the input dimension and dout is the output
+dimension. A ∈ Rr×din and B ∈ Rdout×r are two trainable
+low-rank matrices. Then, we can obtain the fine-tune weights
+W ∈ Rdout×din as follows:
+W = W0 +
+α
+r
+BA, (22)
+where r denotes the rank of the low-rank approximation. The
+hyperparameter α facilitates the adjustment of the rank r and
+is typically set as α = 2 × r.
+Assuming the input to the feed-forward network is xt and
+the output is yt, the forward propagation of the model can be
+expressed as follows:
+yt = Wxt = W0xt +
+α
+r
+BAxt. (23)
+To extend this concept to multi-task learning, we incorporate
+the well-known MoE models [42]. This approach establishes
+a collection of independent low-rank matrices that learn
+task-specific features individually. A gating network is then
+employed to select and combine different experts for various
+tasks, facilitating a specific aggregation mechanism for the
+experts. The underlying idea is expressed as follows:
+yt = Wxt = W0xt +
+α
+r
+Ne
+X
+k=1
+ωkBkAkxt, (24)
+where Bk ∈ Rdout×r and Ak ∈ Rr×din is the k-th pair of low-
+rank matrices. Ne and ωk represents the number of experts
+and k-th experts’ weights, respectively. A larger value of Ne
+indicates that more experts participate in the training and
+inference processes of the network. This can enhance the
+model’s capacity for accurate representation. However, it also
+linearly increases the training and inference costs, meaning
+that the specific value of Ne requires a trade-off between
+model accuracy and inference speed.
+Notably, the design of the gating network has a direct
+impact on the performance of the MoE model. To prevent
+overfitting, we employ a single-layer linear network to gener-
+ate the expert weights for each task and normalize the weight
+matrix using the Softmax(·) function to maintain the stability
+of the output data.
+We apply MoE-LoRA to the linear layers within the feed-
+forward network (FFN) of LLM while leaving the remaining
+parameters frozen. This approach significantly reduces the
+model’s trainable parameters, greatly lowering training costs
+and improving training efficiency.
+D. MULTI-TASK OUTPUT MODULE
+Normal LLMs map the output features of transformer blocks
+to a probability distribution over the vocabulary, selecting
+the token with the highest probability as the output text.
+However, for wireless channel-associated tasks, the output is
+often challenging to express in text. Moreover, as the vocab-
+ulary size increases, this mapping incurs significant storage
+and computational costs. For instance, GPT-2’s vocabulary
+of 50000 words necessitates an output layer with at least
+50000 dimensions.
+To address these challenges, and similar to the approach
+used in [33], we have designed a specific output layer tailored
+VOLUME 3, 2025 841
+for wireless channel-associated tasks. This specialized output
+layer is intended to more effectively capture the target output
+relevant to these tasks, thereby improving performance and
+reducing the resource demands typically associated with large
+vocabulary sizes.
+To align the task’s output feature vector with the semantic
+space of the LLM, we use a multi-task adapter connected
+directly to the LLM’s output, which is identical to the
+input adapter. Assuming the task n’s output feature of
+the large model is XLLM
+n , and the multi-task adapter for
+the task n is denoted as Adapterout
+n , so this process can be
+represented as:
+Xp
+n = Adapterout
+n (XLLM
+n ) (25)
+where X
+p
+n denotes output of the multi-task adapter for
+task n.
+Considering that channel estimation and channel predic-
+tion tasks are more sensitive to the learning of local features,
+we use the convolutional neural network (CNN) for process-
+ing and dimensional alignment in subsequent steps. On the
+other hand, tasks such as beamforming, distance estima-
+tion, and path loss estimation require obtaining a global
+feature representation of the channel. Therefore, the feature
+map will be flattened, and a multi-layer perceptron (MLP)
+network will be employed for feature processing and
+dimensional alignment. The operations can be described as
+follows:
+Xo
+n =
+(
+CNN(Xp
+n), n ∈ {CE, CP, PF}
+MLP(Xp
+n), n ∈ {BF, DE, PE}
+(26)
+where Xo
+n represents prediction or estimation result of task n.
+Both MLP and CNN consist of three layers with ReLU activa-
+tion functions. Additionally, CNN uses convolutional kernels
+of size 3 × 3.
+E. TRAINING CONFIGURATION
+The proposed network is trained on a multi-task mixed dataset
+using a two-stage training approach. In the first stage, only
+the multi-task adapters and output layer are trained, while
+the LLM parameters are frozen. At this point, the model
+learns the mapping between the task feature space and the
+pre-trained LLM’s text feature space. In the second stage,
+the LLM is fine-tuned by MoE-LoRA, while the multi-task
+adapters become frozen, but the output layer is still trainable.
+At this stage, the model leverages the LLM for joint modeling
+of multiple tasks, achieving better results by utilizing gener-
+alized representations across tasks. The same loss function is
+used for both stages, as follows:
+Loss =
+X
+n
+ωnfloss,n(Xo
+n, Xl
+n) (27)
+where floss,n denotes the loss function for task n. And they
+are linearly combined with task weightings ωn. To ensure that
+all tasks are well-trained, we use the Dynamic Weight Aver-
+age (DWA) algorithm [43] to dynamically adjust each task’s
+weight based on its loss every epoch. The selection of the loss
+function floss,n fully considers the characteristics of the task
+itself. For classification problems, such as BF, we employ the
+cross-entropy loss function, while for regression problems,
+such as CP, the normalized mean square error (NMSE) [22]
+is used as the loss function.
+VI. EXPERIMENTS
+In this section, we first describe the simulation settings and
+then assess the performance of the proposed LLM4WM
+method from multiple perspectives: overall performance,
+generalization ability, and stability. We also conduct compre-
+hensive ablation experiments to highlight the contribution of
+each module within the framework.
+A. SIMULATION SETUP
+1) DATASETS
+We adopt the widely used channel generator QuaDRiGa [44]
+to simulate time-varying CSI datasets compliant with 3GPP
+standards. We consider a dual-frequency wireless system
+having a 1.9 GHz sub-6G link and a 28 GHz mmWave link.
+The hyperparameters of the dataset generation are presented
+in Table 2.
+TABLE 2. Hyperparameters for dataset generation.
+The sub-6G link operates in FDD mode to enhance spec-
+trum utilization. Assuming that the uplink and downlink
+channels are adjacent, and for the uplink channel, a pilot is
+placed every 8 subcarriers. For the channel prediction task,
+we predict future P̃ = 4 RBs based on historical T̃ = 16
+RBs and set the time interval of pilots as 0.5 ms, and for
+the frequency domain prediction task, the downlink channel
+at pilot is inferred from the uplink channel estimated or
+predicted by the uplink pilot.
+In contrast, the mmWave link employs the TDD mode.
+For the sub-6G assisted mmWave beamforming task, the
+downlink analog precoding is also derived based on the spa-
+tial correlation of the uplink sub-6G channel estimated by
+the uplink pilot. The initial position of the user is random-
+ized, and the motion trajectory is set to be linear at a speed
+of 30 km/h. The dataset contains a total of 20000 samples.
+Specifically, the training set includes 15000 samples, the
+validation set has 1600 samples, and the test set consists
+of 3400 samples.
+842 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+TABLE 3. Performance of LLM4WM and other baselines: For mmWave link, the maximum SE is 9.32 bit·(s · Hz)−1; For sub-6G link, the
+maximum SE is 6.33 bit·(s · Hz)−1. The boldface denotes the highest score, while the underline marks the second-best result.
+2) BASELINES
+To validate the superiority of the proposed method, several
+model-based and deep learning-based methods are imple-
+mented as baselines.
+a: TRADITIONAL METHODS (WITHOUT DEEP LEARNING)
+This class of methods does not rely on a training process but
+instead leverages the inherent characteristics of the channel
+to address specific problems.
+• BI: In this method, CSI is treated as a time series,
+and bilinear interpolation (BI) is used to complete the
+channel reconstruction tasks.
+• Codebook [45]: Based on spatial correlation, a super-
+resolution codebook is used for beam scanning in the
+sub-6G band to obtain the optimal mmWave downlink
+beam vector. This method is used to process the beam
+management task.
+• FIFS [46]: FIFS is a CSI-based fingerprinting system
+that introduces a coherence bandwidth-enhanced prob-
+ability algorithm, utilizing a correlation filter to map
+objects to fingerprints. It is implemented for radio envi-
+ronment mining tasks.
+b: SINGLE-TASK SMALL MODEL METHODS
+This class of methods employs specially designed model
+components to address specific downstream tasks, which
+often have a relatively small number of parameters.
+• MLP [21], [47]: Many works have employed MLP to
+model complex mapping relationships in communica-
+tion problems. We implement an MLP for the task of
+radio environment sensing and beam management.
+• LSTM [48]: LSTM is designed with memory cells and
+multiplicative gates to deal with long-term dependency.
+We implement it using 4 LSTM layers for processing
+channel reconstruction tasks.
+• CNN [23]: A CNN-based predictor for FDD systems is
+proposed in [23], where the prediction of time-frequency
+CSI data is treated as a two-dimensional image process-
+ing task. It contains ten convolutional layers, where the
+convolution kernel size is 3 × 3. We implement it for
+processing channel reconstruction tasks.
+• WiT [37]: A transformer-based location estimation
+method, which leverages the attention mechanism to
+achieve robust learning effects. We implement it as
+described in [37] for processing radio environment sens-
+ing tasks.
+c: MULTI-TASK SMALL MODEL METHODS
+This class of methods employs techniques such as low-level
+sharing and cross-feature fusion to enable feature sharing
+across different tasks, thereby achieving the functionality of
+a multi-purpose model.
+• Cross-stitch [24]: A convolutional multi-task learning
+neural network equipped with ‘‘cross-stitch’’ unit, which
+could combine the activations from multiple networks.
+We implement it by using ResNet [49] as the backbone
+layer. To illustrate the impact of wireless multi-task
+learning for small model, Cross-stitch(s) is added as
+a baseline. We implement it by directly applying the
+cross-stitch network while only performing a single task.
+d: SINGLE-TASK LARGE MODEL METHODS
+This class of methods typically fine-tunes large models for
+a single downstream task, achieving strong performance
+by leveraging the powerful modeling capabilities of large
+models.
+• LLM4CP [18]: This method is the first to apply LLM
+to the channel prediction task through fine-tuning.
+We implement it and choose GPT-2 as the backbone
+LLM and LN Tuning [50] as the fine-tuning method for
+processing Channel Reconstruction tasks.
+• LLM4WM(s): A single-task fine-tuning based large
+model network, where we directly apply our proposed
+LLM4WM whilst only performing a single task.
+3) NETWORK AND TRAINING PARAMETERS
+In the simulation, we adopt the Multi-Task Adapter mod-
+ule with Na = 2 for input and output feature alignment.
+For the configuration of the MoE-LoRA fine-tuning method,
+we choose the number of experts to be 8, and we set r = 8 for
+each LoRA matrix, and we employ only one single-layer
+fully connected network to align the output dimensions.
+VOLUME 3, 2025 843
+The smallest version [51] of GPT-2 with F = 768 feature
+dimension is adopted, the first NL = 6 layers of which are
+deployed. Both the warm-up and cosine annealing scheduler
+are employed to train LLM4WM. The first 50 epochs serve
+as the warm-up phase, where the learning rate increases
+linearly from the minimum value of 1 × 10−5
+to 1 × 10−3
+.
+During the subsequent training phases, the learning rate is
+dynamically adjusted using the cosine annealing scheduler.
+Additional hyperparameters for model training are presented
+in Table 4.
+TABLE 4. Hyperparameters for network training.
+4) PERFORMANCE METRIC
+To evaluate performance, we employ task-specific metrics.
+For channel reconstruction tasks, we measure the NMSE
+between predictions and ground truth. The beam manage-
+ment task utilizes the Top-1 accuracy, which shows whether
+the model correctly predicts the beam index, and distance
+estimation and path loss estimation rely on mean absolute
+error (MAE) and NMSE, respectively. Meanwhile, we calcu-
+lated the average metric Avg. across all tasks for each model
+to facilitate intuitive comparisons. The calculation of this
+average metric is as follows:
+Avg. =
+1
+6
+∗ [NMSE (CE) + NMSE (CP) + NMSE (PF)
++ (1 − Acc (BF)) + MAE (DE) + NMSE (PE)].
+(28)
+To provide a comprehensive evaluation of the proposed
+scheme’s performance, we introduce an additional metric,
+SE, which reflects the overall performance of the commu-
+nication system. SE is a crucial metric that indicates the
+system’s achievable rate, thereby capturing the effectiveness
+of the communication. It is calculated by Eq. (4), where ht,k
+is the actual CSI and wt is obtained as Eq. (7) with pre-
+dicted ht,k. The communication SNR is defined as 1/σ2
+n and
+set as 10 dB.
+B. PERFORMANCE EVALUATION
+1) OVERALL PERFORMANCE
+Table 3 shows that LLM4WM outperforms non-learning
+methods, small models, and single-task fine-tuning across
+various tasks. Its success stems from leveraging the gen-
+eral knowledge of pre-trained LLMs and its multi-task
+learning capability, which enhances feature representation.
+In contrast, single-task fine-tuning is prone to overfitting,
+leading to performance degradation in challenging scenarios.
+LLM4WM’s combination of a Multi-Task Adapter and MoE-
+LoRA aligns feature spaces across tasks, resulting in more
+generalized performance. Meanwhile, benefiting from the
+strong modeling capacity of large models (LM), LLM4WM
+achieves an average performance gain of 2.41 dB over the
+best-performing single-task small models (SM) across all
+tasks. We further investigate the multi-task learning on large
+models and small models, and find that the small model
+suffers an average improvement of only 0.19 dB when switch-
+ing from single-task to multi-task learning, while the large
+model shows an improvement of 0.99 dB. This is due to
+the large model’s ability to extract joint representations,
+unlike the small model, which struggles with conflicting task
+knowledge. Thus, large models are better suited for handling
+wireless multi-task learning.
+FIGURE 5. Performance comparison of large and small models
+before and after wireless multi-task learning.
+FIGURE 6. Pearson correlation coefficient heatmap of expert
+combination weights for various tasks.
+To verify whether the experts in the MoE are effectively
+allocated based on task types, we use the Pearson correla-
+tion coefficient as a metric. Heatmaps of expert combination
+weights from two randomly selected MoE-LoRA layers are
+shown in Fig. 6. The results reveal that the correlation
+between expert combination weights for most tasks is quite
+low, indicating that the gating network indeed learns distinct
+expert combinations for different task types. Additionally,
+it can be observed that tasks with similar characteristics
+exhibit higher correlations, likely due to the fact that neigh-
+boring tasks often belong to the same task set, thus exhibiting
+stronger correlations.
+844 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+TABLE 5. Generalization performance of LLM4WM and other baselines: The average loss across tasks is computed and presented in
+the final column labeled ‘‘AVG.’’ The boldface denotes the highest score, while the underline marks the second-best result.
+2) GENERALIZATION EXPERIMENTS
+Generalization, referring to the ability of models to maintain
+performance in new communication scenarios, is crucial for
+real-world deployment as it reduces the need for frequent
+updates. We use only 10% of the RMa dataset to transfer a
+model trained in the UMa scenario, as well as a model trained
+on the 1.9 GHz sub-6 GHz link dataset to the 2.4 GHz sub-
+6 GHz link dataset. Results in Table 5 indicate that, despite
+the challenges of multi-task generalization and transfer, our
+approach consistently outperforms others across most tasks,
+achieving average performance gains of 1.33 dB and 1.25 dB,
+respectively, compared to the single-task small models. This
+improvement is largely attributed to the general knowledge
+encoded in large models, enhancing the generalization across
+diverse tasks. In contrast, small models, trained on specific
+datasets, often lack such diversity, thus performing poorly
+in new scenarios. Their limited capacity hinders their ability
+to learn abstract, transferable representations, making them
+susceptible to overfitting to task-specific patterns. As a result,
+once exposed to new configurations, these models struggle to
+adapt and result in a significant performance degradation. The
+slight dip in radio environment mining performance is due
+to the task’s relative simplicity in the LOS scenario, where
+smaller models like WiT excel. However, our model excels in
+more complex tasks like channel estimation, which requires
+understanding multidimensional features, further confirming
+that large models are better suited for dynamic real-world
+communication scenarios.
+FIGURE 7. The performance of LLM4WM under different LoRA
+ranks and number of experts.
+3) HYPER-PARAMETER ANALYSIS
+To illustrate the rationale behind the hyperparameter settings,
+we conduct a thorough experiment on how hyperparameters
+affect the performance of LLM4WM. Specifically, we exam-
+ine the effects of varying the LoRA rank and the number
+of experts, as depicted in Fig. 7. When we increase the
+LoRA rank while keeping the number of experts fixed at 8,
+the performance of LLM4WM gradually improves. This
+can be attributed to the enhanced adaptability of the model
+to the data distribution due to the increase in trainable
+parameters. However, this improvement comes with higher
+training overhead as a cost. After weighing the trade-off
+between performance and computational efficiency, we deter-
+mine that a LoRA rank of 8 provided the optimal balance.
+Subsequently, with the LoRA rank fixed at its optimal value
+of 8, we incrementally increase the number of experts. A sim-
+ilar trend to that of the LoRA rank was observed, as an
+increase in the number of experts effectively enhanced the
+model’s analytical and representational capacity. Balancing
+performance and computational efficiency, we determine that
+setting the number of experts to 8 was the most appropriate
+choice.
+4) ABLATION EXPERIMENTS
+To assess the effectiveness of the proposed modules, abla-
+tion experiments are conducted by altering or removing
+the configurations of the multi-task adapter and backbone
+LLM modules. Variations for the multi-task adapter include
+w/o Adapterin (placing adapter only on the output side of
+the LLM), w/o Adapterout (placing adapter only on the input
+side of the LLM), and w/o Adapter (no adapters). For back-
+bone LLM, variations include w/o LLM (removing the large
+model), w/o MoE (LoRA fine-tuning with equal parame-
+ter count), and frozen LLM (freezing pre-trained weights).
+Results in Table 6 indicate that all ablation configurations
+resulted in performance declines, highlighting the effective-
+ness of both the multi-task adapter and backbone LLM
+modules. Notably, the impact of removing the backbone LLM
+is significantly greater, indicating its critical role in the suc-
+cess of multi-task joint learning for wireless tasks.
+5) EFFICIENCY EVALUATION
+We evaluate the model’s training and inference cost of
+LLM4WM with other baselines to assess the difficulty
+of deploying the model in practical scenarios, as shown
+in Table 7. The same machine with 4 Intel Xeon Platinum
+VOLUME 3, 2025 845
+TABLE 6. Test results of ablation experiments for multi-task adapter module and the backbone LLM module.
+TABLE 7. The number of network parameters (trainable parameters/total parameters) and the interference cost per batch.
+8375C CPUs, 4 NVIDIA GeForce RTX4090 GPUs, and
+256 GB of RAM is used to conduct all evaluations.
+To facilitate representation and comparison, the data in
+the table reflects the average performance across tasks for
+each method. Notably, the MoE-LoRA fine-tuning method
+results in LLM4WM having trainable parameters compa-
+rable to those of smaller models. This highlights both the
+training efficiency and parameter efficiency of LLM4WM,
+as adding new tasks increases the model’s parameters by only
+about 1.13 M, a small fraction of the total. Additionally,
+utilizing a lightweight backbone LLM ensures that the over-
+all inference speed of LLM4WM remains acceptable. Thus,
+LLM4WM demonstrates significant potential for deployment
+in future communication scenarios marked by increasing
+demand and the need for customized services involving
+numerous tasks.
+VII. CONCLUSION
+In this paper, we have proposed a novel multi-task fine-tuning
+framework tailored for large models in wireless communi-
+cation systems. By leveraging a diverse multi-task dataset,
+our approach has enabled the model to perform various
+wireless channel-associated tasks concurrently. To facili-
+tate the extraction of shared representations across multiple
+tasks, we integrated MoE-LoRA into the fine-tuning pro-
+cess, empowering the backbone model to dynamically adapt
+by optimally combining expert modules and improving
+task-specific performance. Additionally, we employed a
+multi-task adapter to harmonize the feature spaces of different
+tasks with the semantic embedding space of the large model,
+ensuring coherent task alignment. Preliminary simulation
+results have demonstrated the robust multi-task learning
+and generalization capabilities of the proposed LLM4WM
+framework. Furthermore, ablation studies have underscored
+the critical contributions of each module to overall system
+performance. The expert weight heatmap has validated the
+efficacy of the MoE mechanism in adaptively allocating
+expert resources, highlighting its role in enhancing model
+specialization and flexibility.
+REFERENCES
+[1] E. G. Larsson, O. Edfors, F. Tufvesson, and T. L. Marzetta, ‘‘Massive
+MIMO for next generation wireless systems,’’ IEEE Commun. Mag.,
+vol. 52, no. 2, pp. 186–195, Feb. 2014.
+[2] L. Lu, G. Y. Li, A. L. Swindlehurst, A. Ashikhmin, and R. Zhang, ‘‘An
+overview of massive MIMO: Benefits and challenges,’’ IEEE J. Sel. Topics
+Signal Process., vol. 8, no. 5, pp. 742–758, Oct. 2014.
+[3] F. Rusek et al., ‘‘Scaling up MIMO: Opportunities and challenges with
+very large arrays,’’ IEEE Signal Process. Mag., vol. 30, no. 1, pp. 40–60,
+Jan. 2013.
+[4] S. Gao, X. Cheng, and L. Yang, ‘‘Estimating doubly-selective chan-
+nels for hybrid mmWave massive MIMO systems: A doubly-sparse
+approach,’’ IEEE Trans. Wireless Commun., vol. 19, no. 9, pp. 5703–5715,
+Sep. 2020.
+[5] B. Liu, S. Gao, Z. Yang, X. Cheng, and L. Yang, ‘‘Beam pattern modula-
+tion embedded hybrid transceiver optimization for integrated sensing and
+communication,’’ 2024, arXiv:2405.09778.
+[6] M. Soltani, V. Pourahmadi, A. Mirzaei, and H. Sheikhzadeh, ‘‘Deep
+learning-based channel estimation,’’ IEEE Commun. Lett., vol. 23, no. 4,
+pp. 652–655, Apr. 2019.
+[7] E. Balevi, A. Doshi, A. Jalal, A. Dimakis, and J. G. Andrews, ‘‘High
+dimensional channel estimation using deep generative networks,’’ IEEE
+J. Sel. Areas Commun., vol. 39, no. 1, pp. 18–30, Jan. 2021.
+[8] M. Arvinte and J. I. Tamir, ‘‘MIMO channel estimation using score-
+based generative models,’’ IEEE Trans. Wireless Commun., vol. 22, no. 6,
+pp. 3698–3713, Jun. 2023.
+[9] X. Cheng et al., ‘‘Intelligent multi-modal sensing-communication integra-
+tion: Synesthesia of machines,’’ IEEE Commun. Surveys Tuts., vol. 26,
+no. 1, pp. 258–301, 1st Quart., 2024.
+[10] H. Zhang, S. Gao, X. Cheng, and L. Yang, ‘‘Integrated sensing and commu-
+nications toward proactive beamforming in mmWave V2I via multi-modal
+feature fusion (MMFF),’’ IEEE Trans. Wireless Commun., vol. 23, no. 11,
+pp. 15721–15735, Nov. 2024.
+[11] Z. Yang, S. Gao, X. Cheng, and L. Yang, ‘‘Synesthesia of machines (SoM)-
+enhanced ISAC precoding for vehicular networks with double dynamics,’’
+2024, arXiv:2408.13546.
+[12] W. Xie, J. Xiao, P. Zhu, and C. Yu, ‘‘Multi-task learning-based channel
+estimation for RIS assisted multi-user communication systems,’’ IEEE
+Commun. Lett., vol. 26, no. 3, pp. 577–581, Mar. 2022.
+[13] T. B. Brown et al., ‘‘Language models are few-shot learners,’’ in Proc.
+NIPS, 2020, pp. 1877–1901.
+[14] K. Singhal et al., ‘‘Towards expert-level medical question answering with
+large language models,’’ 2023, arXiv:2305.09617.
+[15] P. Colombo et al., ‘‘SaulLM-7B: A pioneering large language model for
+law,’’ 2024, arXiv:2403.03883.
+[16] S. Wu et al., ‘‘BloombergGPT: A large language model for finance,’’ 2023,
+arXiv:2303.17564.
+[17] V. Ekambaram et al., ‘‘Tiny time mixers (TTMs): Fast pre-trained models
+for enhanced zero/few-shot forecasting of multivariate time series,’’ in
+Proc. Adv. Neural Inf. Process. Syst., Dec. 2024, p. 3740275.
+[18] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, ‘‘LLM4CP: Adapting large
+language models for channel prediction,’’ J. Commun. Inf. Netw., vol. 9,
+no. 2, pp. 113–125, Jun. 2024.
+[19] Y. Sheng, K. Huang, L. Liang, P. Liu, S. Jin, and G. Y. Li, ‘‘Beam prediction
+based on large language models,’’ IEEE Wireless Commun. Lett., vol. 14,
+no. 5, pp. 1406–1410, May 2025.
+[20] Q. Liu et al., ‘‘When MOE meets LLMs: Parameter efficient fine-tuning
+for multi-task medical applications,’’ in Proc. 47th Int. ACM SIGIR Conf.
+Res. Develop. Inf. Retr., Jul. 2024, pp. 1104–1114.
+846 VOLUME 3, 2025
+Liu et al.: LLM4WM: Adapting LLM for Wireless Multi-Tasking
+[21] M. Alrabeiah and A. Alkhateeb, ‘‘Deep learning for mmWave beam and
+blockage prediction using sub-6 GHz channels,’’ IEEE Trans. Commun.,
+vol. 68, no. 9, pp. 5504–5518, Sep. 2020.
+[22] H. Jiang, M. Cui, D. W. K. Ng, and L. Dai, ‘‘Accurate channel prediction
+based on transformer: Making mobility negligible,’’ IEEE J. Sel. Areas
+Commun., vol. 40, no. 9, pp. 2717–2732, Sep. 2022.
+[23] M. S. Safari, V. Pourahmadi, and S. Sodagari, ‘‘Deep UL2DL: Data-driven
+channel knowledge transfer from uplink to downlink,’’ IEEE Open J. Veh.
+Technol., vol. 1, pp. 29–44, 2020.
+[24] I. Misra, A. Shrivastava, A. Gupta, and M. Hebert, ‘‘Cross-stitch networks
+for multi-task learning,’’ in Proc. IEEE Conf. Comput. Vis. Pattern Recog-
+nit. (CVPR), Jun. 2016, pp. 3994–4003.
+[25] A. Jagannath and J. Jagannath, ‘‘Multi-task learning approach for auto-
+matic modulation and wireless signal classification,’’ in Proc. IEEE Int.
+Conf. Commun., Jun. 2021, pp. 1–7.
+[26] X. Li, J. Guo, C.-K. Wen, S. Jin, S. Han, and X. Wang, ‘‘Multi-task
+learning-based CSI feedback design in multiple scenarios,’’ IEEE Trans.
+Commun., vol. 71, no. 12, pp. 7039–7055, Dec. 2023.
+[27] W. Ni, H. Sun, H. Ao, and H. Tian, ‘‘Federated intelligence: When large
+AI models meet federated fine-tuning and collaborative reasoning at the
+network edge,’’ 2025, arXiv:2503.21412.
+[28] H. Quan et al., ‘‘Large language model agents for radio map generation and
+wireless network planning,’’ IEEE Netw. Lett., early access, Feb. 7, 2025,
+doi: 10.1109/LNET.2025.3539829.
+[29] H. Sun, H. Tian, W. Ni, J. Zheng, D. Niyato, and P. Zhang, ‘‘Fed-
+erated low-rank adaptation for large models fine-tuning over wireless
+networks,’’ IEEE Trans. Wireless Commun., vol. 24, no. 1, pp. 659–675,
+Jan. 2025.
+[30] B. Liu, S. Gao, X. Liu, X. Cheng, and L. Yang, ‘‘WiFo: Wireless foundation
+model for channel prediction,’’ Sci. China Inf. Sci., vol. 68, no. 6, Jun. 2025,
+Art. no. 162302.
+[31] S. Taheri, A. Ihalage, P. Mishra, S. Coaker, F. Muhammad, and
+H. Al-Raweshidy, ‘‘Domain tailored large language models for log mask
+prediction in cellular network diagnostics,’’ IEEE Trans. Netw. Service
+Manage., vol. 22, no. 3, pp. 2370–2381, Jul. 2025.
+[32] P. Medaranga, D. Shah, S. V. Kandala, and A. Varshney, ‘‘POSTER:
+Simplifying the networking of wireless embedded systems using
+a large language model,’’ in Proc. ACM SIGCOMM, Aug. 2024,
+pp. 78–80.
+[33] D. Wu et al., ‘‘NetLLM: Adapting large language models for networking,’’
+in Proc. ACM SIGCOMM Conf., Sydney, NSW, Australia, Aug. 2024,
+pp. 661–678.
+[34] T. Zheng and L. Dai, ‘‘Large language model enabled multi-task physical
+layer network,’’ 2024, arXiv:2412.20772.
+[35] T. L. Marzetta, E. G. Larsson, H. Yang, and H. Q. Ngo, Fundamentals of
+Massive MIMO. Cambridge, U.K.: Cambridge Univ. Press, 2016.
+[36] S. Lv, X. Li, J. Liu, and M. Shi, ‘‘Sub-6G aided millimeter wave hybrid
+beamforming: A two-stage deep learning framework with statistical chan-
+nel information,’’ IEEE Trans. Green Commun. Netw., vol. 8, no. 3,
+pp. 1245–1258, Sep. 2024.
+[37] A. Salihu, S. Schwarz, and M. Rupp, ‘‘Attention aided CSI wireless local-
+ization,’’ in Proc. IEEE 23rd Int. Workshop Signal Process. Adv. Wireless
+Commun. (SPAWC), Oulu, Oulu, Finland, Jul. 2022, pp. 1–5.
+[38] Y. Sun et al., ‘‘Environment features-based model for path loss prediction,’’
+IEEE Wireless Commun. Lett., vol. 11, no. 9, pp. 2010–2014, Sep. 2022.
+[39] Y.-L. Sung, J. Cho, and M. Bansal, ‘‘VL-ADAPTER: Parameter-efficient
+transfer learning for vision-and-language tasks,’’ in Proc. IEEE/CVF
+Conf. Comput. Vis. Pattern Recognit. (CVPR), New Orleans, LA, USA,
+Jun. 2022, pp. 5227–5237.
+[40] J. Pan, Z. Lin, X. Zhu, J. Shao, and H. Li, ‘‘ST-adapter: Parameter-efficient
+image-to-video transfer learning,’’ in Proc. Adv. Neural Inf. Process. Syst.,
+Nov. 2022, pp. 26462–26477.
+[41] D. Hendrycks and K. Gimpel, ‘‘Gaussian error linear units (GELUs),’’
+2016, arXiv:1606.08415.
+[42] N. Shazeer et al., ‘‘Outrageously large neural networks: The sparsely-gated
+mixture-of-experts layer,’’ 2017, arXiv:1701.06538.
+[43] S. Liu, E. Johns, and A. J. Davison, ‘‘End-to-end multi-task learning
+with attention,’’ in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit.
+(CVPR), Long Beach, CA, USA, Jun. 2019, pp. 1871–1880.
+[44] S. Jaeckel, L. Raschkowski, K. Börner, and L. Thiele, ‘‘QuaDRiGa:
+A 3-D multi-cell channel model with time evolution for enabling virtual
+field trials,’’ IEEE Trans. Antennas Propag., vol. 62, no. 6, pp. 3242–3256,
+Jun. 2014.
+[45] A. Ali, N. González-Prelcic, and R. W. Heath Jr., ‘‘Millimeter wave beam-
+selection using out-of-band spatial information,’’ IEEE Trans. Wireless
+Commun., vol. 17, no. 2, pp. 1038–1052, Feb. 2018.
+[46] J. Xiao, K. Wu, Y. Yi, and L. M. Ni, ‘‘FIFS: Fine-grained indoor fin-
+gerprinting system,’’ in Proc. 21st Int. Conf. Comput. Commun. Netw.
+(ICCCN), Munich, Germany, Jul. 2012, pp. 1–7.
+[47] P. Ferrand, A. Decurninge, and M. Guillaud, ‘‘DNN-based localization
+from channel estimates: Feature design and experimental results,’’ in Proc.
+IEEE Global Commun. Conf., Taipei, Taiwan, Dec. 2020, pp. 1–6.
+[48] W. Jiang and H. D. Schotten, ‘‘Deep learning for fading channel predic-
+tion,’’ IEEE Open J. Commun. Soc., vol. 1, pp. 320–332, 2020.
+[49] K. He, X. Zhang, S. Ren, and J. Sun, ‘‘Deep residual learning for image
+recognition,’’ in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR),
+Las Vegas, NV, USA, Jun. 2016, pp. 770–778.
+[50] W. Qi, Y.-P. Ruan, Y. Zuo, and T. Li, ‘‘Parameter-efficient tuning on layer
+normalization for pre-trained language models,’’ 2022, arXiv:2211.08682.
+[51] A. Vaswani et al., ‘‘Attention is all you need,’’ in Proc. Adv. Neural
+Inf. Process. Syst. (NeurIPS), vol. 30, Long Beach, CA, USA, 2017,
+pp. 5998–6008.
+VOLUME 3, 2025 847
+

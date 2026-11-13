@@ -1,0 +1,1751 @@
+Cluster Computing (2026) 29:198
+https://doi.org/10.1007/s10586-026-06064-2
+[3, 4]. This tension between security requirements and com-
+putational constraints motivates the exploration of light-
+weight yet effective detection frameworks.
+Recent advances in machine learning have demonstrated
+promising results for IoT security. Deep neural networks
+have achieved high classification accuracy on benchmark
+datasets, with several studies reporting detection rates
+exceeding 95% on multi-class attack scenarios [5–7]. Kili-
+chev et al. [1] developed a CNN-LSTM-GRU ensemble
+achieving strong performance (100% binary, 97.44% six-
+class, 96.90% fifteen-class accuracy) through systematic
+feature selection via chi-squared testing on Edge-IIoTset.
+Their published preprocessed dataset contains 97 features
+after excluding target and label columns. Building upon
+this preprocessed dataset provided by Kilichev et al. [1],
+we apply correlation-based feature reduction to produce a
+compact 35-feature representation, improving suitability for
+resource-constrained deployment.
+1 Introduction
+The proliferation of Internet of Things (IoT) devices in criti-
+cal infrastructure has fundamentally transformed network
+security paradigms. Modern IoT ecosystems, encompassing
+smart cities, industrial control systems, and electric vehicle
+charging stations, generate massive volumes of network traf-
+fic requiring real-time security monitoring [1, 2]. However,
+the resource-constrained nature of edge devices—charac-
+terized by limited computational power, memory capacity,
+and energy budgets—presents fundamental challenges for
+deploying sophisticated intrusion detection systems (IDS)
+Özlem Batur Dinler
+o.b.dinler@siirt.edu.tr
+1
+Faculty of Engineering, Department of Computer
+Engineering, Siirt University, Siirt 56100, Turkey
+Abstract
+Distributed IoT systems in critical infrastructure demand intrusion detection solutions that balance detection accuracy
+with the computational constraints of edge deployment. This study presents a lightweight Spiking Neural Network (SNN)
+framework for network intrusion detection, utilizing the computational properties of spike-based processing — namely,
+replacement of multiply-accumulate (MAC) operations with sparse accumulate (AC) operations and input-adaptive com-
+putation through natural spike sparsity — to explore neuromorphic-compatible architectures suited to resource-constrained
+edge deployment. The framework is validated on the Edge-IIoTset dataset [1] through five-fold stratified cross-validation.
+A multi-stage feature selection pipeline reduces the input space from 97 to 35 features (63.9% reduction), including
+removal of seven features exhibiting strong target correlation (|r| > 0.70) to promote broader feature diversity. Task-scaled
+architectures match network capacity to classification granularity, ranging from 9,342 parameters (36.5 KB) for binary
+to 51,347 parameters (200.6 KB) for fifteen-class classification. Cross-validation results show consistent performance:
+binary 99.18% (±0.03%), six-class 96.99% (±0.11%), and fifteen-class 96.79% (±0.08%) accuracy. Minority class detec-
+tion remains a limitation, with Fingerprinting (54.04%) and Password (59.46%) recall indicating challenges from class
+imbalance and feature overlap. These results suggest that compact spiking architectures can provide effective intrusion
+detection within the memory budgets of edge processors, establishing architectural groundwork for future neuromorphic
+deployment.
+Keywords Spiking neural networks · IoT intrusion detection · Edge computing · Feature selection · Lightweight
+architecture
+Received: 3 July 2025 / Revised: 26 February 2026 / Accepted: 1 March 2026
+© The Author(s) 2026
+Task-scaled spiking neural networks with multi-stage feature selection
+for resource-constrained iot intrusion detection
+Özlem Batur Dinler1
+1 3
+Cluster Computing (2026) 29:198
+Spiking Neural Networks (SNNs) offer a computation-
+ally distinct alternative to conventional artificial neural net-
+works (ANNs). In standard ANNs, each neuron computes a
+weighted sum followed by a nonlinear activation — requir-
+ing multiply-accumulate (MAC) operations proportional to
+the number of input connections at every inference step. In
+contrast, SNNs communicate through binary spike events: a
+presynaptic neuron either fires (1) or remains silent (0), and
+postsynaptic computation occurs only when a spike arrives.
+This replaces dense MAC operations with sparse accumu-
+late (AC) operations, where synaptic weights are added to
+the membrane potential only upon spike arrival [8]. The
+computational cost of SNN inference is therefore data-
+dependent: inputs that produce fewer spikes (i.e., features
+with lower normalized values under Poisson rate coding)
+naturally consume fewer operations, creating an implicit
+compute-on-demand mechanism.
+This property is particularly relevant for IoT intrusion
+detection, where network traffic features exhibit high vari-
+ability — normal traffic typically produces sparse feature
+vectors, while attack traffic activates specific feature sub-
+sets. An SNN processing such inputs will allocate more
+computation to anomalous patterns and less to routine traf-
+fic, without requiring explicit gating mechanisms. Further-
+more, the binary nature of spike communication reduces the
+memory bandwidth requirements during inference, as spike
+events can be represented as single bits rather than 32-bit
+floating-point activations [9, 10].
+While the full energy benefits of SNNs are realized on
+neuromorphic hardware platforms such as Intel’s Loihi [9]
+and IBM’s TrueNorth [10], the computational advantages
+of spike sparsity and accumulate-only operations are archi-
+tecture-independent properties that hold on any platform.
+The present study investigates the feasibility and detection
+accuracy of SNN-based intrusion detection within edge-
+compatible parameter budgets, establishing the architectural
+groundwork for future neuromorphic deployment.
+1.1 Research motivation
+This study is motivated by three interconnected challenges
+in IoT security. First, we aim to reduce feature dimensional-
+ity while maintaining detection performance. Starting from
+the preprocessed dataset [1] (97 features), we apply a multi-
+stage selection pipeline combining variance filtering, inter-
+feature correlation analysis, statistical ranking, and target
+correlation filtering to produce a compact 35-feature rep-
+resentation that retains detection capability while reducing
+input dimensionality by 63.9%.
+Second, we investigate whether SNN architectures can
+maintain detection accuracy within the parameter and
+memory budgets of edge processors while exploiting the
+computational properties inherent to spike-based process-
+ing. Conventional ANNs require dense MAC operations
+at every layer regardless of input characteristics; SNNs,
+by contrast, perform computation only upon spike arrival,
+with the volume of computation scaling naturally with input
+activity. This study systematically explores how compact
+SNN architectures (9,342–51,347 parameters) perform
+across three classification granularities, establishing base-
+line feasibility for neuromorphic-ready intrusion detection
+at the edge.
+Third, we emphasize statistical validation to ensure reli-
+able performance estimates. We employ five-fold strati-
+fied cross-validation with fixed random seeds to quantify
+expected variance across data partitions, providing a trans-
+parent assessment of model consistency for deployment
+reliability.
+1.2 Research contributions
+This study makes three principal contributions to IoT intru-
+sion detection research:
+First, we apply a multi-stage feature selection pipeline
+on the preprocessed dataset [1], combining variance filter-
+ing, inter-feature correlation filtering, ANOVA F-test rank-
+ing, and target correlation filtering (|r| > 0.70) to produce
+a compact 35-feature representation. This achieves 96.79%
+fifteen-class accuracy with 63.9% fewer features.
+Second, we develop a task-scaled SNN architecture that
+matches network capacity to classification granularity, rang-
+ing from 9,342 parameters (36.5 KB) for binary to 51,347
+parameters (200.6 KB) for fifteen-class classification. All
+configurations use a uniform Linear → LIF processing pipe-
+line, where inference computation scales with spike activity
+rather than network size. This neuromorphic-ready design
+enables direct deployment on spike-based processors with-
+out architectural modification.
+Third, we conduct five-fold stratified cross-validation
+with fixed random seeds (seed=42) across binary, six-class,
+and fifteen-class classification scenarios. All experimental
+protocols, including data preprocessing steps, feature selec-
+tion criteria, and cross-validation procedures, are docu-
+mented in detail to facilitate reproducibility.
+The remainder of this paper is organized as follows. Sec-
+tion 2 reviews related work in IoT intrusion detection, deep
+learning approaches, and spiking neural networks. Section
+3 describes the proposed methodology, including data pre-
+processing, feature selection, architecture design, and cross-
+validation protocol. Section 4 presents experimental results
+across binary, six-class, and fifteen-class classification
+scenarios. Section 5 discusses the implications of our find-
+ings, compares performance with prior work, and examines
+limitations, including the lack of hardware-based energy
+1 3
+198 Page 2 of 19
+Cluster Computing (2026) 29:198
+measurements. Section 6 concludes the paper and outlines
+directions for future research.
+2 Related work
+The application of machine learning to IoT intrusion detec-
+tion has evolved significantly in recent years, with research-
+ers exploring various architectures and methodologies to
+address the dual challenges of detection accuracy and com-
+putational efficiency.
+2.1 Deep learning for IoT intrusion detection
+Deep learning architectures have demonstrated strong per-
+formance on IoT security benchmarks. Ferrag et al. [2] pro-
+vided a comprehensive survey of deep learning techniques
+for intrusion detection in IoT environments, highlighting the
+effectiveness of convolutional neural networks (CNNs) and
+recurrent architectures for temporal pattern recognition.
+Kilichev et al. [1] developed a CNN-LSTM-GRU
+ensemble architecture on the Edge-IIoTset dataset, achiev-
+ing 100% binary, 97.44% six-class, and 96.90% fifteen-
+class accuracy.
+Their approach employed chi-squared testing for system-
+atic feature engineering, producing a research-ready prepro-
+cessed dataset. The published preprocessed dataset contains
+97 features after excluding target and label columns.
+ElKashlan et al. [3, 4] explored machine learning
+approaches for electric vehicle charging station (EVCS)
+intrusion detection using the IoT-23 dataset, investigat-
+ing filtered classifiers and decision tables for DDoS detec-
+tion [3], and extending to multi-class scenarios with Naive
+Bayes, J48, and attribute selection classifiers [4].
+Nandanwar and Katarya [5–7, 11–13] presented a series
+of studies addressing IoT security through multiple per-
+spectives, including optimized intrusion detection using
+GAO-XGBoost with blockchain framework [5], deep learn-
+ing for Industrial IoT [6], privacy-preserving data sharing
+[7], explainable AI for cyber-physical systems [11], hybrid
+blockchain frameworks for IDS [12], and federated learning
+approaches [13].
+2.2 Feature engineering
+Feature selection plays a critical role in intrusion detection
+performance, particularly for resource-constrained deploy-
+ments. Traditional approaches have employed chi-squared
+testing [1], information gain [14], and mutual information
+[15] to identify discriminative features. The Edge-IIoTset
+dataset [16] provides a comprehensive collection of net-
+work traffic from various IoT devices under different attack
+scenarios, including DDoS, injection, scanning, MITM, and
+malware attacks. In this study, we apply correlation-based
+feature analysis (r>0.70) on the preprocessed dataset (97
+features) provided by Kilichev et al. [1] to produce a com-
+pact 35-feature representation.
+To provide context for our methodological choices
+described in Sect. 3.2, we present a preliminary analysis
+of correlation threshold sensitivity and feature selection
+method comparison.
+This threshold is supported by established statistical
+guidelines: Dormann et al. [17] identify |r| > 0.7 as the point
+beyond which collinearity among predictors distorts model
+estimation. Ratner [18] classifies correlations above 0.70
+as strong. In our pipeline, the inter-feature correlation filter
+(Stage 2, |r| > 0.95) addresses predictor collinearity, while
+the target correlation filter (Stage 4, |r| > 0.70) removes
+encoded categorical variables that carry disproportionately
+concentrated discriminative power, reducing the model’s
+reliance on a narrow feature subset for edge deployment
+robustness. Pearson correlation provides a transparent,
+reproducible metric with low computational cost. To vali-
+date the threshold selection empirically, we conducted a
+systematic sensitivity analysis evaluating five correlation
+thresholds on the binary classification task with 5-fold strat-
+ified cross-validation. Table 1 presents the results.
+The results reveal a clear pattern: thresholds at 0.80
+and above retain features that yield near-perfect accuracy
+(99.99%). The accuracy plateau at 99.99% for thresh-
+olds≥0.80 reflects the well-documented tendency of cate-
+gorical encodings to produce high mutual information with
+the target when category distributions are class-dependent
+[19]. This property makes such features highly effective
+for maximum-accuracy objectives — as demonstrated
+by Kilichev et al. [1] — but introduces a dependency on
+protocol-type metadata that may not generalize across net-
+work configurations where protocol distributions differ. Our
+threshold selection at 0.70 trades this concentrated discrimi-
+native signal for broader feature diversity, balancing dimen-
+sionality reduction with detection performance for the target
+edge deployment scenario.
+To assess the impact of the feature selection method itself,
+we compared four approaches—all selecting 35 features for
+Table 1 Correlation threshold sensitivity analysis (binary classifica-
+tion, 5-fold CV)
+Threshold Features
+removed
+Features
+kept
+Accuracy (%) F1-score
+(%)
+0.60 8 34 99.15±0.09 98.46±0.16
+0.70 7 35 99.12±0.02 98.42±0.03
+0.80 4 38 99.99±0.00 99.99±0.00
+0.90 4 38 99.99±0.00 99.99±0.00
+1.00 0 42 99.99±0.00 99.99±0.00
+1 3
+Page 3 of 19 198
+Cluster Computing (2026) 29:198
+proposed a convolutional spiking neural network model that
+integrates CNN feature extraction with SNN temporal pro-
+cessing for lightweight intrusion detection. More complex
+hybrid approaches have also emerged: SURFS [26] inte-
+grated hierarchical federated learning with SNNs for dis-
+tributed Cloud-Edge-IoT security, while LOA-BHLESNN
+[27] combined metaheuristic feature optimization with beta
+Hebbian learning-based SNNs across multiple IoT datasets.
+These studies demonstrate growing interest in SNN-
+based intrusion detection; however, they predominantly
+employ either hybrid multi-component architectures or
+focus on binary/single-granularity classification. The pres-
+ent study differs in its emphasis on pure feedforward SNN
+architectures with minimal processing pipelines (Linear
+→ LIF), systematic evaluation across three classification
+granularities (binary, six-class, fifteen-class), and explicit
+constraint to edge-compatible parameter budgets (9,342–
+51,347 parameters).
+The computational properties of SNNs — spike-driven
+inference and input-adaptive sparsity, as detailed in Sect. 1
+— have motivated their adoption in the IDS studies reviewed
+above. However, most existing SNN-based IDS implemen-
+tations rely on hybrid pipelines that combine SNNs with
+conventional components (CNNs, decision trees, or meta-
+heuristic optimizers), which partially offset the sparsity
+advantage by introducing dense computation stages. The
+extent to which a pure SNN architecture can maintain detec-
+tion accuracy while preserving full spike sparsity across all
+processing layers remains an open question, particularly for
+multi-class IoT scenarios where classification complexity
+increases output dimensionality.
+2.4 Validation methodology
+The choice of validation protocol depends on the research
+question. Architecture comparison studies typically employ
+a single train-test split to control for partition effects when
+comparing multiple models under identical conditions —
+an approach that prioritizes internal validity [28, 29]. For
+instance, Kilichev et al. [1] evaluated CNN, LSTM, GRU,
+and their ensemble on identical partitions, where single-split
+evaluation is the appropriate protocol to ensure that observed
+performance differences reflect architectural choices rather
+than data sampling variation.
+Deployment-oriented studies, by contrast, benefit from
+cross-validation to quantify expected variance across
+unseen data partitions — prioritizing external validity [30].
+Stratified k-fold cross-validation preserves class distribu-
+tions across folds, which is particularly important for imbal-
+anced datasets common in intrusion detection [31]. Since
+the present study focuses on deployment reliability rather
+than architecture comparison, we adopt five-fold stratified
+fair comparison—on the fifteen-class classification task.
+Table 2 presents the results.
+All four methods achieve comparable accuracy within
+a 0.09% point range (96.77–96.86%), confirming that the
+Edge-IIoTset feature space is robust to the choice of selec-
+tion method. Correlation-based filtering was selected for
+two reasons: (1) it is the only method that can explicitly
+identify features with high target correlation, enabling
+detection and removal of features with disproportionately
+concentrated class-discriminative power as demonstrated in
+Table 1; and (2) correlation coefficients provide transpar-
+ent, reproducible metrics with clear physical interpretation,
+which is important for deployment in security-critical IoT
+environments.
+2.3 Spiking neural networks
+Spiking Neural Networks (SNNs) process information
+through discrete spike events rather than continuous-
+valued activations, potentially enabling energy-efficient
+computation on neuromorphic hardware platforms such
+as Intel’s Loihi and IBM’s TrueNorth [9, 10]. Tavanaei et
+al. [8] surveyed SNN learning algorithms, discussing both
+biologically-inspired STDP rules and gradient-based train-
+ing approaches. Kim et al. [20] explored CNNs for network
+intrusion detection on the NSL-KDD dataset, demonstrating
+competitive accuracy with reduced computational require-
+ments. Wang et al. [21] investigated a lightweight intrusion
+detection method for IoT using deep learning combined
+with dynamic quantization to reduce computational burden
+on edge devices.
+Several recent studies have specifically applied SNNs
+to intrusion detection. Zhou and Li [22] presented one of
+the earliest pure SNN implementations for network intru-
+sion detection, employing single-spike temporal coding
+with a three-layer architecture of 205 neurons and achiev-
+ing 98.98% accuracy on NSL-KDD. Zarzoor et al. [23] pro-
+posed IDS-SNNDT, combining a decision tree for sample
+selection with a non-leaky integrate-and-fire SNN model
+for IoT attack classification, demonstrating reduced latency
+and power usage compared to conventional DNN-based
+detection. Živadinović et al. [24] investigated resource-effi-
+cient SNN-based intrusion detection on the BoT-IoT data-
+set, comparing SNN performance against DNN baselines
+with focus on computational efficiency. Wang et al. [25]
+Table 2 Comparison of feature selection methods (fifteen-class, 5-fold
+CV)
+Method Features Accuracy (%) F1-score (%)
+Correlation (r>0.70) 35 96.79±0.07 96.78
+Mutual Information 35 96.85±0.06 96.87
+Chi-squared 35 96.77±0.04 96.79
+PCA 35 96.86±0.04 96.88
+1 3
+198 Page 4 of 19
+Cluster Computing (2026) 29:198
+traffic, six-class classification categorizing traffic into nor-
+mal, DDoS, injection, scanning, MITM, and malware cat-
+egories, and fifteen-class classification providing detailed
+attack subcategories including specific DDoS variants
+(UDP, TCP, HTTP, ICMP), SQL injection, XSS, port scan-
+ning, fingerprinting, password attacks, ransomware, and
+backdoor attacks.
+The preprocessed dataset is loaded (97 features after
+excluding target and label columns) and processed through
+the multi-stage feature selection pipeline described in Sect.
+3.2, resulting in a clean 35-feature dataset. Within each
+cross-validation fold, features are normalized to the [0,1]
+range using Min-Max scaling:
+xnorm =
+x − xmin
+xmax − xmin
+ (1)
+where xmin and xmaxare computed from the training set,
+with identical transformation parameters applied to valida-
+tion and test sets to prevent train-test contamination. Output
+values are clipped to the [0,1] range to handle potential out-
+of-range values in unseen data.
+3.2 Feature engineering
+Starting from the preprocessed dataset [1], we apply a
+multi-stage feature selection pipeline to produce a compact
+feature set suitable for resource-constrained edge devices.
+After excluding target and label columns, the dataset con-
+tains 97 features spanning network protocol attributes (TCP,
+UDP, ICMP, HTTP, DNS, MQTT, Modbus TCP) and their
+encoded representations.
+The feature selection proceeds in four stages. In the first
+stage, features with variance below 0.01 are removed using
+a variance threshold filter. This eliminates near-constant
+features that carry minimal discriminative information.
+In the second stage, pairwise Pearson correlation coef-
+ficients are computed among remaining features. For each
+pair exhibiting |r| > 0.95, one feature is removed to reduce
+redundancy among features measuring similar network
+characteristics.
+In the third stage, remaining features are ranked using the
+ANOVA F-test [32], which measures the ratio of between-
+class variance to within-class variance for each feature.
+Features with the highest F-statistics are retained, selecting
+those that exhibit the greatest separation among classifica-
+tion categories. After Stages 1–3, 42 features remain.
+In the fourth stage, Pearson correlation coefficients were
+computed between each retained feature and the target
+labels. Seven features exceeding |r| > 0.70 were identified
+and removed: dns_encoded (|r| = 0.95), mqtt1_0, mqtt2_0,
+mqtt3_0 (|r| = 0.90 each), mqtt1_encoded, mqtt2_encoded,
+cross-validation with fixed random seeds to ensure reliable
+and reproducible performance estimates Table 3.
+3 Methodology
+This section presents the methodological framework
+employed in this study, including dataset preparation,
+feature engineering, spiking neural network architecture
+design, training procedures, and cross-validation protocols.
+3.1 Dataset and preprocessing
+This study employs the Edge-IIoTset dataset [16], utilizing
+the preprocessed version developed by Kilichev et al. [1] and
+publicly available at ​
+h​
+t​
+t​
+p​​
+s​
+:​
+/​​
+/​
+g​
+i​
+t​​
+h​
+u​​
+b​
+.​
+c​​
+o​
+m​
+/​
+T​​
+A​
+T​
+U​​
+-​
+h​
+a​​
+c​
+k​
+e​​
+r​
+/​
+C​​
+N​
+N​
+-​L​​S​T​​M​-​G​R​U​.​g​i​t. Their preprocessing pipeline applies ​s​y​s​t​
+e​m​a​t​i​c feature engineering, normalization, and chi-squared
+feature selection to the raw Edge-IIoTset, producing a pre-
+processed CSV file (Edge-IIoTset_112.csv) containing 99
+columns. After excluding the target column (Attack_type)
+and the auxiliary label column (Attack_label), the dataset
+contains 97 features.
+This dataset encompasses network traffic from diverse
+IoT and Industrial IoT (IIoT) devices under various attack
+scenarios, including security cameras, smart thermostats,
+weather stations, and industrial sensors. Edge-IIoTset con-
+tains labeled instances across three classification scenarios:
+binary classification distinguishing normal from attack
+Table 3 Comparative summary of methodological approaches
+Characteristic Kilichev
+et al. [1]
+ElKashlan et
+al. [3]
+This
+work
+Dataset Edge-IIoTset IoT-23 Edge-
+IIoTset
+(prepro-
+cessed by
+[1])
+Feature
+Engineering
+Chi-squared (97
+features in pub-
+lished CSV)
+Domain-specific Multi-
+stage
+pipeline
+(97→35
+features)
+Architecture CNN-LSTM-GRU Filtered
+classifiers
+Task-
+Scaled
+SNN
+Binary
+Accuracy
+100.00% 99.99% 99.18%
+(±0.03%)
+6-class
+Accuracy
+97.44% N/A 96.99%
+(±0.11%)
+15-class
+Accuracy
+96.90% N/A 96.79%
+(±0.08%)
+Validation
+Method
+Single split (archi-
+tecture comparison)
+Standard
+evaluation
+5-fold
+CV
+(deploy-
+ment reli-
+ability)
+1 3
+Page 5 of 19 198
+Cluster Computing (2026) 29:198
+The architecture comprises an input layer with 35 neu-
+rons matching feature dimensionality, followed by task-
+specific hidden layer configurations and an output layer
+matching classification granularity:
+● Binary classification: 35 → 96 → 48 → 24 → 2 neurons
+(9,342 parameters, 36.5 KB).
+● Six-class classification: 35 → 128 → 64 → 32 → 6 neu-
+rons (15,146 parameters, 59.2 KB).
+● Fifteen-class classification: 35 → 256 → 128 → 64 →
+15 neurons (51,347 parameters, 200.6 KB).
+Each neuron in the hidden and output layers implements
+the Leaky Integrate-and-Fire (LIF) model. The membrane
+potential Vi (t) of neuron i evolves according to:
+Vi (t) = βVi (t − 1) + Ii (t) (2)
+where β is the membrane decay factor (initialized to 0.95)
+and Ii (t) is the input synaptic current from the preceding
+linear layer.A spike is emitted when the membrane potential
+exceeds the threshold Vthr= 0.8, after which the membrane
+potential is reset through subtraction: Vi ← Vi − Vthr.
+The decay factor is configured as a learnable parameter
+(=True), allowing each LIF neuron to adapt its temporal
+dynamics during training. This enables the network to learn
+task-appropriate membrane time constants rather than rely-
+ing on a fixed decay rate.
+The network is trained using the surrogate gradient
+method, which addresses the non-differentiability of the
+spike function by replacing the Heaviside step function
+with a smooth approximation during backpropagation. We
+employ the fast sigmoid surrogate:
+σ′
+(x) =
+α
+2(1 + α |x|)
+2  (3)
+where α=10.0 controls the sharpness of the surrogate gradi-
+ent. This value corresponds to the default configuration of
+the fast sigmoid surrogate in the snnTorch library [33] and
+provides a balance between gradient approximation accu-
+racy and training stability.
+A key design consideration is that the computational cost
+of each SNN layer during inference is not fixed but scales
+with the spike activity of the preceding layer. For a layer
+with nin​input neurons and nout​​output neurons, a conven-
+tional ANN requires nin × nout​​MAC operations per for-
+ward pass. The equivalent SNN layer requires only ​
+s × nout
+AC operations, where ​
+s ≤ nin ​is the number of active
+(spiking) input neurons at a given time step. When the aver-
+age firing
+rate is
+−
+f
+(
+0 <
+−
+f≤ 1
+)
+, the expected number of AC
+mqtt3_encoded (|r| ≈ 0.70 each). These seven features are
+one-hot or label-encoded representations of categorical pro-
+tocol fields. By construction, such encodings create a deter-
+ministic mapping between protocol type and numeric value;
+when certain protocols appear predominantly in specific
+attack classes, the encoded feature inherits a strong statis-
+tical association with the target. This is not a data quality
+issue but a well-known property of categorical encoding in
+supervised learning contexts. However, for edge deploy-
+ment, retaining these features would cause the model to rely
+heavily on a small set of protocol-type indicators rather than
+learning from the richer set of continuous network mea-
+surements. Their removal is therefore a deployment design
+choice, not a correction.
+The complete pipeline reduces dimensionality from
+97 to 35 features (63.9% reduction). The 35 retained fea-
+tures encompass raw protocol measurements (TCP flags,
+checksums, sequence numbers, port numbers), connection
+attributes (connection states, acknowledgment values),
+and protocol-specific fields (DNS queries, MQTT headers,
+Modbus transactions).
+3.3 Spike encoding
+To interface continuous network traffic features with the
+SNN, Poisson Rate Coding is employed. Each input feature
+is normalized to the [0,1] range using Min-Max scaling as
+described in Sect. 3.1. The normalized value is then inter-
+preted as a firing probability at each time step. At each of
+the T=50 discrete time steps, a Bernoulli trial is performed
+independently for each feature, generating a binary spike
+train [t] ∈ {0, 1}. This produces a three-dimensional input
+tensor of shape (T × B × F), where B is the batch size and
+F=35 is the number of features. Features with higher nor-
+malized values produce more spikes on average, preserv-
+ing the information content in a spike-based representation.
+The simulation length T=50 is selected as a standard value
+commonly adopted in surrogate gradient-based SNN train-
+ing [33]. This duration provides sufficient spike statistics for
+Poisson rate coding while maintaining reasonable computa-
+tional cost.
+3.4 Spiking neural network architecture
+The proposed architecture employs a task-scaled feedfor-
+ward spiking neural network with three predefined configu-
+rations matched to classification granularity. Each hidden
+layer follows a minimal processing pipeline: Linear trans-
+formation → LIF neuron integration. No batch normaliza-
+tion or dropout is applied, maintaining a clean signal path
+through the spiking layers.
+1 3
+198 Page 6 of 19
+Cluster Computing (2026) 29:198
+Ltotal =
+1
+K
+T
+∑
+t=T −K+1
+L
+(
+V out
+[t] , y
+)
+ (6)
+Training proceeds for a maximum of 100 epochs with early
+stopping based on validation accuracy, halting if validation
+accuracy fails to improve for 30 consecutive epochs. The
+model checkpoint corresponding to the best validation accu-
+racy is selected as the final model. Batch size is set to 64
+samples.
+3.7 Cross-validation protocol
+We employ five-fold stratified cross-validation to assess
+model consistency across different data partitions. The data-
+set is partitioned into five mutually exclusive subsets such
+that class distributions are preserved in each fold. For each
+fold k ∈ {1, 2, 3, 4, 5}, fold k serves as the test set (20%)
+while the remaining four folds are further split into train-
+ing (90%) and validation (10%) sets using stratified sam-
+pling. Each fold uses a deterministic seed (seed+ fold_idx)
+to ensure reproducibility while providing variation across
+folds.
+During validation, multi-pass evaluation with 3 passes
+is employed to reduce variance from the stochastic Poisson
+encoding process. Each pass generates independent spike
+trains from the same input, and the resulting membrane
+potentials are averaged before making predictions.
+Each test fold contains approximately 389,090 samples
+(20% of the total 1,945,449 samples).
+To ensure reproducibility, all random processes are seeded
+with seed=42, including data partitioning, weight initializa-
+tion, spike train generation, and mini-batch shuffling.
+Model performance is evaluated using standard classifi-
+cation metrics:
+Accuracy =
+(TP + TN)
+(TP + TN + FP + FN)
+ (7)
+Precision =
+TP
+(TP + FP)
+ (8)
+Recall =
+TP
+(TP + FN)
+ (9)
+F1 = 2
+(Precision.Recall)
+(Precision + Recall)
+ (10)
+For multi-class scenarios, weighted-averaged metrics are
+computed by calculating metrics independently for each
+class and then averaging with weights proportional to class
+operations per time step is ​
+−
+f ×nin​ ×nout​, yielding a theoret-
+ical computational reduction factor of
+(
+1−
+−
+f
+)
+, relative to
+the equivalent ANN. This reduction is realized without any
+explicit pruning or sparsification mechanism — it emerges
+naturally from the spike-based communication protocol.
+3.5 Decision mechanism
+Unlike rate-coded SNN approaches that count output
+spikes, the proposed architecture uses membrane potential
+for classification. The output LIF neurons are configured
+with output=True, meaning they accumulate input without
+emitting spikes, producing continuous membrane potential
+traces. Classification is based on the average membrane
+potential over the last K=T/5=10 time steps:
+−
+V c =
+1
+K
+T
+∑
+t=T −K+1
+V out(t)
+c  (4)
+This averaging over the final time steps provides a stable
+decision signal that captures the network’s settled-state
+response to each input, reducing sensitivity to transient
+dynamics in earlier time steps.
+3.6 Training configuration
+Network weights are optimized using the Adam optimizer
+with learning rate η=0.001, β₁ = 0.9, and β₂ = 0.999. No
+explicit weight decay is applied. Gradient clipping with
+maxnorm= 5.0 is used to prevent gradient explosion during
+backpropagation through time.
+The learning rate schedule employs CosineAnnealing-
+WarmRestarts with initial period T₀ = 20 epochs, period
+multiplier Tmult=2, and minimum learning rate ηmin =
+1×10⁻⁶. This scheduler provides periodic warm restarts
+that help the optimizer escape local minima while gradually
+extending the annealing periods.
+The cross-entropy loss function is applied to the mem-
+brane potentials of the output neurons:
+L = −
+∑
+i
+yilog
+(
+softmax
+(
+V out
+i
+))
+ (5)
+where yi represents the true label and Viᵒᵘᵗ denotes the output
+membrane potential at each time step. The loss is computed
+over the last K=T/5=10 time steps and averaged, focusing
+the optimization on the network’s settled-state response:
+1 3
+Page 7 of 19 198
+Cluster Computing (2026) 29:198
+4.1 Binary classification performance
+Binary classification distinguishes normal network traffic
+from attack traffic. Table 4 presents performance metrics
+across five folds.
+The model achieves 99.18% mean accuracy (±0.03%)
+with 99.97% precision and 97.09% recall. The precision-
+recall balance indicates a conservative detection strategy:
+the model produces very few false positives (high preci-
+sion) at the cost of missing a small fraction of attacks (lower
+recall). The 2.91% false negative rate represents the primary
+limitation of binary classification.
+The low standard deviation across all metrics (≤0.11%)
+indicates consistent performance across data partitions.
+The largest variation appears in recall (±0.11%), suggest-
+ing slight sensitivity to the specific attack samples pres-
+ent in each fold, while precision remains nearly constant
+(±0.015%).
+Figure 1 presents the aggregated confusion matrix across
+all five folds. The model correctly classifies 1,399,485 nor-
+mal traffic samples (99.99% true negative rate) and detects
+529,940 attack instances (97.09% true positive rate). The
+139 false positives (0.01% of normal traffic) and 15,885
+false negatives (2.91% of attacks) characterize the model’s
+error profile. The false negatives constitute the primary lim-
+itation, though this is expected given the conservative deci-
+sion boundary reflected in the high precision.
+Figures 2 and 3 present learning curves across all five
+folds. Validation accuracy exceeds 95% within the first
+5–10 epochs, followed by gradual refinement toward the
+frequency, reflecting the contribution of each class accord-
+ing to its prevalence in the dataset.
+The methodology is implemented using Python 3.8 with
+snnTorch 0.6.0, PyTorch 1.12.0, and scikit-learn 1.1.1.
+Experiments are conducted on an NVIDIA RTX 3090 GPU
+with 24 GB VRAM.
+4 Experimental results
+This section presents experimental results across three clas-
+sification scenarios—binary, six-class, and fifteen-class—
+evaluated through five-fold stratified cross-validation with
+SEED=42. Results are reported as mean±standard devia-
+tion across folds.
+Table 4 Binary classification performance across 5-fold cross-valida-
+tion
+Fold Accuracy
+(%)
+Precision
+(%)
+Recall
+(%)
+F1-Score
+(%)
+1 99.19 99.98 97.13 98.53
+2 99.13 99.97 96.94 98.43
+3 99.21 100.00 97.18 98.57
+4 99.20 99.96 97.18 98.55
+5 99.15 99.96 97.02 98.47
+Mean 99.18 99.97 97.09 98.51
+Std Dev ±0.03 ±0.015 ±0.11 ±0.06
+Fig. 1 Binary-class confusion
+matrix
+1 3
+198 Page 8 of 19
+Cluster Computing (2026) 29:198
+The standard deviations are higher than binary classifica-
+tion (±0.10–0.15% vs.±0.03–0.11%), which is expected as
+finer classification is more sensitive to the specific composi-
+tion of each fold. However, all five folds achieve accuracy
+within a narrow 0.26% point range (96.86%–97.12%), indi-
+cating stable performance. Table 6 provides per-class per-
+formance analysis.
+Normal traffic achieves the highest F1-score (99.96%),
+benefiting from its dominant sample size and distinctive
+traffic patterns. DDoS achieves strong performance (97.13%
+F1-score), as its high-volume characteristics produce distin-
+guishable features. MITM achieves perfect precision (100%)
+despite its small sample size (358 samples), though its recall
+(95.25%) indicates occasional misclassification. The pri-
+mary challenges appear in Malware (70.59% F1-score) and
+Injection (80.47% F1-score). Malware recall is notably low
+(56.13%), with the confusion matrix revealing that 35,183
+of 83,648 Malware samples are misclassified as Injection,
+reflecting shared payload delivery characteristics between
+these categories. Injection precision (70.19%) is reduced by
+false positives from Scanning and DDoS classes.
+Figure 4 presents the aggregated confusion matrix. The
+dominant confusion pattern occurs between Malware and
+Injection, where 35,183 Malware samples (42.1%) are
+final performance. Validation accuracy closely tracks train-
+ing accuracy throughout the training process, with no vis-
+ible train-validation gap, indicating that the model does not
+overfit to the training data. The loss curves show smooth
+convergence across all folds, with the CosineAnnealing-
+WarmRestarts scheduler producing periodic fluctuations
+that help the optimizer explore the loss landscape before
+settling.
+4.2 Six-class categorical classification performance
+Six-class classification categorizes traffic into normal,
+DDoS, injection, scanning, MITM, and malware. This pro-
+vides intermediate granularity between binary detection and
+fine-grained attack identification. Table 5 presents perfor-
+mance metrics across five folds.
+The model achieves 96.99% mean accuracy (±0.11%)
+with weighted-averaged metrics (precision: 97.44%, recall:
+96.99%, F1-score: 96.90%). The weighted-averaged met-
+rics account for class frequency, giving higher weight to
+more prevalent classes. The accuracy decrease from binary
+(99.18%) to six-class (96.99%) of 2.19% points reflects the
+increased difficulty of distinguishing among attack families
+that share overlapping traffic characteristics.
+Fig. 2 Training and validation accuracy curves for binary classification
+1 3
+Page 9 of 19 198
+Cluster Computing (2026) 29:198
+probing behaviors. These confusion patterns reflect seman-
+tic similarity among attack families—misclassified samples
+typically fall into categories requiring similar response
+protocols.
+Figures 5 and 6 present learning curves. Validation
+accuracy exceeds 94% within the first five epochs, with all
+folds converging to a narrow performance band. The loss
+curves exhibit smooth convergence with minimal train-val-
+idation gap, consistent with the pattern observed in binary
+classification.
+4.3 Fifteen-class fine-grained classification
+performance
+Fifteen-class classification identifies specific attack types
+including DDoS variants (HTTP, ICMP, TCP, UDP), injec-
+tion types (SQL injection, XSS), scanning methods (port
+scanning, fingerprinting, vulnerability scanning), MITM,
+and malware subcategories (backdoor, ransomware, pass-
+word attacks, uploading). This represents the most demand-
+ing evaluation scenario. Table 7 presents performance
+metrics.
+The model achieves 96.79% mean accuracy (±0.08%)
+across fifteen classes. The accuracy decrease from binary
+misclassified as Injection due to shared payload delivery
+mechanisms. Additional confusion occurs between DDoS
+and Scanning (5,034 Scanning samples predicted as DDoS),
+and between Scanning and Injection (2,497 Scanning sam-
+ples predicted as Injection), reflecting overlapping network
+Table 5 Six-class categorical classification performance across 5-fold
+cross-validation
+Fold Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+1 97.12 97.61 97.12 97.05
+2 97.09 97.57 97.09 97.03
+3 96.95 97.31 96.95 96.85
+4 96.86 97.31 96.86 96.75
+5 96.92 97.40 96.92 96.84
+Mean 96.99 97.44 96.99 96.90
+Std Dev ±0.11 ±0.15 ±0.10 ±0.12
+Table 6 Per-class performance analysis for six-class classification
+Attack Class Precision (%) Recall (%) F1-Score (%)
+Normal 99.94 99.97 99.96
+DDoS 96.98 97.27 97.13
+Scanning 92.11 89.18 90.62
+Injection 70.19 94.27 80.47
+MITM 100.00 95.25 97.57
+Malware 95.10 56.13 70.59
+Macro 92.39 88.68% 89.39%
+Fig. 3 Training and validation loss curves for binary classification
+1 3
+198 Page 10 of 19
+Cluster Computing (2026) 29:198
+(19,977 samples, 99.68% recall). Mid-frequency classes
+maintain practical detection levels: Backdoor (24,026 sam-
+ples, 93.93% recall), DDoS_TCP (50,062 samples, 93.36%
+recall), and Vulnerability_scanner (50,026 samples, 92.20%
+recall).
+The lowest-performing classes include Fingerprinting
+(853 samples, 54.04% recall), Password (49,933 samples,
+59.46% recall), Uploading (36,957 samples, 66.76% recall),
+and SQL_injection (50,826 samples, 76.53% recall). Pass-
+word and SQL_injection represent exceptions to the fre-
+quency-performance pattern—despite moderate sample
+counts, their recall is low, suggesting that these attack types
+share overlapping feature distributions with other catego-
+ries. The confusion matrix confirms this: Password samples
+are frequently misclassified as SQL_injection (17,199 sam-
+ples) and Uploading (3,044 samples), while SQL_injection
+samples show confusion with Password (11,910 samples).
+to fifteen-class (99.18% → 96.79%, −2.39% points) reflects
+the 7.5-fold increase in output complexity. Notably, the stan-
+dard deviation for accuracy (±0.08%) is the lowest across
+all three scenarios, indicating that the fifteen-class model
+produces the most consistent results across folds despite the
+increased task complexity.
+The weighted-averaged metrics (precision: 97.35%,
+recall: 96.79%, F1-score: 96.78%) confirm balanced perfor-
+mance. The precision standard deviation (±0.24%) is higher
+than recall (±0.08%), suggesting that per-class precision
+varies more across folds while overall recall remains stable.
+Table 8 provides per-class performance analysis.
+Per-class performance generally correlates with class fre-
+quency in the dataset. High-volume classes achieve strong
+detection: Normal (1,399,624 samples, 99.99% recall),
+DDoS_UDP (121,567 samples, 100% recall), DDoS_ICMP
+(67,939 samples, 99.70% recall), and Port_Scanning
+Fig. 4 Six-class confusion matrix
+1 3
+Page 11 of 19 198
+Cluster Computing (2026) 29:198
+learn discriminative representations for rare attack types.
+Password attacks, despite a moderate sample count (49,933),
+show low recall (59.46%), suggesting that password attack
+traffic shares overlapping feature distributions with other
+The class distribution in Edge-IIoTset exhibits severe
+imbalance: Normal traffic constitutes 71.9% of the dataset
+(1,399,624 samples), while Fingerprinting represents only
+0.04% (853 samples)—a ratio exceeding 1,600:1. At this
+level of imbalance, the model lacks sufficient examples to
+Fig. 6 Training and validation loss curves for six-class classification
+Fig. 5 Training and validation accuracy curves for six-class classification
+1 3
+198 Page 12 of 19
+Cluster Computing (2026) 29:198
+Parameter counts include all linear layer weights and
+biases plus four learnable membrane decay factors (learn_
+beta). Model size reflects stored weight memory, calculated
+as parameters × 4 bytes (float32). Inference additionally
+requires activation buffers for membrane potentials and
+spike states (e.g., 463 neurons × 4 bytes per layer for the
+fifteen-class configuration), though these represent a small
+fraction of the weight memory and are reused across time
+steps. The largest configuration (200.6 KB) fits within typi-
+cal memory budgets of modern edge processors such as
+ARM Cortex-M7 (256 KB–1 MB RAM) and ESP32-S3
+(512 KB SRAM).
+5 Discussion
+The experimental results demonstrate that lightweight spik-
+ing neural networks achieve competitive intrusion detec-
+tion performance across all three classification scenarios
+while remaining within memory budgets of typical edge
+processors.
+It is important to note that the feature selection pipeline
+in this study serves a different and complementary purpose
+to the chi-squared feature engineering performed by Kili-
+chev et al. [1]. Their preprocessing pipeline was designed
+to produce a general-purpose, research-ready dataset from
+the raw Edge-IIoTset, and it has proven highly effective for
+that purpose—serving as a reliable foundation for down-
+stream research including the present study. Our additional
+correlation-based filtering is specifically motivated by the
+constraints of edge deployment, where minimizing input
+dimensionality directly translates to reduced memory and
+computation at inference time. The encoded protocol fea-
+tures removed in Stage 4 (e.g., dns_encoded, mqtt variants)
+carry strong discriminative information and are entirely
+appropriate for use in server-side or cloud-based detection
+systems; their removal here reflects deployment-specific
+optimization rather than a limitation of the original data-
+set preparation. Indeed, the high discriminative quality of
+these features in the preprocessed dataset [1] validates the
+effectiveness of the original encoding decisions and pro-
+vides downstream researchers with flexibility to select fea-
+tures appropriate to their specific deployment requirements.
+Moreover, the fact that removing these seven high-leverage
+features results in only a 0.11-percentage-point decrease in
+fifteen-class accuracy suggests that the preprocessed dataset
+[1] contains broadly distributed discriminative information
+rather than concentrating predictive power in a narrow fea-
+ture subset—a property that enhances its value as a general-
+purpose research resource.
+It is worth emphasizing that this validation is not merely
+qualitative: the near-perfect accuracy achievable with these
+categories, making it inherently harder to distinguish with
+the current 35-feature set.
+The confusion patterns reflect semantic similarity among
+attack types. The largest confusion cluster involves Pass-
+word, SQL_injection, and Uploading, where shared payload
+delivery and data exfiltration characteristics cause signifi-
+cant cross-misclassification. DDoS_HTTP shows confusion
+with Vulnerability_scanner (660 samples) and XSS (4,099
+samples), reflecting overlapping HTTP-based traffic charac-
+teristics. DDoS_TCP shows confusion with Port_Scanning
+(3,321 samples) due to similar connection-oriented prob-
+ing behaviors. Ransomware shows primary confusion with
+Backdoor (992 samples), while Backdoor is misclassified as
+DDoS_TCP (451 samples) Fig. 7.
+Figures 8 and 9 present learning curves. Validation accu-
+racy exceeds 92% within the first five epochs across all
+folds. The convergence pattern is consistent with the binary
+and six-class results, with validation accuracy tracking
+training accuracy closely.
+4.4 Computational efficiency
+Table 9 presents computational requirements across classi-
+fication scenarios.
+Table 7 Fifteen-class classification performance across 5-fold cross-
+validation
+Fold Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+1 96.72 97.55 96.72 96.59
+2 96.78 97.03 96.78 96.84
+3 96.77 97.20 96.77 96.84
+4 96.74 97.60 96.74 96.62
+5 96.92 97.36 96.92 96.98
+Mean 96.79 97.35 96.79 96.78
+Std Dev ±0.08 ±0.24 ±0.08 ±0.17
+Table 8 Per-class performance analysis for fifteen-class classification
+Attack Class Precision (%) Recall (%) F1-Score (%)
+Normal 99.96 99.99 99.97
+DDoS_UDP 99.97 100.00 99.99
+DDoS_ICMP 99.63 99.70 99.66
+Port_Scanning 85.59 99.68 92.10
+MITM 100 99.72 99.86
+Vulnerability_scanner 98.57 92.20 95.28
+SQL_injection 63.66 76.53 69.51
+Backdoor 95.28 93.93 94.60
+DDoS_TCP 98.14 93.36 95.69
+DDoS_HTTP 92.85 90.19 91.50
+XSS 63.76 83.31 72.24
+Ransomware 95.24 86.78 90.81
+Uploading 88.96 66.76 76.28
+Password 60.73 59.46 60.09
+Fingerprinting 70.06 54.04 61.02
+Macro 87.49 86.38 86.57
+1 3
+Page 13 of 19 198
+Cluster Computing (2026) 29:198
+representation is sufficient for effective intrusion detection
+on this dataset.
+Second, the accuracy decrease from binary to fifteen-
+class (99.18% → 96.79%, −2.39% points) despite a 7.5-
+fold increase in output classes indicates that the task-scaled
+architecture provides sufficient capacity.
+Direct numerical comparison between our cross-vali-
+dated results and the single-split results in [1] requires cau-
+tion, as the two protocols answer fundamentally different
+questions. Kilichev et al.‘s reported accuracies reflect the
+best performance achievable on a specific data partition
+with 97 features and a larger-capacity ensemble architec-
+ture, while our results reflect expected performance across
+random partitions with 35 features and a compact SNN. The
+encoded features (Table 1, threshold≥0.80) provides direct
+empirical evidence that the encoding scheme in [1] success-
+fully captures class-discriminative protocol information.
+The present study simply explores the complementary ques-
+tion of whether competitive performance can be maintained
+without these high-leverage features, which is relevant spe-
+cifically for deployment scenarios where protocol distribu-
+tions may shift across network environments.
+Several findings are worth noting. First, the multi-
+stage feature selection pipeline reduced dimensionality by
+63.9% (97 → 35 features). The 35-feature SNN achieves
+96.79% fifteen-class accuracy with 51,347 parameters. The
+retained features encompass raw protocol measurements
+and connection attributes, suggesting that a compact feature
+Fig. 7 Fifteen-class aggregated confusion matrix
+1 3
+198 Page 14 of 19
+Cluster Computing (2026) 29:198
+0.11-percentage-point difference in fifteen-class accuracy
+(96.90% vs. 96.79%) is comparable in magnitude to the
+cross-fold standard deviation (±0.08%) and falls within the
+range spanned by individual fold results (96.72%–96.92%).
+Given the differences in validation protocol, feature
+Table 9 Model size across classification granularities
+Classification Architecture Parameters Memory
+Binary 35→96→48→24→2 9,342 36.5 KB
+Six-class 35→128→64→32→6 15,146 59.2 KB
+Fifteen-class 35→256→128→64→15 51,347 200.6 KB
+Fig. 9 Training and validation loss curves for fifteen-class classification
+Fig. 8 Training and validation accuracy curves for fifteen-class classification
+1 3
+Page 15 of 19 198
+Cluster Computing (2026) 29:198
+be directly deployable on neuromorphic platforms without
+architectural modification, as they use standard LIF neu-
+rons with learnable parameters that map to on-chip neuron
+models. Quantifying the actual energy reduction on neuro-
+morphic hardware remains an important direction for future
+work, and represents the natural next step following the
+architectural exploration presented here.
+5.1 Limitations
+This study has several limitations. Evaluation relies on a
+single dataset (Edge-IIoTset). Cross-dataset validation on
+IoT-23, UNSW-NB15, and CIC-IDS2017 would provide
+stronger evidence of generalization across different network
+environments and attack distributions.
+The study focuses on network-level features. Incorpo-
+rating host-based and application-layer indicators could
+improve detection of attacks that are not well-characterized
+by network traffic alone.
+Energy consumption analysis in this study is limited to
+algorithmic-level metrics (parameter counts, model memory
+footprint, and theoretical operation reduction through spike
+sparsity). While these metrics establish compatibility with
+edge processor budgets and provide a theoretical basis for
+computational efficiency, actual power consumption on neu-
+romorphic hardware depends on platform-specific factors
+including spike routing overhead, memory access patterns,
+and neuron update costs. Hardware-level benchmarking on
+platforms such as Intel Loihi 2 or SynSense Xylo is required
+to quantify realized energy savings and represents a primary
+direction for future work.
+Adversarial robustness has not been evaluated. The sen-
+sitivity of the SNN to adversarial perturbations in network
+traffic features remains an open question. A direct compari-
+son between the proposed SNN and an equivalent-capacity
+conventional ANN was not conducted. Such ablation would
+isolate the contribution of spiking dynamics from the archi-
+tectural design and is recommended for future work.
+Minority class performance (Fingerprinting: 54.04%,
+Password: 59.46%) indicates that class imbalance poses
+a challenge that the current architecture does not fully
+address. Analysis of the confusion matrix reveals two dis-
+tinct root causes: (1) sample scarcity, where Fingerprinting
+(853 samples, 0.04% of the dataset) lacks sufficient repre-
+sentation for the model to learn discriminative patterns; and
+(2) feature overlap, where Password (49,933 samples) and
+SQL_injection (50,826 samples) share overlapping feature
+distributions despite moderate sample counts, with 17,199
+Password samples misclassified as SQL_injection and
+11,910 SQL_injection samples misclassified as Password.
+To quantify the potential for improvement, we evalu-
+ated three class imbalance mitigation strategies on the
+dimensionality (97 vs. 35), and model capacity, this mar-
+gin does not support a meaningful performance distinction
+between the two approaches.
+Third, the precision-recall balance in binary classifica-
+tion (99.97% precision, 97.09% recall) reflects a conserva-
+tive detection strategy.
+Fourth, confusion matrices across all scenarios reveal
+that misclassifications primarily occur between semanti-
+cally related attack types — Password with SQL_injection
+and Uploading, DDoS_HTTP with Vulnerability_scanner
+and XSS, DDoS_TCP with Port_Scanning.
+Fifth, per-class performance in fifteen-class classifica-
+tion generally correlates with class frequency. High-volume
+classes (Normal, DDoS_UDP, DDoS_ICMP) achieve>99%
+recall, while minority and semantically overlapping classes
+(Fingerprinting: 54.04%, Password: 59.46%, SQL_injec-
+tion: 76.53%) show lower performance. Addressing this
+through techniques such as SMOTE or cost-sensitive learn-
+ing is a direction for future work. The weighted-averaged
+metrics reported in Tables 5 and 7 reflect class-frequency
+weighting, which is influenced by the dominant Normal class
+(71.9% of samples). Macro-averaged metrics, which weight
+all classes equally, are lower (six-class: 92.39% precision,
+88.68% recall, 89.39% F1; fifteen-class: 87.49% precision,
+86.38% recall, 86.57% F1), confirming that minority class
+performance remains the primary area for improvement.
+The cross-fold standard deviations remain low across
+all scenarios (accuracy: ±0.03–0.08%, F1-score: ±0.06–
+0.17%), indicating consistent performance across different
+data partitions. This consistency is maintained from binary
+through fifteen-class classification.
+The computational advantages of the proposed SNN
+architecture operate at two levels. At the algorithmic level,
+spike-driven inference replaces dense MAC operations with
+sparse AC operations, with the computational load scaling
+proportionally to spike activity rather than network size.
+This property is platform-independent and holds on conven-
+tional hardware through sparse computation: for a layer with
+firing rate
+−
+f​
+, the expected operation count is reduced by a
+factor of
+(
+1−
+−
+f
+)
+relative to an equivalent ANN layer. At
+the hardware level, neuromorphic processors such as Intel’s
+Loihi [9] and IBM’s TrueNorth [10] can further exploit the
+event-driven nature of SNN computation through native
+spike routing and near-memory processing, yielding addi-
+tional energy savings beyond algorithmic sparsity.
+The present study establishes the algorithmic feasibil-
+ity — demonstrating that competitive detection accuracy
+(96.79% fifteen-class) is achievable within SNN architec-
+tures compatible with edge memory budgets (≤200.6 KB).
+The task-scaled architectures presented here are designed to
+1 3
+198 Page 16 of 19
+Cluster Computing (2026) 29:198
+length (T=50) and surrogate gradient sharpness (α=10.0)
+were set to standard values from the snnTorch framework
+[33]. Sensitivity analysis across different values of T and α
+was not conducted in this study and remains a direction for
+future work.
+6 Conclusıon
+This study presented a lightweight spiking neural network
+architecture for intrusion detection in IoT environments.
+Using the preprocessed dataset [1], we applied a multi-stage
+feature selection pipeline to produce a compact 35-feature
+representation and developed task-scaled SNN architectures
+for three classification scenarios.
+The main findings are as follows. Binary classification
+achieves 99.18% accuracy (±0.03%), six-class 96.99%
+(±0.11%), and fifteen-class 96.79% (±0.08%), with model
+sizes ranging from 36.5 KB to 200.6 KB. The 63.9% feature
+reduction (97 → 35 features) maintains 96.79% fifteen-class
+accuracy. Five-fold stratified cross-validation confirms con-
+sistent performance across data partitions.
+These results suggest two practical implications for IoT
+security deployment. First, correlation-based feature reduc-
+tion can substantially decrease input dimensionality without
+significant accuracy loss, reducing both memory and com-
+putation requirements at the edge. Second, the task-scaled
+architecture demonstrates that a single design paradigm
+(Linear → LIF) can serve multiple classification granulari-
+ties, with inference computation that scales with input spike
+activity rather than fixed network size. This allows network
+operators to select the appropriate complexity level based on
+available device resources, while benefiting from the inher-
+ent computational efficiency of spike-based processing.
+Future work should address the limitations identified in
+this study: cross-dataset validation on IoT-23, UNSW-NB15,
+and CIC-IDS2017 to assess generalization, neuromorphic
+hardware deployment for actual energy measurements,
+adversarial robustness evaluation, class imbalance mitiga-
+tion for minority attack types such as Fingerprinting and
+Password, and federated learning integration for distributed
+IoT security.
+Acknowledgements Acknowledgments: The author acknowledges the
+foundational work of Kilichev et al. [2] and Ferrag et al. [17] in devel-
+oping and preprocessing the Edge-IIoTset dataset, which provided the
+essential data foundation for this research.
+Author contributions ÖZLEM BATUR DİNLER: Software, Resourc-
+es, Writing - original draft, Supervision, Methodology, Conceptualiza-
+tion, Formal analysis, Review & editing.
+Funding Open access funding provided by the Scientific and Techno-
+logical Research Council of Türkiye (TÜBİTAK).
+fifteen-class task using a single train-test split (80/20). Table
+10 presents the results. Note that the baseline accuracy in
+this experiment (96.42%) differs slightly from the 5-fold
+CV mean in Table 7 (96.79%) because Table 10 reports a
+single-split result rather than a cross-validated average. The
+discrepancy is more pronounced for minority classes: Fin-
+gerprinting recall drops from 54.04% (CV mean, Table 8) to
+28.66% (single split), and Password from 59.46% to 34.85%.
+This high partition sensitivity is expected for rare classes—
+Fingerprinting comprises only 853 samples (0.04% of the
+dataset), so each fold’s test set contains approximately 170
+samples, making recall highly dependent on which specific
+samples appear in the test partition. This variance further
+underscores the importance of cross-validated reporting for
+minority class evaluation and motivates the mitigation strat-
+egies explored below.
+Class weighting improves Fingerprinting recall from
+28.66% to 81.87% but reduces overall accuracy by 3.93%
+points (96.42% → 92.49%). SMOTE achieves comparable
+Fingerprinting improvement (84.21%) with smaller accu-
+racy loss, but increases training data from 1.56 M to 16.80
+M samples and training time by 7.2×(2,781s → 20,048s),
+conflicting with resource-constrained deployment objec-
+tives. Notably, none of the strategies meaningfully improved
+Password recall (24–36%), confirming that Password mis-
+classification stems from feature overlap rather than sample
+scarcity.
+These results indicate an inherent accuracy–minority
+recall trade-off in this dataset. Future work should explore
+targeted mitigation strategies that avoid uniform resam-
+pling: hierarchical classification to separate semantically
+similar attack types, attack-specific feature engineering for
+Password/SQL_injection discrimination, and adaptive cost-
+sensitive learning that differentially penalizes minority class
+errors.
+Feature selection was performed on the full dataset prior
+to cross-validation. Given the large sample size (1,945,449),
+the selected features are expected to remain stable across
+folds; however, embedding feature selection within each
+fold would provide a stricter protocol. This is noted as a
+limitation. The hyperparameters governing spike simulation
+Table 10 Class imbalance mitigation experiments (fifteen-class clas-
+sification)
+Method Accu-
+racy
+(%)
+Macro
+F1
+(%)
+Finger-
+printing
+Recall
+(%)
+Pass-
+word
+Recall
+(%)
+Train
+Time
+(s)
+Baseline (proposed) 96.42 83.61 28.66 34.85 2,781
+Class Weighting 92.49 74.84 81.87 24.20 1,850
+SMOTE 95.86 80.99 84.21 36.02 20,048
+SMOTE+Class
+Weight
+95.19 76.98 84.21 28.71 10,657
+1 3
+Page 17 of 19 198
+Cluster Computing (2026) 29:198
+integrated circuit with a scalable communication network and
+interface. Science 345(6197), 668–673 (2014)
+11. Nandanwar, H., Katarya, R.: Securing Industry 5.0: An explain-
+able deep learning model for intrusion detection in cyber-physi-
+cal systems. Computers and Electrical Engineering 123, 110161
+(2025)
+12. Nandanwar, H., Katarya, R.: A hybrid Blockchain-Based frame-
+work for securing intrusion detection systems in the Internet of
+Things. Cluster Computing 28(7), 471 (2025)
+13. Nandanwar, H., Katarya, R.: A secure and privacy-preserving ids
+for iot networks using hybrid blockchain and federated learning.
+In: Proceedings of International Conference on Next-Generation
+Communication and Computing (NGCCOM 2024). Lecture
+Notes in Networks and Systems, vol 1305, pp. 207–219. Springer,
+Singapore. (2025)
+14. Chandrashekar, G., Sahin, F.: A survey on feature selection meth-
+ods. Computers & Electrical Engineering 40(1), 16–28 (2014)
+15. Vergara, J.R., Estévez, P.A.: A review of feature selection meth-
+ods based on mutual information. Neural Computing and Appli-
+cations 24(1), 175–186 (2014)
+16. Ferrag, M.A., Friha, O., Hamouda, D., Maglaras, L., Janicke,
+H.: Edge-IIoTset: A new comprehensive, realistic cybersecurity
+dataset of IoT and IIoT applications for centralized and federated
+learning. IEEE Access 10, 40281–40306 (2022)
+17. Dormann, C.F., Elith, J., Bacher, S., Buchmann, C., Carl, G.,
+Carré, G. et al.: A review of methods to deal with it and a simula-
+tion study evaluating their performance. Ecography 36(1), 27–46
+(2013). ​
+h​
+t​
+t​
+p​​
+s​
+:​
+/​​
+/​
+d​
+o​
+i​​
+.​
+o​​
+r​
+g​
+/​​
+1​
+0​
+.​
+1​​
+1​
+1​
+1​​
+/​
+j​
+.​​
+1​
+6​
+0​​
+0​
+-​
+0​​
+5​
+8​
+7​
+.​​
+2​
+0​​
+1​
+2​
+.​
+0​
+7​
+3​
+4​
+8​
+.​
+x
+18. Ratner, B.: The correlation coefficient: Its values range between
++1/−1, or do they? Journal of Targeting, Measurement andAnaly-
+sis for Marketing 17(2), 139–142 (2009)
+19. Cerda, P., Varoquaux, G., Kégl, B.: Similarity encoding for learn-
+ing with dirty categorical variables. Machine Learning 107(8–
+10), 1477–1494 (2018)
+20. Kim, J., Kim, J., Kim, H., Shim, M., Choi, E.: CNN-Based Net-
+work Intrusion Detection against Denial-of-Service Attacks.
+Electronics. 9(6), 916 (2020)
+21. Wang, Z., Chen, H., Yang, S., Luo, X., Li, D., Wang, J.: A light-
+weight intrusion detection method for IoT based on deep learn-
+ing and dynamic quantization. PeerJ Computer Science 9, e1569
+(2023). ​
+h​
+t​
+t​
+p​​
+s​
+:​
+/​​
+/​
+d​
+o​
+i​​
+.​
+o​​
+r​
+g​
+/​​
+1​
+0​
+.​
+7​​
+7​
+1​
+7​​
+/​
+p​
+e​​
+e​
+r​
+j​
+-​
+c​
+s​
+.​
+1​
+5​
+6​
+9
+22. Zhou, S., Li, X.: Spiking neural networks with single-spike tem-
+poral-coded neurons for network intrusion detection. In: Proceed-
+ings of the 25th International Conference on Pattern Recognition
+(ICPR), 8148–8155. IEEE. (2021)
+23. Zarzoor, A.R., Al-Jamali, N.A.S., Qader, D.A.A.: Intrusion detec-
+tion method for internet of things based on the spiking neural net-
+work and decision tree method. International Journal of Electrical
+and Computer Engineering 13(2), 2278–2288 (2023)
+24. Živadinović, M., Simić, D.: Resource efficient Internet-of-Things
+intrusion detection with spiking neural networks. In: Proceedings
+of the 19th Conference on Computer Science and Intelligence
+Systems (FedCSIS) (FedCSIS), 73–78. (2024)
+25. Wang, Z., Ghaleb, F.A., Zainal, A., Siraj, M.M., Lu, X.: An effi-
+cient intrusion detection model based on convolutional spiking
+neural network. Scientific Reports 14, 7054 (2024)
+26. Aouedi, O., Piamrat, K.: SURFS: Sustainable intrusion detection
+with hierarchical federated spiking neural networks. ICC 2024
+- IEEE International Conference on Communications, Denver,
+USA, pp. 2173–2178. (2024)
+27. Vishwanath, M.G., Jayachandra, A.B., Chen, C.-L., Liu, L.-C.:
+Feature-Optimized Intrusion Detection Based on a Hybrid Spik-
+ing Neural Network for the Internet of Things. Journal of Artifi-
+cial Intelligence and Technology 6, 52–63 (2025)
+Data availability The preprocessed version (99 columns; 97 features
+after excluding target and label columns) developed by Kilichev et al.
+(2024) [1] is available at: ​
+[​
+h​
+t​
+t​​
+p​
+s​
+:​​
+/​
+/​
+g​
+i​​
+t​
+h​​
+u​
+b​
+.​
+c​
+o​
+m​
+/​
+T​
+A​
+T​
+U​
+-​
+h​
+a​
+c​
+k​
+e​
+r​
+/​
+C​
+N​
+N​
+-​
+L​
+S​
+T​
+M​-​G​R​U​.​g​i​t​
+]​
+(​
+h​
+t​
+t​
+p​
+s​
+:​
+/​
+g​
+i​
+t​
+h​
+u​
+b​
+.​
+c​
+o​
+m​
+/​
+T​
+A​
+T​
+U​
+-​
+h​
+a​
+c​
+k​
+e​
+r​
+/​
+C​
+N​
+N​
+-​
+L​
+S​
+T​
+M​
+-​
+G​
+R​
+U​
+.​
+g​
+i​
+t​
+)​
+.​​
+Declarations
+Competing interests The authors declare no competing interests.
+Ethical Approval This article does not contain any studies with human
+participants or animals performed by the author.
+Open Access This article is licensed under a Creative Commons
+Attribution 4.0 International License, which permits use, sharing,
+adaptation, distribution and reproduction in any medium or format,
+as long as you give appropriate credit to the original author(s) and the
+source, provide a link to the Creative Commons licence, and indicate
+if changes were made. The images or other third party material in this
+article are included in the article’s Creative Commons licence, unless
+indicated otherwise in a credit line to the material. If material is not
+included in the article’s Creative Commons licence and your intended
+use is not permitted by statutory regulation or exceeds the permitted
+use, you will need to obtain permission directly from the copyright
+holder. To view a copy of this licence, visit ​
+h​
+t​
+t​
+p​​
+:​
+/​
+/​​
+c​
+r​
+e​
+a​​
+t​
+i​​
+v​
+e​
+c​​
+o​
+m​
+m​
+o​​
+n​
+s​
+.​​
+o​
+r​g​​/​l​i​c​e​n​s​e​s​/​b​y​/​4​.​0​/.
+References
+1. Kilichev, D., Turimov, D., Kim, W.: Next-Generation Intrusion
+Detection for IoT EVCS: Integrating CNN, LSTM, and GRU
+Models. Mathematics. 12(4), 571 (2024)
+2. Ferrag, M.A., Maglaras, L., Moschoyiannis, S., Janicke, H.: Deep
+learning for cyber security intrusion detection: Approaches, data-
+sets, and comparative study. Journal of Information Security and
+Applications 50, 102419 (2020)
+3. ElKashlan, M., Aslan, H., Said Elsayed, M., Jurcut, A.D., Azer,
+M.A.: Intrusion Detection for Electric Vehicle Charging Systems
+(EVCS). Algorithms. 16(2), 75 (2023)
+4. ElKashlan, M., Elsayed, M.S., Jurcut, A.D., Azer, M.: A Machine
+Learning-Based Intrusion Detection System for IoT Electric
+Vehicle Charging Stations (EVCSs). Electronics. 12(4), 1044
+(2023)
+5. Nandanwar, H., Katarya, R.: Optimized intrusion detection and
+secure data management in IoT networks using GAO-Xgboost
+and ECC-integrated blockchain framework. Knowledge and
+Information Systems 67, 9531–9586 (2025). ​
+h​
+t​
+t​
+p​​
+s​
+:​
+/​​
+/​
+d​
+o​
+i​​
+.​
+o​​
+r​
+g​
+/​​
+1​
+0​
+.​
+1​​
+0​
+0​7​​/​s​1​​0​1​1​5​-​0​2​5​-​0​2​5​1​3​-​3
+6. Nandanwar, H., Katarya, R.: Deep learning enabled intrusion
+detection system for an Industrial IOT environment. Expert Sys-
+tems with Applications 249, 123808 (2024)
+7. Nandanwar, H., Katarya, R.: Privacy-preserving data sharing in
+blockchain-enabled IoT healthcare management system. Comput.
+J. 68, 1657–1681 (2025)
+8. Tavanaei, A., Ghodrati, M., Kheradpisheh, S.R., Masquelier, T.,
+Maida, A.: Deep learning in spiking neural networks. Neural Net-
+works 111, 47–63 (2019)
+9. Davies, M., Srinivasa, N., Lin, T.H., Chinya, G., Cao, Y., Choday,
+S.H. et al.: Loihi: A neuromorphic manycore processor with on-
+chip learning. IEEE Micro 38(1), 82–99 (2018). ​
+h​
+t​
+t​
+p​​
+s​
+:​
+/​​
+/​
+d​
+o​
+i​​
+.​
+o​​
+r​
+g​
+/​​
+1​
+0​.​1​​1​0​9​​/​M​M​​.​2​0​1​8​.​1​1​2​1​3​0​3​5​9
+10. Merolla, P.A., Arthur, J.V., Alvarez-Icaza, R., Cassidy, A.S.,
+Sawada, J., Akopyan, F., Modha, D.S.: A million spiking-neuron
+1 3
+198 Page 18 of 19
+Cluster Computing (2026) 29:198
+32. Pedregosa, F., Varoquaux, G., Gramfort, A., Michel, V., Thirion,
+B., Grisel, O., et al.: Scikit-learn: Machine learning in Python. J.
+Mach. Learn. Res. 12, 2825–2830 (2011)
+33. Eshraghian, J.K., Ward, M., Neftci, E.O., Wang, X., Lenz, G.,
+Dwivedi, G., Bennamoun, M., Jeong, D.S., Lu, W.D.: Training
+spiking neural networks using lessons from deep learning. Proc.
+IEEE. 111(9), 1016–1054 (2023)
+Publisher’s note Springer Nature remains neutral with regard to juris-
+dictional claims in published maps and institutional affiliations.
+28. Raschka, S.: Model evaluation, model selection, and algorithm
+selection in machine learning. arXiv preprint arXiv:1811.12808.
+(2018)
+29. Hastie, T., Tibshirani, R., Friedman, J.: The elements of statis-
+tical learning: data mining, inference, and prediction, 2nd edn.
+Springer Series in Statistics. Springer, New York (2009). ​
+h​
+t​
+t​
+p​
+s​
+:​​​
+/​​
+/​
+d​
+o​​i​.​o​​r​​g​​/​​1​0​​.​1​0​​​0​7​/​​​9​7​​8​-​0​​-​3​8​7​-​8​​4​8​5​8​-​7
+30. Japkowicz, N., Shah, M.: Evaluating learning algorithms: a clas-
+sification perspective. Cambridge University Press (2011)
+31. He, H., Garcia, E.A.: Learning from imbalanced data. IEEE
+Transactions on Knowledge and Data Engineering 21(9), 1263–
+1284 (2009)
+1 3
+Page 19 of 19 198
+

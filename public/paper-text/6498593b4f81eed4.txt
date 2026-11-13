@@ -1,0 +1,1095 @@
+Rethinking Spiking Self-Attention Mechanism: Implementing α-XNOR
+Similarity Calculation in Spiking Transformers
+Yichen Xiao1, ‡
+Shuai Wang1, ‡
+Dehao Zhang1
+Wenjie Wei1
+Yimeng Shan2
+Xiaoli Liu1
+Yulin Jiang1
+Malu Zhang1,*
+1
+University of Electronic Science and Technology of China, 2
+Liaoning Technical University
+{xiaoyichen, wangshuai718, zhangdh}@std.uestc.edu.cn maluzhang@uestc.edu.cn
+Abstract
+Transformers significantly raise the performance limits
+across various tasks, spurring research into integrating
+them into spiking neural networks. However, a notable
+performance gap remains between existing spiking Trans-
+formers and their artificial neural network counterparts.
+Here, we first analyze the cause of this gap and attribute
+it to the dot product’s ineffectiveness in measuring similar-
+ity between spiking queries and keys, due to numerous non-
+spiking events. To address this, we propose a novel α-XNOR
+similarity measure tailored for spike trains. It redefines the
+correlation between non-spike pairs as a specific value α,
+effectively overcoming the limitations of dot-product simi-
+larity. Furthermore, considering the sparse nature of spike
+trains where spikes carry more information than non-spikes,
+the α-XNOR similarity correspondingly highlights the dis-
+tinct importance of spikes over non-spikes. Extensive ex-
+periments demonstrate that α-XNOR similarity significantly
+improves performance across different spiking Transformer
+architectures on various static and neuromorphic datasets,
+further revealing the potential of spiking Transformers.
+1. Introduction
+Transformer in Artificial Neural Networks (ANNs) [10, 11,
+31, 38] offers an effective method for processing long se-
+quences in parallel, significantly improving performance in
+various tasks [6, 10, 16, 23, 37]. However, its reliance on
+large-scale parameters [31] and the complexity of its self-
+attention mechanism [52] result in high energy consump-
+tion and hardware costs [18, 41]. Consequently, developing
+energy-efficient and high-performance Transformer [3, 24]
+remains a prominent research focus.
+Spiking Neural Networks (SNNs) [17, 26, 32, 33], as
+the third generation of neural networks, gain significant
+attention due to their superior energy efficiency [33, 42].
+*Corresponding author, ‡ Equal contribution.
+Linear & BN
+𝐐 𝐊
+𝐕
+𝐗
+weighted
+values
+(a) Spiking
+Self-Attention
+CM: Count of Matches
+SS: Similarity Score
+Matching
+Values
+Non-spike
+Spike
+𝑘!
+𝑞! CM: 6
+SS: 2
+𝑘"
+𝑞" CM: 3
+SS: 3
+𝑘#
+𝑞# CM: 8
+SS: 0
+(b) Dot-product Similarity Calculation
+Figure 1. (a) Illustration of the Spiking Self-Attention (SSA)
+mechanism. (b) Similarity calculation in SSA, highlighting dot-
+product limitations with three spike train pairs: (1) q1 and k1 have
+3 matching values and a consistent score of 3; (2) q2 and k2 have
+6 matching values but only score 2; and (3) identical all-zero train
+q3 and k3 yield a clearly unreasonable score of 0.
+Spiking neurons fire only when activated and remain silent
+in others. This event-driven mechanism [5] greatly en-
+hances energy efficiency by promoting sparse synaptic op-
+erations and avoiding multiply-accumulate (MAC) compu-
+tations [7, 34, 49]. Recently, numerous researchers focus
+on developing spiking Transformer models, such as Spik-
+former [54], Spike-driven Transformers [44, 46], and Spik-
+ingResformer [36]. These approaches enhance SNNs’ per-
+formance limits in various aspects. However, a substantial
+performance gap remains compared to their ANNs’ coun-
+terparts [40]. Through theoretical analysis, we attribute this
+gap to the unsuitability of dot-product similarity for the bi-
+nary nature of spike trains in existing spiking Transformers.
+In ANNs, self-attention calculates token similarities by
+taking the dot product of Queries (Q) and Keys (K), assign-
+ing similarity scores to Values (V) to model human selective
+attention [12]. However, the sparse, event-driven nature of
+SNNs results in numerous non-spikes (represented as 0) and
+a limited number of spikes (represented as 1) in spiking Q
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+5444
+and K. Due to the unique behavior of 0 in multiplication,
+both 0×0 and 0×1 result in 0, making effective distinction
+challenging in dot product. As illustrated in Fig.1, the rela-
+tionship between dot-product similarity and true matching
+for spike trains is examined. Even when Q and K vectors are
+entirely identical (e.g., q3 and k3 in Fig.1), the presence of
+zero multiplications causes the dot-product similarity to di-
+verge significantly from the true matches. Thus, designing
+a specialized similarity calculation method for spike trains
+could improve spiking Transformers’ performance.
+In this paper, we propose the α-XNOR similarity calcu-
+lation specifically designed for SNNs. The α-XNOR simi-
+larity redefines the correlation of non-spike pairs as a spe-
+cific value α to address the ineffectiveness in similarity as-
+sessments. Furthermore, given the sparse nature of spike
+trains, spikes convey more critical information than non-
+spikes. Therefore, the α-XNOR similarity method also em-
+phasizes distinguishing the relative roles of spikes and non-
+spikes. Based on α-XNOR similarity, we integrate it into
+the spiking self-attention mechanism and and develop an α-
+XNOR Spiking Self-Attention (α-SSA) module. Extensive
+experiments demonstrate that α-SSA significantly improves
+the performance of spiking Transformers across various ar-
+chitectures. The main contributions of this paper are sum-
+marized as follows:
+• We thoroughly analyze the reasons why the dot product
+is unsuitable for calculate spiking similarity. Our findings
+reveal that the unique multiplicative properties of non-
+spike hinder the dot-product’s ability to accurately cap-
+ture the similarity between sparse spiking Q and K.
+• To address this issue, we propose the α-XNOR similar-
+ity, which redefines the correlation of non-spike pairs as a
+specific value α. This adjustment not only overcomes the
+ineffectiveness of dot-product similarity but also empha-
+sizes the distinct importance of spikes over non-spikes,
+enabling richer information representation.
+• Based on the α-XNOR similarity, we propose the α-
+XNOR Spiking Self-Attention (α-SSA) module. Exten-
+sive experiments show that α-SSA achieves significant
+performance improvements across various Transformer
+architectures on both static and neuromorphic datasets.
+2. Related Work
+Spiking Neural Networks: The event-driven mechanism
+of SNNs greatly enhances energy efficiency, providing a
+critical advantage for compute-constrained edge devices.
+The advent of ANN-to-SNN conversion [4, 22] and di-
+rect training methods [20, 42] significantly reduce the chal-
+lenges of training high-performance SNNs. Leveraging
+these advanced learning algorithms, some studies [25, 51]
+propose deep residual SNNs, while others [43, 48] develope
+multi-dimensional spiking attention mechanisms, achieving
+competitive results on ImageNet [8, 35] and various neuro-
+morphic datasets [1, 28, 30]. Further research explores par-
+allel training strategies [15] and shortcuts residual connec-
+tions [13, 25] for SNNs in the ResNet framework, extend-
+ing SNNs’ applicability to diverse tasks. However, despite
+these advances, a notable performance gap remains between
+the deep SNN architectures and the latest Transformers.
+Spiking Transformers: Recently, growing attention has
+been paid to high-performance, energy-efficient spiking
+Transformers. Some models [39, 53, 54] adopt a single-
+stage Vision Transformer (ViT) architecture [11], while
+recent approaches [36, 44, 46] favor a multi-stage archi-
+tecture [31] to enable hierarchical feature extraction. For
+instance, Spikformer [54] first proposes spike-based self-
+attention computation, establishing the first spiking Trans-
+former. Building on this, Spikingformer [53] introduces a
+hardware-friendly residual learning architecture that avoids
+non-spike computations in SNNs. Additionally, the Spike-
+driven Transformer [44] incorporates the Hadamard prod-
+uct into the self-attention module, achieving a fully spike-
+driven mechanism. Furthermore, SpikingResformer [36]
+integrates a Dual Spike self-attention module, enhancing
+both performance and energy efficiency. Nonetheless, these
+models primarily utilize self-attention as a token mixer [47],
+without paying attention to exploring effective similarity
+calculations suited to spike trains [2, 50]. Therefore, design-
+ing spiking self-attention mechanisms tailored to the binary
+nature of SNNs is essential for further advancement.
+3. Preliminaries
+3.1. Leaky Integrate-and-Fire model
+The Leaky Integrate-and-Fire (LIF) model [32] is one of
+the most widely used spiking neuron models in SNNs due
+to its efficiency in mimicking biological neurons. In a LIF
+neuron, the membrane potential H[t] accumulates synaptic
+input and decays over time. When H[t] exceeds the thresh-
+old Vth, the neuron emits a spike. After firing, H[t] is reset
+to Vreset, and the postsynaptic potential U[t] continues to
+evolve, decaying back to the resting potential if no further
+input arrives. These dynamics are governed by:
+H[t] = τU[t − 1] + WS[t], (1)
+S[t] = Θ (H[t] − Vth) , (2)
+U[t] = H[t] (1 − S[t]) + VresetS[t], (3)
+where τ is the decay constant, W the synaptic weight ma-
+trix, S[t] the input spike at time t, and Θ(·) the Heaviside
+function. Θ(·) outputs 1 when a spike is fired, and 0 for the
+absence of a spike (i.e., a non-spike). For brevity, we denote
+the spiking neuron layer as SN(·) in subsequent sections.
+3.2. Vanilla Self-attention
+The self-attention mechanism, a key component of the
+Transformer model, efficiently processes large-scale data by
+5445
+capturing global dependencies and flexibly allocating atten-
+tion across tokens in the input sequence [38]. Let the input
+matrix be X ∈ Rn×d
+, where n is the sequence length and
+d is the embedding dimension. The vanilla self-attention
+(VSA) first projects X into query Q, key K, and value V
+matrices using three distinct weight matrices WQ, WK,
+and WV as follows:
+Q = XWQ, K = XWK, V = XWV . (4)
+Next, the similarity between the elements is computed to
+determine the level of attention each token should receive.
+This is achieved by calculating the dot-product similarity
+between the corresponding tokens in Q and K and gener-
+ates the attention scores:
+Score = SimDP(Q, K) = QK⊤
+, (5)
+where SimDP(·) denote the similarity function by dot prod-
+uct. Then, a scaling factor
+√
+d is applied to prevent the dot-
+product values from becoming large, and Softmax(·) is uti-
+lized to obtain the attention scores. The final output Z is
+then computed as the weighted sum of the value matrix V:
+Z = Softmax
+
+Score
+√
+d
+
+V. (6)
+Based on the dot-product similarity, the model is able to
+flexibly distribute attention across the sequence, allowing
+long-range dependencies capture.
+3.3. Spiking Self-Attention
+Building on VSA, Spikformer [54] introduced a spiking
+variant called Spiking Self-Attention (SSA). For the input
+X ∈ Rn×d
+, the queries, keys, and values are first computed
+using learnable weight matrices WQ, WK, WV and then
+transformed into spike trains as follows:
+Q = SN(BN(XWQ)), (7)
+K = SN(BN(XWK)), (8)
+V = SN(BN(XWV )), (9)
+where Q, K, V ∈ RT ×n×d
+, BN(·) denotes batch normal-
+ization, and SN(·) refers to the spiking neuron layer, ensur-
+ing the attention mechanism operates entirely in spike form.
+Similar to VSA, SSA computes the similarity between spik-
+ing Q and K using a dot-product operation:
+Score = SimDP(Q, K) = QK⊤
+. (10)
+Unlike VSA, SSA omits the softmax operation while retain-
+ing scaling to control the magnitude of the attention output.
+The attention output Attn is computed as a weighted sum
+of V, scaled by factor s, and then converted to spiking form:
+Attn′
+= s · ScoreV, Attn = SN(Attn′
+). (11)
+× ×
+× ×
+× × × × × ×
+↓ ↓
+↓ ↓
+↓ ↓ ↓ ↓ ↓ ↓
+-1.30 1.90
+0.12 0.23 -1.07 -1.15 -0.18 0.47 -0.32 -0.15
+1.80
+-1.80
+(a) Dot-product operation in ANNs.
+× ×
+× ×
+× × × × × ×
+↓ ↓
+↓ ↓
+↓ ↓ ↓ ↓ ↓ ↓
+0 0
+0 0 1 0 0 0 0 1
+1
+-1
+-1
+(b) Dot-product operation in SNNs.
+Figure 2. Dot-product operation in ANNs and SNNs. (a): Dot-
+product operation in ANNs, with data sampled from VSA. (b):
+Dot-product operation in SNNs, with data sampled from SSA.
+Finally, the attention result passes through a linear layer and
+batch normalization, followed by the spiking neuron layer,
+to produce the final SSA output Z:
+Z = SN(BN(Linear(Attn))), (12)
+where Linear(·) is the fully connected layer. Thus, SSA pro-
+vides a spiking version of self-attention, enabling the spik-
+ing Transformer to capture global dependencies efficiently
+while maintaining scalability.
+4. Methods
+4.1. Spiking Dot-Product Similarity Ineffectiveness
+In ANNs, the attention mechanism effectively captures rel-
+evant information by using dot products to calculate query-
+key similarity, where higher similarity increases the weight
+of the corresponding value. However, in SNNs, the spike-
+driven nature poses two major challenges, making the spik-
+ing dot products ineffective for calculating similarity be-
+tween spike trains.
+Firstly, the unique mathematical properties of 0 prevent
+dot product from effectively capturing correlations involv-
+ing non-spike events (represented as 0) in SNNs. As shown
+in Fig.1, in the first spike train pair q1 and k1, the 3 match-
+ing values yield a dot-product similarity score of 3, which is
+consistent. However, this consistency relies on the absence
+of 0-0 pairs. In the second pair q2 and k2, despite 6 match-
+ing values, the dot-product score is only 2, as 0-0 pairs do
+not contribute in multiplication. A more extreme case is the
+third pair q3 and k3, where both spike trains are entirely
+identical, yet the dot-product similarity score is 0, which
+5446
+is significantly unreasonable. Notably, due to the sparsity
+of spike trains, pairs like the second are the most common.
+Thus, the dot-product similarity is ineffective in SSA due to
+the multiplication properties of 0.
+Secondly, dot-product operations in ANNs effectively
+capture a wide range of attentional preferences, with sign
+bits indicating the direction of correlation between corre-
+sponding elements. In contrast, due to the binary nature of
+spike trains in SNNs, dot product results are limited to two
+states. Additionally, they lack sign bits to denote the direc-
+tion of correlation. Consequently, these limitations lead to
+a significant deficiency in information capacity during dot-
+product similarity calculations. As depicted in Fig.2, com-
+pared to the rich dot product outcomes in ANNs, the results
+become increasingly sparse following dot-product calcula-
+tions in SNNs and fail to represent the correlation direction.
+4.2. α-XNOR Similarity
+To address the issue wherein matching non-spike pairs do
+not contribute to the dot-product similarity score, we intu-
+itively expect that identical pairs, whether they are spikes or
+non-spikes, contribute equally to the similarity score. Thus,
+we replace the multiplication operation in dot product with
+an operation where matching values contribute a score of 1
+while differing values contribute a score of 0. This adjust-
+ment aligns with the XNOR operation in binary logic:
+XNOR(x, y) =
+(
+1, if x = y,
+0, if x ̸= y.
+(13)
+The XNOR operation therefore measures the similarity by
+evaluating the exact matches between two spike trains.
+However, most current SNNs operate at a low firing
+rate, spikes typically represent rare but significant events,
+making each spike occurrence carry a higher informational
+value (details provided in Suppl. B). Consequently, spikes
+can be considered more important than non-spikes within
+the spiking data. Building on this insight, we further
+adapt the XNOR operation to distinguish between match-
+ing spikes and matching non-spikes. Specifically, we assign
+a lower weight to matching non-spikes, making them less
+significant than matching spikes yet more significant than
+non-matching pairs. This weight, denoted as α, is set be-
+tween 0 and 1. The modified operation is formulated as:
+α-XNOR(x, y) =
+
+
+
+
+
+1, if x = y = 1,
+α, if x = y = 0,
+0, otherwise.
+(14)
+Here, α-XNOR(·) denotes the modified XNOR operation.
+Since α-XNOR(·) is non-differentiable, we define cus-
+tom gradients to ensure smooth gradient flow during back-
+propagation:
+∂ α-XNOR(x, y)
+∂x
+= −2αx + (1 + α)y, (15)
+Matching
+Spikes
+Non-spike
+Spike
+𝒌
+𝒒
+↓ ↓
+↓ ↓ ↓ ↓ ↓ ↓
+1 0.6
+0.6 0.6 0 0 1 0.6
+α = 0.6
+↓
+4.4
+1 0
+0 0 0 0 1 0
+↓
+2
+1 1
+1 1 0 0 1 1
+↓
+6
+Matching
+Non-spikes
+Non-Matching
+Values
+Sim!-"#$% 𝒒, 𝒌
+α = 1
+(Sim!"#$)
+α = 0
+(Sim%&)
+1 0.3
+0.3 0.3 0 0 1 0.3
+α = 0.3
+↓
+3.2
+Figure 3. Illustration of α-XNOR similarity with α values of 0.3,
+0.6, 1, and 0. Cases where α = 1 and α = 0 correspond to XNOR
+similarity and dot-product similarity, respectively.
+∂ α-XNOR(x, y)
+∂y
+= −2αy + (1 + α)x. (16)
+These gradients are derived from a differentiable function
+that is numerically equivalent to α-XNOR(·):
+α-XNORgrad(x, y) = (1 − α)xy − α(x − y)2
++ α. (17)
+By adopting the gradients in Eq. 17, the α-XNOR opera-
+tion achieves both computational efficiency and a smooth
+gradient flow, facilitating effective parameter updates dur-
+ing training.
+Building on α-XNOR(·), we define the α-XNOR simi-
+larity between two spike trains x, y ∈ Rd
+as:
+Simα-XNOR(x, y) =
+d
+X
+i=1
+α-XNOR(xi, yi). (18)
+For notational simplicity, we overload Simα-XNOR(·) to also
+support batched similarity calculation between spike matri-
+ces. Given X, Y ∈ Rn×d
+, we define Simα-XNOR(X, Y) ∈
+Rn×n
+as the pairwise α-XNOR similarity matrix between
+all tokens in X and Y:
+[Simα-XNOR(X, Y)]ij = Simα-XNOR(Xi, Yj), (19)
+where i, j index the tokens and range from 1 to n.
+Additionally, there are two special cases for the
+α-XNOR similarity: when α = 0, α-XNOR(·) reduces to
+the traditional dot-product similarity (SimDP), where only
+matching spikes contribute; and when α = 1, it becomes
+the original XNOR operation, referred to as XNOR simi-
+larity (SimXNOR(·)), where all matching values contribute
+equally, regardless of being spikes or non-spikes.
+As illustrated in Fig. 3, α-XNOR similarity effectively
+addresses the issue of non-spike pairs making no contribu-
+tion in dot-product similarity. Compared to XNOR simi-
+larity, α-Similarity further differentiates the contributions
+of spikes and non-spikes by assigning less weight to non-
+spike matches, resulting in a more balanced and accurate
+similarity score for spiking data.
+5447
+𝐒𝐜𝐨𝐫𝐞 𝐒𝐜𝐨𝐫𝐞′ 𝐀𝐭𝐭𝐧 LIF Membrane Potential
+(b) Distributions of Some Selected Data in α-SSA
+𝐻 𝐒𝐜𝐨𝐫𝐞
+= 3.44
+α = 1
+(Sim!"#$)
+𝐻 𝐒𝐜𝐨𝐫𝐞
+= 2.07
+Sim%&
+in SSA
+𝐻 𝐒𝐜𝐨𝐫𝐞
+= 5.50
+α = 0.4
+LIF Neuron
+(a) α-XNOR Spiking Self-Attention
+𝐀𝐭𝐭𝐧′
+𝐐 𝐊 𝐕
+𝐗
+BN BN BN
+Linear
+BN
+𝐀𝐭𝐭𝐧
+Matrix Dot-Product
+Self-Attention
+α-XNOR Similarity Calculation
+𝜶
+8 1 4
+4 0 3
+7 6 7
+𝒌 ( ) + 𝒃
+𝜶
+𝐐 𝐊 𝐕
+𝐒𝐜𝐨𝐫𝐞
+𝐒𝐜𝐨𝐫𝐞′
+𝐀𝐭𝐭𝐧′
+Linear Linear Linear
+Figure 4. α-XNOR Spiking Self-Attention (α-SSA) mechanism. (a) Overall architecture of α-SSA. (b) Distributions of similarity scores
+calculated using α-XNOR similarity with α = 0.4 and α = 1 (XNOR similarity) before and after linear transformation, alongside the
+membrane potential distribution prior to firing in the LIF neuron that generates the self-attention outputs Attn. For a clear comparison,
+corresponding distributions from the original SSA are also shown.
+Moreover, α-XNOR similarity also significantly in-
+creases the information representation within the spiking
+self-attention module. In the following, we present a the-
+oretical analysis for this. We begin with the information
+entropy as our criterion, which is defined as:
+H(X) = −
+n
+X
+i=1
+pi log2 pi, (20)
+where X is a random variable with outcome probabilities p.
+Higher entropy values signify greater variability and infor-
+mational content in the similarity scores. The entropy can
+be calculated based on the distribution of the scores.
+Theorem 1. Let q, k ∈ {0, 1}d
+be independent spike trains
+with firing rates fq and fk, respectively. The similarity
+scores for dot-product and XNOR similarity both follow a
+binomial distribution:
+SimDP(q, k) ∼ Bin(d, p1), (21)
+SimXNOR(q, k) ∼ Bin(d, p1 + p2), (22)
+where p1 = fqfk, and p2 = (1−fq)(1−fk), represent the
+probability of matching spikes and non-spikes, respectively.
+Theorem 1 (proof in Suppl. A.1) shows that scores gen-
+erated by the two special cases of α-XNOR similarity,
+dot-product similarity and XNOR similarity, both approx-
+imately follow a binomial distribution, with different prob-
+ability parameters. However, the score distribution of α-
+XNOR similarity in the general case is much more complex.
+Theorem 2. Let q, k ∈ {0, 1}d
+be independent spike trains
+with firing rates fq and fk, respectively. The score calcu-
+lated by α-XNOR similarity is distributed as:
+P(s = k + lα) =
+d!
+k! l! (d − k − l)!
+· pk
+1 pl
+2 pd−k−l
+3 , (23)
+for 0 ≤ k ≤ d and 0 ≤ l ≤ d − k, where p1 = fqfk,
+p2 = (1 − fq)(1 − fk), and p3 = 1 − p1 − p2.
+Theorem 2 (proof in Suppl. A.2) demonstrates that the
+similarity score calculated by α-XNOR similarity approxi-
+mately follows a weighted multinomial distribution, where
+matching spikes and non-spikes contribute to the score with
+weights 1 and α, respectively. The introduction of α in-
+creases the complexity of the score distribution. By dis-
+tinguishing between spikes and non-spikes, α-XNOR sim-
+ilarity captures a broader range of variability in similarity
+scores, resulting in higher information entropy. The fol-
+lowing Theorem 3 further reveals the relationships among
+scores produced by these similarity calculations.
+Theorem 3. Let q, k ∈ {0, 1}d
+be independent spike trains
+with firing rates fq, fk ∈ (0, 1) and α ∈ (0, 1). Then the
+entropies satisfy: H (Simα-XNOR(q, k)) > H (SimDP(q, k))
+and H (Simα-XNOR(q, k)) > H (SimXNOR(q, k)).
+Theorem 3 (proof provided in Suppl. A.3) shows that the
+α-XNOR similarity achieves higher information entropy
+compared to dot-product and XNOR similarities, reflecting
+its enhanced capacity for information representation. Fig. 4
+(b) compares the similarity scores calculated by these meth-
+ods under the parameters fq = fk = 0.2, d = 32, and
+5448
+α = 0.4. Unlike dot-product and XNOR similarities, which
+generate highly discretized distributions with limited vari-
+ability, the α-XNOR similarity produces smoother, more
+centrally distributed scores. This broader value range en-
+ables richer information representation and more nuanced
+similarity assessments. The information entropy of scores
+from α-XNOR similarity is 5.50, significantly exceeding
+the 2.07 and 3.44 from dot-product and XNOR similari-
+ties, respectively, highlighting the effectiveness of α-XNOR
+similarity for spiking data.
+4.3. α-XNOR Spiking Self-Attention
+In Sec. 4.2, we introduce α-XNOR similarity to address
+dot-product limitations, and differentiate spikes and non-
+spikes in similarity calculations. Leveraging this spik-
+ing similarity calculation, we develop an improved spik-
+ing self-attention module, termed as α-XNOR Spiking Self-
+Attention (α-SSA).
+The overall architecture of α-SSA is shown in Fig. 4 (a).
+Initially, the spiking Q, K, and V matrices are generated
+similarly to SSA using Eq. 4. Then, we calculate the simi-
+larity scores with α-XNOR similarity instead of the original
+dot-product similarity:
+Score = Simα-XNOR(Q, K). (24)
+Following this, the obtained attention scores undergo
+transformation. In the original SSA, only a scaling factor
+adjusts the score magnitudes, which is inadequate for scores
+based on α-XNOR similarity, as they exhibit different dis-
+tribution patterns (see Fig. 4 (b)). In α-SSA, we use a linear
+transformation for the score with an added bias term:
+Attn′
+= (k · Score + b)V, (25)
+where k and b are constants that help adjust the attention
+output distribution. For Score derived from α-XNOR, the
+corresponding Attn′
+has an expected value E[Attn′
+] and
+variance V[Attn′
+], which can be given by (proof provided
+in Suppl. A.4):
+E[Attn′
+] = nfV (kdγ1 + b) , (26)
+V[Attn′
+] = nfV k2
+d(γ2 − γ2
+1 ) + (1 − fV)(kdγ1 + b)2
+
+,
+(27)
+where γ1 and γ2 are determined by the firing rates of Q, K,
+and V, denoted as fQ, fK, and fV, respectively:
+γ1 = fQfK + α(1 − fQ)(1 − fK), (28)
+γ2 = fQfK + α2
+(1 − fQ)(1 − fK), (29)
+To achieve a balanced membrane potential distribution, we
+set E[Attn′
+] = 0 and V[Attn′
+] = 1, leading to the follow-
+ing values for k and b:
+k =
+1
+p
+nd (γ2 − γ2
+1 ) fV
+, b = −
+γ1
+√
+d
+p
+n (γ2 − γ2
+1 ) fV
+. (30)
+α-SSA
+Input
+SSA
+Figure 5. Attention heatmaps of α-SSA and SSA models on Ima-
+geNet1K, showing α-SSA’s sparser focus on key visual features.
+Here, we select the positive solution of k to ensure that the
+scores after the linear transformation are positively corre-
+lated with the original values.
+Finally, the attention output is converted to spiking form
+as Attn = SN(Attn′
+). Following [45], the multiplica-
+tion of floating-point data in Eq. 25 can be merged into the
+threshold of this spiking neuron layer, preserving the spike-
+driven nature of SNNs. Subsequently, Attn is processed
+using Eq. 12 in SSA to generate the final output.
+Fig. 4 (b) shows the data distributions in α-SSA along-
+side those in SSA for comparison. In α-SSA, scores calcu-
+lated using α-XNOR yield not only more reasonable sim-
+ilarity values but also a distribution closer to normal with
+significantly higher information entropy. By comparison,
+the dot-product similarity in SSA produces a positively
+skewed distribution with lower entropy. Furthermore, the
+simple scaling in SSA results in a discrete and skewed mem-
+brane potential distribution, which previous studies [19, 21]
+suggest may impact model performance. Meanwhile, the
+linear transformation in α-SSA with XNOR similarity and
+α-XNOR produces a more balanced membrane potential
+distribution. These improvements in similarity scores, dis-
+tribution balance, and entropy in α-SSA highlight its ad-
+vantage in capturing richer information from spiking input
+patterns for spiking self-attention mechanisms.
+5. Experiments
+5.1. Image Classification
+In image classification experiments, we evaluate the pro-
+posed α-SSA module on both static and dynamic im-
+age datasets, including ImageNet [8], CIFAR-10, CIFAR-
+100 [27], and CIFAR10-DVS [28]. We implement α-SSA
+moudule within both Single-stage ViT (S-ViT) and Muti-
+stage ViT (M-ViT) architectures and conduct detailed com-
+5449
+Table 1. Detailed comparison with other similar methods on ImageNet
+Type Method Architecture Time Step Param. (M) Acc. (%)
+ResNet
+SEW ResNet [13]
+Sew ResNet-50 4 25.6 67.78
+Sew ResNet-101 4 44.6 68.76
+MS ResNet [25]
+MS-ResNet-50 4 21.8 69.40
+MS-ResNet-104 4 77.3 75.30
+Att-MS-ResNet [43]
+Att-ResNet-50 1 22.1 69.20
+Att-ResNet-104 4 78.4 76.30
+Single-stage
+ViTs
+Spikformer [54]
+Spikformer-8-384 4 16.8 70.24
+Spikformer-8-512 4 29.7 73.38
+Spikingformer [53]
+Spikingformer-8-384 4 16.8 70.45
+Spikingformer-8-512 4 29.7 74.49
+S-ViT + α-SSA (α = 0.3) α-SSA-ViT-8-384 4 16.8 71.36
+S-ViT + α-SSA (α = 0.3) α-SSA-ViT-8-512 4 29.7 75.39
+Muti-stage
+ViTs
+Spike-driven Transformer [44]
+Spike-driven-8-384 4 16.8 72.28
+Spike-driven-8-512 4 29.7 74.57
+SpikingResformer [36]
+SpikingResformer-S 4 17.8 75.95
+SpikingResformer-M 4 35.5 77.24
+Meta-SpikeFormer [45]
+Meta-SpikeFormer-384 4 15.1 74.10
+Meta-SpikeFormer-512 4 55.4 79.70
+M-ViT + α-SSA (α = 0.3) α-SSA-Swin-10-384 4 31.8 77.89
+M-ViT + α-SSA (α = 0.3) α-SSA-Swin-10-512 4 54.6 80.62
+parisons with the latest spiking Transformers [36, 44, 45,
+53, 54]. The results are as follows:
+ImageNet: For the ImageNet dataset, we set the input
+image dimensions to 224 × 224, with a batch size of 128
+and a total of 300 training epochs. In this set of experiments,
+the value of α is set to 0.3 for all α-SSA layers across dif-
+ferent models. As shown in Table 1, our α-SSA module
+enhances performance across both S-ViT and M-ViT archi-
+tectures. Specifically, in the S-ViT architecture, α-SSA in-
+creases accuracy to 75.39% in the 512-dimensional setting.
+Similarly, in the M-ViT Transformer architecture, α-SSA
+achieves 80.62% in the 512-dimensional setting. Addition-
+ally, we compared the attention maps of the original SSA
+and our α-SSA. As shown in Fig. 5, α-SSA demonstrates
+sparser attention with a sharper focus on key visual features.
+CIFAR10/100 and CIFAR10-DVS: CIFAR10 and CI-
+FAR100 [27] are widely used benchmarks for image clas-
+sification, while CIFAR10-DVS [28] is an event-based
+dataset specifically designed for SNN models. In both ar-
+chitectures, we conducted experiments with two different
+values of α = 0.3 and α = 0.5. As demonstrated in Ta-
+ble 2, our proposed α-SSA module consistently boosts per-
+formance across various architectures and datasets while
+maintaining model simplicity. Notably, in M-ViT mod-
+𝛼 𝑏
+𝑘 𝑓𝐐 𝑓𝐊 𝑓𝐕 𝑓𝐀𝐭𝐭𝐧 Acc.
+Figure 6. Parallel coordinate plots of α-SSA parameters (α, k,
+b) and metrics (firing rates for Q (fQ), K (fK), V (fV), attention
+output (fAttn), and accuracy), showing correlations between α and
+other variables. Results are based on CIFAR100 with α-SSA in the
+Spikformer architecture.
+els, α-SSA achieves exceptional outcomes, attaining accu-
+racies of 96.15% on CIFAR10, 81.08% on CIFAR100, and
+84.24% on CIFAR10-DVS, underscoring its effectiveness
+in enhancing model robustness and accuracy. Notably, The
+performance improvements in the M-ViT architecture are
+less significant compared to those in the S-ViT architec-
+ture. This can be attributed to the relatively minor role of
+self-attention modules in the Swin Transformer’s design, by
+findings in metaformer [47] research.
+5450
+Table 2. Detailed comparison with other similar methods across CIFAR10, CIFAR100 and CIFAR10-DVS
+Type Method
+CIFAR10 CIFAR100 CIFAR10-DVS
+Param. (M) Acc. (%) Param. (M) Acc. (%) Param. (M) Acc. (%)
+ResNet
+PLIF [14] - 93.50 - - - 74.8
+tdBN [51] - 93.2 - - - 67.8
+DSpike [29] - 94.25 - 74.24 - 75.4
+TET [9] 12.63 94.44 12.63 74.47 - 77.33
+Single-stage
+ViTs
+Spikformer [54] 9.32 95.51 9.32 78.21 2.57 80.9
+Spikingformer [53] 9.32 95.81 9.32 79.09 2.57 81.3
+S-ViT + α-SSA (α = 0.5) 9.32 95.92 9.32 79.97 2.57 81.45
+S-ViT + α-SSA (α = 0.3) 9.32 95.97 9.32 80.22 2.57 81.64
+Muti-stage
+ViTs
+Spike-driven Transformer [44] 10.28 95.60 10.28 78.40 2.57 80.0
+M-ViT + α-SSA (α = 0.5) 6.50 96.05 6.50 80.66 1.54 82.24
+M-ViT + α-SSA (α = 0.3) 6.50 96.15 6.50 81.08 1.54 82.22
+5.2. Study of Different α
+In the α-SSA module, α serves as a critical parameter. We
+conducted experiments on the Spikformer architecture on
+CIFAR100 dataset to investigate the effect of varying α val-
+ues on metrics. These metrics include the linear scaling
+factors k and b; the spiking firing rates fQ, fK, fV, and
+fAttn responsible for generating Q, K, V, and the spiking
+self-attention output Attn, respectively; and the network’s
+performance accuracy (Acc.). We set α to [0, 0.2, 0.4, 0.6,
+0.8, 1], where α = 0 and α = 1 correspond to dot-product
+similarity and XNOR similarity, respectively, while inter-
+mediate values represent α-XNOR similarities. Fig. 6 illus-
+trates the average values of these metrics, and detailed data
+across different α-SSA layers are provided in Suppl.D. The
+results show a clear negative correlation between α and the
+parameters k and b. The parameters fQ, fK, fV, and fAttn
+exhibit no clear correlation and present a complex interac-
+tion, with fV showing relatively minimal variation. More-
+over, model accuracy peaks when α ranges from 0.2 to 0.4,
+indicating that this range optimally reflects the differential
+importance of spikes and non-spikes in attention scoring.
+5.3. Ablation Study
+To evaluate the effectiveness of our proposed model’s com-
+ponents, we conducted an ablation study on the CIFAR100
+dataset using Spikformer as the baseline. We replaced Spik-
+former’s SSA with our proposed α-SSA, testing three val-
+ues of α: 0, 1, and 0.3. For α = 0, the original SSA replaces
+only the linear transformations of attention scores, main-
+taining the traditional dot-product similarity. For α = 1
+and α = 0.3, the model employs XNOR similarity and
+α-XNOR similarity, respectively. As shown in Table 3,
+adding the linear transformations for attention scores in-
+creased accuracy from 78.21% to 79.04%. Incorporating
+Table 3. Ablation study on CIFAR100 dataset
+Model Param. (M) Acc. (%)
+Spikformer (baseline) 9.32 78.21
++ α-SSA (α = 0) 9.32 79.04
++ α-SSA (α = 1) 9.32 79.33
++ α-SSA (α = 0.3) 9.32 80.22
+XNOR similarity resulted in a further 0.29% gain. Finally,
+the α-SSA with α = 0.3 achieved an accuracy of 80.22%,
+marking a 2.01% improvement over the baseline. These re-
+sults demonstrate that both the introduction of α-SSA and
+the linear transformations of attention scores yield substan-
+tial gains with minimal increase in parameters.
+6. Conclusion
+This work identifies a fundamental challenge in spiking
+Transformers: the dot product is ineffective for calculat-
+ing spiking similarity due to the binary and sparse na-
+ture of spike trains. To address this issue, we propose
+a novel α-XNOR similarity method specifically tailored
+to spike trains, which effectively resolves the limitations
+of dot-product similarity caused by numerous non-spiking
+events. Moreover, given the sparse nature of spike trains,
+where spikes carry more information than non-spikes, the
+α-XNOR similarity emphasizes the distinct importance of
+spikes, with enhanced representation capability in spik-
+ing self-attention. Extensive experiments demonstrate sig-
+nificant performance improvements across various Trans-
+former architectures. These advancements bring us closer
+to realizing the full potential of spiking Transformers in ef-
+ficient, neuromorphic computing applications.
+5451
+Acknowledgment
+This work was supported in part by the National Natu-
+ral Science Foundation of China under grants U20B2063,
+62220106008, and 62106038, the Sichuan Science and
+Technology Program under Grant 2024NSFTD0034 and
+2023YFG0259, the Open Research Fund of the State Key
+Laboratory of Brain-Machine Intelligence, Zhejiang Uni-
+versity (Grant No.BMI2400020).
+References
+[1] Arnon Amir, Brian Taba, David Berg, Timothy Melano, Jef-
+frey McKinstry, Carmelo Di Nolfo, Tapan Nayak, Alexander
+Andreopoulos, Guillaume Garreau, Marcela Mendoza, et al.
+A low power, fully event-based gesture recognition system.
+In Proceedings of the IEEE conference on computer vision
+and pattern recognition, pages 7243–7252, 2017. 2
+[2] Sander M Bohte, Joost N Kok, and Johannes A La Poutré.
+Spikeprop: backpropagation for networks of spiking neu-
+rons. In ESANN, pages 419–424. Bruges, 2000. 2
+[3] Han Cai, Chuang Gan, Tianzhe Wang, Zhekai Zhang, and
+Song Han. Once-for-all: Train one network and specialize it
+for efficient deployment. arXiv preprint arXiv:1908.09791,
+2019. 1
+[4] Yongqiang Cao, Yang Chen, and Deepak Khosla. Spiking
+deep convolutional neural networks for energy-efficient ob-
+ject recognition. International Journal of Computer Vision,
+113:54–66, 2015. 2
+[5] Stefano Caviglia, Maurizio Valle, and Chiara Bartolozzi.
+Asynchronous, event-driven readout of posfet devices for
+tactile sensing. In 2014 IEEE International Symposium
+on Circuits and Systems (ISCAS), pages 2648–2651. IEEE,
+2014. doi: 10.1109/iscas.2014.6865717 . 1
+[6] Chun-Fu Richard Chen, Quanfu Fan, and Rameswar Panda.
+Crossvit: Cross-attention multi-scale vision transformer for
+image classification. In Proceedings of the IEEE/CVF in-
+ternational conference on computer vision, pages 357–366,
+2021. 1
+[7] Mike Davies, Narayan Srinivasa, Tsung-Han Lin, Gautham
+Chinya, Yongqiang Cao, Sri Harsha Choday, Georgios Di-
+mou, Prasad Joshi, Nabil Imam, Shweta Jain, et al. Loihi:
+A neuromorphic manycore processor with on-chip learning.
+Ieee Micro, 38(1):82–99, 2018. 1
+[8] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,
+and Li Fei-Fei. Imagenet: A large-scale hierarchical image
+database. In 2009 IEEE conference on computer vision and
+pattern recognition, pages 248–255. Ieee, 2009. 2, 6
+[9] Shikuang Deng, Yuhang Li, Shanghang Zhang, and Shi Gu.
+Temporal efficient training of spiking neural network via gra-
+dient re-weighting. arXiv preprint arXiv:2202.11946, 2022.
+8
+[10] Jacob Devlin. Bert: Pre-training of deep bidirectional
+transformers for language understanding. arXiv preprint
+arXiv:1810.04805, 2018. 1
+[11] Alexey Dosovitskiy. An image is worth 16x16 words:
+Transformers for image recognition at scale. arXiv preprint
+arXiv:2010.11929, 2020. 1, 2
+[12] Oliver Eberle, Stephanie Brandl, Jonas Pilot, and Anders
+Søgaard. Do transformer models show similar attention pat-
+terns to task-specific human gaze? In Proceedings of the
+60th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 4295–4309,
+2022. 1
+[13] Wei Fang, Zhaofei Yu, Yanqi Chen, Tiejun Huang, Timothée
+Masquelier, and Yonghong Tian. Deep residual learning in
+spiking neural networks. Advances in Neural Information
+Processing Systems, 34:21056–21069, 2021. 2, 7
+[14] Wei Fang, Zhaofei Yu, Yanqi Chen, Timothée Masquelier,
+Tiejun Huang, and Yonghong Tian. Incorporating learnable
+membrane time constant to enhance learning of spiking neu-
+ral networks. In Proceedings of the IEEE/CVF international
+conference on computer vision, pages 2661–2671, 2021. 8
+[15] Wei Fang, Zhaofei Yu, Zhaokun Zhou, Ding Chen, Yanqi
+Chen, Zhengyu Ma, Timothée Masquelier, and Yonghong
+Tian. Parallel spiking neurons with high efficiency and abil-
+ity to learn long-term dependencies. Advances in Neural In-
+formation Processing Systems, 36, 2024. 2
+[16] Yuxin Fang, Bencheng Liao, Xinggang Wang, Jiemin Fang,
+Jiyang Qi, Rui Wu, Jianwei Niu, and Wenyu Liu. You
+only look at one sequence: Rethinking transformer in vision
+through object detection. Advances in Neural Information
+Processing Systems, 34:26183–26197, 2021. 1
+[17] Wulfram Gerstner and Werner M Kistler. Spiking neuron
+models: Single neurons, populations, plasticity. Cambridge
+university press, 2002. 1
+[18] Benjamin Graham, Alaaeldin El-Nouby, Hugo Touvron,
+Pierre Stock, Armand Joulin, Hervé Jégou, and Matthijs
+Douze. Levit: a vision transformer in convnet’s clothing for
+faster inference. In Proceedings of the IEEE/CVF interna-
+tional conference on computer vision, pages 12259–12269,
+2021. 1
+[19] Yufei Guo, Xinyi Tong, Yuanpei Chen, Liwen Zhang, Xi-
+aode Liu, Zhe Ma, and Xuhui Huang. Recdis-snn: Recti-
+fying membrane potential distribution for directly training
+spiking neural networks. In Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition,
+pages 326–335, 2022. 6
+[20] Yufei Guo, Xuhui Huang, and Zhe Ma. Direct learning-based
+deep spiking neural networks: a review. Frontiers in Neuro-
+science, 17:1209795, 2023. 2
+[21] Yufei Guo, Xiaode Liu, Yuanpei Chen, Liwen Zhang, Wei-
+hang Peng, Yuhan Zhang, Xuhui Huang, and Zhe Ma. Rmp-
+loss: Regularizing membrane potential distribution for spik-
+ing neural networks. In Proceedings of the IEEE/CVF In-
+ternational Conference on Computer Vision, pages 17391–
+17401, 2023. 6
+[22] Bing Han, Gopalakrishnan Srinivasan, and Kaushik Roy.
+Rmp-snn: Residual membrane potential neuron for enabling
+deeper high-accuracy and low-latency spiking neural net-
+work. In Proceedings of the IEEE/CVF conference on com-
+puter vision and pattern recognition, pages 13558–13567,
+2020. 2
+[23] Dongchen Han, Xuran Pan, Yizeng Han, Shiji Song, and
+Gao Huang. Flatten transformer: Vision transformer using
+5452
+focused linear attention. In Proceedings of the IEEE/CVF
+international conference on computer vision, pages 5961–
+5971, 2023. 1
+[24] Kai Han, Yunhe Wang, Qi Tian, Jianyuan Guo, Chunjing
+Xu, and Chang Xu. Ghostnet: More features from cheap
+operations. In Proceedings of the IEEE/CVF conference on
+computer vision and pattern recognition, pages 1580–1589,
+2020. 1
+[25] Yifan Hu, Lei Deng, Yujie Wu, Man Yao, and Guoqi Li. Ad-
+vancing spiking neural networks toward deep residual learn-
+ing. IEEE Transactions on Neural Networks and Learning
+Systems, 2024. 2, 7
+[26] Eugene M Izhikevich. Simple model of spiking neurons.
+IEEE Transactions on neural networks, 14(6):1569–1572,
+2003. 1
+[27] Alex Krizhevsky, Geoffrey Hinton, et al. Learning multiple
+layers of features from tiny images. 2009. 6, 7
+[28] Hongmin Li, Hanchao Liu, Xiangyang Ji, Guoqi Li, and
+Luping Shi. Cifar10-dvs: an event-stream dataset for ob-
+ject classification. Frontiers in neuroscience, 11:309, 2017.
+2, 6, 7
+[29] Yuhang Li, Yufei Guo, Shanghang Zhang, Shikuang Deng,
+Yongqing Hai, and Shi Gu. Differentiable spike: Rethink-
+ing gradient-descent for training spiking neural networks.
+Advances in Neural Information Processing Systems, 34:
+23426–23439, 2021. 8
+[30] Yu Liang, Wenjie Wei, Ammar Belatreche, Honglin Cao,
+Zijian Zhou, Shuai Wang, Malu Zhang, and Yang Yang.
+Towards accurate binary spiking neural networks: Learn-
+ing with adaptive gradient modulation mechanism. arXiv
+preprint arXiv:2502.14344, 2025. 2
+[31] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng
+Zhang, Stephen Lin, and Baining Guo. Swin transformer:
+Hierarchical vision transformer using shifted windows. In
+Proceedings of the IEEE/CVF international conference on
+computer vision, pages 10012–10022, 2021. 1, 2
+[32] Wolfgang Maass. Networks of spiking neurons: the third
+generation of neural network models. Neural networks, 10
+(9):1659–1671, 1997. 1, 2
+[33] Timothée Masquelier, Rudy Guyonneau, and Simon J
+Thorpe. Spike timing dependent plasticity finds the start of
+repeating patterns in continuous spike trains. PloS one, 3(1):
+e1377, 2008. 1
+[34] Paul A Merolla, John V Arthur, Rodrigo Alvarez-Icaza, An-
+drew S Cassidy, Jun Sawada, Filipp Akopyan, Bryan L Jack-
+son, Nabil Imam, Chen Guo, Yutaka Nakamura, et al. A mil-
+lion spiking-neuron integrated circuit with a scalable com-
+munication network and interface. Science, 345(6197):668–
+673, 2014. 1
+[35] Yimeng Shan, Malu Zhang, Rui-jie Zhu, Xuerui Qiu, Ja-
+son K Eshraghian, and Haicheng Qu. Advancing spiking
+neural networks towards multiscale spatiotemporal interac-
+tion learning. arXiv preprint arXiv:2405.13672, 2024. 2
+[36] Xinyu Shi, Zecheng Hao, and Zhaofei Yu. Spikingres-
+former: Bridging resnet and vision transformer in spiking
+neural networks. In Proceedings of the IEEE/CVF Confer-
+ence on Computer Vision and Pattern Recognition, pages
+5610–5619, 2024. 1, 2, 7
+[37] Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco
+Massa, Alexandre Sablayrolles, and Hervé Jégou. Training
+data-efficient image transformers & distillation through at-
+tention. In International conference on machine learning,
+pages 10347–10357. PMLR, 2021. 1
+[38] A Vaswani. Attention is all you need. Advances in Neural
+Information Processing Systems, 2017. 1, 3
+[39] Qingyu Wang, Tielin Zhang, Minglun Han, Yi Wang,
+Duzhen Zhang, and Bo Xu. Complex dynamic neurons im-
+proved spiking transformer network for efficient automatic
+speech recognition. In Proceedings of the AAAI Conference
+on Artificial Intelligence, pages 102–109, 2023. 2
+[40] Shuai Wang, Malu Zhang, Dehao Zhang, Ammar Belatreche,
+Yichen Xiao, Yu Liang, Yimeng Shan, Qian Sun, Enqi
+Zhang, and Yang Yang. Spiking vision transformer with sac-
+cadic attention. In The Thirteenth International Conference
+on Learning Representations, 2025. 1
+[41] Kan Wu, Jinnian Zhang, Houwen Peng, Mengchen Liu, Bin
+Xiao, Jianlong Fu, and Lu Yuan. Tinyvit: Fast pretraining
+distillation for small vision transformers. In European con-
+ference on computer vision, pages 68–85. Springer, 2022. 1
+[42] Yujie Wu, Lei Deng, Guoqi Li, Jun Zhu, and Luping
+Shi. Spatio-temporal backpropagation for training high-
+performance spiking neural networks. Frontiers in neuro-
+science, 12:331, 2018. 1, 2
+[43] Man Yao, Guangshe Zhao, Hengyu Zhang, Yifan Hu, Lei
+Deng, Yonghong Tian, Bo Xu, and Guoqi Li. Attention spik-
+ing neural networks. IEEE transactions on pattern analysis
+and machine intelligence, 45(8):9393–9410, 2023. 2, 7
+[44] Man Yao, Jiakui Hu, Tianxiang Hu, Yifan Xu, Zhaokun
+Zhou, Yonghong Tian, Bo Xu, and Guoqi Li. Spike-driven
+transformer v2: Meta spiking neural network architecture
+inspiring the design of next-generation neuromorphic chips.
+arXiv preprint arXiv:2404.03663, 2024. 1, 2, 7, 8
+[45] Man Yao, JiaKui Hu, Tianxiang Hu, Yifan Xu, Zhaokun
+Zhou, Yonghong Tian, Bo XU, and Guoqi Li. Spike-driven
+transformer v2: Meta spiking neural network architecture in-
+spiring the design of next-generation neuromorphic chips. In
+The Twelfth International Conference on Learning Represen-
+tations, 2024. 6, 7
+[46] Man Yao, Jiakui Hu, Tianxiang Hu, Yifan Xu, Zhaokun
+Zhou, Yonghong Tian, Bo Xu, and Guoqi Li. Spike-driven
+transformer v2: Meta spiking neural network architecture
+inspiring the design of next-generation neuromorphic chips.
+arXiv preprint arXiv:2404.03663, 2024. 1, 2
+[47] Weihao Yu, Mi Luo, Pan Zhou, Chenyang Si, Yichen Zhou,
+Xinchao Wang, Jiashi Feng, and Shuicheng Yan. Metaformer
+is actually what you need for vision. In Proceedings of
+the IEEE/CVF conference on computer vision and pattern
+recognition, pages 10819–10829, 2022. 2, 7
+[48] Dehao Zhang, Shuai Wang, Ammar Belatreche, Wenjie Wei,
+Yichen Xiao, Haorui Zheng, Zijian Zhou, Malu Zhang, and
+Yang Yang. Spike-based neuromorphic model for sound
+source localization. In The Thirty-eighth Annual Conference
+on Neural Information Processing Systems, 2024. 2
+[49] Jilin Zhang, Dexuan Huo, Jian Zhang, Chunqi Qian, Qi Liu,
+Liyang Pan, Zhihua Wang, Ning Qiao, Kea-Tiong Tang,
+5453
+and Hong Chen. 22.6 anp-i: A 28nm 1.5 pj/sop asyn-
+chronous spiking neural network processor enabling sub-o. 1
+µj/sample on-chip learning for edge-ai applications. In 2023
+IEEE International Solid-State Circuits Conference (ISSCC),
+pages 21–23. IEEE, 2023. 1
+[50] Malu Zhang, Jiadong Wang, Jibin Wu, Ammar Belatreche,
+Burin Amornpaisannon, Zhixuan Zhang, Venkata Pavan Ku-
+mar Miriyala, Hong Qu, Yansong Chua, Trevor E Carlson,
+et al. Rectified linear postsynaptic potential function for
+backpropagation in deep spiking neural networks. IEEE
+transactions on neural networks and learning systems, 33
+(5):1947–1958, 2021. 2
+[51] Hanle Zheng, Yujie Wu, Lei Deng, Yifan Hu, and Guoqi Li.
+Going deeper with directly-trained larger spiking neural net-
+works. In Proceedings of the AAAI conference on artificial
+intelligence, pages 11062–11070, 2021. 2, 8
+[52] Lin Zheng, Chong Wang, and Lingpeng Kong. Linear com-
+plexity randomized self-attention mechanism. In Interna-
+tional conference on machine learning, pages 27011–27041.
+PMLR, 2022. 1
+[53] Chenlin Zhou, Liutao Yu, Zhaokun Zhou, Zhengyu Ma, Han
+Zhang, Huihui Zhou, and Yonghong Tian. Spikingformer:
+Spike-driven residual learning for transformer-based spiking
+neural network. arXiv preprint arXiv:2304.11954, 2023. 2,
+7, 8
+[54] Zhaokun Zhou, Yuesheng Zhu, Chao He, Yaowei Wang,
+YAN Shuicheng, Yonghong Tian, and Li Yuan. Spikformer:
+When spiking neural network meets transformer. In The
+Eleventh International Conference on Learning Representa-
+tions, 2023. 1, 2, 3, 7, 8
+5454
+

@@ -1,0 +1,999 @@
+Asynchronous Temporal Modeling with Two-Agent Framework for
+Streaming Dense Video Captioning
+Yolo Y. Tang1
+, Chao Huang1
+, Susan Liang1
+, Jing Bi1
+, Yicheng Wang1
+,
+Daiki Shimada2
+, Chenliang Xu1
+1
+University of Rochester, 2
+Sony Group Corporation
+Abstract
+Streaming dense video captioning requires real-time pro-
+cessing of continuous visual input while determining pre-
+cisely when and what to caption. Current approaches
+primarily focus on designing complex external memory
+mechanisms, failing to leverage Large Multimodal Models’
+(LMMs) inherent long-context capabilities. Moreover, exist-
+ing methods employing threshold-based caption triggering
+face a severe Threshold-Gated Discrepancy (TGD) prob-
+lem, a training-inference mismatch arising from data imbal-
+ance, where models predominantly predict silence tokens,
+requiring thresholds that vary drastically across videos with
+extremely narrow effective ranges. We introduce Takusen,
+an asynchronous temporal modeling two-agent framework
+comprising a Small Multimodal Model (SMM) as an Or-
+acle agent and an LMM as a Listener agent. The Or-
+acle agent processes sparse video inputs at an acceler-
+ated rate to detect event boundaries, while the Listener
+agent processes dense inputs to generate accurate captions
+when prompted by the Oracle’s signals. This architecture
+eliminates threshold dependencies by fundamentally chang-
+ing how silence/generation decisions are made, resolving
+the TGD problem. To enhance robustness against bound-
+ary prediction instabilities, we integrate uniformly dis-
+tributed fixed decoding points with Oracle-predicted bound-
+aries. Experiments on ActivityNet Captions and YouCook2
+datasets demonstrate that Takusen achieves state-of-the-art
+performance with a simpler and more efficient design that
+balances temporal sensitivity with descriptive accuracy.
+1. Introduction
+Dense video captioning [22, 23, 61, 70, 82] has become in-
+creasingly important with the proliferation of online video
+platforms. Unlike conventional dense video captioning
+which operates on complete videos, streaming dense video
+captioning [3, 84] presents unique challenges: (1) main-
+taining vision-language memory while processing con-
+Figure 1. Overview of our asynchronous streaming framework,
+Takusen. The Oracle (SMM) processes frames at an accelerated
+rate to detect event boundaries (ei) and generate prompt signals
+(si), while the Listener (LMM) receives a denser stream of frames,
+producing final captions (ci) in real time. By decoupling early
+detection from detailed generation, the system efficiently handles
+streaming inputs without relying on a hard threshold mechanism.
+tinuous input, and (2) determining when to output cap-
+tions in real-time. When investigating existing models for
+streaming video understanding, we observed that recent
+approaches have focused on designing complex memory
+mechanisms [3, 22, 50, 84] and using fixed decoding points
+for caption generation [84]. However, these approaches
+often overlook the inherent long-context memory capabil-
+ities of Large Multimodal Models (LMMs) [12, 13, 17,
+18, 32, 36, 47, 54, 55, 76, 78], which have recently seen
+rapid advancements. Many designs also frequently invoke
+Large Language Models (LLMs) for decoding [70], failing
+to leverage LMMs’ inherent single-turn long-context mem-
+ory capabilities, and may introduce inefficiencies when pro-
+cessing streaming inputs [45, 66].
+To enable LMMs to perform streaming dense video
+captioning in a single inference pass, a critical challenge
+emerges: determining when to remain silent and when to
+generate text. This introduces what we identify as the
+Threshold-Gated Discrepancy (TGD) problem. The TGD
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+2799
+Figure 2. Examples of Threshold-Gated Discrepancy (TGD) problem observed during streaming dense video captioning. Each pair shows
+the smoothed silence-token probability over time (left) and the count of frames below varying thresholds (right). Small shifts in the
+threshold can abruptly change the model from staying silent to over-generating, illustrating the mismatch between training and inference.
+More details about our preliminary experiments can be found in Section A.
+problem stems from the severe data imbalance [58, 71] in
+streaming captioning tasks, where the model must remain
+silent for the majority of frames. This imbalance causes
+models to favor predicting silence, requiring a threshold
+at inference time to override this bias, which introduces
+a training-inference mismatch since no threshold exists
+during training. Training-inference mismatch is common
+in video summarization tasks [37, 81] but does not lead
+to TGD. As shown in Figure 2, our preliminary experi-
+ments on streaming dense captioning reveal that appropriate
+thresholds vary significantly across videos, with extremely
+narrow effective ranges; even slight deviations can cause
+models to either remain completely silent or generate ex-
+cessive captions for every frame. Designing an additional
+network to dynamically predict these thresholds is imprac-
+tical given their video-specific nature and narrow effective
+ranges.
+To address these challenges, we propose Takusen, an
+asynchronous temporal modeling framework comprising a
+Small Multimodal Model (SMM) acting as an Oracle and a
+Large Video-Language Model (LMM) functioning as a Lis-
+tener. This design effectively leverages the inherent capa-
+bilities of VLMs while elegantly solving the TGD problem:
+(1) The Oracle Agent processes sparse streaming video in-
+puts (sufficient for temporal localization) at an accelerated
+rate, focusing on detecting event boundaries. Its speed al-
+lows it to “see” further into the future than the Listener
+Agent, anticipating event boundaries (both starting and end-
+ing timestamps). (2) The Listener Agent receives dense
+streaming video inputs to gather sufficient information for
+accurate captioning. When the Listener reaches a position
+where the Oracle has detected an event boundary, the Or-
+acle signals the Listener to either acknowledge a starting
+event (e.g., “I will track this event from now on”) or gener-
+ate a caption for a completed event. This approach enables
+the Listener Agent to confidently remain silent most of the
+time, awaiting signals from the Oracle Agent. Crucially,
+this eliminates the need for threshold-based decisions dur-
+ing both training and inference, resolving the TGD problem
+by fundamentally changing how silence/generation deci-
+sions are made. To enhance robustness against the Oracle’s
+occasional boundary prediction instabilities (where bound-
+ary pairs may be excessive, insufficient, or incomplete), we
+also incorporate uniformly distributed fixed decoding points
+2800
+alongside Oracle-predicted boundaries. These fixed points
+allow the Listener to generate additional captions at regular
+intervals, improving overall captioning quality by comple-
+menting the Oracle’s predictions. As shown in Figure 1, the
+Oracle Agent identifies temporal event boundaries, while
+the Listener Agent is fine-tuned on streaming data to gener-
+ate accurate captions. All streaming frames, text prompts,
+and responses are handled in a single inference turn by
+the video LMM, eliminating the need for complex external
+memory mechanisms.
+Experiments on standard benchmark datasets including
+ActivityNet Captions [23] and Youcook2 [82] demonstrate
+that Takusen achieves state-of-the-art performance in
+streaming dense video captioning while maintaining a
+simpler and more efficient architecture.
+In summary, our contributions are:
+• We introduce Takusen, an asynchronous streaming
+two-agent framework that leverages the complementary
+strengths of small and large multimodal models to effec-
+tively perform streaming dense video captioning.
+• We identify and solve the Threshold-Gated Discrepancy
+problem through our Oracle-Listener architecture, elimi-
+nating the need for problematic threshold-based caption
+triggering.
+• Experiments on standard dense video captioning datasets
+validate our approach, demonstrating how to leverage
+LMMs’ inherent long-context capabilities for streaming
+captioning without complex external memory.
+2. Related Works
+Dense Video Captioning. Dense video captioning local-
+izes events and generates descriptions for each segment
+[60]. Hierarchical methods enhanced context modeling
+and narrative coherence [2], while transformer-based
+approaches jointly optimized event localization and
+caption generation [61, 83, 86]. Memory-augmented
+frameworks extended temporal awareness, improving
+caption accuracy [22, 26, 68]. Large-scale pre-training en-
+hanced generalization and cross-modal alignment [29, 70].
+Streaming solutions address real-time requirements by
+processing video incrementally and generating on-the-
+fly captions [39, 84]. Cross-attention mechanisms and
+adaptive sampling calibrate focus across temporal spans
+[5, 7], while progressive strategies refine event proposals
+using hierarchical memory and cross-modal retrieval
+[22, 50]. Transformer-based dynamic queries improve
+event proposal and captioning pipelines [26, 61]. These
+developments inform our unified streaming multimodal
+large language model for dense event captioning with
+minimal overhead.
+Streaming Video Understanding. Real-time video an-
+alytics has grown important with the rise of untrimmed
+streams. JOADAA [11] recognizes actions as they occur
+while anticipating future activities. Online detection
+strategies reduce latency by identifying action starts in
+continuous data [49]. Reinforcement learning enables
+dynamic adaptation in online tracking [52], while weakly
+supervised approaches reduce annotation requirements [9].
+Progressive knowledge distillation improves efficiency at
+scale [80]. Transformer-based models like OadTR achieve
+low-latency inference through refined attention [62], with
+continual learning addressing shifting distributions in
+real-world streams [4, 34, 45]. Edge-cloud infrastructures
+distribute computation to reduce bandwidth and server
+loads [21], while adaptive optimizations handle varying
+video content [51]. Surveys highlight challenges in bi-
+trate adaptation and resource allocation [24, 72]. FPGA
+solutions accelerate processing for UHD content [20, 64],
+while selective frame filtering balances accuracy and
+cost [30, 38]. Large-scale edge platforms demonstrate
+feasible real-time systems [16], with advances in instance
+segmentation and few-shot recognition handling occlusions
+and novel categories [41, 42, 63, 75]. Volumetric streaming
+shows 3D data potential [25], while incremental modeling
+maintains performance over time [4, 34, 36, 45]. Integra-
+tion of large language models enables richer multimodal
+interpretations.
+Large Multimodal Models. Large multimodal models
+(LMMs) have advanced multimodal learning through uni-
+fied representations bridging vision and language [1, 29,
+73]. Early transformer-based approaches established cross-
+modal alignment [19, 27, 43, 53], later enhanced by pixel-
+level techniques and momentum distillation for improved
+robustness [28]. Significant generalization gains emerged
+from scaling with massive datasets and combining frozen
+visual encoders with large language models [1, 29]. Con-
+trastive learning on extensive image-text and video-text
+pairs has proven essential for extracting rich contextual
+embeddings [35, 69], while instruction tuning expands
+model applicability across diverse tasks [77, 78]. Tem-
+poral modeling in LMMs addresses video-specific chal-
+lenges through spatial-temporal token merging, masked
+auto-encoding, and sparse attention mechanisms [14, 33].
+Long video transformers introduce efficient architectures
+capturing extended dependencies without computational
+excess [65, 67]. Chain-of-thought approaches enable step-
+wise multimodal reasoning for complex analyses [57, 79].
+Integrated video and image encoders create shared em-
+beddings improving cross-domain transfer [1, 69], while
+instruction-tuned LMMs facilitate sophisticated composi-
+tional tasks [6, 78]. Recent surveys confirm these models’
+transformative impact across multiple domains [48, 56, 77].
+2801
+Figure 3. The Takusen framework. The Oracle (SMM) processes sparse video frames at an accelerated rate to detect event boundaries,
+sending messages to the Listener (LMM). At event starts, the Listener acknowledges tracking; at event ends, it generates captions. This
+collaboration eliminates threshold dependencies while maintaining silence between events. The framework integrates both silence loss (for
+non-event frames) and text loss (for boundary frames) during training and only needs a single-turn inference process.
+3. Method: Takusen
+3.1. Preliminaries
+Dense Video Captioning. The goal of dense video cap-
+tioning is to predict a set of temporally localized captions
+{(si, ei, ci)}ne
+i=1 for a given video V ∈ RT ×H×W ×3
+,
+where si, ei ∈ R are the starting and ending timestamps
+(0 ≤ si < ei ≤ T), ci = [w1, ..., wn] is the text token
+sequence, and ne is the number of events [84].
+Streaming Dense Video Captioning. Unlike conventional
+dense video captioning which operates on complete videos,
+streaming dense video captioning processes video in real-
+time as frames become available [84]. Formally, given a
+continuous video stream from time t0 up to the current
+time tc, denoted as V t0≤t≤tc
+∈ R(tc−t0)×H×W ×3
+, the
+model must predict a set of temporally localized captions
+{(si, ei, ci)} where t0 ≤ si < ei ≤ tc for all detected
+events. This task presents two major challenges: (1) de-
+termining whether an event boundary has been reached at
+the current time tc, and (2) generating appropriate captions
+for completed events, using only frames observed up to tc
+without access to future information.
+3.2. Overview
+Takusen is an asynchronous temporal modeling frame-
+work designed to overcome the limitations of existing
+streaming dense video captioning approaches. As shown in
+Figure 3, our framework consists of two key components:
+an Oracle agent and a Listener agent.
+Oracle agent. The Oracle agent is a lightweight small
+multimodal model (SMM) responsible for detecting event
+boundaries in the video stream. It features a vision encoder
+that processes video frames, a language decoder that
+generates captions, and sometimes, additional localization
+heads designed to predict precise numerical timestamps.
+Listener agent. The Listener agent is a large multimodal
+model (LMM) that receives streaming video frames and
+generates captions based on Oracle messages. It adopts
+a modular architecture integrating a pretrained vision en-
+coder, a learnable projector, and a pre-trained decoder-only
+LLM. The implementation details of both Oracle and
+Listener can be found in Section 4.1.
+The Oracle agent “sees” further ahead in the video
+stream than the Listener, detecting event boundaries and
+2802
+signaling the Listener when to acknowledge events start or
+generate captions for all events within a single-turn infer-
+ence. This approach eliminates the need for threshold-based
+decision-making, avoiding the TGD problem (introduced in
+Section 1) while leveraging the inherent long-context ca-
+pabilities of large multimodal models, and eliminating the
+need for complex external memory mechanisms. We in-
+troduce the asynchronous streaming processing of Oracle
+and Listener in Section 3.3 and how they interact during the
+event caption decoding in Section 3.4. The training method
+is covered in Section 3.5.
+3.3. Asynchronous Streaming Video Encoding
+Oracle: Sparse Sampling & Fast Encoding. Given a
+continuous video stream V t0≤t≤tc
+, the Oracle processes
+sparse video frames up to time tc(O), where tc(O) ≤ tc.
+The Oracle samples frames at a fixed frame rate from
+V t0≤t≤tc(O) and uses its vision encoder to extract visual
+features F
+t0≤t≤tc(O)
+O . This sparse sampling allows the
+Oracle to process video more quickly than the Listener,
+enabling it to detect event boundaries ahead of time.
+Listener: Dense Sampling & Streaming Encoding. The
+Listener commences receiving frames from time t0. At cur-
+rent time tc, the vision encoder processes the frame at tc(L)
+to obtain frame features F
+tc(L)
+L , where tc(L) ≤ tc(O) ≤ tc.
+The learnable projector subsequently transforms these fea-
+tures from the visual space to the LLM’s input space, gener-
+ating video tokens. The Listener utilizes significantly more
+video tokens than the Oracle, ensuring comprehensive and
+sufficient modeling of the video content.
+3.4. Interactive Streaming Event Decoding
+Oracle: Message Preparation. Based on the extracted
+features, the Oracle predicts event boundaries {(si, ei)}
+where t0 ≤ si < ei ≤ tc(O). This can be accomplished
+through: using localization heads for direct regression (if
+available) or through text generation with the language
+decoder, from which boundaries can be extracted. For
+each detected boundary pair (si, ei), the Oracle constructs
+prompt messages {(Msi
+O , Mei
+O )} based on predefined
+templates (provided in the supplementary material). These
+messages instruct the Listener to: to start tracking an
+event at time si (e.g., “Event i starts now.”) and generate a
+caption at time ei (e.g., “Event i has ended. Please describe
+it.”). This boundary information is passed to the Listener
+agent, guiding its captioning behavior without requiring
+threshold-based decisions, allowing the Listener to focus
+on high-quality caption generation.
+Listener: Next Token Prediction with Silence. While the
+Oracle may be invoked multiple times, the Listener pro-
+cesses the entire video stream in a single, continuous in-
+ference pass. Upon acquiring video tokens from vision
+encoder at each timestamp, the LLM ingests these tokens
+auto-regressively and predicts the next token:
+  \max ~P(w_j|w_{0:j-1}, F_L^{t\leq t_{c(L)}})  (1)
+where w0:j−1 represents the previous tokens and wj can be
+either a text token or a special Silence Token ∅. When
+the Listener reaches a timestamp that matches an Oracle-
+detected boundary (tc(L) = si or tc(L) = ei), it updates its
+context with the corresponding Oracle message:
+  w_{0:j-1} := w_{0:j-1} \cup M^{t_{c(L)}}_O  (2)
+Listener: Event Caption Decoding. Based on the Oracle
+messages and its own processing: At event start times-
+tamps (tc(L) = si), the Listener acknowledges tracking
+the event (e.g., “Sure, I will track Event i”). At event
+end timestamps (tc(L) = ei), the Listener generates a
+caption ci = [wj, ..., wj+k−1] describing the event, where
+wj+k = ∅ indicates the end of the caption. At all other
+timestamps, the Listener predicts the Silence Token ∅ and
+continues processing the next frame.
+Enhanced Robustness with Fixed Decoding Points. To
+address potential instabilities in Oracle boundary predic-
+tions, we incorporate Fixed Decoding Points (FDPs) dur-
+ing inference. These uniformly distributed points {di}
+complement Oracle-detected boundaries by generating ad-
+ditional prompts {(Ms=di−1
+, Me=di
+)} at regular intervals.
+When tc = di, these messages are passed to the Listener,
+prompting it to generate additional captions that may cap-
+ture events missed by the Oracle.
+3.5. Model Training
+Training Objective. Inspired by [5], Takusen is trained
+with a hybrid loss function that balances text generation at
+event boundaries with silence maintenance between events:
+  L = \frac {1}{N}\sum ^{N-1}_{j=0}(- \mathbb {I}^{[w_j\neq \varnothing ]}\log P_{j}^{w_{j}} - \mathbb {I}^{[w_j=\varnothing ]}\log P_{j}^\varnothing )  (3)
+where I is a condition indicator, and Pj denotes the prob-
+ability of the j-th token. This loss function encourages the
+model to: generate accurate text tokens at event boundaries
+(text loss) and maintain silence between events by predict-
+ing silence tokens (silence loss). Crucially, unlike previous
+approaches that introduce thresholds only during inference,
+our training objective directly aligns with the inference
+process, eliminating the training-inference mismatch that
+characterizes the TGD problem.
+Parameter-Efficient Fine-Tuning. To preserve the origi-
+nal capabilities of the pretrained vision encoder and LLM,
+2803
+ActivityNet Captions YouCook2
+CIDEr SODAc METEOR F1 CIDEr SODAc METEOR F1
+Non-Streaming Setting
+MT [83] 9.3 – 5.0 – 6.1 – 3.2 –
+E2ESG [85] – – – – 25.0 – 3.5 –
+PDVC [61] 29.3 6.0 7.6 – 28.9 4.9 5.7 –
+GIT [59] 29.8 5.7 7.8 50.6 12.1 3.1 3.4 17.7
+Vid2Seq [70] 30.2 5.9 8.5 51.8 25.3 5.7 6.4 23.5
+CM2
+[22] 33.1 6.2 8.5 54.2 31.7 5.3 6.1 –
+TRACE-uni [13] 29.2 6.4 6.9 40.4 35.5 6.7 – 31.8
+Streaming Setting
+Streaming Vid2Seq [84] 37.8 6.2 10.0 52.9 32.9 6.0 7.1 24.1
+Streaming GIT [84] 41.2 6.6 9.0 50.9 15.4 3.2 3.6 16.6
+Takusen (ours) 43.7 7.5 9.7 54.0 40.7 8.4 7.0 37.0
+Table 1. Comparison to the state-of-the-art on dense video captioning models on ActivityNet Captions and Youcook2 dataset. All models
+use only visual inputs.
+we employed Parameter-Efficient Fine-Tuning using Activ-
+ityNet Captions [23] and YouCook2 [82] training datasets.
+We froze both pretrained models’ parameters, only updating
+the projector between them and the LoRA [15] in the LLM.
+This approach protected the visual representation ability
+and language capabilities while significantly reducing train-
+ing time.
+Model CIDEr SODAc METEOR F1
+Momentor [44] 14.9 2.3 4.7 –
+TimeChat [47] 19.0 4.7 5.7 36.9
+VTG-LLM [12] 20.7 5.1 5.9 34.8
+AVicuna [55] 22.5 5.1 6.5 45.2
+TRACE [13] 25.9 6.0 6.4 39.3
+VideoLLaMA3 [76] 26.8 6.1 6.9 39.2
+VTimeLLM [18] 27.6 5.8 6.8 –
+TRACE-uni [13] 29.2 6.4 6.9 40.4
+Takusen (ours) 43.7 7.5 9.7 54.0
+Table 2. Comparison to video-LLMs on ActivityNet Captions
+dataset in dense video captioning. Our Takusen is still in stream-
+ing setting, while other models are not. All the listed models are
+based on LLMs with 7B or 8B parameters.
+4. Experiment
+4.1. Experimental Setup
+In this section, we detail our experimental setup, including
+the dataset and benchmark, evaluation metrics, and imple-
+mentation details. We conduct experiments on two widely
+used benchmarks for dense video captioning: ActivityNet
+Captions [23] and YouCook2 [82].
+ActivityNet Captions [23]. ActivityNet Captions dataset
+is a large-scale benchmark for dense video captioning that
+includes 8,649 training videos and 4,267 validation clips.
+Each untrimmed video captures multiple action segments,
+with approximately 3.7 distinct events per clip on average.
+The videos have an average duration of two minutes,
+making this a diverse collection that spans a wide range of
+everyday activities. The captions are densely annotated,
+providing temporal boundaries for each described event,
+which enables more fine-grained video understanding.
+YouCook2 [82]. YouCook2 dataset is a challenging
+cooking video collection comprising 1,333 training and
+456 validation videos from YouTube. Each video is
+approximately 5.3 minutes long and contains about 7.8
+distinct cooking actions on average. The dataset spans 89
+recipes across various cuisines, providing a rich domain for
+understanding procedural activity. Each video is annotated
+with temporally localized cooking steps and their corre-
+sponding natural language descriptions, presenting unique
+challenges, as models must recognize fine-grained cook-
+ing actions, understand ingredient transformations, and
+capture the procedural nature of food preparation processes.
+Evaluation Metrics. Following prior work [61, 70, 84],
+we adopt standard metrics for dense captioning. Our main
+metric is CIDEr and F1 score, computed for each predicted
+event whose Intersection-over-Union (IoU) with a ground-
+truth segment exceeds thresholds in {0.3, 0.5, 0.7, 0.9},
+and then averaged. We also report METEOR using the
+same threshold approach and SODAc [8], which aggregates
+all event captions within a video for a more comprehensive
+evaluation. BLEU-4 [40] and ROUGE-L [31] are also
+reported in the ablation study.
+Implementation Details. We adopt pretrained small
+2804
+Setting Oracle Model CIDEr SODAc METEOR BLEU-4 ROUGE-L Precision Recall F1
+Takusen CM2
+[22] 43.7 7.5 9.7 4.0 14.7 50.4 58.2 54.0
+w/o Oracle model Best FDP 30.4 6.0 6.6 1.6 11.3 44.2 50.2 47.0
+Avg. FDP 18.3 4.3 4.8 1.0 7.1 32.7 35.1 33.2
+w/o FDP CM2
+[22] 12.3 3.3 5.8 0.5 9.7 45.5 71.3 53.5
+Videollama3-2b [76] 20.3 4.2 6.4 1.4 11.3 51.1 45.9 48.3
+w/o Listener model CM2
+[22] 33.1 6.2 8.5 2.0 13.9 44.8 77.3 54.2
+Videollama3-2b [76] 28.4 6.3 7.2 – – 44.8 39.2 40.5
+Boundary-aware – 107.5 10.8 14.5 8.8 27.0 – – –
+Table 3. Ablation study. The experiments are conducted on the ActivityNet Captions dataset. “Best FDP” refers to the optimal number
+of fixed decoding points that maximizes performance for this dataset without using the Oracle model. “Avg. FDP” represents the average
+performance across different FDP configurations.
+#FDPs C S M B4 R-L P R F1
+2 10.1 1.8 1.7 0.9 1.9 5.3 1.8 2.7
+4 13.2 3.1 3.1 0.6 3.6 13.8 8.6 10.6
+6 16.1 3.8 4.0 0.7 5.2 18.6 16.4 17.4
+8 17.6 4.1 4.7 0.8 5.9 20.4 23.2 21.7
+10 17.9 4.4 5.2 1.0 6.2 21.5 28.6 24.5
+12 14.7 4.1 4.6 0.7 5.7 20.7 31.6 25.0
+14 16.1 3.8 4.0 0.7 5.2 18.6 16.4 17.4
+16 13.2 3.8 4.3 0.6 5.1 18.9 35.9 24.8
+Avg. 14.9 3.6 3.9 0.8 4.9 17.2 20.3 18.0
+Table 4. Performance analysis of different numbers of fixed de-
+coding points (#FDPs) on the Youcook2 dataset. Higher #FDPs
+generally improve recall but may affect precision and overall per-
+formance balance. The metrics are: C (CIDEr), S (SODAc), M
+(METEOR), B4 (BLEU-4), R-L (ROUGE-L), P (Precision), R
+(Recall), and F1 Score.
+LMMs as our Oracle agents: CM2
+[22] and Videollama3-
+2b [76], both lightweight LMMs with language mod-
+els smaller than 2B parameters. CM2
+uses CLIP ViT-
+L/14 [46] as its vision encoder, while Videollama3-2b em-
+ploys SigLIP [74]. Both process video at 1 FPS. Our Lis-
+tener agent also uses SigLIP as its vision encoder, sam-
+pling frames at 2 FPS. A two-layer MLP projects visual
+embeddings into LLM-compatible token space. For the
+language backbone, we fine-tune LLaMA-3 8B [10] using
+Low-Rank Adaptation (LoRA) [15] to improve training ef-
+ficiency. We fine-tuned the model on ActivityNet Captions
+and YouCook2 training sets for 5 and 6 epochs, respectively.
+The process takes 16-20 hours on a single NVIDIA A6000
+48G GPU.
+4.2. Main Results and Comparisons
+Tables 1 and 2 summarize our comparisons with state-of-
+the-art models. Despite operating in a streaming setting,
+Takusen achieves new state-of-the-art performance across
+multiple evaluation metrics on both datasets. On Activi-
+tyNet Captions, Takusen achieves a CIDEr score of 43.7,
+outperforming Streaming GIT [84] (+2.5) and Streaming
+Vid2Seq [84] (+5.9), along with the best SODAc (7.5) and
+F1-score (54.0). Similarly on YouCook2, Takusen main-
+tains its advantage with a CIDEr score of 40.7, outperform-
+ing Streaming GIT and Streaming Vid2Seq (+7.8). When
+compared with Video-LLMs (Table 2), Takusen’s CIDEr
+score of 43.7 significantly surpasses VideoLLaMA3 [76]
+(26.8), TRACE-uni [13] (29.2), and VTG-LLM [12] (20.7),
+while achieving the best F1-score (54.0), +8.8 compared to
+AVicuna [55]. These results confirm that Takusen not
+only outperforms all existing streaming models but also
+achieves competitive results against non-streaming models
+and dedicated Video-LLMs, despite operating under real-
+time constraints. The integration of event-aware processing
+and Silence Token Prediction effectively mitigates TGD,
+enabling superior temporal alignment and contextual coher-
+ence.
+4.3. Ablation Studies
+To analyze the effectiveness of each component in
+Takusen, we conduct extensive ablation studies.
+Impact of Core Components. From Table 3, accurate
+event boundary prediction by the Oracle agent directly
+boosts the quality of captions predicted by Listener, as re-
+flected in higher metrics such as CIDEr. The stronger the
+Oracle’s F1, the more effectively the Listener can generate
+coherent and detailed descriptions. Introducing fixed de-
+coding points (FDP) helps the Oracle balance precision and
+recall, preventing overly strict or overly loose boundaries.
+However, relying solely on the Oracle or FDP in isolation
+yields suboptimal results; it is the synergy between the Or-
+acle and the Listener that leads to the best overall perfor-
+mance. Finally, when event boundaries are assumed to be
+perfectly known (the boundary-aware setting), CIDEr rises
+significantly, suggesting that further enhancing the Oracle
+agent’s accuracy could substantially elevate the system’s
+captioning capabilities.
+Trade-offs in Fixed Decoding Points. Figure 4 and Table 4
+2805
+Figure 4. Performance trends across various evaluation metrics as the number of fixed decoding points increases without Oracle agents.
+The experiments are conducted on Youcook2 dataset. The results on ActivityNet Captions can be found in Section B.
+Figure 5. Comparison of our Takusen with ground-truth and VideoLLaMA3-7B. Takusen provides accurate timestamps and detailed
+captions without hallucination, while VideoLLaMA3-7B shows temporal misalignment and tends toward brief descriptions.
+illustrate the impact of varying the number of fixed decod-
+ing points (FDPs) on YouCook2. Increasing FDPs from 2
+to 16 raises recall from 5.3 to 35.9 but reduces precision
+from 21.5 to 18.9. Optimal performance occurs at 10 FDPs
+(CIDEr of 17.9, F1-score of 24.5), with performance declin-
+ing thereafter due to redundancy. This demonstrates that too
+few FDPs miss critical events while too many generate re-
+dundant captions. More analysis on trade-offs in FDPs can
+be found in Section B.
+4.4. Qualitative Results
+Figure 5 presents qualitative comparisons with ground-truth
+annotations and VideoLLaMA3-7B on ActivityNet Cap-
+tions. Takusen produces captions that align well with
+event boundaries while successfully detecting fine-grained
+actions. In contrast, VideoLLaMA3-7B suffers from tem-
+poral misalignment, overly brief descriptions, and frag-
+mented event continuity. Takusen produces detailed and
+temporally accurate captions, maintains event continuity
+between actions, and avoids hallucinations. These results
+validate the effectiveness of our Oracle-Listener framework
+in achieving state-of-the-art streaming captioning with high
+precision and temporal alignment. More qualitative results
+can be found in Section C.
+5. Conclusion
+We present Takusen, an asynchronous temporal model-
+ing two-agent framework for streaming dense video cap-
+tioning. Our Oracle-Listener architecture pairs a small
+multimodal model (Oracle agent) with a large multimodal
+model (Listener agent), eliminating threshold-based trigger-
+ing and resolving the Threshold-Gated Discrepancy prob-
+lem. This approach enables efficient event boundary de-
+tection and high-quality caption generation without com-
+plex external memory. Experiments on ActivityNet Cap-
+tions and YouCook2 show Takusen outperforms exist-
+ing streaming methods while achieving competitive results
+compared to full-video approaches, all with a simpler and
+more efficient architecture.
+2806
+Acknowledgements. This work was supported by Sony
+Group Corporation. We would like to thank Sayaka Naka-
+mura and Jerry Jun Yokono for their insightful discussion.
+References
+[1] Max Bain, Arsha Nagrani, Gül Varol, and Andrew Zisser-
+man. Frozen in time: A joint video and image encoder for
+end-to-end retrieval. In Proceedings of the IEEE/CVF inter-
+national conference on computer vision, pages 1728–1738,
+2021.
+[2] Lorenzo Baraldi, Costantino Grana, and Rita Cucchiara. Hi-
+erarchical boundary-aware neural encoder for video caption-
+ing. In Proceedings of the IEEE conference on computer
+vision and pattern recognition, pages 1657–1666, 2017.
+[3] Eduardo Blanco-Fernández, Carlos Gutiérrez-Álvarez, Na-
+dia Nasri, Saturnino Maldonado-Bascón, and Roberto J
+López-Sastre. Live video captioning. arXiv preprint
+arXiv:2406.14206, 2024.
+[4] João Carreira, Michael King, Viorica Patraucean, Dilara
+Gokay, Catalin Ionescu, Yi Yang, Daniel Zoran, Joseph Hey-
+ward, Carl Doersch, Yusuf Aytar, et al. Learning from one
+continuous video stream. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 28751–28761, 2024.
+[5] Joya Chen, Zhaoyang Lv, Shiwei Wu, Kevin Qinghong Lin,
+Chenan Song, Difei Gao, Jia-Wei Liu, Ziteng Gao, Dongxing
+Mao, and Mike Zheng Shou. Videollm-online: Online video
+large language model for streaming video. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 18407–18418, 2024.
+[6] Xiaoyi Dong, Pan Zhang, Yuhang Zang, Yuhang Cao,
+Bin Wang, Linke Ouyang, Xilin Wei, Songyang Zhang,
+Haodong Duan, Maosong Cao, et al. Internlm-xcomposer2:
+Mastering free-form text-image composition and compre-
+hension in vision-language large model. arXiv preprint
+arXiv:2401.16420, 2024.
+[7] Jiajun Fei, Dian Li, Zhidong Deng, Zekun Wang, Gang Liu,
+and Hui Wang. Video-ccam: Enhancing video-language un-
+derstanding with causal cross-attention masks for short and
+long videos. arXiv preprint arXiv:2408.14023, 2024.
+[8] Soichiro Fujita, Tsutomu Hirao, Hidetaka Kamigaito, Man-
+abu Okumura, and Masaaki Nagata. Soda: Story oriented
+dense video captioning evaluation framework. In Computer
+Vision–ECCV 2020: 16th European Conference, Glasgow,
+UK, August 23–28, 2020, Proceedings, Part VI 16, pages
+517–531. Springer, 2020.
+[9] Mingfei Gao, Yingbo Zhou, Ran Xu, Richard Socher, and
+Caiming Xiong. Woad: Weakly supervised online ac-
+tion detection in untrimmed videos. In Proceedings of
+the IEEE/CVF conference on computer vision and pattern
+recognition, pages 1915–1923, 2021.
+[10] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Ab-
+hinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha
+Letman, Akhil Mathur, Alan Schelten, Alex Vaughan,
+et al. The llama 3 herd of models. arXiv preprint
+arXiv:2407.21783, 2024.
+[11] Mohammed Guermal, Abid Ali, Rui Dai, and Francois Bre-
+mond. Joadaa: joint online action detection and action an-
+ticipation. In Proceedings of the IEEE/CVF Winter Confer-
+ence on Applications of Computer Vision, pages 6889–6898,
+2024.
+[12] Yongxin Guo, Jingyu Liu, Mingda Li, Xiaoying Tang, Xi
+Chen, and Bo Zhao. Vtg-llm: Integrating timestamp knowl-
+edge into video llms for enhanced video temporal grounding.
+arXiv preprint arXiv:2405.13382, 2024.
+[13] Yongxin Guo, Jingyu Liu, Mingda Li, Xiaoying Tang, Qing-
+bin Liu, and Xi Chen. Trace: Temporal grounding video llm
+via causal event modeling. arXiv preprint arXiv:2410.05643,
+2024.
+[14] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr
+Dollár, and Ross Girshick. Masked autoencoders are scalable
+vision learners. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, pages 16000–
+16009, 2022.
+[15] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-
+Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al.
+Lora: Low-rank adaptation of large language models. ICLR,
+1(2):3, 2022.
+[16] Miao Hu, Zhenxiao Luo, Amirmohammad Pasdar,
+Young Choon Lee, Yipeng Zhou, and Di Wu. Edge-based
+video analytics: A survey. arXiv preprint arXiv:2303.14329,
+2023.
+[17] Hang Hua, Yunlong Tang, Chenliang Xu, and Jiebo
+Luo. V2xum-llm: Cross-modal video summarization
+with temporal prompt instruction tuning. arXiv preprint
+arXiv:2404.12353, 2024.
+[18] Bin Huang, Xin Wang, Hong Chen, Zihan Song, and Wenwu
+Zhu. Vtimellm: Empower llm to grasp video moments. In
+Proceedings of the IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition, pages 14271–14280, 2024.
+[19] Zhicheng Huang, Zhaoyang Zeng, Bei Liu, Dongmei Fu,
+and Jianlong Fu. Pixel-bert: Aligning image pixels with
+text by deep multi-modal transformers. arXiv preprint
+arXiv:2004.00849, 2020.
+[20] Chuanmin Jia, Xinyu Hang, Shanshe Wang, Yaqiang Wu,
+Siwei Ma, and Wen Gao. Fpx-nic: An fpga-accelerated
+4k ultra-high-definition neural video coding system. IEEE
+Transactions on Circuits and Systems for Video Technology,
+32(9):6385–6399, 2022.
+[21] Muhammad Asif Khan, Emna Baccour, Zina Chkirbene,
+Aiman Erbad, Ridha Hamila, Mounir Hamdi, and Moncef
+Gabbouj. A survey on mobile edge computing for video
+streaming: Opportunities and challenges. IEEE Access, 10:
+120514–120550, 2022.
+[22] Minkuk Kim, Hyeon Bae Kim, Jinyoung Moon, Jinwoo
+Choi, and Seong Tae Kim. Do you remember? dense video
+captioning with cross-modal memory retrieval. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, pages 13894–13904, 2024.
+[23] Ranjay Krishna, Kenji Hata, Frederic Ren, Li Fei-Fei, and
+Juan Carlos Niebles. Dense-captioning events in videos. In
+Proceedings of the IEEE international conference on com-
+puter vision, pages 706–715, 2017.
+2807
+[24] Tajinder Kumar, Purushottam Sharma, Jaswinder Tanwar,
+Hisham Alsghier, Shashi Bhushan, Hesham Alhumyani,
+Vivek Sharma, and Ahmed I Alutaibi. Cloud-based video
+streaming services: Trends, challenges, and opportunities.
+CAAI Transactions on Intelligence Technology, 9(2):265–
+285, 2024.
+[25] Kyungjin Lee, Juheon Yi, Youngki Lee, Sunghyun Choi, and
+Young Min Kim. Groot: a real-time streaming system of
+high-fidelity volumetric videos. In Proceedings of the 26th
+Annual International Conference on Mobile Computing and
+Networking, pages 1–14, 2020.
+[26] Jie Lei, Liwei Wang, Yelong Shen, Dong Yu, Tamara L Berg,
+and Mohit Bansal. Mart: Memory-augmented recurrent
+transformer for coherent video paragraph captioning. arXiv
+preprint arXiv:2005.05402, 2020.
+[27] Gen Li, Nan Duan, Yuejian Fang, Ming Gong, and Daxin
+Jiang. Unicoder-vl: A universal encoder for vision and
+language by cross-modal pre-training. In Proceedings of
+the AAAI conference on artificial intelligence, pages 11336–
+11344, 2020.
+[28] Junnan Li, Ramprasaath Selvaraju, Akhilesh Gotmare,
+Shafiq Joty, Caiming Xiong, and Steven Chu Hong Hoi.
+Align before fuse: Vision and language representation learn-
+ing with momentum distillation. Advances in neural infor-
+mation processing systems, 34:9694–9705, 2021.
+[29] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi.
+Blip-2: Bootstrapping language-image pre-training with
+frozen image encoders and large language models. In In-
+ternational conference on machine learning, pages 19730–
+19742. PMLR, 2023.
+[30] Yuanqi Li, Arthi Padmanabhan, Pengzhan Zhao, Yufei
+Wang, Guoqing Harry Xu, and Ravi Netravali. Reducto:
+On-camera filtering for resource-efficient real-time video an-
+alytics. In Proceedings of the Annual conference of the ACM
+Special Interest Group on Data Communication on the appli-
+cations, technologies, architectures, and protocols for com-
+puter communication, pages 359–376, 2020.
+[31] Chin-Yew Lin. Rouge: A package for automatic evaluation
+of summaries. In Text summarization branches out, pages
+74–81, 2004.
+[32] Junming Lin, Zheng Fang, Chi Chen, Zihao Wan, Fuwen
+Luo, Peng Li, Yang Liu, and Maosong Sun. Streamingbench:
+Assessing the gap for mllms to achieve streaming video un-
+derstanding. arXiv preprint arXiv:2411.03628, 2024.
+[33] Kevin Lin, Linjie Li, Chung-Ching Lin, Faisal Ahmed, Zhe
+Gan, Zicheng Liu, Yumao Lu, and Lijuan Wang. Swin-
+bert: End-to-end transformers with sparse attention for video
+captioning. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, pages 17949–
+17958, 2022.
+[34] Eric Lopez-Lopez, Xose M Pardo, and Carlos V Regueiro.
+Incremental learning from low-labelled stream data in open-
+set video face recognition. Pattern Recognition, 131:108885,
+2022.
+[35] Jiasen Lu, Dhruv Batra, Devi Parikh, and Stefan Lee. Vil-
+bert: Pretraining task-agnostic visiolinguistic representations
+for vision-and-language tasks. In Advances in Neural Infor-
+mation Processing Systems, 2019.
+[36] Muhammad Maaz, Hanoona Rasheed, Salman Khan, and Fa-
+had Shahbaz Khan. Video-chatgpt: Towards detailed video
+understanding via large vision and language models. arXiv
+preprint arXiv:2306.05424, 2023.
+[37] Safa Messaoud, Ismini Lourentzou, Assma Boughoula,
+Mona Zehni, Zhizhen Zhao, Chengxiang Zhai, and Alexan-
+der G Schwing. Deepqamvs: Query-aware hierarchical
+pointer networks for multi-video summarization. In Pro-
+ceedings of the 44th international ACM SIGIR conference
+on research and development in information retrieval, pages
+1389–1399, 2021.
+[38] Liang Mi, Tingting Yuan, Weijun Wang, Haipeng Dai, Lin
+Sun, Jiaqi Zheng, Guihai Chen, and Xiaoming Fu. Accel-
+erated neural enhancement for video analytics with video
+quality adaptation. IEEE/ACM Transactions on Networking,
+2024.
+[39] Jonghwan Mun, Linjie Yang, Zhou Ren, Ning Xu, and Bo-
+hyung Han. Streamlined dense video captioning. In Pro-
+ceedings of the IEEE/CVF conference on computer vision
+and pattern recognition, pages 6588–6597, 2019.
+[40] Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing
+Zhu. Bleu: a method for automatic evaluation of machine
+translation. In Proceedings of the 40th annual meeting of the
+Association for Computational Linguistics, pages 311–318,
+2002.
+[41] Leonardo Peroni and Sergey Gorinsky. An end-to-
+end pipeline perspective on video streaming in best-
+effort networks: A survey and tutorial. arXiv preprint
+arXiv:2403.05192, 2024.
+[42] Toby Perrett, Alessandro Masullo, Tilo Burghardt, Ma-
+jid Mirmehdi, and Dima Damen. Temporal-relational
+crosstransformers for few-shot action recognition. In Pro-
+ceedings of the IEEE/CVF conference on computer vision
+and pattern recognition, pages 475–484, 2021.
+[43] Di Qi, Lin Su, Jia Song, Edward Cui, Taroon Bharti, and
+Arun Sacheti. Imagebert: Cross-modal pre-training with
+large-scale weak-supervised image-text data. arXiv preprint
+arXiv:2001.07966, 2020.
+[44] Long Qian, Juncheng Li, Yu Wu, Yaobo Ye, Hao Fei, Tat-
+Seng Chua, Yueting Zhuang, and Siliang Tang. Momen-
+tor: Advancing video large language model with fine-grained
+temporal reasoning. arXiv preprint arXiv:2402.11435, 2024.
+[45] Rui Qian, Xiaoyi Dong, Pan Zhang, Yuhang Zang, Shuan-
+grui Ding, Dahua Lin, and Jiaqi Wang. Streaming long video
+understanding with large language models. arXiv preprint
+arXiv:2405.16009, 2024.
+[46] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning
+transferable visual models from natural language supervi-
+sion. In International conference on machine learning, pages
+8748–8763. PmLR, 2021.
+[47] Shuhuai Ren, Linli Yao, Shicheng Li, Xu Sun, and Lu
+Hou. Timechat: A time-sensitive multimodal large lan-
+guage model for long video understanding. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 14313–14323, 2024.
+2808
+[48] Javier Selva, Anders S Johansen, Sergio Escalera, Kamal
+Nasrollahi, Thomas B Moeslund, and Albert Clapés. Video
+transformers: A survey. IEEE Transactions on Pattern Anal-
+ysis and Machine Intelligence, 45(11):12922–12943, 2023.
+[49] Zheng Shou, Junting Pan, Jonathan Chan, Kazuyuki
+Miyazawa, Hassan Mansour, Anthony Vetro, Xavier Giro-i
+Nieto, and Shih-Fu Chang. Online detection of action start
+in untrimmed, streaming videos. In Proceedings of the Eu-
+ropean conference on computer vision (ECCV), pages 534–
+551, 2018.
+[50] Enxin Song, Wenhao Chai, Guanhong Wang, Yucheng
+Zhang, Haoyang Zhou, Feiyang Wu, Haozhe Chi, Xun Guo,
+Tian Ye, Yanting Zhang, et al. Moviechat: From dense token
+to sparse memory for long video understanding. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, pages 18221–18232, 2024.
+[51] Max Sponner, Bernd Waschneck, and Akash Kumar. Adapt-
+ing neural networks at runtime: Current trends in at-runtime
+optimizations for deep learning. ACM Computing Surveys,
+56(10):1–40, 2024.
+[52] James Supancic III and Deva Ramanan. Tracking as online
+decision-making: Learning a policy from streaming videos
+with reinforcement learning. In Proceedings of the IEEE in-
+ternational conference on computer vision, pages 322–331,
+2017.
+[53] Hao Tan and Mohit Bansal. Lxmert: Learning cross-
+modality encoder representations from transformers. arXiv
+preprint arXiv:1908.07490, 2019.
+[54] Yunlong Tang, Jing Bi, Siting Xu, Luchuan Song, Susan
+Liang, Teng Wang, Daoan Zhang, Jie An, Jingyang Lin,
+Rongyi Zhu, et al. Video understanding with large language
+models: A survey. arXiv preprint arXiv:2312.17432, 2023.
+[55] Yunlong Tang, Daiki Shimada, Jing Bi, Mingqian Feng,
+Hang Hua, and Chenliang Xu. Empowering llms with
+pseudo-untrimmed videos for audio-visual temporal under-
+standing. arXiv preprint arXiv:2403.16276, 2024.
+[56] Yolo Yunlong Tang, Jing Bi, Pinxin Liu, Zhenyu Pan,
+Zhangyun Tan, Qianxiang Shen, Jiani Liu, Hang Hua, Jun-
+jia Guo, Yunzhong Xiao, Chao Huang, Zhiyuan Wang, Su-
+san Liang, Xinyi Liu, Yizhi Song, Junhua Huang, Jia-Xing
+Zhong, Bozheng Li, Daiqing Qi, Ziyun Zeng, Ali Vosoughi,
+Luchuan Song, Zeliang Zhang, Daiki Shimada, Han Liu,
+Jiebo Luo, and Chenliang Xu. Video-lmm post-training: A
+deep dive into video reasoning with large multimodal mod-
+els. arXiv preprint arXiv:2510.05034, 2025.
+[57] Yolo Yunlong Tang, Daiki Shimada, Hang Hua, Chao
+Huang, Jing Bi, Rogerio Feris, and Chenliang Xu. Video-
+r4: Reinforcing text-rich video reasoning with visual rumi-
+nation. arXiv preprint arXiv:2511.17490, 2025.
+[58] Adane Nega Tarekegn, Mario Giacobini, and Krzysztof
+Michalak. A review of methods for imbalanced multi-label
+classification. Pattern Recognition, 118:107965, 2021.
+[59] Jianfeng Wang, Zhengyuan Yang, Xiaowei Hu, Linjie Li,
+Kevin Lin, Zhe Gan, Zicheng Liu, Ce Liu, and Lijuan Wang.
+Git: A generative image-to-text transformer for vision and
+language. arXiv preprint arXiv:2205.14100, 2022.
+[60] Teng Wang, Huicheng Zheng, Mingjing Yu, Qian Tian, and
+Haifeng Hu. Event-centric hierarchical representation for
+dense video captioning. IEEE Transactions on Circuits and
+Systems for Video Technology, 31(5):1890–1900, 2020.
+[61] Teng Wang, Ruimao Zhang, Zhichao Lu, Feng Zheng, Ran
+Cheng, and Ping Luo. End-to-end dense video captioning
+with parallel decoding. In Proceedings of the IEEE/CVF
+International Conference on Computer Vision, pages 6847–
+6857, 2021.
+[62] Xiang Wang, Shiwei Zhang, Zhiwu Qing, Yuanjie Shao,
+Zhengrong Zuo, Changxin Gao, and Nong Sang. Oadtr:
+Online action detection with transformers. In Proceedings
+of the IEEE/CVF International Conference on Computer Vi-
+sion, pages 7565–7575, 2021.
+[63] Yuqing Wang, Zhaoliang Xu, Xinlong Wang, Chunhua Shen,
+Baoshan Cheng, Hao Shen, and Huaxia Xia. End-to-end
+video instance segmentation with transformers. In Proceed-
+ings of the IEEE/CVF conference on computer vision and
+pattern recognition, pages 8741–8750, 2021.
+[64] Mateusz Wasala, Hubert Szolc, and Tomasz Kryjak. An ef-
+ficient real-time fpga-based orb feature extraction for an uhd
+video stream for embedded visual slam. Electronics, 11(14):
+2259, 2022.
+[65] Yuetian Weng, Mingfei Han, Haoyu He, Xiaojun Chang, and
+Bohan Zhuang. Longvlm: Efficient long video understand-
+ing via large language models. In European Conference on
+Computer Vision, pages 453–470. Springer, 2025.
+[66] Cheng-Kuang Wu, Zhi Rui Tam, Chieh-Yen Lin, Yun-Nung
+Chen, and Hung-yi Lee. Streambench: Towards bench-
+marking continuous improvement of language agents. arXiv
+preprint arXiv:2406.08747, 2024.
+[67] Chao-Yuan Wu and Philipp Krahenbuhl. Towards long-form
+video understanding. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition, pages
+1884–1894, 2021.
+[68] Hao Wu, Huabin Liu, Yu Qiao, and Xiao Sun. Dibs: Enhanc-
+ing dense video captioning with unlabeled videos via pseudo
+boundary enrichment and online refinement. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 18699–18708, 2024.
+[69] Hu Xu, Gargi Ghosh, Po-Yao Huang, Dmytro Okhonko,
+Armen Aghajanyan, Florian Metze, Luke Zettlemoyer, and
+Christoph Feichtenhofer. Videoclip: Contrastive pre-training
+for zero-shot video-text understanding. arXiv preprint
+arXiv:2109.14084, 2021.
+[70] Antoine Yang, Arsha Nagrani, Paul Hongsuck Seo, An-
+toine Miech, Jordi Pont-Tuset, Ivan Laptev, Josef Sivic, and
+Cordelia Schmid. Vid2seq: Large-scale pretraining of a vi-
+sual language model for dense video captioning. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, pages 10714–10726, 2023.
+[71] Yuzhe Yang and Zhi Xu. Rethinking the value of labels for
+improving class-imbalanced learning. Advances in neural
+information processing systems, 33:19290–19301, 2020.
+[72] Abid Yaqoob, Ting Bi, and Gabriel-Miro Muntean. A survey
+on adaptive 360 video streaming: Solutions, challenges and
+opportunities. IEEE Communications Surveys & Tutorials,
+22(4):2801–2838, 2020.
+[73] Jiahui Yu, Zirui Wang, Vijay Vasudevan, Legg Yeung, Mo-
+jtaba Seyedhosseini, and Yonghui Wu. Coca: Contrastive
+2809
+captioners are image-text foundation models. arXiv preprint
+arXiv:2205.01917, 2022.
+[74] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and
+Lucas Beyer. Sigmoid loss for language image pre-training.
+In Proceedings of the IEEE/CVF international conference on
+computer vision, pages 11975–11986, 2023.
+[75] Zitong Zhan, Daniel McKee, and Svetlana Lazebnik. Robust
+online video instance segmentation with track queries. arXiv
+preprint arXiv:2211.09108, 2022.
+[76] Boqiang Zhang, Kehan Li, Zesen Cheng, Zhiqiang Hu,
+Yuqian Yuan, Guanzheng Chen, Sicong Leng, Yuming Jiang,
+Hang Zhang, Xin Li, et al. Videollama 3: Frontier multi-
+modal foundation models for image and video understand-
+ing. arXiv preprint arXiv:2501.13106, 2025.
+[77] Duzhen Zhang, Yahan Yu, Jiahua Dong, Chenxing Li, Dan
+Su, Chenhui Chu, and Dong Yu. Mm-llms: Recent ad-
+vances in multimodal large language models. arXiv preprint
+arXiv:2401.13601, 2024.
+[78] Hang Zhang, Xin Li, and Lidong Bing. Video-llama: An
+instruction-tuned audio-visual language model for video un-
+derstanding. arXiv preprint arXiv:2306.02858, 2023.
+[79] Zhuosheng Zhang, Aston Zhang, Mu Li, Hai Zhao,
+George Karypis, and Alex Smola. Multimodal chain-of-
+thought reasoning in language models. arXiv preprint
+arXiv:2302.00923, 2023.
+[80] Peisen Zhao, Lingxi Xie, Jiajie Wang, Ya Zhang, and Qi
+Tian. Progressive privileged knowledge distillation for on-
+line action detection. Pattern Recognition, 129:108741,
+2022.
+[81] Kaiyang Zhou, Yu Qiao, and Tao Xiang. Deep reinforce-
+ment learning for unsupervised video summarization with
+diversity-representativeness reward. In Proceedings of the
+AAAI conference on artificial intelligence, 2018.
+[82] Luowei Zhou, Chenliang Xu, and Jason Corso. Towards
+automatic learning of procedures from web instructional
+videos. In Proceedings of the AAAI conference on artificial
+intelligence, 2018.
+[83] Luowei Zhou, Yingbo Zhou, Jason J Corso, Richard Socher,
+and Caiming Xiong. End-to-end dense video captioning with
+masked transformer. In Proceedings of the IEEE conference
+on computer vision and pattern recognition, pages 8739–
+8748, 2018.
+[84] Xingyi Zhou, Anurag Arnab, Shyamal Buch, Shen Yan,
+Austin Myers, Xuehan Xiong, Arsha Nagrani, and Cordelia
+Schmid. Streaming dense video captioning. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 18243–18252, 2024.
+[85] Wanrong Zhu, Bo Pang, Ashish V Thapliyal, William Yang
+Wang, and Radu Soricut. End-to-end dense video captioning
+as sequence generation. arXiv preprint arXiv:2204.08121,
+2022.
+[86] Wanrong Zhu, Bo Pang, Ashish V Thapliyal, William Yang
+Wang, and Radu Soricut. End-to-end dense video captioning
+as sequence generation. arXiv preprint arXiv:2204.08121,
+2022.
+2810
+

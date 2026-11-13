@@ -1,0 +1,1142 @@
+Hierarchical Event Memory for Accurate and Low-latency Online Video
+Temporal Grounding
+Minghang Zheng1
+Yuxin Peng1
+Benyuan Sun3
+Yi Yang3
+Yang Liu1,2*
+1
+Wangxuan Institute of Computer Technology, Peking University
+2
+State Key Laboratory of General Artificial Intelligence, Peking University
+3
+Central Media Technology Institute, Huawei
+{minghang,pengyuxin,yangliu}@pku.edu.cn
+{sunbenyuan,yangyi16}@huawei.com
+Abstract
+In this paper, we tackle the task of online video tempo-
+ral grounding (OnVTG), which requires the model to lo-
+cate events related to a given text query within a video
+stream. Unlike regular video temporal grounding, On-
+VTG requires the model to make predictions without ob-
+serving future frames. As online videos are streaming inputs
+and can go on indefinitely, it is impractical and inefficient
+to store all historical inputs. The existing OnVTG mod-
+els employ memory to store recent historical video frame
+features and predict scores indicating whether the current
+frame corresponds to the start or end time of the target
+event. However, these methods lack effective event modeling
+and cannot retain long-term historical information, leading
+to low performance. To tackle these challenges, we pro-
+pose a hierarchical event memory for OnVTG. We propose
+an event-based OnVTG framework that makes predictions
+based on event proposals that model event-level informa-
+tion with various durations. To preserve historically valu-
+able event information, we introduce a hierarchical event
+memory that retains historical events, allowing the model
+to access both recent and long-term information. To enable
+the real-time prediction, we further propose a future predic-
+tion branch that predicts whether the target event will occur
+shortly and further regresses the start time of the event. We
+achieve state-of-the-art performance on the TACoS, Activ-
+ityNet Captions, and MAD datasets. Code is available at
+https://github.com/minghangz/OnVTG.
+1. Introduction
+In recent decades, the number of online videos, such as
+surveillance and live streaming, has increased significantly.
+*Corresponding author
+Time flow
+Grounding
+Model
+start
+end
+Prediction scores
+Current time 𝑡𝑡
+Frame-level
+Memory
+Current Frames
+Long-Term History
+…
+…
+…
+Grounding
+Model
+Current Frames
+Long-Term History
+…
+…
+Hierarchical
+Event Memory
+Event Proposals
+IoU prediction &
+Boundary regression
+start end
+Prediction
+Future Prediction
+(b) Existing OnVTG Models (c) Our Models
+Query: The guy plays the saxophone again.
+Long-term history
+Short-term
+window
+Future (invisible)
+Current time 𝑡𝑡
+Ground Truth:
+(a) Online video temporal Grounding
+Real-time prediction
+Figure 1. (a) The online video temporal grounding. (b) Existing
+work employs memory to store recent historical video frames and
+predicts scores indicating whether the current frame corresponds
+to the start or end time of the target event. (c) We propose a hi-
+erarchical event memory that retains historical events at different
+scales, allowing the model to acquire long-term historical infor-
+mation and make predictions based on event proposals.
+As shown in Figure 1 (a), online video temporal ground-
+ing (OnVTG) [10] can localize the location of events de-
+scribed by natural language queries within online videos
+in real time, showing potential applications in areas such
+as alert in surveillance [1, 49] and online cross-media re-
+trieval [19, 30, 54].
+Unlike the traditional video temporal grounding [7, 11,
+21, 23, 28, 41, 43, 45, 51] method, the OnVTG model can
+only observe the video from 0 to t at the current timestamp
+This ICCV paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+21589
+t, and it should make predictions promptly when the target
+event occurs. As online videos are streaming inputs and can
+go on indefinitely, it is impractical and inefficient to store
+all historical inputs. Thus, most existing online video un-
+derstanding methods [10, 16, 18, 33] only retain the latest
+historical information using a fixed-size memory. As shown
+in Figure 1(b), the existing OnVTG model [10] employs
+memory to store recent historical video frame features and
+predicts scores indicating whether the current frame corre-
+sponds to the start or end time of the target event. However,
+these methods have the following limitations.
+First, video temporal grounding requires identifying tar-
+get events of various durations within the video. For ex-
+ample, for a person pushing open a door, the duration of
+the target event can be very short, but for a person play-
+ing the saxophone, the duration of the target event can be
+long. However, such per-frame score prediction methods
+lack effective event modeling, leading to poor performance.
+Secondly, the target event may require long-term valuable
+historical information for accurate localization. For exam-
+ple, in Figure 1(a), to locate the query ‘the guy plays the
+saxophone again’, the model needs the information about
+when he first plays the saxophone, which happens at the be-
+ginning of the video. Previous methods typically employed
+a first-in-first-out principle to update the memory, result-
+ing in the memory being filled with redundant content and
+valuable event information being removed from the mem-
+ory when long-duration similar frames appear.
+To address the aforementioned issues, we propose a hi-
+erarchical event memory for online video temporal ground-
+ing, as illustrated in Figure 1(c). First, we propose an event-
+based OnVTG framework to model complete event-level in-
+formation with various durations. We construct event pro-
+posals with various durations using a segment tree struc-
+ture, classify whether these proposals match the query, and
+further regress the temporal boundaries of the matched pro-
+posals. Secondly, we propose a hierarchical event memory
+that retains long-term historical events. The ideal memory
+should (1) retain long-term historical event information and
+(2) preserve valuable low-redundant information within a
+limited size. To achieve this, (1) we create a hierarchical
+memory where small-scale memory stores recent informa-
+tion, while large-scale memory stores long-term informa-
+tion. (2) We propose a dynamic memory size configuration
+for different scales, ensuring that those scales with more
+positive events have larger memory sizes. We also remove
+redundant events in the memory by proposing an adaptive
+memory update rule.
+However, solely relying on event proposals for predic-
+tions can lead to delays in predicting the start of events
+since the model can only obtain a complete event proposal
+when the event is about to end. To solve this problem,
+we further propose a future prediction branch that predicts
+whether the target event will occur in the near future and
+further regresses the start time of the event. This enables
+our model to predict in two ways: one is to predict the start
+and end times based on the event proposal, and the other is
+to predict the start time using the future prediction branch
+and the end time using the event proposal. The former
+achieves higher performance by observing the entire event
+before making predictions, while the latter can make predic-
+tions when the event begins, achieving less start time pre-
+diction latency. Through hierarchical event memory and fu-
+ture prediction, we achieve significantly better performance
+and lower latency than existing methods, attaining state-of-
+the-art performance on the TACoS [34], ActivityNet [17],
+and MAD [36] datasets.
+Our contributions are summarized as follows: (1) We
+propose a novel pipeline for online video temporal ground-
+ing based on hierarchical event memory, enabling a more
+accurate and low-latency prediction. (2) We propose the
+dynamic memory size configuration and adaptive memory
+updating to enable the memory to preserve more valuable
+information within a limited size and reduce redundant in-
+formation in the memory. (3) We propose a future predic-
+tion branch to address the issue of delays in model predic-
+tions. (4) We achieve state-of-the-art performance on the
+MAD, ActivityNet, and TACoS datasets.
+2. Related Work
+2.1. Offline Video Temporal Grounding
+Video temporal grounding (VTG) aims to localize the most
+relevant segments in untrimmed videos based on a given
+natural language query. Most of the existing work focuses
+on offline videos, where the model makes predictions after
+all the videos are inputted. These approaches can be catego-
+rized into two types: proposal-free [14, 23, 25, 28, 45, 57]
+and proposal-based [11, 21, 26, 43, 51, 55, 56, 58, 59]
+methods. Proposal-free methods directly predict the tar-
+get moment’s start and end temporal boundaries. Proposal-
+based methods demonstrate better performance by model-
+ing event proposals of varying lengths and positions within
+the video. The proposal-based method explicitly models
+event proposals in the video and typically achieves better
+performance. However, these proposal-based methods can-
+not be directly applied to online videos. Firstly, the num-
+ber of these proposals scales quadratically with the video
+stream input, which is redundant and inefficient. Besides,
+the delays in predicting the start of events can be large since
+the model can only obtain a complete event proposal when
+the event is about to end.
+2.2. Online Video Understanding
+Existing research on online videos mainly includes online
+video temporal grounding [10], action detection [2–4, 8, 9,
+21590
+35, 40, 46, 47, 52], and action localization [15, 16, 33, 48].
+To our knowledge, the only previous online video temporal
+grounding (OnVTG) method was proposed by Gan et al.
+[10]. Gan et al. [10] stores historical frames to predict
+the probability of the current frame being the start or end
+timestamps of the target event and uses a teacher network
+that can observe future frames for knowledge distillation.
+However, the target event can have various durations, and
+such frame-level memory and per-frame score prediction
+methods lack effective event modeling. In this paper, we
+propose an event-based OnVTG framework to model com-
+plete event-level information and make predictions based on
+event proposals.
+Online video action detection predicts an action label
+for each frame in real time. Online video action local-
+ization further requires the output of the action’s start and
+end timestamps. TeSTra uses M learnable queries to
+compress history information through cross-attention [39].
+MiniROAD directly uses GRU [6] to encode history in-
+formation. OAT [16] and HAT [33] introduce proposal-
+based methods for online video action localization, utilizing
+a memory to retain historical frames, employing a sliding
+window to generate action proposals, and further classify-
+ing these proposals. However, they do not account for the
+delay in predicting the start time, which cannot be over-
+looked in the OnVTG task, where the target segments are
+longer. Besides, different from action detection and local-
+ization, which independently predict each occurring action,
+the OnVTG requires consideration of inter-event relation-
+ships described in the query. This necessitates a robust ca-
+pability to handle historical information over long periods.
+Therefore, we propose a hierarchical event memory that re-
+tains historical events at different scales to obtain long-term
+historical information. We also propose a future prediction
+branch to address the delay in model predictions.
+2.3. Memory for Long Video Understanding
+Some works [5, 13, 31, 37, 42, 44, 50] have explored how to
+enable video large language models to support long video
+inputs through memory mechanisms. For example, MA-
+LMM [13] and MovieChat [37] store historical frame fea-
+tures using memory and compress them by merging similar
+frames. VideoLLaMB [42] and VideoStreaming [31] use at-
+tention mechanisms to compress historical information into
+a fixed number of historical tokens. Flash-Vstream [50] and
+HEM-LLM [5] combine multiple methods to construct mul-
+tiple memories. However, the memory used in these meth-
+ods is not optimal for online video temporal grounding. On
+one hand, OnVTG requires a multi-granularity temporal un-
+derstanding ability, while its memory only forms sequential
+time representations and fails to capture hierarchical event
+structures. For instance, they cannot represent sub-events
+within a larger event. In contrast, we propose a hierarchical
+event memory that can preserve different granularities of the
+same event. On the other hand, these methods tend to com-
+press all the video frames into memory, as a user can ask
+about everything everywhere. However, in the online set-
+ting, they cannot store all frames due to memory constraints,
+and thus progressively compress fine-grained visual details
+during continuous video processing. This compression-
+induced information loss is particularly detrimental for tem-
+poral localization tasks requiring precise moment retrieval.
+Our hierarchical memory effectively addresses these issues:
+the lower-level memory only retains recent details, while
+the higher-level memory preserves long-term historical in-
+formation.
+3. Method
+3.1. Problem Definition
+Online video temporal grounding (OnVTG) aims to localize
+the target event (s, e) related to a given natural language
+query Q in an untrimmed video V = {vi}T
+i=1, where s and
+e are the start and end time of the target event and T is the
+number of frames in the video. The online constraint of
+OnVTG requires that at any timestamp t(1 ≤ t ≤ T), only
+partial video V = {vi}t
+i=1 is observed by the model, and the
+model should predict the target event as early as possible.
+3.2. Overview
+The pipeline of our method is illustrated in Figure 2. To
+ensure real-time predictions, we construct event proposals
+that end within the current short-term window and promptly
+predict which proposals match the query text. Since tar-
+get events can have various durations and may require
+long-term historical information for accurate localization,
+we propose a hierarchical event memory to store historical
+events of varying durations and distances in time to refine
+the current event proposals.
+Specifically, as illustrated in Figure 3, we use a segment
+tree structure to generate event proposals with various dura-
+tions (colored in blue) based on the current short-term win-
+dow and the event memory. The event proposals are divided
+into L scales, and the large-scale proposals are obtained by
+merging the two adjacent small-scale proposals. To pro-
+vide long-term historical information, we further use his-
+tory memory to refine the current event proposals. As on-
+line videos are streaming inputs and can go on indefinitely,
+we need to retain more valuable and low-redundancy his-
+torical information within a limited memory size. The scale
+that aligns with the typical duration of events is more likely
+to preserve valuable event information, thus, we propose
+a dynamic memory size configuration for different scales,
+ensuring that those scales with more positive events have
+larger memory sizes. We also propose an adaptive memory
+update rule to merge redundant events.
+21591
+Streaming Video
+Short-term
+window
+Hierarchical
+Event Memory
+…
+Predict start timestamp
+Query Sentence
+A person is
+shopping in the
+supermarket.
+Text Encoder
+Vision Encoder
+Multimodal Fusion
+Classifier Regressor
+Memory-Driven
+Event Refinement
+Event proposals
+Memory Updating
+Prediction
+Start End
+Future Prediction
+1. Dynamic Memory size config:
+Memory Updating
+Long-term history
+Time flow Current time 𝑡𝑡
+Scale 1
+Scale 2
+Scale 3
+memory size
+memory size
+expand
+shrink
+More positive
+proposals
+Less positive
+proposals
+2. Adaptive memory update:
+1 2 3 4
+Yes, merge
+For full scales:
+New event
+Existing redundant events?
+No, first-in-first-out
+Old memory
+New memory
+1 2&3 4 2 3 4
+Adjust the memory size based on the
+distribution of positive proposals.
+Event-based OnVTG Model
+Figure 2. The framework of our proposed event-based online VTG method. Left: Our model processes a streaming video and a query
+sentence to locate a described event in real-time. It generates event proposals from a short-term window and enriches them with long-term
+context from the Hierarchical Event Memory, which stores historical events of varying durations. The model then outputs the event’s
+boundaries: a Future Prediction branch provides a low-latency start prediction, while the refined proposal is used to determine the more
+accurate event boundaries. Right: The Hierarchical Event Memory is maintained through an efficient Memory Updating process, which
+uses a Dynamic Memory size config and Adaptive memory update rule to preserve the most relevant historical information.
+Short-term
+window
+Long-term history
+Scale 1
+Current event proposal
+Historical events in the memory
+Abandoned historical events
+Event memory
+Scale 2
+Scale 3
+Scale 4
+merge
+merge
+merge
+Figure 3. The construction of our hierarchical events. We use a
+segment tree structure to generate event proposals, where event
+proposals are divided into L scales, and the large-scale proposals
+are obtained by merging the two adjacent small-scale proposals.
+To enable a real-time prediction of the start time, we pro-
+pose a future prediction branch in Figure 4, which requires
+each event proposal to predict whether the target event will
+start soon. When the target event is about to start (at t1 in
+Figure 4), we can obtain real-time predictions of the start
+time. When the event is about to end (at t2 in Figure 4), we
+can obtain real-time predictions of the event’s end time and
+provide a more accurate start time from event proposals.
+Query: The guy plays the saxophone again.
+Ground Truth:
+Future Prediction
+start time end time
+Time flow
+At timestamp 𝑡𝑡1
+Classify & Regress
+At timestamp 𝑡𝑡2
+Figure 4. The illustration of future prediction. When the target
+event is about to start (at timestamp t1), we can obtain real-time
+predictions of the start time. When the event is about to end (at
+timestamp t2), we can obtain real-time predictions of the event’s
+end time and provide a more accurate start time from event pro-
+posals.
+3.3. Event-based OnVTG Model
+In video temporal grounding, target events can have various
+durations and may require long-term historical information
+for accurate localization. In this paper, we propose a novel
+hierarchical event based OnVTG pipeline that utilizes the
+segment tree structure to generate event proposals with var-
+21592
+ious durations and make predictions based on these event
+proposals.
+Hierarchical Event Construction. As shown by the
+blue proposals in Figures 2 and 3, to ensure the real-time
+prediction, we construct event proposals that end within the
+short window [t - L_s, t] at time  t , where Ls is the short-
+window size. The recent historical events are also stored
+in an event memory M (colored in green) to preserve long-
+term historical information. As illustrated in Figure 3, we
+use a segment tree structure to generate event proposals to
+reduce event redundancy and improve efficiency. Specifi-
+cally, for the short window frames V = {vi}t
+i=t−Ls+1, we
+use a pre-trained vision encoder [39] to extract the visual
+features and use 1-D convolution to obtain the proposal fea-
+tures at the first scale: P1
+= {p1
+i }t
+i=t−Ls+1. Then, for the
+(j + 1)-th scale, proposals are obtained by merging two ad-
+jacent proposals at the j-th scale (1 ≤ j ≤ L − 1):
+  \begin {aligned} p^{j+1}_{i} = \text {MLP}([p^{j}_{2i};p^{j}_{2i-1}]) \\ \label {eq: proposal} \end {aligned} 
+(1)
+where [; ] represents the concatenation and MLP(·) is the
+multilayer perceptron [12]. At the j-th scale, the duration
+of proposal Pj+1
+is 2j
+. When j is large, this duration may
+exceed the length of the short-term window (for example,
+scales 3 and 4 in Figure 3). As shown in Figure 3, in this
+case, the most recent historical event stored in memory at
+scale j will be involved in the calculation of Eq(1).
+Memory-Driven Event Refinement. For some queries
+like ‘the guy plays the saxophone again’, the model requires
+other events information that may happen early to assist in
+the localization of the current query. Thus, we further refine
+the current event proposals by the historical events stored in
+the memory M: Pj
+= E(Pj
+; M), where E(·) is the trans-
+former encoder layer [39]. The small-scale memory pro-
+vides fine-grained recent information, while the large-scale
+memory retains long-term coarse-grained information.
+Proposal-based Model Prediction. After obtaining the
+event proposal features P, we encode the query sentence
+Q using a text encoder and fuse the event proposal fea-
+tures with the query features with transformer decoder:
+P̂ = D(P, Etext(Q)). Then, for each event proposal p̂i, we
+use a classifier to determine whether it is a positive event:
+ci = MLP(p̂i). An event proposal is regarded as positive
+if the IoU between the proposal and ground truth is larger
+than a certain threshold. For the positive proposal, we fur-
+ther regress the offsets between the start/end times of the
+GT and the proposal to obtain more accurate predictions:
+os
+i , oe
+i = MLP(p̂i). We use focal loss [22] to supervise the
+classification results and use DIoU loss [60] to supervise the
+regression results:
+  \mathcal {L}_{cls} = \frac {1}{N}\sum _{i=1}^{N}\mathcal {L}_{focal}(c_i, \hat {c}_i)  (2)
+  \mathcal {L}_{reg} = \frac {1}{N}\sum _{i=1}^{N}\mathcal {L}_{DIoU}(p^s_i+o^s_i, p^e_i+o^e_i, s, e) \mathbf {1}_{\{\hat {c}_i = 1\}}  (3)
+where ĉi = 1 if and only if event proposal p̂i is positive,
+(ps
+i , pe
+i ) is the start and end time of proposal p̂i, (s, e) is the
+start and end time of the ground truth, 1{·} is the indicator
+function.
+Future Prediction. Relying solely on event proposals
+for predictions can lead to delays in predicting the start of
+events since the model can only obtain a complete event
+proposal when the event is about to end. To address this is-
+sue, we propose the future prediction branch. Specifically,
+at time t, we use an MLP to predict the probability cf
+t that
+the target event starts in a future window [t + a, t + b] us-
+ing the current event proposals P̂, where (a, b) are hyperpa-
+rameters. Then, we further predict the offset of
+t by another
+MLP. The future prediction loss is:
+  \mathcal {L}_{future} = \mathcal {L}_{focal}(c^f_t, \hat {c}^f_t) + \|o^f_t-(s -t)\|_1 \mathbf {1}_{\{\hat {c}^f_t = 1\}}  (4)
+where s is the start time of the ground truth, ĉf
+t = 1 if and
+only if t+a ≤ s ≤ t+b. As illustrated in Figure 4, when the
+target event is about to start (at t1), we can obtain real-time
+predictions of the start time. When the event is about to end
+(at t2), we can obtain real-time predictions of the event’s
+end time and provide a more accurate start time from event
+proposals.
+3.4. Memory Updating
+When the next short-term window comes, the event propos-
+als in the current window will be added to the memory. As
+online videos are streaming inputs and can go on indefi-
+nitely, we need to retain more valuable and low-redundancy
+historical information within a limited memory size. Thus,
+we propose a dynamic memory size configuration and an
+adaptive memory update rule.
+Dynamic memory size configuration. The scale that
+aligns with the typical duration of events is more likely to
+preserve valuable event information. Thus, we only spec-
+ify the total size of the memory as K, while the size of the
+memory at each scale depends on the probability of posi-
+tive sample events occurring at that scale. Specifically, for
+each scale, we count wi to represent the frequency of posi-
+tive samples at that scale. We ensure that the memory size
+for each scale is at least 1 to successfully retrieve histori-
+cal events when constructing the current event proposal in
+Figure 3. The remaining memory size will be allocated pro-
+portionally according to wi:
+  K_i = 1 + (K - L)\frac {w_i}{\sum _{j=1}^Lw_j}, i=1,2,...,L  (5)
+where L is the number of scales.
+21593
+Adaptive memory update. When a new event proposal
+is added to memory, in some scale, the memory may exceed
+the size Ki. Previous methods typically employed a first-in,
+first-out update rule. However, when long-duration similar
+segments appear in the video, memory can easily become
+filled with redundant content. Therefore, we propose an
+adaptive memory update rule: For the scale i which exceeds
+the memory size, we calculate the cosine similarity between
+two adjacent events in scale i. If there are adjacent events
+with a similarity greater than δ, we merge them through av-
+erage pooling, repeating this process until the memory size
+does not exceed Ki. If there are no adjacent events with a
+similarity greater than δ, we follow a first-in-first-out prin-
+ciple, retaining the most recent Ki events in the memory.
+3.5. Training and inference
+Training. For training efficiency, we group queries from
+the same video into the same batch. After obtaining event
+proposals for all the short-term windows in the video, we
+fuse them with text for prediction and calculate classifica-
+tion loss Lcls, regression loss Lreg, and future prediction
+loss Lfuture. The total loss is:
+  \mathcal {L} = \mathcal {L}_{cls} + \mathcal {L}_{reg} + \mathcal {L}_{future}  (6)
+Inference. Our future prediction branch enables us to in-
+fer in two ways: one is to predict the start and end times
+based on the event proposal, and the other is to predict the
+start time using the future prediction branch and the end
+time using the event proposal. The former achieves higher
+performance by observing the entire event before making
+predictions, while the latter can make predictions when the
+event begins, achieving less start time prediction latency. In
+Section 4.4 of our experiments, we report the performance
+under both inference methods.
+3.6. Discussion
+Here we discuss the advantages of our hierarchical event
+memory over previous frame-level memory in HAT [33],
+OAT [16], and Gan et al. [10]. When the memory size
+is fixed to K, frame-level memory can only retain the re-
+cent K frames of historical information. In the current win-
+dow, the model can only construct event proposals with a
+maximum duration of K, making it difficult for frame-level
+memory to locate such long-term events. Our hierarchical
+event memory, by utilizing a segment tree structure to con-
+struct events, as shown in Figure 3, allows the model to
+obtain event proposals of length 2K
+(a total of K scales,
+with each scale’s memory storing one latest event). In ad-
+dition, our small-scale memory can retain fine-grained but
+recent information, while the large-scale memory retains
+long-term but coarse-grained information to meet the needs
+of locating target events of different durations.
+4. Experiment
+4.1. Datasets
+We follow the settings of Gan et al. [10] and conduct exper-
+iments on three datasets, MAD [36] and ActivityNet Cap-
+tions [17] and TACoS [34]. MAD [36] is a large dataset
+with long videos. It comprises over 1,200 hours of video
+and 384,000 queries from high-quality mainstream movie
+audio descriptions. The average duration of videos is 110.8
+minutes, while the average duration of the target segments
+is only 4.1 seconds, making this dataset challenging. Activ-
+ityNet Captions [17] comprises 14,926 videos and 71,953
+natural language queries about human activity. The average
+duration of videos is 117.6 seconds, and the average dura-
+tion of the target segments is 37.1 seconds. TACoS [34]
+comprises 127 videos and 18,227 natural language queries.
+The average duration of videos is 286.59 seconds, and the
+average duration of the target segments is 27.88 seconds.
+4.2. Metrics
+We follow Gan et al. [10] to use an offline evaluation (i.e.
+evaluate after all videos have been input) and use the met-
+ric “R@n,IoU=m (Rn
+m)” to evaluate the model. Rn
+m cal-
+culates the percentage of the model’s top-n predictions that
+have at least one prediction having an IoU with the ground
+truth greater than m. Inspired by OAT [16], we also eval-
+uate the model’s start time prediction delay (SD) and end
+time prediction delay (ED). The SD/ED indicates the dif-
+ference between the timestamp when the model makes a
+prediction and the ground-truth start/end time. Smaller val-
+ues are better, and negative values mean the model can pre-
+dict the event before it actually occurs. Details are in the
+Supplementary Materials.
+4.3. Implementation Details
+We follow previous works[10] to use C3D [38] to extract
+frame features on ActivityNet Captions and TACoS datasets
+and use CLIP [32] to frame features on the MAD dataset.
+The hyperparameters are a = −4, b = 4, L = 8, the length
+of the short-term window is 8, and the total size of the mem-
+ory is 64 on all datasets. We trained the model with the
+AdamW [24] optimizer with a learning rate of 0.002 on Ac-
+tivityNet Caption, 0.0001 on MAD, and 0.001 on TACoS.
+4.4. Comparison with Other Methods
+In Table 1 2 3, we compare the performance and predic-
+tion delay on the TACoS, ActivityNet Captions, and MAD
+datasets, respectively. We compare our method with the on-
+line video temporal grounding baseline proposed by Gan
+et al. [10]. To our knowledge, this is the only work designed
+for online video temporal grounding. We also compare
+with online action detection and online action localiza-
+tion baselines. These methods are not originally designed
+21594
+Method R1
+0.5 R1
+0.7 R5
+0.5 R5
+0.7 SD ED
+Offline video temporal grounding methods
+G2L [20] 42.74 30.95 65.83 49.86 - -
+SnAG [27] 56.44 44.86 81.15 70.66 - -
+Online action detection methods 1
+OadTR[40] 21.12 10.92 37.99 21.09 - -
+LSTR[47] 26.02 16.75 43.01 27.99 - -
+GateHUB[4] 27.10 17.25 43.44 26.87 - -
+TeSTra[53] 27.43 16.84 43.57 27.11 0.89s 1.14s
+MiniROAD[2] 28.03 17.98 44.11 27.64 1.56s 1.08s
+Online action localization methods 1
+OAT[16] 32.53 12.11 50.96 33.14 18.11s -1.09s
+HAT[33] 34.15 14.53 51.16 34.98 20.07s -1.98s
+Online video temporal grounding methods
+Gan et al. [10] 29.74 19.07 48.11 31.19 1.42s 1.38s
+Ours w/ FP 37.44 27.32 57.49 44.44 -1.28s -3.78s
+Ours w/o FP 44.19 30.87 68.96 52.69 22.38s -4.26s
+Table 1. Performance comparison on TACoS dataset. ‘FP’ repre-
+sents the future prediction branch.
+Method R1
+0.5 R1
+0.7 R5
+0.5 R5
+0.7 SD ED
+Offline video temporal grounding methods
+G2L [20] 51.68 33.35 81.32 67.60 - -
+SnAG [27] 48.55 30.56 81.71 63.41 - -
+Online action detection methods 1
+OadTR[40] 23.27 10.97 48.15 29.76 - -
+LSTR[47] 24.05 11.19 50.77 31.63 - -
+GateHUB[4] 23.30 11.31 50.25 31.00 - -
+TeSTra[53] 24.14 11.69 52.83 32.47 1.86s 1.14s
+MiniROAD[2] 24.31 12.09 53.10 33.13 1.09s 1.23s
+Online action localization methods 1
+OAT[16] 34.41 14.37 53.41 38.49 30.07s -6.41s
+HAT[33] 36.56 16.64 55.69 40.51 31.41s -7.41s
+Online video temporal grounding methods
+Gan et al. [10] 25.48 12.56 53.77 33.70 2.13s 1.49s
+Ours w FP 42.89 24.49 67.82 51.74 -1.58s -10.96s
+Ours w/o FP 45.29 26.25 76.24 62.14 41.10s -10.89s
+Table 2. Performance comparison on ActivityNet Captions
+dataset. ‘FP’ represents the future prediction branch.
+for online video temporal grounding, and we have modified
+them for this task. For the online action detection baselines,
+we compare ours with OAT and HAT, both of which use
+the proposal-based framework. We introduce a text encoder
+and utilize cross-attention to fuse proposal features with text
+features, adapting them to video temporal grounding.
+Performance comparisons. (1) In all datasets, the
+proposal-based methods (OAT, HAT, and ours) show sig-
+nificant advantages. For example, in Table 1, ours w/o FP
+outperforms Gan et al. [10] by 14.45% on R1
+0.5. (2) Among
+those proposal-based methods, ours w/o FP outperforms
+HAT by 10.04% on R1
+0.5 in Table 1. This is because our
+Method R5
+0.3 R5
+0.5 R50
+0.3 R50
+0.5 SD ED
+Offline video temporal grounding methods
+SOONet [29] 19.64 13.14 44.78 32.59 - -
+SnAG [27] 20.60 13.75 46.68 35.24 - -
+Online action detection methods 1
+OadTR[40] 2.50 0.90 8.61 4.12 - -
+LSTR[47] 3.56 1.43 11.73 4.99 - -
+GateHUB[4] 3.38 1.47 11.96 4.74 - -
+TeSTra[53] 3.46 1.33 12.98 6.61 1.24s 0.97s
+MiniROAD[2] 4.58 1.64 14.07 7.03 1.51s 1.13s
+Online action localization methods 1
+OAT 6.17 4.41 20.11 13.14 3.02s -1.17s
+HAT 7.14 5.11 22.03 14.47 3.14s -1.23s
+Online video temporal grounding methods
+Gan et al. [10] 4.71 2.00 16.34 7.80 0.13s 1.52s
+Ours w/ FP 9.84 6.43 16.67 12.18 0.64s -1.10s
+Ours w/o FP 15.76 11.07 37.84 29.21 3.60s -1.45s
+Table 3. Performance comparison on MAD dataset. ‘FP’ repre-
+sents the future prediction branch.
+Event
+memory
+Dynamic
+size
+Adaptive
+updating
+Future
+prediction
+R1
+0.5 R1
+0.7 SD ED
+% % % % 34.88 23.47 18.36s -3.17s
+" 41.61 29.84 20.59s -4.18s
+" " 43.97 30.54 22.41s -4.16s
+" " " 44.19 30.87 22.38s -4.26s
+" " " " 37.44 27.32 -1.28s -3.78s
+Table 4. Ablations of each component on TACoS dataset.
+hierarchical memory can retain longer historical informa-
+tion compared to the frame-level memory in HAT, allowing
+for the construction of proposals of varying durations.
+Delay comparisons. (1) The proposal-based methods
+(OAT, HAT, and ours) can predict the end time even before
+the event has concluded. This may be because the model
+has learned the priors of how long various events typically
+last. (2) Relying solely on proposals for prediction results in
+a delay in predicting the start time. For example, in Table 1,
+these methods have a delay of about 20 seconds when pre-
+dicting the start time on TACoS. This is because the model
+only obtains a complete event proposal when the event is
+about to end. (3) Our proposed future prediction branch
+(ours w/ FP) can reduce the delay, making predictions even
+before the event is about to start. However, the accuracy de-
+creases when applying future prediction (on TACoS, R1
+0.5
+drops by 6.75% compared to ours w/o FP), but it is still
+higher than the existing baseline. Whether to use future pre-
+diction depends on the application’s demand for latency.
+1These methods are not originally designed for online video temporal
+grounding, and we have modified them for this task.
+21595
+37.52
+36.8938.14
+40.19
+44.19
+36
+38
+40
+42
+44
+-10 0 10 20
+R1@0.5
+SD (second)
+0
+10
+20
+30
+40
+50
+60
+R@1,IoU=0.5
+Ours w/o FP Ours w/ FP Gen et al.
+Figure 5. Accuracy-latency trade-off on TACoS dataset.
+Method param. Inference speed R5
+0.3
+Gan et al. [10] 29.5M 734.3 FPS 4.71
+Ours 36.2M 614.5 FPS 15.76
+Table 5. Number of parameters and inference speed comparison
+on MAD dataset.
+4.5. Ablation Studies
+We perform ablation studies on the TACoS dataset to ana-
+lyze the effectiveness of the proposed method.
+Effectiveness of each component. In Table 4, we ana-
+lyze the effectiveness of different modules. For the model
+without event memory, we used a frame-level memory to re-
+tain the latest K frame features, where K is the size of the
+memory. For the model without dynamic size, we equally
+set the memory size across each scale. For the model with-
+out adaptive updating, we used a first-in-first-out strategy to
+update the memory. Our event memory, dynamic size, and
+adaptive updating can enhance the model’s performance,
+demonstrating the effectiveness of these modules. Our fu-
+ture prediction can significantly reduce the prediction delay
+at the start time, but it also leads to a decrease in perfor-
+mance. Whether to use future prediction depends on the
+application’s demand for latency.
+Accuracy-latency trade off. Our method offers a flex-
+ible trade-off by combining future and event-based predic-
+tions. For early start-time estimation, future prediction is
+used, while event-based prediction refines the start-time and
+determines the end-time as the event concludes. In addition,
+the performance and latency can be adjusted via the future
+prediction window (a, b) introduced in our future prediction
+branch. When a < 0, the model is allowed to make predic-
+tions shortly after an event starts, thus improving the perfor-
+mance while increasing the prediction delay. In Fig. 5, we
+provide the accuracy and delay when adjusting the future
+prediction window, which helps to select models based on
+latency tolerance.
+Speed Comparison. In Table 5, we compare the speed
+and the number of parameters of our model with the base-
+line [10]. This excludes the visual and text feature extrac-
+tion, as we use the same pre-extracted features. Our method
+has similar parameters to the baseline. In terms of inference
+Query: One man is holding onto a rope attached to a machine, and the other man
+instructs him to bend down on his left knee while still holding onto the rope and he
+showing the man how to have proper form.
+Baseline:
+Start score
+End score
+Prediction
+Ground Truth:
+4s~33s
+12.16s~25.62s
+Ours:
+Future prediction score
+w/ future prediction
+1.87s~38.61s
+w/o future prediction
+5.87s~38.61s
+Video
+Ground Truth:
+Figure 6. Qualitative results on the ActivityNet Captions dataset.
+speed, both models meet the real-time requirements for on-
+line video (exceeding the frame rate of typical videos). Our
+method is 17% slower than the baseline, but the perfor-
+mance of R5
+0.3 is 3.3 times that of the baseline.
+Qualitative Comparison. Figure 6 provides visualiza-
+tions between our method and Gan et al. [10]. The baseline
+utilizes frame-level historical information, but when the tar-
+get event has a long duration, the model’s predictions are
+not accurate. In contrast, our method, by storing hierarchi-
+cal historical events, is able to make more accurate predic-
+tions. Our future prediction branch can also predict the start
+time of future events. The prediction is more accurate from
+the event proposal when the event is about to end.
+5. Conclusion
+In this work, we propose a hierarchical event memory for
+online video temporal grounding. We introduce a hierarchi-
+cal event memory that retains historical events of varying
+durations to preserve historically valuable event informa-
+tion. We use adaptive memory updating to reduce the re-
+dundant proposal in the memory and propose the dynamic
+configuration method of memory sizes to enhance the uti-
+lization efficiency of the memory. To address the issue of
+delays in model predictions, we propose a future prediction
+branch. Experiments on MAD, ActivityNet, and TACoS
+datasets demonstrate the effectiveness of our method.
+Acknowledgements. This work was supported by the
+grants from the National Natural Science Foundation of
+China (62372014, 62525201, 62132001, 62432001), Bei-
+jing Nova Program and Beijing Natural Science Foundation
+(4252040, L247006).
+21596
+References
+[1] Ahmed Al-Slemani and Ahmet ZENGİN. A new surveil-
+lance and security alert system based on real-time motion de-
+tection. Journal of Smart Systems Research, 4:31–47, 2023.
+1
+[2] Joungbin An, Hyolim Kang, Su Ho Han, Ming-Hsuan Yang,
+and Seon Joo Kim. Miniroad: Minimal rnn framework for
+online action detection. In Proceedings of the IEEE/CVF
+International Conference on Computer Vision, pages 10341–
+10350, 2023. 2, 7
+[3] Shuqiang Cao, Weixin Luo, Bairui Wang, Wei Zhang, and
+Lin Ma. E2e-load: end-to-end long-form online action de-
+tection. In Proceedings of the IEEE/CVF International Con-
+ference on Computer Vision, pages 10422–10432, 2023.
+[4] Junwen Chen, Gaurav Mittal, Ye Yu, Yu Kong, and Mei
+Chen. Gatehub: Gated history unit with background sup-
+pression for online action detection. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 19925–19934, 2022. 2, 7
+[5] Dingxin Cheng, Mingda Li, Jingyu Liu, Yongxin Guo, Bin
+Jiang, Qingbin Liu, Xi Chen, and Bo Zhao. Enhancing long
+video understanding via hierarchical event-based memory.
+arXiv preprint arXiv:2409.06299, 2024. 3
+[6] Junyoung Chung, Caglar Gulcehre, KyungHyun Cho, and
+Yoshua Bengio. Empirical evaluation of gated recurrent
+neural networks on sequence modeling. arXiv preprint
+arXiv:1412.3555, 2014. 3
+[7] Ioana Croitoru, Simion-Vlad Bogolin, Samuel Albanie,
+Yang Liu, Zhaowen Wang, Seunghyun Yoon, Franck Der-
+noncourt, Hailin Jin, and Trung Bui. Moment detection in
+long tutorial videos. In Proceedings of the IEEE/CVF In-
+ternational Conference on Computer Vision (ICCV), pages
+2594–2604, 2023. 1
+[8] Roeland De Geest, Efstratios Gavves, Amir Ghodrati,
+Zhenyang Li, Cees Snoek, and Tinne Tuytelaars. Online ac-
+tion detection. In Computer Vision–ECCV 2016: 14th Euro-
+pean Conference, Amsterdam, The Netherlands, October 11-
+14, 2016, Proceedings, Part V 14, pages 269–284. Springer,
+2016. 2
+[9] Hyunjun Eun, Jinyoung Moon, Jongyoul Park, Chanho Jung,
+and Changick Kim. Learning to discriminate information for
+online action detection. In Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition,
+pages 809–818, 2020. 2
+[10] Tian Gan, Xiao Wang, Yan Sun, Jianlong Wu, Qingpei Guo,
+and Liqiang Nie. Temporal sentence grounding in streaming
+videos. In Proceedings of the 31st ACM International Con-
+ference on Multimedia, pages 4637–4646, 2023. 1, 2, 3, 6,
+7, 8
+[11] Jiyang Gao, Chen Sun, Zhenheng Yang, and Ram Nevatia.
+Tall: Temporal activity localization via language query. In
+Proceedings of the IEEE international conference on com-
+puter vision, pages 5267–5275, 2017. 1, 2
+[12] Simon Haykin. Neural networks: a comprehensive founda-
+tion. Prentice Hall PTR, 1994. 5
+[13] Bo He, Hengduo Li, Young Kyun Jang, Menglin Jia, Xue-
+fei Cao, Ashish Shah, Abhinav Shrivastava, and Ser-Nam
+Lim. Ma-lmm: Memory-augmented large multimodal model
+for long-term video understanding. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 13504–13514, 2024. 3
+[14] Jiabo Huang, Hailin Jin, Shaogang Gong, and Yang Liu.
+Video activity localisation with uncertainties in temporal
+boundary. In Proceedings of the European Conference on
+Computer Vision (ECCV), 2022. 2
+[15] Hyolim Kang, Kyungmin Kim, Yumin Ko, and Seon Joo
+Kim. Cag-qil: Context-aware actionness grouping via q im-
+itation learning for online temporal action localization. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, pages 13729–13738, 2021. 3
+[16] Young Hwi Kim, Hyolim Kang, and Seon Joo Kim. A sliding
+window scheme for online temporal action localization. In
+European Conference on Computer Vision, pages 653–669.
+Springer, 2022. 2, 3, 6, 7
+[17] Ranjay Krishna, Kenji Hata, Frederic Ren, Li Fei-Fei, and
+Juan Carlos Niebles. Dense-captioning events in videos. In
+International Conference on Computer Vision (ICCV), 2017.
+2, 6
+[18] Ting Lei, Fabian Caba, Qingchao Chen, Hailin Ji, Yuxin
+Peng, and Yang Liu. Efficient adaptive human-object inter-
+action detection with concept-guided memory, 2023. 2
+[19] DAI Leichao, FENG Lin, SHANG Xinglin, and SU Han.
+Cross modal adaptive few-shot learning based on task depen-
+dence. Chinese Journal of Electronics, 32(1):85–96, 2023.
+1
+[20] Hongxiang Li, Meng Cao, Xuxin Cheng, Yaowei Li, Zhi-
+hong Zhu, and Yuexian Zou. G2l: Semantically aligned and
+uniform video grounding via geodesic and game theory. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, pages 12032–12042, 2023. 7
+[21] Pandeng Li, Chen-Wei Xie, Hongtao Xie, Liming Zhao, Lei
+Zhang, Yun Zheng, Deli Zhao, and Yongdong Zhang. Mo-
+mentdiff: Generative video moment retrieval from random
+to real. Advances in neural information processing systems,
+36, 2024. 1, 2
+[22] T Lin. Focal loss for dense object detection. arXiv preprint
+arXiv:1708.02002, 2017. 5
+[23] Zhihang Liu, Jun Li, Hongtao Xie, Pandeng Li, Jiannan Ge,
+Sun-Ao Liu, and Guoqing Jin. Towards balanced alignment:
+Modal-enhanced semantic modeling for video moment re-
+trieval. In Proceedings of the AAAI Conference on Artificial
+Intelligence, pages 3855–3863, 2024. 1, 2
+[24] Ilya Loshchilov and Frank Hutter. Decoupled weight decay
+regularization. arXiv preprint arXiv:1711.05101, 2017. 6
+[25] Dezhao Luo, Jiabo Huang, Shaogang Gong, Hailin Jin, and
+Yang Liu. Towards generalisable video moment retrieval:
+Visual-dynamic injection to image-text pre-training. In Pro-
+ceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), 2023. 2
+[26] Dezhao Luo, Jiabo Huang, Shaogang Gong, Hailin Jin, and
+Yang Liu. Zero-shot video moment retrieval from frozen
+vision-language models. In Proceedings of the IEEE/CVF
+Winter Conference on Applications of Computer Vision
+(WACV), pages 5464–5473, 2024. 2
+21597
+[27] Fangzhou Mu, Sicheng Mo, and Yin Li. Snag: Scalable and
+accurate video grounding. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 18930–18940, 2024. 7
+[28] Jonghwan Mun, Minsu Cho, and Bohyung Han. Local-
+global video-text interactions for temporal grounding. In
+Proceedings of the IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition, pages 10810–10819, 2020. 1,
+2
+[29] Yulin Pan, Xiangteng He, Biao Gong, Yiliang Lv, Yujun
+Shen, Yuxin Peng, and Deli Zhao. Scanning only once: An
+end-to-end framework for fast temporal grounding in long
+videos. arXiv preprint arXiv:2303.08345, 2023. 7
+[30] Yuxin Peng, Xin Huang, and Yunzhen Zhao. An overview
+of cross-media retrieval: Concepts, methodologies, bench-
+marks, and challenges. IEEE Transactions on Circuits and
+Systems for Video Technology, 28:2372–2385, 2017. 1
+[31] Rui Qian, Xiaoyi Dong, Pan Zhang, Yuhang Zang, Shuan-
+grui Ding, Dahua Lin, and Jiaqi Wang. Streaming long video
+understanding with large language models. Advances in Neu-
+ral Information Processing Systems, 37:119336–119360,
+2024. 3
+[32] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning
+transferable visual models from natural language supervi-
+sion. In International conference on machine learning, pages
+8748–8763. PMLR, 2021. 6
+[33] Sakib Reza, Yuexi Zhang, Mohsen Moghaddam, and Octavia
+Camps. Hat: History-augmented anchor transformer for on-
+line temporal action localization. In European Conference
+on Computer Vision, pages 205–222. Springer, 2025. 2, 3, 6,
+7
+[34] Anna Rohrbach, Marcus Rohrbach, Wei Qiu, Annemarie
+Friedrich, Manfred Pinkal, and Bernt Schiele. Coherent
+multi-sentence video description with variable level of detail.
+In Pattern Recognition: 36th German Conference, GCPR
+2014, Münster, Germany, September 2-5, 2014, Proceedings
+36, pages 184–195. Springer, 2014. 2, 6
+[35] Zheng Shou, Junting Pan, Jonathan Chan, Kazuyuki
+Miyazawa, Hassan Mansour, Anthony Vetro, Xavier Giroi
+Nieto, and Shih-Fu Chang. Online action detection in
+untrimmed, streaming videos-modeling and evaluation. In
+ECCV, page 5, 2018. 3
+[36] Mattia Soldan, Alejandro Pardo, Juan León Alcázar, Fabian
+Caba, Chen Zhao, Silvio Giancola, and Bernard Ghanem.
+Mad: A scalable dataset for language grounding in videos
+from movie audio descriptions. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 5026–5035, 2022. 2, 6
+[37] Enxin Song, Wenhao Chai, Guanhong Wang, Yucheng
+Zhang, Haoyang Zhou, Feiyang Wu, Haozhe Chi, Xun Guo,
+Tian Ye, Yanting Zhang, et al. Moviechat: From dense token
+to sparse memory for long video understanding. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, pages 18221–18232, 2024. 3
+[38] Du Tran, Lubomir Bourdev, Rob Fergus, Lorenzo Torresani,
+and Manohar Paluri. Learning spatiotemporal features with
+3d convolutional networks. In Proceedings of the IEEE inter-
+national conference on computer vision, pages 4489–4497,
+2015. 6
+[39] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+Polosukhin. Attention is all you need. Advances in neural
+information processing systems, 30, 2017. 3, 5
+[40] Xiang Wang, Shiwei Zhang, Zhiwu Qing, Yuanjie Shao,
+Zhengrong Zuo, Changxin Gao, and Nong Sang. Oadtr:
+Online action detection with transformers. In Proceedings
+of the IEEE/CVF International Conference on Computer Vi-
+sion, pages 7565–7575, 2021. 3, 7
+[41] Yuxuan Wang, Yueqian Wang, Pengfei Wu, Jianxin Liang,
+Dongyan Zhao, Yang Liu, and Zilong Zheng. Efficient
+temporal extrapolation of multimodal large language models
+with temporal grounding bridge. In Proceedings of the Em-
+pirical Methods in Natural Language Processing (EMNLP),
+2024. 1
+[42] Yuxuan Wang, Cihang Xie, Yang Liu, and Zilong Zheng.
+Videollamb: Long-context video understanding with recur-
+rent memory bridges. arXiv preprint arXiv:2409.01071,
+2024. 3
+[43] Zhenzhi Wang, Limin Wang, Tao Wu, Tianhao Li, and Gang-
+shan Wu. Negative sample matters: A renaissance of met-
+ric learning for temporal grounding. In Proceedings of
+the AAAI Conference on Artificial Intelligence, pages 2613–
+2623, 2022. 1, 2
+[44] Yuetian Weng, Mingfei Han, Haoyu He, Xiaojun Chang, and
+Bohan Zhuang. Longvlm: Efficient long video understand-
+ing via large language models. In European Conference on
+Computer Vision, pages 453–470. Springer, 2024. 3
+[45] Yicheng Xiao, Zhuoyan Luo, Yong Liu, Yue Ma, Heng-
+wei Bian, Yatai Ji, Yujiu Yang, and Xiu Li. Bridging the
+gap: A unified video comprehension framework for mo-
+ment retrieval and highlight detection. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 18709–18719, 2024. 1, 2
+[46] Mingze Xu, Mingfei Gao, Yi-Ting Chen, Larry S Davis, and
+David J Crandall. Temporal recurrent networks for online
+action detection. In Proceedings of the IEEE/CVF inter-
+national conference on computer vision, pages 5532–5541,
+2019. 3
+[47] Mingze Xu, Yuanjun Xiong, Hao Chen, Xinyu Li, Wei Xia,
+Zhuowen Tu, and Stefano Soatto. Long short-term trans-
+former for online action detection. Advances in Neural In-
+formation Processing Systems, 34:1086–1099, 2021. 3, 7
+[48] Dejie Yang and Yang Liu. Active object detection with
+knowledge aggregation and distillation from large models.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR), 2024. 3
+[49] LI Zeyi, WANG Pan, and WANG Zixuan. Flowgananomaly:
+Flow-based anomaly network intrusion detection with adver-
+sarial learning. Chinese Journal of Electronics, 33(1):58–71,
+2024. 1
+[50] Haoji Zhang, Yiqin Wang, Yansong Tang, Yong Liu, Jiashi
+Feng, Jifeng Dai, and Xiaojie Jin. Flash-vstream: Memory-
+based real-time understanding for long video streams. arXiv
+preprint arXiv:2406.08085, 2024. 3
+21598
+[51] Songyang Zhang, Houwen Peng, Jianlong Fu, and Jiebo Luo.
+Learning 2d temporal adjacent networks for moment local-
+ization with natural language. In Proceedings of the AAAI
+Conference on Artificial Intelligence, pages 12870–12877,
+2020. 1, 2
+[52] Peisen Zhao, Lingxi Xie, Jiajie Wang, Ya Zhang, and Qi
+Tian. Progressive privileged knowledge distillation for on-
+line action detection. Pattern Recognition, 129:108741,
+2022. 3
+[53] Yue Zhao and Philipp Krähenbühl. Real-time online video
+detection with temporal smoothing transformers. In Euro-
+pean Conference on Computer Vision (ECCV), 2022. 7
+[54] YE Zhaoda, HE Xiangteng, and PENG Yuxin. Unsupervised
+cross-media hashing learning via knowledge graph. Chinese
+Journal of Electronics, 31(6):1081–1091, 2022. 1
+[55] Minghang Zheng, Yanjie Huang, Qingchao Chen, and Yang
+Liu. Weakly supervised video moment localization with con-
+trastive negative sample mining. In Proceedings of the AAAI
+Conference on Artificial Intelligence, 2022. 2
+[56] Minghang Zheng, Yanjie Huang, Qingchao Chen, Yuxin
+Peng, and Yang Liu. Weakly supervised temporal sentence
+grounding with gaussian-based contrastive proposal learn-
+ing. In Proceedings of the IEEE/CVF Conference on Com-
+puter Vision and Pattern Recognition (CVPR), 2022. 2
+[57] Minghang Zheng, Shaogang Gong, Hailin Jin, Yuxin Peng,
+and Yang Liu. Generating structured pseudo labels for noise-
+resistant zero-shot video sentence localization. In Annual
+Meeting of the Association for Computational Linguistics,
+2023. 2
+[58] Minghang Zheng, Sizhe Li, Qingchao Chen, Yuxin Peng,
+and Yang Liu. Phrase-level temporal relationship mining for
+temporal sentence localization. In Proceedings of the AAAI
+Conference on Artificial Intelligence, 2023. 2
+[59] Minghang Zheng, Xinhao Cai, Qingchao Chen, Yuxin Peng,
+and Yang Liu. Training-free video temporal grounding
+usinglarge-scale pre-trained models. In Proceedings of the
+European Conference on Computer Vision (ECCV), 2024. 2
+[60] Z Zheng, P Wang, W Liu, J Li, R Ye, and D Ren Distance-
+IoU Loss. Faster and better learning for bounding box regres-
+sion., 2020, 34. DOI: https://doi. org/10.1609/aaai. v34i07,
+6999:12993–13000, 2020. 5
+21599
+

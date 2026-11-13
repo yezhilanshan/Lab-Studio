@@ -1,0 +1,1087 @@
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025 6017
+BCRNet-SNN: Body Channel Response-Aware
+Spiking Neural Network for User Recognition
+Taewook Kang , Chanwoo Shin , Jongseok Lee , Jae-Jin Lee , Donggyu Sim, Senior Member, IEEE,
+and Seong-Eun Kim , Senior Member, IEEE
+Abstract—Spiking neural networks (SNNs) have been re-
+cently highlighted as an attractive approach for implement-
+ing artificial intelligence models in resource-constrained
+edge devices for various industrial applications. These
+SNNs leverage low-power and wide dynamic range pro-
+cessing through biologically inspired event-driven opera-
+tions in a massively parallel manner. In this respect, we
+propose BCRNet-SNN, an SNN model designed to utilize
+an electric body channel response (BCR) as a biometric
+feature for user recognition, where each element in the
+BCR dataset for 15 subjects is a 1-D vector comprising
+380 feature points from the measured envelope by applying
+chirp signals to the body. The network parameters for im-
+plementing the posttrained BCRNet-SNN are inherited from
+the proposed convolutional neural network (CNN) that ex-
+tensively extracts BCR-based biometric features (BCRNet),
+followed by applying knowledge distillation-based network
+lightening process on BCRNet. The performance evalua-
+tion results compared to ResNet18 and ResNet6 for the
+BCR dataset show that BCRNet achieves a greater than 2%
+and 1.4% improvement, respectively, in the average clas-
+sification accuracy, while significantly reducing the num-
+ber of network parameters to less than 1%. The student
+network distilled from the teacher BCRNet (BCRNet-S) re-
+quires only 5.1% network parameters than BCRNet, which
+can be eligible for implementation in BCRNet-SNN. The pro-
+posed structure of BCRNet-SNN to effectively accommo-
+date the CNN-to-SNN-converted parameters from BCRNet-S
+can achieve up to a maximum accuracy of 98.11%, without
+observable performance degradation compared to BCRNet.
+Received 25 July 2024; revised 19 January 2025; accepted 22 Jan-
+uary 2025. Date of publication 28 April 2025; date of current ver-
+sion 9 July 2025. This work was supported in part by the Electronics
+and Telecommunications Research Institute (ETRI), Korea government
+[Memory-computation convergence neuromorphic computing technol-
+ogy] under Grant 25ZS1230 and in part by the National Research
+Foundation of Korea (NRF), Ministry of Science and ICT (MSIT), Korean
+Government under Grant RS-2024-00422599. Paper no. TII-24-3756.
+(Taewook Kang and Chanwoo Shin contributed equally to this work.)
+(Corresponding author: Seong-Eun Kim.)
+This work involved human subjects or animals in its research. Ap-
+proval of all ethical and experimental procedures and protocols was
+granted by Public Institutional Review Board, South Korea under Ap-
+plication No. PO1-202009-13-002, and performed in line with the Decla-
+ration of Helsinki.
+Taewook Kang and Jae-Jin Lee are with the Artificial Intelligence
+Computing Research Laboratory, Electronics and Telecommunications
+Research Institute (ETRI), Daejeon 34129, South Korea.
+Chanwoo Shin and Seong-Eun Kim are with the Department of Arti-
+ficial Intelligence, Seoul National University of Science and Technology,
+Seoul 01811, South Korea (e-mail: sekim@seoultech.ac.kr).
+Jongseok Lee and Donggyu Sim are with the Digital Insights Com-
+pany Ltd., Seoul 01897, South Korea, and also with the Department
+of Computer Engineering, Kwangwoon University, Seoul 01897, South
+Korea.
+Digital Object Identifier 10.1109/TII.2025.3558309
+Index Terms—Body pulse response, convolutional neural
+network (CNN), knowledge distillation (KD), spiking neural
+network (SNN), user recognition.
+I. INTRODUCTION
+AS the personal information progressively gains higher
+accessibility through digital networks based on wide-
+spread mobile Internet-of-Things (IoT) devices, the leakage
+and forgery of that information have been emerging as serious
+social concerns [1]. In this respect, the current user authentica-
+tion systems for accessing private data associated with finance,
+healthcare and medical records, and administration have become
+increasingly demanding to secure high accuracy and reliabil-
+ity [2]. Biometrics inherent in the unique individual biological
+features of the fingerprint, face, and iris has been spotlighted as a
+promising alternative to conventional recognition methods, such
+as identification cards and password-based user authentication.
+The biometrics can resolve falsified or misplaced problems that
+occur in case of loss or theft and secure the convenience of not
+having to remember or carry them [3]. If biometric informa-
+tion is mutilated, it cannot function properly and be restored
+to its original status. Moreover, information leakage is highly
+likely to result in malicious spoofing attacks via forgery and
+alterations [4]. Recent studies have presented biometric features
+extracted from body channel responses (BCRs) as an effective
+candidate for strengthening the security of conventional biomet-
+rics. The BCR can be considered a consistent and unclonable
+biometric method because individual body channel differences
+stem from the intrinsic anatomical structure of the body, such as
+tissues, muscles, fat, and bones [5], [6], [7], [8], [9].
+This study was inspired by a previous study that proposed
+BCR-based biometric features (BBFs) comprising a series of
+respective upper and lower envelope vectors of the measured
+BCRs by applying up- and down-chirp signals to the body
+channel passed through from the left to right forefingers using
+capacitive coupling [8]. This achieved a classification accuracy
+of up to approximately 95.8% for a dataset, including 2644 data
+elements for 15 subjects, using a kernel-based support vector
+machine, where each data element comprised a BCR-envelope
+vector consisting of 380 feature points [8], [10].
+Currently, the performance of classification problems has
+been dramatically enhanced by employing deep neural network
+(DNN)-based algorithms, which can surmount the inefficient
+aspects of the artificial neural networks (ANNs) in learning
+1941-0050 © 2025 IEEE. All rights reserved, including rights for text and data mining, and training of artificial intelligence and similar technologies.
+Personal use is permitted, but republication/redistribution requires IEEE permission. See https://www.ieee.org/publications/rights/index.html
+for more information.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+6018 IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025
+processes as the networks become deeper, such as an increase in
+learning time, computational complexity, and vanishing gradient
+values while synaptic weights are updated [11]. Convolutional
+neural networks (CNNs) can effectively extract reliable features
+based on convolution and pooling processes adaptive to DNN
+structures, which show outstanding performance in classifica-
+tion applications for vision and image data, such as medical
+and autonomous vehicle image analyses [12]. However, because
+CNNs require excessive computation and considerable power
+consumption to achieve reliable performance, it is impractical
+for CNN-based algorithms to operate in resource-limited de-
+vices [13]. Consequently, current studies have primarily focused
+on reducing network complexity while minimizing performance
+loss to be implemented in mobile devices and the edges of IoT
+networks [14].
+Recently, spiking neural networks (SNNs) have been high-
+lighted as a remarkable neural computing paradigm that can
+realize ANN for low-power and low-latency data processing
+using event-driven and asynchronous spike signals operated in
+a massively parallel manner inherited from biological neural
+systems [15], [16]. In particular, recent studies on neuromorphic
+hardware, such as TrueNorth and Loihi, have demonstrated
+that SNNs are highly advantageous in terms of fast infer-
+ence and low power consumption [17], [18], [19]. Meanwhile,
+because the discontinuous and nondifferential characteristics
+of SNN make backpropagation-based training impossible,
+many previous studies have presented approximate approaches
+for training SNNs, such as spike-based backpropagation,
+spike-driven equilibrium propagation, and surrogate gradi-
+ent learning [20], [21]. These direct training methods re-
+quire computation at each time step for forward and back-
+ward propagation, resulting in considerable training time and
+computational complexity.
+This study presents an efficient alternative for implementing
+a reliable posttrained SNN by adopting knowledge distillation
+(KD) that can transfer extensively trained knowledge from the
+CNN-based teacher network for biometric feature extraction
+from the BCR dataset, BCRNet, to the lightweight student
+network, BCRNet-S [22]. This can substantially reduce the
+network parameter number to approximately 5% of that of
+BCRNet while minimizing the training loss and considering the
+structural and computational constraints in the CNN-to-SNN
+conversion process. We built BCRNet-SNN based on BCRNet-S
+using the proposed ANN-to-SNN conversion, including the
+replacement of convolution operations with spike transmissions
+employing properly scaled ANN parameters. With no observ-
+able performance loss compared to BCRNet, BCRNet-SNN
+achieved approximately 96.52% average accuracy for 15 subject
+classifications.
+The rest of this article is organized as follows. Section II
+describes the BCR dataset used for evaluating BCRNet-SNN.
+Section III presents the proposed methodology, including KD to
+BCRNet-S from BCRNet and ANN-to-SNN conversion for con-
+version from BCRNet-S to BCRNet-SNN. Section IV presents
+the performance evaluation. Finally, Section V concludes this
+article.
+II. BCR DATASET
+The electrical conductivity of the body attributed to the fluid
+components enables the body to be a transmission medium for
+electric signals, where the channel properties, including signal
+pass loss and delay propagation, vary with individual physical
+differences [23]. Previous studies presented various applications
+utilizing body channels, such as communication systems us-
+ing generalized body channel models and energy harvesting
+systems using the antenna effects of the body [24]. The aim
+of this study is to develop a highly reliable user recognition
+system by leveraging nonreplicable biometric features extracted
+from the BCR. These features are characterized by variations
+in individual intrinsic resistance and capacitance, influenced
+by the electrical behaviors of bones, fat, and muscles in the
+body [23], [25]. Consequently, any interference during the BCR
+measurement process, such as unauthorized signal interception
+through physical contact or close proximity, definitively distorts
+biometric features within the BCR. This capability enables
+BCR-based user recognition systems to easily detect spoofing
+attempts and safeguard against signal interception.
+Signal transmission within the body can be primarily catego-
+rized into capacitive and galvanic coupling [25]. In capacitive
+coupling, electric signals are transmitted through current loops
+formed between a signal electrode (SE) attached to the body
+and a floating ground electrode (GE) coupled to the external
+ground on both sides of the signal transmitter (Tx) and receiver
+(Rx). In galvanic coupling, both the SE and GE of the respective
+Tx and Rx are attached to the body, utilizing it as a waveguide
+for signal transmission paths by coupling alternating currents
+through the body. Given the BCR measurement environment
+between the Tx and Rx, this study primarily focuses on capac-
+itive coupling. This approach enables the proposed recognition
+system to achieve higher signal-to-noise ratios compared to
+galvanic coupling, particularly for longer transmission distances
+across the entire human body, including narrow body channels,
+such as the arms and legs [8], [25]. Fig. 1(a) and (b) shows
+the experimental environment for measuring the BCRs in a
+shielded enclosure in size of 170 × 230 × 200 cm3
+that atten-
+uates electromagnetic interference (EMI) NEMI radiated from
+neighboring electronic devices. In addition, Fig. 1(c) illustrates
+the channel model formed by electric components [8]. A pulse
+function arbitrary noise generator of 81150A (Keysight) gener-
+ates channel-sounding signals, and BCRs are measured using
+an oscilloscope of DSOX3022T (Keysight) with a sampling rate
+of 1 GSa/s. The subsampling rate between datapoints in the
+BCR data element is approximately 1 MSa/s. The dimension of
+the Tx and Rx devices, connected to 81150A and DSOX3022T,
+respectively, is approximately 5.2 × 3.4 cm2
+. The experimental
+process, including measurement and data storage, could be car-
+riedoutwithoutanyoutsideassistancebyanexperimenterowing
+to customized macroinstructions programmed in the equipment.
+The intrinsic capacitance Cint and resistance Rint, which are
+associated with the path loss and delay the propagation of the
+BCR, mainly affect the body channel characteristics. Additional
+coupling capacitances, including CTx between Tx-GE and the
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+KANG et al.: BCRNET-SNN: BODY CHANNEL RESPONSE-AWARE SPIKING NEURAL NETWORK FOR USER RECOGNITION 6019
+Fig. 1. Designate experimental environment for BCR data acquisition.
+(a) Measurement setup. (b) Experimental posture measuring the BCRs
+in the shielded enclosure. (c) Channel modeling for measuring the BCRs
+based on capacitive coupling.
+Fig. 2. (a) Chirp signals sweeping between 1 and 10 MHz applied to
+the body for channel sounding. (b) BCRs of two subjects responded to
+up- and down-chirp signals.
+body, CRx between the Rx-GE and the body, CTxRx between
+the GEs of the Tx and Rx, and Cext between the body and the
+surrounding environment, were assumed to be constant because
+the subjects conducted the experiment in a consistent posture,
+as shown in Fig. 1.
+The BBFs were derived from the BCR measured by up- and
+down-chirp signals passed through from the left to right hands
+in a designated experimental environment [8]. Fig. 2(a) shows
+the applied chirp signal S(t) and its magnitude response of the
+short-time Fourier transform, which can be generated as
+S(t) = Av sin
+
+2π
+w
+2
+t2
++ f0t
+
+(1)
+where Av is the amplitude voltage, w = (|fM − fm|)/T, fM
+and fm are the maximum and minimum frequencies of the
+sweeping frequency range, respectively, and T is the frequency
+sweeping period between fM and fm. The values of Av, fm,
+fM , and T were determined as 6 V, 1 MHz, 10 MHz, and
+100 μs, respectively. With the approval of the Institutional
+Review Board of the Ministry of Health and Welfare of the
+RepublicofKorea(IRBnumberP01-202009-13-002),theBCRs
+were acquired from 15 subjects, including four females and
+11 males. The height, weight, body mass index, and age ranges
+of the subjects were 152–180 cm (mean: 171 cm), 44–77 kg
+(mean: 66.1 kg), 19.2–26.9 (mean: 22.5), and 22–29 years
+(mean: 24.5 years). The subjects participated in the measure-
+ment experiment for a minimum of six weeks to gather at
+least 40 session datasets. Each session dataset was collected
+on a different day, with each session consisting of five BCRs
+measured using sequential up- and down-chirp signals [8]. As
+shown in the measured BCRs of the two subjects obtained by
+applying the up- and down-chirp signals in Fig. 2(b), it clearly
+appears that accurate classification is expected to be limited as
+the number of BCR cases increase because of physiological
+variations among subjects and intersubject diversity due to time-
+varying effects. To gain more diversity in extracting the avail-
+able information for distinguishing subjects, the BBF comprises
+the following:
+BBF =
+
+Rupper
+up , Rlower
+up , Rupper
+down , Rlower
+down
+
+(2)
+where Rupper
+up , Rlower
+up , Rupper
+down , and Rlower
+down are the discrete upper
+and lower envelopes of the BCRs obtained by applying the
+respective up- and down-chirp signals to the body. The BBF
+dataset comprises 2644 data elements for 15 subjects, and each
+data element consists of 380 feature points.
+Our BCR-based biometric system utilizes a 1-D feature vector
+of 380 data points derived from unique body channel characteris-
+tics, aligning with the data format used for the pattern-matching
+templates of existing biometric systems, such as fingerprint and
+face recognition. These conventional systems typically employ
+well-established security protocols, including transport layer
+security for secure transmission, advanced encryption standard
+for encrypted storage, and public key infrastructure for au-
+thentication and data integrity. Our proposed system inherently
+integrates these protocols throughout the entire workflow, en-
+compassing data capture, secure template generation, encrypted
+storage, and template matching during authentication. In ad-
+dition, because the BCR-based user recognition system re-
+lies on unique BCRs that are intrinsically difficult to repli-
+cate, it provides additional safeguards against spoofing and
+unauthorized access. With further experimentation and valida-
+tion, these attributes can be leveraged even more effectively,
+ensuring robust protection against eavesdropping, database
+breaches, and other security threats while preserving user
+privacy.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+6020 IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025
+Fig. 3. Feature differences among subjects for (a) raw data and
+(b) proposed normalized data.
+III. PROPOSED BCRNET-SNN MODEL
+In this section, we describe the development process of the
+SNN structure designed for user recognition through BCR. The
+direct training of SNN is challenging because of the discon-
+tinuous, nondifferentiable attributes of spike-based neuron ac-
+tivation, which complicates the use of traditional backpropaga-
+tion methods and requires substantial memory for computation.
+To address this, we first developed a high-performance deep
+learning structure based on CNN mechanisms and then created
+a compact student network from the larger teacher network
+by utilizing an offline KD method. This approach effectively
+transferred learned features and behaviors from the teacher to the
+student network. Finally, we convert the student network into an
+SNN model. The following subsections provide comprehensive
+details of each procedure.
+A. Data Preprocessing
+As previously described, each feature vector consists of 380
+points. These raw features manifest limited distinctive char-
+acteristics across the 15 subjects. To maximize intersubject
+differences, we implemented a standardization method for each
+feature point across the entire range of feature vectors collected
+from the 15 subjects. The standardization process is as follows:
+fnorm
+i,n =
+fi,n − mean(fi)
+std(fi)
+(3)
+for i ∈ [0, 379] denotes the feature vector element and
+n ∈ [0, 2644] indicates the feature vector index. The term fi,n
+refers to the specific ith component of the nth feature vector. The
+functions mean(·) and std(·) represent the mean and standard
+deviation of a vector, respectively. Fig. 3 shows the efficacy
+of this standardization, demonstrating a marked enhancement
+in feature differentiation across 15 subjects compared with the
+original feature vectors. The effective encoding of BCR data
+does not hinge on reducing the number of parameters but rather
+on the method used to convert analog information into spike sig-
+nals. Our approach proposes a methodology for this conversion
+TABLE I
+NUMBER OF PARAMETERS, NEURONS, AND SYNAPSES OF EACH LAYER
+that ensures high accuracy in ANNs and effectively translates
+these features into SNNs without observable performance loss.
+B. BCRNet Model
+The main objective of this study was to develop a shallow neu-
+ral network designed for low-power computing environments,
+which is an essential consideration for widespread practical
+IoT devices. To this end, minimizing the network parameters
+is crucial for preserving a balance between efficiency and per-
+formance. Hence, we adopt a simpler yet highly effective CNN
+structure [26].
+The proposed BCRNet is mainly composed of two 1D-
+convolutional layers with a rectified linear unit (ReLU) acti-
+vation function, followed by three fully connected layers with
+ReLU6 and softmax activation functions. The first convolutional
+layer performs temporal convolutions with 16 filters of size
+7 × 1, employing a stride of three and zero padding, effectively
+reducing the input size by a third and extracting 16 feature maps.
+Subsequently,theseoutputsarefedintothesecondconvolutional
+layer, which uses eight filters of size 5 × 1 and a stride of
+two, resulting in an 8 × 32 feature map. This feature map is
+concatenated into a 1 × 256 vector and fed into fully connected
+layer with an output size of 128. The ReLU6 activation function
+processes this output, capping the maximum at six. ReLU6 is
+particularly beneficial in low-power scenarios because it allows
+the activated values to be presented with only three bits. The
+output is fed into two additional fully connected layers with
+output sizes of 64 and 15. The final layer uses a softmax function
+forclassification.Fig.4showstheproposedstructureasateacher
+network.
+C. BRNet-S Model
+The student model, BCRNet-S, is a streamlined version of
+the teacher model, BCRNet. Our analysis reveals that approxi-
+mately 98% of the BRCNet model parameters are concentrated
+within three fully connected layers, as listed in Table I. In
+pursuit of a simplified and computationally efficient model, the
+BCRNet-S was designed by replacing the layers with a single
+fully connected layer. This modification, as detailed in Table I,
+leads to a remarkable reduction in the number of parameters by
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+KANG et al.: BCRNET-SNN: BODY CHANNEL RESPONSE-AWARE SPIKING NEURAL NETWORK FOR USER RECOGNITION 6021
+Fig. 4. Block diagram of the comprehensive design procedure for the proposed BCRNet-SNN with two steps, including the first step for KD from
+BCRNet to BCRNet-S and the second step for ANN-to-SNN conversion from BCRNet-S to BCRNet-SNN.
+approximately 95% compared with the original BCRNet. Con-
+sequently,thearchitectureofBCRNet-Scomprisestwoconvolu-
+tional layers, followed by a single fully connected layer. Fig. 4
+illustrates a comparison between the BCRNet and BRCNet-S
+structures, elucidating modifications in the student network.
+Furthermore, the conversion of BCRNet-S to SNNs decreases
+the neuron count by about half and the synapse connections by
+nearly one-fifth, significantly reducing the overall complexity in
+comparison to BCRNet, as described in Table I.
+D. Knowledge Distillation
+Offline KD is a pivotal component of our method, enabling the
+transfer of knowledge from the larger, complex teacher network
+(BCRNet) to the smaller, efficient student network (BCRNet-S).
+This process empowers the student network to maintain the high
+performance of the teacher network while drastically reducing
+parameter count. Through KD, the student network learns to
+generalize crucial data patterns using interclass relationships
+gleaned by the teacher network during extensive training on
+large datasets. Numerous studies attest to the efficacy of this
+approach in significantly boosting the performance of smaller
+networks, equipping them to rival their larger counterparts ef-
+fectively [22]. Fig. 4 illustrates the KD process along with the
+structures of the proposed teacher and student networks. In this
+study, KD was leveraged to transfer the knowledge gained by
+the pretrained teacher model specialized in time-series datasets
+to a student model. Here, “knowledge” is conceptualized as the
+probability distribution over predicted classes from the teacher
+model, formulated as follows:
+ŷi =
+exp(zi)
+
+j exp(zj)
+(4)
+where zi denotes the logit for the ith class, and ŷi is the cor-
+responding predicted probability. The temperature parameter
+T is also employed to make the probability distribution more
+uniform. The modified probability was defined as follows:
+ˆ
+yi
+T
+=
+exp(zi/T)
+
+j exp(zj/T)
+. (5)
+This allows the model to consider a broader range of classes and
+reduce class-specific biases, thereby enabling it to learn more
+diverse features. A higher T yields a more uniform distribution
+with a lower bias, whereas a lower T increases the bias, bringing
+the probability distribution closer to the original logits.
+In KD, the difference between the probability distribu-
+tions of the teacher and student models is quantified us-
+ing the Kullback–Leibler (KL) divergence (KLD) defined as
+KL(P, Q) =
+
+j Pj log(
+Pj
+Qj
+). The student model was trained
+to minimize the model difference and simultaneous classifi-
+cation error using the cross-entropy (CE) loss as CE(y, ŷ) =
+−
+
+c yc log ŷc. Consequently, the total loss function of the KD
+model is defined as
+L = (1 − α)CE (y, ŷs) + αT2
+KL ŷT
+s , ŷT
+t (6)
+where ŷt and ŷs denote the predicted probabilities of the teacher
+and student models, respectively, y is a true label, and α is
+a tradeoff parameter that controls the relative importance of
+the two loss functions. Typically, α varies between zero and
+one, with larger values indicating a higher dependence on the
+teacher model. Using a grid search method, the optimal values
+for hyperparameters T and α were obtained as 10 and 0.9,
+respectively, thereby optimizing the balance between knowledge
+transfer and model specificity.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+6022 IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025
+Fig. 5. Block diagrams of conversion relationship between the con-
+volution layers in BCRNet-S and the SNN layers in BCRNet-SNN.
+(a) Conversion of seven-tap 1-D convolution filter with stride 3 in std-
+conv-layer0 to SNN-layer0. (b) Conversion of five-tap 1-D convolution
+filter with stride 2 in std-conv-layer1 to SNN-layer1.
+E. BCRNet-SNN Model
+As shown in Fig. 4, the proposed BCRNet-SNN is con-
+verted from BCRNet-S, which inherits the training results from
+BCRNet, where the network consists of an integrated-and-fire
+(IF) neuron model with an excitatory postsynaptic potential or
+inhibitory postsynaptic potential synapse model. The features
+between the layers of BCRNet-S are encoded through spike
+transmissions from the input to the output neurons of each layer
+of BCRNet-SNN in proportion to the values for a given time
+window based on rate coding [27]. In addition, the decision for
+the candidate subject was made by the output neuron with the
+highest spike rate in the neuron group2 (NG2) of the SNN fully
+connected layer (SNN-FC-layer). The synapses indicate the
+conversions of the connections established by the convolution
+filter taps in the student-convolution-layers (Std-conv-layers)
+into connections between the input and output neurons in the
+SNN layers. Biases in the ANN model were substituted by
+bias neurons scaled by the threshold value Vth in the respective
+SNN layer, where Vth triggered spike firing when the sum of
+the weighted spikes was greater than Vth in the IF neuron. All
+connections in the student fully connected layer (Std-FC-layer)
+were converted into synapses between the input and output
+neurons in the SNN-FC-layer.
+Fig. 5 shows the block diagrams that present the conversion
+relationships between the convolution layers in BCRNet-S and
+the SNN layers in BCRNet-SNN without considering the spe-
+cific input size. Each synapse connection between multiple input
+neurons and an output neuron replaces the convolution operation
+at respective shifts by strides of 3 and 2 for the feature con-
+versions of std-conv-layer0 to SNN-layer0 and std-conv-layer1
+to SNN-layer1, respectively. The required numbers of neurons
+and synapses to convert Std-conv-layer to SNN layer can be
+expressed as
+N(neuron) = N (filterconv)
+× L (inputconv) /L(stride) (7)
+N(synapse) = NC (inputconv) × N(neuron)
+× L (filterconv) (8)
+where N(·) is the number of elements, L(·) is the length of the
+vector, NC(·) is the number of columns of the matrix, filterconv
+is the convolutional filter, inputconv is the input data to Std-
+conv-layer, and · indicates the ceiling operation. For example,
+when Std-conv-layer0 is converted to SNN-layer0, as shown
+in Fig. 5(a), the required neuron and synapse numbers were
+calculated as 512 = 8 × 190/3 and 7168 = 2 × 512 × 7, re-
+spectively. In addition, the neuron and synapse numbers in the
+SNN-FC-layer were translated to the output class number and
+connections between the feature1 size and output class number,
+respectively.
+The relations between the features of each layer in BCRNet-
+SNN can be presented as linear equations as follows:
+y0 = w0x + b0 (9)
+y1 = w1y0 + b1 (10)
+y2 = w2y1 (11)
+where y0, y1, and y2 indicate feature0 from SNN-layer0, fea-
+ture1 from SNN-layer1, and the output feature from SNN-FC-
+layer, respectively, which can be presented by IF neurons in
+BCRNet-SNN in Fig. 5. b0 and b1 express the bias terms of
+SNN-layer0 and SNN-layer1, respectively. Similarly, x and
+wk indicate the input neurons in the Poisson group and the
+synaptic weights for the kth corresponding layers, respectively.
+While the operations in BCRNet-S are conducted using positive
+and negative values, BCRNet-SNN cannot use negative values
+because the values are presented by spike rates. Hence, the
+addition of positive offset values o to the input data to remove
+negative values is required for the presentation of the input data
+by spike rates in SNN-layer0, as follows:
+y0 = w0(x + o) + b0 − w0o (12)
+where the value of the o elements is determined as 3.89 ac-
+cording to the range of the input data BCR, which is approx-
+imately between −3.89 and 4.00. The ReLU function’s effect
+was implemented by dividing both sides by Vth, after scaling
+(9)–(11) by multiplying both sides by the spike-rate frequency fs
+to reflect the spike transmission rate from the Poisson group. The
+conversion of ANNs to SNNs introduces discreteness errors due
+to discontinuities in the input and synchronization errors caused
+by spikes sent at different times. To mitigate these errors, we
+scaledthemodelweightsandbiastermsbyVth duringconversion
+to prevent each neuron in the SNN from being overactivated or
+underactivated. Hence, (9)–(11) can be rewritten as
+fs
+Vth
+y0 =
+fs
+Vth
+w0(x + o) +
+fs
+Vth
+(b0 − w0o) (13)
+fs
+V 2
+th
+y1 =
+fs
+V 2
+th
+w1y0 +
+fs
+V 2
+th
+b1 (14)
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+KANG et al.: BCRNET-SNN: BODY CHANNEL RESPONSE-AWARE SPIKING NEURAL NETWORK FOR USER RECOGNITION 6023
+Fig. 6. Feature visualizations for comparison of feature distribution
+between BCRNet-S and BCRNet-SNN for each corresponding layer,
+where the line color indicates each column data of the feature and
+the input is a BCR data of the subject0. (a) Feature visualization of
+BCRNet-S. (b) Feature visualization of BCRNet-SNN.
+fs
+V 3
+th
+y2 =
+fs
+V 3
+th
+w2y1 (15)
+where the second addition terms on the right-hand sides of (13)
+and (14) are scaled biases modeled as IF neurons, as shown in
+Fig. 5.
+Fig. 6 shows visualizations of the relative feature ratio for the
+neuron index for comparison of feature distribution between
+BCRNet-S and BCRNet-SNN for the corresponding layers,
+wherethelinecolorindicateseachcolumndataofthefeature,the
+input is the BCR data of subject0, the offset value o is 3.89, and
+Vth is 4.0. As shown in Fig. 6, the proposed ANN-to-SNN con-
+version approach can achieve negligible feature losses between
+BCRNet-S and BCRNet-SNN, where the negative features in the
+output layer of BRCNet-S are excluded from BRCNet-SNN by
+normalizing the body response data range by o in the conversion
+process.
+IV. RESULTS
+A. Experimental Setup
+The teacher model (BCRNet) is initially trained using a train-
+ing dataset through supervised learning with CE loss. This step
+enables the teacher model to capture the fundamental patterns
+and attributes essential for the subsequent KD process. Follow-
+ing primary training, knowledge transfer to the student network
+(BCRNets-S) was facilitated using the KD loss in (6). Through
+this process, the student network strives to acquire the teacher’s
+advanced knowledge, thereby enhancing its performance. Fi-
+nally, the student model was transformed into an SNN model
+using the proposed ANN-to-SNN conversion method to achieve
+low-power and efficient networks suitable for broader IoT appli-
+cations. During the test phase, fivefold cross-validation was uti-
+lized to evaluate the generalization ability of the model robustly.
+Regarding the hyperparameter settings, the initial learning
+rate was set to 10−2
+, and the batch size was aligned with the size
+TABLE II
+ACCURACY AND PARAMETER ANALYSIS OF DIFFERENT NEURAL NETWORK
+MODELS ON THE BCR DATASET
+of the training set. The hyperparameters were optimized using
+an exhaustive grid search method. The Adam optimizer was
+selected for its efficiency in optimizing the model parameters.
+The size of the input image was set to 190 × 2. The training
+was conducted for a maximum of 1000 epochs, incorporating
+an early stopping technique after 30 epochs without perfor-
+mance improvements to optimize the training efficiency. Our
+experiments were conducted on a system equipped with an Intel
+Core i7-10700K, NVIDIA RTX2080 Ti with 11 GB of memory,
+and 64 GB of RAM. The implementations of the ANN were
+performed using Python 3.10, whereas the SNN experiments
+utilized the Brian 2.5.1 framework [29].
+B. Performance Comparisons in Network Architectures
+In this section, we compare BCRNet, BCRNet-S, and
+BCRNet-SNN with various neural network architectures on the
+BCR dataset in terms of classification accuracy and number of
+trainable parameters, as detailed in Table II, where SD indi-
+cates the standard deviation. In addition, we have provided the
+number of operations (OPs), energy consumption, and latency
+for all the algorithms. In ANN models, the main computational
+cost comes from multiply-accumulate (MAC) operations, while
+SNNs transmit binary spikes and rely primarily on asynchronous
+accumulate (AC) operations to update the state of each neuron.
+Consequently, we define OPs as MACs for the ANN algorithms
+and ACs for the SNNs. We assume that MAC and AC operations
+are implemented on 45-nm CMOS hardware, where each AC
+operation consumes 0.9 pJ of energy and each MAC operation
+consumes 4.6 pJ [19]. Under these assumptions, the theoreti-
+cal energy consumption for each algorithm was calculated. In
+ANN models, latency represents the measured inference time in
+our computational environment, whereas in SNNs, the actual
+inference time depends heavily on the specifications of the
+neuromorphic hardware; therefore, it has not been included in
+our analysis. The details are summarized in Table III.
+The ResNet18 model with 11 million parameters exhibits
+an average accuracy of 95.73% and a maximum accuracy of
+96.41%. In contrast, the more streamlined ResNet6 demon-
+strated a marginally higher average accuracy of 96.33%, de-
+spite having only five million parameters. Both the ResNet18
+and ResNet6 models exhibited significantly higher OPs, energy
+consumption, and latency than the other models, as listed in
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+6024 IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025
+TABLE III
+COMPARISON OF COMPUTATIONAL METRICS OF COMPARATIVE ALGORITHMS
+Table III. These results indicate that a larger model does not
+always guarantee better performance in relation to the specific
+characteristics of the dataset. These findings highlight the impor-
+tance of tailoring neural network architectures to suit datasets.
+In our evaluation of the basic architectures, we tested the
+one-layer and two-layer ANN models. The one-layer model
+with 5700 parameters achieved an average accuracy of 89.71%,
+which was considerably lower than that of the deeper models. In
+contrast, the two-layer ANN with 10 000 parameters achieved
+a higher accuracy of 95.16%, indicating the impact of the addi-
+tional layers on the model effectiveness.
+Furthermore, the proposed BCRNet, with its two convolu-
+tional layers, significantly outperformed all other architectures.
+It achieved an impressive average accuracy of 97.73% and a
+maximum accuracy of 98.30%, demonstrating its effectiveness
+inhandlingtheBCRdataset.BCRNetachievedtheseresultswith
+only 43 000 parameters, which is only 1% of the parameter count
+of ResNet6, yet approximately eight times that of the one-layer
+ANN model.
+This balance between high accuracy and a low number of
+parameters is particularly crucial for IoT device applications,
+where computational resources are often limited. To address this
+need, we propose the BCRNet-S model to effectively reduce the
+number of parameters while maintaining model efficacy using
+the KD technique. Remarkably, BCRNet-S achieved an average
+of 97.01% and a maximum of 98.29%, which is comparable to
+that of BCRNet, with significantly reduced parameters of 2200,
+which is less than half of that of the one-layer ANN.
+Finally, we tested the BCRNet-SNN model, which was de-
+rived from the BCRNet-S model, using our ANN-to-SNN
+conversion mechanism. BCRNet-SNN achieved an average
+accuracy of 96.52%, which was only marginally lower by 0.5%
+comparedwithBCRNet-S.Thisresultvalidatestheeffectiveness
+of the proposed ANN-to-SNN conversion technique, particu-
+larly for implementing spike-based operations for a 1-D convo-
+lutionalfilter.OurBCRNet-SNNwascomposedof1035neurons
+and 14 208 synapses. Table III gives that by relying solely on AC
+operations, the BCRNet-SNN could achieve an 80% reduction
+in energy consumption compared with the BCRNet-S.
+Utilizing lower precision multipliers and adder implementa-
+tions reduces overall hardware complexity, potentially optimiz-
+ing hardware resource utilization without compromising model
+accuracy. Unlike ANNs, SNNs encode input signals as spike
+signals of either zero or one. In BCRNet-SNN, two-operand
+multiplications involved in FC and CNN layers with spike binary
+input signals can be replaced by summing weight values at spike
+occurrences. This streamlined approach reduces real multiplica-
+tions and bit operations, enhancing mixed-precision arithmetic
+performance. As a result, BCRNet-SNN-based recognition sys-
+tems can be developed efficiently with decreased computational
+complexity, facilitating deployment in real-world applications.
+C. Comparisons to Conventional Biometric Modalities
+Conventional iris recognition systems offer low false accep-
+tance rates (FAR) between 0.0001% and 0.01% and false rejec-
+tion rates (FRR) between 0.1% and 0.5% [30]. Compared with
+other biometric techniques, the probability of different people’s
+irises being identical is extremely low. However, the installation
+and maintenance costs of the infrastructure can be high, making
+it cost-prohibitive for small businesses or organizations with
+limited resources. It generally requires close proximity to the
+camera, which can cause discomfort for some users. As the
+most practical and well-utilized biometric because of its easy
+and intuitive usability, fingerprint patterns offer cost-effective
+implementation with a small form factor while ensuring a highly
+reliable accuracy, with FAR between 0.01% and 0.1% and FRR
+between 0.1% and 1.0% [30]. However, compared to other bio-
+metric measures, the innate biometric features of fingerprints are
+vulnerable to mutilation or leakage, which can lead to spoofing
+attacks through forgery and alteration attempts using artificial
+fingerprints [9].
+The proposed BCR-based recognition achieved an FAR of
+0.02% with a standard deviation of 0.0024, and an FRR of
+2.78% with a standard deviation of 0.0385. The high FRR was
+attributed to the small number of samples per class, as even a
+single error could significantly affect the overall results. The size
+of the BCR dataset employed in this study was insufficient to
+accurately measure the FARs and FRRs compared with mature
+technologies that have been extensively researched for a long
+time, such as fingerprint or iris recognition. While the FRR of
+BCR evaluated by BCRNet-SNN was slightly higher than those
+of fingerprint biometrics, one of the standout benefits of BCR
+was its remarkable resistance to replication and reproduction. In
+this respect, as a form of multifactor authentication, BCR can
+effectively complement fingerprint biometrics by enhancing se-
+curitybecauseitcanbemeasuredsimultaneouslywhilescanning
+the fingerprint with the same posture. The proposed BCR-based
+recognition system can serve as a highly secure and convenient
+alternative or supplementary measure that enhances the security
+of current biometrics, such as fingerprints for authentication in
+allareasoflife,includingfinance,administration,accesscontrol,
+welfare, and healthcare.
+D. Ablation Study on BCRNet-S
+1) Role of Different Losses in KD Technique: We conducted
+a series of experiments to evaluate the effects of various KD
+loss functions on the performance of the BCRNet-S model.
+Initially, when trained with only CE loss, the BCRNet-S model
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+KANG et al.: BCRNET-SNN: BODY CHANNEL RESPONSE-AWARE SPIKING NEURAL NETWORK FOR USER RECOGNITION 6025
+TABLE IV
+ABLATION STUDY ON THE ROLE OF DIFFERENT LOSSES IN KD TECHNIQUE
+FOR BCRNET-S
+TABLE V
+ABLATION STUDY FOR THE EFFECT OF HYPERPARAMETERS ON
+BCRNET-SNN PERFORMANCE
+achieved an average accuracy of 96.26%, exhibiting the lowest
+performance without the KD method. Combining CE with the
+mean-square error (mse) loss resulted in an improved average
+accuracy of 97.05%. In addition, incorporating KLD loss with-
+out the temperature parameter T and CE increases the accuracy
+to an average of 96.60%. In particular, when the KD loss
+was combined with CE, the BCRNet-S model maintained an
+average accuracy of 97.01% and reached a maximum accuracy
+of 98.29%. The results are listed in Table IV. Therefore, by
+enabling a smaller student model to learn latent information
+from a high-capacity teacher model, KD effectively preserves
+model performance while reducing the computational overhead,
+which in turn lowers energy consumption upon conversion to the
+BCRNet-SNN.
+2) Effect of Hyperparameters: In this section, we explore the
+impact of varying the key hyperparameters α and T on the KD
+process for the BCRNet-S model applied to the BCR dataset.
+Table V summarizes the performance of the model across dif-
+ferent hyperparameter settings. Among these, the combination
+of α = 0.9 and T = 10 was particularly effective, resulting in an
+averageaccuracyof97.01%andapeakaccuracyof98.29%.This
+specific setting underlines the importance of fine-tuning the bal-
+ance between the KD loss and original training loss, represented
+by α, as well as the temperature parameter T, which modulates
+the softening of output probabilities. The results demonstrated
+that careful calibration of these parameters can significantly
+enhancetheperformanceofthemodel,offeringvaluableinsights
+for optimizing neural network training in similar applications.
+E. Ablation Study on BCRNet-SNN
+In this ablation study, we specifically examined the influence
+of Vth on the conversion process from ANN to SNN, and the
+BCRNet-SNN model achieved the highest average accuracy of
+TABLE VI
+ABLATION STUDY FOR THE EFFECT OF VTH ON THE BCRNET-SNN
+PERFORMANCE
+Fig. 7. Confusion matrices for (a) BCRNet-S and (b) BCRNet-SNN.
+96.52% and a peak accuracy of 98.11% when Vth was set to
+10. Table VI summarizes the performance of the BCRNet-SNN
+model under different hyperparameter configurations, providing
+insights into the influence of Vth. The successful maintenance
+of the postconversion performance is further illustrated in the
+confusion matrix depicted in Fig. 7. This matrix provides a com-
+parative perspective, underscoring the robustness and efficacy of
+the model in the SNN framework.
+V. DISCUSSION AND CONCLUSION
+A. BCRNet-SNN for User Recognition System
+This study introduces BCRNet-SNN, an SNN architecture
+leveraging electric BCR for user recognition. BCRNet-SNN
+stands out for its low latency, low power consumption, and
+wide dynamic range, which are essential for biometric sys-
+tems to be embedded in resource-constrained IoT devices.
+The network evolves from BCRNet, a CNN model adept at
+extracting BCR-based features, and is further refined through
+KD to reduce complexity significantly. Our evaluations show
+that BCRNet surpasses established models, such as ResNet18
+and ResNet6, by over 2% in accuracy, drastically reducing
+the network parameters. The distilled BCRNet-S requires only
+5.1% of BCRNet’s parameters to be aligned with the SNN
+framework. The BCRNet-SNN model achieves an impressive
+maximum accuracy of 98.11%, demonstrating no significant
+performancedegradationcomparedwithBCRNet. This achieve-
+ment highlights the efficiency of our CNN-to-SNN conversion
+process, making BCRNet-SNN a benchmark in neural network
+design for biometric recognition. This study contributes to ad-
+vanced neural network architectures and sets a new standard
+for energy-efficient high-performance computing models that
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+6026 IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 21, NO. 8, AUGUST 2025
+are particularly relevant for IoT and wearable technology ap-
+plications. The success of BCRNet-SNN opens new possibili-
+ties for integrating sophisticated neural networks into practical
+applications.
+B. Future Study on BCR-Based User Recognition
+1) Extended Experiments With an Increased Subject Pool:
+Implementing BCR data acquisition methods that consider
+various environmental effects, such as interference signals from
+neighboring electronic devices and temperature fluctuations af-
+fecting skin moisture levels and user clothing, can significantly
+enhance the generalizability of BCRNet-SNNs. Long-term data
+acquisition experiments are essential to explore factors, such as
+health and emotional changes over time, which influence BCR
+variations. These experiments should consider these factors as
+control variables to ensure the stability of BCR features over
+extended periods.
+2) Feature Update and Recalibration Methods: The feature
+update policy to compensate for physiological or environmental
+variations should be tailored to the specific service conditions
+of applications, including factors, such as the number of users,
+security level, and frequency of use. This approach minimizes
+the inconvenience of using a BCR-based recognition system.
+The model can adopt an update process that involves refining
+the existing model through fine-tuning with updated datasets
+derived from the latest measured BCRs, which are then applied
+to current recognition processes.
+3) Implementation of a Hardware Structure Customized for
+BCRNet-SNN: Unlike conventional ANNs, SNNs operate in
+an event-based paradigm that requires specialized hardware
+specifications. Achieving optimal efficiency in SNN execution
+necessitates support for parallel and distributed processing, po-
+tentially requiring hardware accelerators or specialized proces-
+sors designed for event-based processing. Therefore, developing
+efficient algorithms and hardware architectures tailored to SNN
+requirements is crucial to fully realizing their potential. In our
+study, we explored SNNs as alternatives to traditional neural net-
+works to develop a BCR-based recognition system specifically
+optimized for resource-constrained edge devices.
+4) Scalability for BCRNet-SNN: The BCRNet-SNN frame-
+work,optimizedforBCRdatausingashallowBCRNet-Smodel,
+may not be directly applicable to larger, more complex datasets,
+such as images, speech, or text. However, our framework can
+be adapted to such scenarios through modifications. For larger
+datasets, the network architecture must be deepened with addi-
+tional convolutional and fully connected layers and enhanced
+feature extraction techniques, such as attention mechanisms.
+Although the specific architecture of the BCRNet-SNN is not
+directly scalable, the underlying framework is adaptable. By
+training a larger, complex model for the task, applying KD to
+create a smaller, efficient student model, and then converting it
+to an SNN, scalable and efficient SNN models can be developed
+for a wide range of applications. This approach ensures that the
+benefits of SNNs, such as their energy efficiency and temporal
+processing capabilities, are effectively maintained.
+REFERENCES
+[1] V. Hassija et al., “A survey on IoT security: Application areas, security
+threats, and solution architectures,” IEEE Access, vol. 7, pp. 82721–82743,
+2019.
+[2] X. Yang, L. Shu, Y. Liu, G. P. Hancke, M. A. Ferrag, and K. Huang,
+“Physical security and safety of IoT equipment: A survey of recent
+advances and opportunities,” IEEE Trans. Ind. Inform., vol. 18, no. 7,
+pp. 4319–4330, Jul. 2022.
+[3] A. Jain, D. Deb, and J. Engelsma, “Biometrics: Trust, but verify,” IEEE
+Trans. Biomed. Behav. Identity Sci., vol. 4, no. 3, pp. 303–323, Jul. 2022.
+[4] B. Biggio, G. Fumera, P. Russu, L. Didaci, and F. Roli, “Adversarial
+biometric recognition: A review on biometric system security from the
+adversarial machine-learning perspective,” IEEE Signal Process. Mag.,
+vol. 32, no. 5, pp. 31–41, Sep. 2015.
+[5] I. Martinovic, K. Rasmussen, M. Roeschlin, and G. Tsudik, “Authenti-
+cation using pulse-response biometrics,” Commun. ACM, vol. 60, no. 2,
+pp. 108–115, Jan. 2017.
+[6] M. Sato et al., “Zensei: Embedded, multielectrode bioimpedance sensing
+for implicit, ubiquitous user recognition,” in Proc. ACM CHI Conf. Hum.
+Factors Comput. Syst., May 2017, pp. 3972–3985.
+[7] H. Noh, Ch.-G. Ahn, H.-J. Kong, and J. Sim, “Ratiometric impedance
+sensing of fingers for robust identity authentication,” Sci. Rep., vol. 9,
+pp. 1–12, Sep. 2019.
+[8] T. Kang, K.-I. Oh, J.-J. Lee, B.-S. Park, W. Oh, and S.-E. Kim, “Mea-
+surement and analysis of human body channel response for biometric
+recognition,” IEEE Trans. Instrum. Meas., vol. 70, 2021, Art. no. 2512812.
+[9] T. Kang et al., “Anti-spoofing for fingerprint recognition using elec-
+tric body pulse response,” IEEE Internet Things J., vol. 11, no. 4,
+pp. 5993–6006, Feb. 2024.
+[10] C.CortesandV.Vapnik,“Support-vectornetworks,”Mach.Learn.,vol.20,
+no. 3, pp. 207–273, Sep. 1995.
+[11] V. Sze, Y. Chen, T. Yang, and J. S. Emer, “Efficient processing of deep
+neural networks: A tutorial and survey,” Proc. IEEE, vol. 105, no. 12,
+pp. 2295–2329, Dec. 2017.
+[12] Z. Li, F. Liu, W. Yang, S. Peng, and J. Zhou, “A survey of convolutional
+neural networks: Analysis, applications, and prospects,” IEEE Trans.
+Neural Netw. Learn., vol. 33, no. 12, pp. 6999–7019, Dec. 2022.
+[13] K. Huang, X. Liu, S. Fu, D. Guo, and M. Xu, “A lightweight privacy-
+preserving CNN feature extraction framework for mobile sensing,” IEEE
+Trans. Dependable Secure Comput., vol. 18, no. 3, pp. 1441–1455,
+May/Jun. 2021.
+[14] E. Li, L. Zeng, Z. Zhou, and X. Chen, “Edge AI: On-demand accelerating
+deep neural network inference via edge computing,” IEEE Trans. Wireless.
+Commun., vol. 19, no. 1, pp. 447–457, Jan. 2020.
+[15] K. Roy, A. Jaiswa, and P. Panda, “Towards spike-based machine intel-
+ligence with neuromorphic computing,” Nature, vol. 575, pp. 607–617,
+Jul. 2018.
+[16] M. Pfeiffer and T. Pfeil, “Deep learning with spiking neurons: Opportuni-
+ties and challenges,” Front. Neurosci., vol. 12, pp. 1–18, Oct. 2018.
+[17] F. Akopyan et al., “TrueNorth: Design and tool flow of a 65mW 1 million
+neuron programmable neurosynaptic chip,” IEEE Trans. Comput. Aided
+Des. Integr. Circuits Syst., vol. 34, no. 10, pp. 1537–1557, Oct. 2015.
+[18] M. Davies et al., “Loihi: A neuromorphic manycore processor with on-chip
+learning,” IEEE Micro, vol. 38, no. 1, pp. 82–99, Jan./Feb. 2018.
+[19] S. Kundu, M. Pedram, and P. A. Beerel, “Hire-SNN: Harnessing the
+inherent robustness of energy-efficient deep spiking neural networks by
+training with crafted input noise,” in Proc. IEEE/CVF Int. Conf. Comput.
+Vis., 2021, pp. 5209–5218.
+[20] C. Lee, S. S. Sarwar, P. Panda, G. Srinivasan, and K. Roy, “Enabling spike-
+based backpropagation for training deep neural network architectures,”
+Front. Neurosci, vol. 14, pp. 1–22, Feb. 2020.
+[21] E. O. Neftci, H. Mostafa, and F. Zenke, “Surrogate gradient learning in
+spiking neural networks: Bringing the power of gradient-based optimiza-
+tion to spiking neural networks,” IEEE Signal Process. Mag., vol. 36, no. 6,
+pp. 51–63, Nov. 2019.
+[22] G. Hinton, O. Vinyals, and J. Dean, “Distilling the knowledge in a neural
+network,” 2015, arXiv:1503.02531.
+[23] S. Maity et al., “BioPhysical modeling, characterization and optimization
+of electroquasistatic human body communication,” IEEE Trans. Biomed.
+Eng., vol. 66, no. 6, pp. 1791–1802, Jun. 2019.
+[24] C.-H. Hyoung and J.-H. Hwang, “Energy harvesting from conducted
+electromagnetic interference of fluorescent light for Internet of Things
+application,” ETRI J., vol. 44, no. 5, pp. 759–768, Oct. 2022.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+KANG et al.: BCRNET-SNN: BODY CHANNEL RESPONSE-AWARE SPIKING NEURAL NETWORK FOR USER RECOGNITION 6027
+[25] M. A. Callejon, D. Naranjo-Hernandez, J. Reina-Tosina, and L. M. Roa,
+“A comprehensive study into intrabody communication measurements,”
+IEEE Trans. Instrum. Meas, vol. 62, no. 9, pp. 2446–2455, Sep. 2013.
+[26] Z. Wang, W. Yan, and T. Oates, “Time series classification from scratch
+with deep neural networks: A strong baseline,” in Proc. Int. Joint Conf.
+Neural Netw., May 2017, pp. 1578–1585.
+[27] W. Guo, M. E. Fouda, A. M. Eltawil, and K. N. Salama, “Neural coding
+in spiking neural networks: A comparative study for robust neuromorphic
+systems,” Front. Neurosci., vol. 15, pp. 1–21, Mar. 2021.
+[28] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image
+recognition,” in Proc. IEEE Comput. Soc. Conf. Comput. Vis. Pattern
+Recognit., 2016, pp. 770–778.
+[29] M. Stimberg, R. Brette, and D. F. Goodman, “Brian 2, an intuitive and
+efficient neural simulator,” eLife, vol. 8, Aug. 2019, Art. no. e47314.
+[30] R. Alrawili, A. A. S. AlQahtani, and M. K. Khan, “Comprehensive survey:
+Biometric user authentication application, evaluation, and discussion,”
+Comput. Electr. Eng., vol. 119, Oct. 2024, Art. no. 109485.
+Taewook Kang received the B.S. and M.S.
+degrees in electronics and electrical engineer-
+ing from the Pohang University of Science and
+Technology, Pohang, South Korea, in 2005 and
+2007, respectively, and the Ph.D. degree in ra-
+dio and information communications engineer-
+ing from Chungnam National University, Dae-
+jeon, South Korea, in 2023.
+Since February 2007, he has been with Elec-
+tronics and Telecommunications Research Insti-
+tute (ETRI), Daejeon, where he is currently a
+Principal Researcher. His research interests include human body com-
+munications for wireless body area networks, radio channel modeling,
+power management of energy harvesting systems, betavoltaic batteries,
+statistical and adaptive signal processing, spiking neural networks, and
+biometrics.
+Dr. Kang is currently an Editor for ETRI Journal.
+Chanwoo Shin received the B.S. degree in
+industrial engineering from Dankook Univer-
+sity, Cheonan, South Korea, in 2022, and the
+M.S. degree in artificial intelligence from the
+Seoul National University of Science Technol-
+ogy, Seoul, South Korea, in 2024.
+His research interests include brain signal
+processing and spiking neural networks.
+Jongseok Lee received the B.S. and M.S. de-
+grees in electronic engineering and the Ph.D.
+degree in computer engineering from Kwang-
+woon University, Seoul, Korea, in 2016, 2018,
+and 2024, respectively.
+From 2020 to 2024, he was also with
+the Digital Insights Company LTD. He is in-
+volved in video, point cloud, and neural feature
+compression, including the standardization of
+VVC/H.266 video codec, MPEG G-PCC, and
+MPEG FCM. He also researched on spiking
+neural network learning method and spike signal processing. His current
+research interests include point cloud coding, Gaussian splats coding,
+video coding, and spiking neural networks.
+Jae-Jin Lee received the B.S., M.S., and Ph.D.
+degrees in computer engineering from Chung-
+buk National University, Cheongju, South Korea,
+in 2000, 2003, and 2007, respectively.
+He is currently a Project Leader with the
+low-power AI system-on-chip (SoC) Design Re-
+search Division, Electronics and Telecommu-
+nications Research Institute, Daejeon, Korea.
+His research interests include ultra-low-power
+deeply embedded RISC-V processor designs
+and event-driven neuromorphic computing ar-
+chitectures for brain-inspired spiking deep neural networks.
+Donggyu Sim (Senior Member, IEEE) received
+the B.S. and M.S. degrees in electronic engi-
+neering and the Ph.D. degree from Sogang Uni-
+versity, Seoul, Korea, in 1993, 1995, and 1999,
+respectively.
+From 1999 to 2000, he was with the Hyundai
+Electronics Company Ltd. From 2000 to 2002,
+he was a Senior Research Engineer with Varo
+Vision Company Ltd. From 2002 to 2005, he
+worked with the Image Computing Systems
+Lab., University of Washington as a Senior Re-
+search Engineer. Since 2005, he has been with the Department of Com-
+puter Engineering, Kwangwoon University, Seoul. In 2011, he joined
+Simon Frasier University, as a Visiting Scholar. He founded Digital In-
+sights Co. Ltd. in 2016 and is working for Digital Insights as the CEO.
+His current research interests include video coding, intelligent video
+processing, computer vision, and video communication.
+Seong-Eun Kim (Senior Member, IEEE) re-
+ceived the B.S. and Ph.D. degrees in electron-
+ics and electrical engineering from the Pohang
+University of Science and Technology, Pohang,
+South Korea, in 2004 and 2010, respectively.
+From 2011 to 2014, he was a Research Staff
+Member with the Samsung Advanced Institute
+of Technology, Yongin, South Korea. From 2014
+to 2017, he was a Postdoctoral Associate with
+the MIT/Harvard Neuroscience Statistics Re-
+search Laboratory, Cambridge, MA, USA, fo-
+cusing on developing neural signal processing algorithms. From 2017
+to 2021, he was an Assistant Professor with the Department of Elec-
+tronics Engineering, Hanbat National University, Daejeon, South Korea.
+He is currently an Associate Professor with the Department of Applied
+Artificial Intelligence, Seoul National University of Science and Tech-
+nology, Seoul, South Korea. His research interests include statistical
+and adaptive signal processing, biomedical signal processing and en-
+gineering, and deep learning for neural decoding techniques, such as
+brain–computer interfaces.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:16:55 UTC from IEEE Xplore. Restrictions apply.
+

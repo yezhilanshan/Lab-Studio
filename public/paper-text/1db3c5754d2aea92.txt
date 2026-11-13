@@ -1,0 +1,1415 @@
+Can Language Models Understand mmWave Data? Benchmarking Large
+Language Models for mmWave Radar-Based Human Understanding
+Jeongwan Shin1,2
+Jaehyeon Kim1
+Donguk Ko1
+Jaeho Choi†,1,2
+1
+DGIST 2
+KAIST InnoCORE LLM
+https://mmwave-qa.github.io/
+
+"
+
+"
+
+
+"
+ !
+!-%*(,%&$$- ))'&!%+#&,)$*
+!%+!0+  ,$%+!&%!%')&)$ )$&%+!%*'&!%+*.!+ 
+&&)!%+*/01&''#)!%+%*!+0
+         
+  2
+ %#01!%+ '&!%+#&,%$&-$%+'++)%*. +$&+!&%!*
+!%'+,)
+  '&!%+#&,+* &.*&%*!*+%+'++)%&'&!%+*$&-!%!%
+-)+!#!)+!&%.!+ $!%!$# &)!1&%+#!*'#$%+. ! !* )+)!*+!&
+*(,+$&+!&% &''#)-#,*!%!+)'+!+!-,'%&.%$&-$%+
++0'!#&*(,++!%*&''&*+&#+)#&)+.!*+!%$&-$%+*
+!(,+
+         
+
+
+  
+    
+ 
+ 
+
+ 
+
+   
+ " 
+ ! +!&%!*)')*%+0+ !*'&!%+#&,
+*"+##)!#
+     
+*+ ')*&%3*'&*!+!&%%+)&! %#&+!&%
+&
+ "#!
+&.$%0!*+!%++!&%*'')!%+ !*
+*$%+
+
+ "    
+ +!*+ !)*++!&%!%+ !**$%+
+*"+##)!#
+ #! !
+ ! *!%#&0')+!*')!$)!#0$&-!%!%
++ !*+!&%
+#+)$
+  
+  
+  
+              
+      
+  
+   
+ !
+ !
+$
+
+ 
+ 
+Figure 1. Top: Conventional mmWave perception frameworks relying on per-dataset retraining vs. our LLM-based perception that
+interprets structured radar point cloud inputs in a zero-shot manner. Bottom: Composition of mmWave-QA, encompassing heterogeneous
+mmWave devices, six real-world scenarios, and ﬁve QA types for comprehensive multimodal reasoning assessment.
+Abstract
+Large language models (LLMs) have shown remarkable
+reasoning and generative capabilities, motivating their use
+as universal reasoning engines for perception. While mod-
+ern approaches such as vision-language models (VLMs)
+have attempted to incorporate reasoning capabilities into
+visual sensing, the integration of LLMs with the millimeter-
+wave (mmWave) modality–despite its unique advantages
+under low light and occlusion–remains largely unexplored.
+The principal bottlenecks stem from the scarcity of radar-
+language pairs, severe cross-dataset heterogeneity, and the
+absence of a foundational mmWave encoder. We address
+this gap through a minimal textualization interface that se-
+rializes each mmWave point cloud into concise natural lan-
+guage, allowing off-the-shelf LLMs to operate in a question-
+answering (QA) setting. Building on this, we present
+mmWave-QA, the ﬁrst benchmark for language-conditioned
+mmWave human perception. mmWave-QA aggregates het-
+erogeneous public mmWave datasets and harmonizes them
+via calibration-aware preprocessing and global taxonomy
+alignment, while providing natural language QA. Spanning
+six scenarios and ﬁve QA tasks, the benchmark enables
+standardized evaluation across diverse mmWave hardware
+and experimental conditions, establishing a foundation for
+scalable research on mmWave-LLM integration. We further
+evaluate and analyze LLMs on our mmWave-QA, highlight-
+ing their zero-shot reasoning potential for radar perception,
+as well as their robustness under visual degradation.
+1. Introduction
+Millimeter-wave (mmWave) sensing has emerged as a
+strong alternative for human perception due to its ability
+†Corresponding author.
+This CVPR Findings paper is the Open Access version, provided by the Computer Vision
+Foundation. Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+2208
+to measure human targets via electromagnetic reﬂections
+rather than appearance cues [5, 25, 28, 68]. By captur-
+ing human kinematics across range, Doppler, and angle
+domains, modern mmWave radar systems remain effective
+even under challenging conditions that routinely degrade
+cameras–low/mixed lighting, partial/strong occlusions of
+the human body, and long standoff distances [11, 57]. Fur-
+thermore, the mmWave signals do not reveal facial identity
+or ﬁne appearance, naturally offering a privacy advantage
+that is essential for continuous and ubiquitous monitoring
+in everyday home or ofﬁce environments [2, 62, 71].
+Meanwhile, recent LLMs [6, 22, 36, 37, 49] trained on
+hyper-scale corpora [24, 39, 48] have demonstrated power-
+ful contextual understanding [42, 69, 72] and broad gener-
+alization across diverse tasks [12, 30, 31, 38, 43, 60, 64, 65].
+When further integrated with visual encoders [26, 40, 63],
+these models evolve into VLMs [1, 9, 10], where perception
+is conditioned on both linguistic and visual cues, allowing
+language-guided scene understanding with minimal super-
+vision [27, 54]. This context-conditioned paradigm offers
+two notable beneﬁts for human perception: 1) a natural-
+language interface that enables humans to query and steer
+models through QA-based interactions and 2) the ability to
+leverage extensive knowledge of LLMs to interpret unseen
+behaviors in a zero-/few-shot manner [6, 51, 52].
+However, integrating LLMs with the mmWave modal-
+ity presents several non-trivial challenges. First, an
+mmWave–language ecosystem remains underdeveloped:
+unlike common modalities (e.g., RGB or audio) with
+web-scale modality-language pairings, existing mmWave
+datasets are small, lab-speciﬁc, and hard to annotate, lead-
+ing to the absence of public mmWave datasets with radar-
+caption pairings. Second, this data scarcity is further com-
+pounded by heterogeneity: mmWave observations vary not
+only due to environmental clutter/multipath but also by
+hardware-speciﬁc factors (e.g., carrier frequency, waveform
+design, # antennas), which in turn induce severe distribu-
+tional shifts across datasets [4, 8, 29, 59]. Third, the ﬁeld
+lacks standardized tokenizers or foundational encoders to
+bridge mmWave tensors and language backbones. Conse-
+quently, current mmWave systems for human understanding
+[45, 58, 62, 66, 67] remain scenario-tuned: models are opti-
+mized for each dataset and require retraining whenever the
+scenario (e.g., hardware, surroundings, or subject distribu-
+tion) changes, as exampliﬁed in Fig. 1 (a). Accordingly, our
+work begins with a concrete question: can we still leverage
+the reasoning power of LLMs for mmWave-based human
+understanding despite the aforementioned challenges?
+To investigate its feasibility, we render each 5D mmWave
+point cloud sample into a coordinate-formatted text rep-
+resentation (i.e., [x, y, z, Doppler, intensity]) and prompt
+LLMs to answer the corresponding human motion question
+(Fig. 1 (b)). Surprisingly, without any mmWave-speciﬁc
+tuning, LLMs exhibit reasonable zero-shot reasoning, re-
+ﬂecting their potential to map textualized radar data to high-
+level behaviors. Building on this observation, we intro-
+duce mmWave-QA, the ﬁrst benchmark designed to explore
+mmWave-LLM integration. The benchmark is constructed
+through a curation pipeline that integrates heterogeneous
+datasets, reformulates them into mmWave-based QA tasks
+aligned with the benchmark taxonomy, and generates QA
+pairs through an LLM–human collaboration process. Fi-
+nally, quality review and reﬁnement are conducted to ensure
+the quality and balance of the resulting benchmark. After
+constructing the benchmark, we evaluate various prompt-
+ing strategies to comprehensively assess and analyze how
+LLMs interpret human motion from mmWave data.
+As shown in Fig. 1 (c), our mmWave-QA provides a
+uniﬁed testbed spanning six diverse scenarios with ﬁve
+complementary QA tasks that go beyond simple spatial
+action queries to probe spatial, temporal, and joint-level
+granular aspects of human motion. Furthermore, our
+benchmark encompasses different mmWave hardware de-
+vices and experimental conditions, thereby enabling stan-
+dardized evaluation in analyzing mmWave-LLM integra-
+tion under diverse co-factors: subject placements, envi-
+ronment/scenario shifts, and even hardware/waveform de-
+pendencies. Through extensive experiments on mmWave-
+QA, we investigate the behavior of off-the-shelf LLMs
+[19, 36] under different prompting strategies, revealing their
+ability to interpret mmWave-based human motion without
+task-speciﬁc ﬁne-tuning. We further evaluate the poten-
+tial of mmWave–LLM integration for zero-shot human un-
+derstanding, demonstrating that the mmWave modality re-
+mains more robust than RGB under visual degradation.
+In summary, our contributions are threefold:
+• We present mmWave-QA, a uniﬁed benchmark that har-
+monizes heterogeneous mmWave human-motion datasets
+and recasts them as natural-language QA tasks spanning
+multiple aspects of action understanding.
+• We show that integration with simple off-the-shelf LLMs
+can even lead to strong zero-shot reasoning on textualized
+mmWave radar inputs.
+• We provide empirical evidence that the mmWave modal-
+ity is more robust than RGB under visual degradation.
+2. Related Work
+mmWave Human Sensing Datasets. As shown in Ta-
+ble 1, several mmWave human sensing datasets have been
+introduced in recent years. Within action recognition,
+datasets have evolved from RadHAR [47] and MVDoppler
+[21], which capture basic body motions to XRF55 [50],
+which covers composite actions and diverse environments.
+Extending beyond action recognition, pose estimation [3, 5,
+61] focuses on joint-level understanding, spanning from re-
+habilitation to natural daily motions, and further enriches
+2209
+Benchmarks #Act #Subj #Env mmWave Sensor Dataset Scenario Modality Annotations
+HW Res. Size Norm. Furn. Rain Smoke Dark Occl. R V T Act Pose QA
+RadHAR [47] 5 2 1 A Low M  - - - - -  - -  - -
+MVDoppler [21] 4 13 1 B Low -  - - - - -  - -  - -
+XRF55 [50] 55 39 4 C Low XL  - - - - -   -  - -
+MARS [3] 10 4 1 A Low S  - - - - -  - - -  -
+mmBody [7] 100 20 6 D High M         - -  -
+HIBER [53] 4 10 10 E High M  - - - -    - -  -
+MMVR [41] - 25 6 E High M  - - - -    - -  -
+mRI [5] 12 20 1 A Low M  - - - - -   -   -
+MM-Fi [61] 27 40 4 C Low M  - - - - -   -   -
+Ours 139(86) 80 11 A, C, D Low, High L            
+Table 1. Comparison of mmWave-based human sensing benchmarks. Each column denotes the following – number of distinct human
+actions (#Act), number of subjects (#Subj), number of environmental settings (#Env), and radar hardware type (mmWave HW): A) TI
+IWR1443, B) TI AWR1843, C) TI IWR6843, D) Phoenix-type custom board, E) TI AWR2243. Scenario cover diverse sensing conditions
+including normal, furnished, rain, smoke, dark and occlusion environments. Modality speciﬁes the available input types: radar, vision, and
+text. Annotations indicate the provided supervision signals: human action labels (Act), 3D pose annotations (Pose), and natural-language
+QA pairs (QA). Numbers in parentheses (e.g., (86)) represent newly categorized action classes. Datasets are categorized by the number of
+frames: S (<100k), M (100–400k), L (400–700k), and XL (>700k), as detailed in the supplementary material.
+datasets by expanding the number of subjects and envi-
+ronments. With recent advances in radar hardware, mm-
+Body [7], HIBER [53], and MMVR [41] employ high-
+resolution radar sensors, providing denser and more de-
+tailed observations. Despite these advances, the growing
+heterogeneity in data sources and sensing setups continues
+to hinder the development of universally adaptable models.
+mmWave-based Human Understanding. Considering
+the diversity of human sensing data, mmWave-based hu-
+man understanding has evolved into several distinct model-
+ing paradigms. MARS [3] and mmPose [44] employ CNN-
+based architectures that learn spatial representations from
+radar reﬂections, while RadHAR [47] and DP-CBL [20]
+further incorporate LSTM to capture temporal dependen-
+cies across consecutive frames. Inspired by the success of
+transformers in achieving powerful context understanding
+across NLP [14] and vision [16, 32, 35] domains, HMR-
+SCL [15], MVDoppler-Pose [11], and mmPoint [46] adopt
+attention mechanisms, underscoring how mmWave encod-
+ing paradigms largely track broader architectural trends in
+other domains. Despite growing applications of LLMs
+for contextual reasoning, their integration with mmWave
+sensing remains limited; mmWave-QA addresses this gap
+through a benchmark for systematic exploration.
+Sensing modalities with LLMs. By incorporating addi-
+tional modalities, LLMs can be extended into multimodal,
+allowing them to interpret multimodal inputs such as im-
+ages [13, 26, 30, 31], videos [17, 64, 65], audio [18, 33], and
+spatial measurements [55, 56]. Building on this progress,
+only a limited number of studies have explored mmWave
+sensing modalities. Among recent attempts, RadarLLM
+[23] is the framework that leverages LLMs for human mo-
+tion understanding using millimeter-wave radar, training on
+synthetically generated IF signals to bridge radar sensing
+and language understanding. Similarly, HoloLLM [70] in-
+troduces a multisensory foundation model that integrates
+sensing modalities with LLMs for language-grounded hu-
+man perception and reasoning. However, existing mod-
+els face inherent limitations: those relying on synthetic
+radar data struggle to generalize to real-world clutter, while
+those processing raw mmWave signals depend on modality-
+speciﬁc encoders. To overcome these limitations, we
+demonstrate that existing LLMs can interpret textualized
+mmWave point clouds in a zero-shot manner and establish a
+benchmark that quantiﬁes their reasoning capability, laying
+the groundwork for future radar–language integration.
+3. mmWave-QA Benchmark
+3.1. Data Construction
+As a step toward building the ﬁrst mmWave–language
+benchmark, we integrate three mmWave sensing datasets
+for human perception: mmBody [7], MM-Fi [61], and mRI
+[5]. This integration provides a comprehensive and diverse
+foundation covering multiple radar devices, environments,
+and subjects. Merging the datasets yielded 139 action la-
+bels, which were reﬁned into 86 distinct categories after re-
+moving redundancies and ambiguities. Table 1 compares
+mmWave-QA with prior human sensing benchmarks, high-
+lighting its diversity and QA-driven design, while Fig. 2 il-
+lustrates the overall dataset construction pipeline.
+mmWave Data Collection and Textualization. We be-
+gin by addressing the insufﬁciencies of prior mmWave
+datasets, which contained dense and cluttered point clouds
+with limited visual information. RGB recordings are con-
+verted into visual references for annotators, presenting
+clean scenes as videos and degraded or occluded ones as
+2210
+       
+ 
+  
+%
+$!&#
+ !%%!#$
+1&,*7
+  
+".)*3
+/*0*832 
+   
+   
+   
+   
+   
+   
+3(&09&28.>&8.32
+6392) 698- *7-
+&  %#"#%# $!#%!
+! %'$ !"#$$! !#  "&%
+  
+$
+8*46&1**0*(8
+8*4(8.322238&8.32
+
+ !%%! #!$$
+%! (! !)! $%#&%!
+#"#$&$%!
+ #-&813:*1*28.77-3;2.28-.76&)&6)&8&
+ 2&0=>.2,8-*43.28(039)&2)13:*1*28
+4&88*627;-&8138.32.7'*.2,(&4896*)
+ #-.(-&(8.32.76*46*7*28*)'=8-.743.28(039)
+ &7*)328-*74&8.38*1436&0).786.'98.323+
+6&)&643.287;-&88=4*3+'3)=13:*1*2836
+,*7896* (&2'*.2+*66*)+6318-.77*59*2(*
+ 
+#% &$%!
+?*&$%! +*33/.2,&88-.76&)&643.28(039))&8&
+;-&8&(8.32.78-*4*67324*6+361.2,B
+* "%! +*.,-2**92BA&6/ .1*BA 
+437*BA#&0/B%
+* $'#+*#&0/+@
+  
+ 
+
+ 
+ 
+  
+  
+                 
+%
+$!&#
+% 
+8*42238&836*:.*;
+  
+8*448.32*+.2*1*28
+8*4 &8&*'&0&2(.2,
+% 
+#!$!% $%#&%!
+.:*28-*6&)&643.28(039))&8&&2)8-*59*78.32
+*0*(8*<&(80=32*348.32
+ !!&% $%#&%!
+.:*28-*6&)&643.28(039))&8&&2)8-*59*78.32
+463:.)*&'6.*+6*&732.2,+36=396&27;*6
+
+#!$!%
+ $'# #&0/
+ !!&%
+%!  -*43.28(039))&8&7-3;7&(327.78*28
++36;&6)&2)'&(/;&6)13:*1*284&88*62&032,8-*=&<.7
+;.8-1.2.1&00&8*6&013:*1*28;-.(-.7(-&6&(8*6.78.(3+
+;&0/.2, -*)3440*6:&09*7&073.2).(&8*&(328.29397
+138.327944368.2,8-*;&0/.2,&(8.32
+ $'##&0/
+
+ 
+  %
+A3.28039)BA$      %$    %B
+A9*78.32BA33/.2,&88-.76&)&643.28(039))&8&;-&8&(8.32.78-*4*67324*6+361.2,B
+A48.32B$A.,-2**92BA&6/ .1*BA 437*BA#&0/B%
+%
+$!&#
+!4)&8*
+ 
+
+ 
+ 
+  
+  
+Figure 2. Pipeline of mmWave-QA construction and evaluation: I) Original mmWave Collection & Textualization–radar data are
+preprocessed into human-interpretable and LLM-ready quantized formats; II) Action Taxonomy & Annotation–actions are categorized
+into hierarchical domains; III) QA Generation–diverse QA pairs are generated through human-in-the-loop LLM; IV) Quality Review–
+annotators reﬁne and balance QA; and V) LLM Inference–the benchmark enables evaluation of language models across diverse prompting.
+skeleton videos to aid human understanding. To standard-
+ize data representation across heterogeneous point-cloud
+formats, we apply coordinate-based quantization to cluster
+points into a form compatible with LLM token limits.
+Action Taxonomy and Annotation. As some of the orig-
+inal datasets do not provide action-wise segmentation, an-
+notators segment the videos into continuous action inter-
+vals, assigning the corresponding action label. Based on
+the annotated action segments, annotators construct a hier-
+archical taxonomy of question types, as illustrated on the
+left side of Fig. 3. Speciﬁcally, mmWave-QA comprises
+ﬁve core categories that capture different aspects of hu-
+man motion understanding, enabling multifaceted evalua-
+tion on how well an mmWave-conditioned LLM can per-
+ceive and align physical information with linguistic repre-
+sentations. (I) Action Recognition (ActRec) for recogniz-
+ing the performed action, (II) Spatial Movement Veriﬁca-
+tion (TrajCheck) for determining whether the subject’s cen-
+troid has changed position, (III) Temporal Action Sequenc-
+ing (ActOrder) for reasoning about the temporal relation-
+ships between consecutive actions, (IV) Action Cardinality
+Estimation (ActNum) for estimating the number of distinct
+actions, and (V) Limb Motion Detection (LimbFocus) for
+identifying the primary moving body part. Each category is
+divided into subtypes capturing motion attributes.
+Question–Answer Generation. Following the annota-
+tion stage, annotators generate natural language ques-
+tion–answer pairs based on the labeled actions. Each
+question is designed to evaluate different aspects of point
+cloud understanding in accordance with the taxonomy es-
+tablished in the previous step. Subsequently, annotators
+construct multiple-choice QA pairs by selecting answer op-
+tions from the predeﬁned action taxonomy. To enhance lin-
+guistic diversity and ensure natural phrasing, we further em-
+ploy LLMs leveraging its paraphrastic generation capability
+[34, 37] to perform paraphrasing of the original questions
+while preserving their semantic intent.
+Quality Review. Existing human motion datasets often
+suffer from biased action distributions and inconsistent la-
+beling of visually similar actions. To ensure annotation reli-
+ability and dataset balance, we conduct a three-step quality
+review process. Three annotators independently review all
+generated QA pairs, and any pair that appears ambiguous
+or contains unclear action semantics is removed from the
+dataset if even one annotator marks it as invalid. During
+this step, we reﬁne the answer options by replacing overly
+similar or redundant candidates with more distinctive ones
+to prevent confusion during QA. Finally, we adjust the dis-
+tribution of QA pairs to ensure a balanced coverage across
+different action domains and question types deﬁned in the
+taxonomy. After completing reﬁnement procedures, we ﬁ-
+nalize the mmWave-QA benchmark and perform evaluation
+using LLM inference under diverse prompting strategies.
+3.2. Dataset Statistics
+The top-right chart in Fig. 3 presents the distribution of
+question types across domains in mmWave-QA. Among all
+2211
+330
+170 140
+220
+55 50 50 55
+112 80 60 40
+125 160 125 125 125
+0
+150
+300
+450
+Number
+of
+ㄆuestions
+Question Type Distribution Across Categories
+ActRec LimbFocus ActNum
+ActOrder TrajCheck
+0
+50
+100
+150
+200
+Normal Furished Rain Smoke Dark Occlusion
+Distribution of Scene Conditions Across Question Types
+ActRec ActNum
+ActOrder LimbFocus
+Number
+of
+Questions
+Figure 3. Statistics of mmWave-QA dataset. Left: Hierarchical taxonomy of question domains: ActRec, TrajCheck, ActOrder, ActNum,
+and LimbFocus. Top-right: Distribution of subcategories within each top-level action domain, illustrating diverse coverage across human-
+motion questions. Bottom-right: Distribution of taxonomy actions across six scene conditions: normal, furnished, rain, smoke, dark, and
+occlusion. Note that the TrajCheck category is omitted in the bottom-right plot due to limited samples under speciﬁc conditions.
+categories, ActRec and TrajCheck questions occur most fre-
+quently, whereas ActOrder, ActNum, and LimbFocus ap-
+pear less often yet enrich the benchmark by addressing se-
+quential reasoning, quantitative estimation, and localized
+motion analysis. Together, these categories provide a com-
+prehensive, balanced, and complementary set of tasks for
+evaluating multimodal reasoning capabilities of language
+models. The bottom-right chart presents the distribution
+of question types across six scene conditions: normal, fur-
+nished, rain, smoke, dark, and occlusion. Note that the Tra-
+jCheck category is excluded due to an insufﬁcient number
+of samples in certain conditions. Each condition contains
+roughly 100–200 questions, with Normal scenes having the
+largest share due to their higher data availability and role
+as the baseline for comparison. This diversity enables con-
+sistent evaluation of model robustness and generalization
+across heterogeneous environmental settings.
+4. LLM-driven mmWave-QA
+4.1. Preliminary
+We ﬁrst formalize the inference process of an LLM on
+the proposed mmWave-QA benchmark. Given a natural-
+language question Q and a mmWave point cloud sequence
+P = {pi}l
+i=1 consisting of l frames, where each frame pi
+exhibits varying point density depending on the sensing de-
+vice and environmental conditions, we formally deﬁne the
+inference process of an LLM M as:
+A = M(I, Q, P), (1)
+where I denotes the instruction prompt deﬁning the infer-
+ence setting, and A represents the sequence of output to-
+kens generated by M. This formulation serves as the foun-
+dation for subsequent prompting strategies, including zero-
+shot, few-shot, and chain-of-thought inference.
+4.2. Inference Strategies
+We investigate three prompting inference strategies to eval-
+uate the reasoning performance of LLMs on the proposed
+mmWave-QA benchmark: zero-shot, few-shot, and chain-
+of-thought (CoT) inference. Each strategy conditions the
+model with different inputs, leading to distinct reasoning
+processes and answer generation behaviors.
+Zero-shot. In the zero-shot setting, the model generates
+an answer directly from the given question–point cloud pair
+(Q, P) without additional examples or reasoning context:
+Azero = Mzero(I, Q, P), (2)
+where Azero denotes the generated answer, and Mzero rep-
+resents the LLM conditioned on zero-shot prompting.
+Few-shot. Given k few-shot in-context examples consist-
+ing of question–point cloud–answer triplets (Qi, Pi, Ai)
+k
+i=1
+as contextual references for inference:
+Afew = Mfew(I, {(Qi, Pi, Ai)}k
+i=1, Q, P), (3)
+enabling the LLM to utilize these examples to infer answers
+for the target input without updating model parameters.
+Chain-of-Thought (CoT). Under the CoT prompting set-
+ting, the model follows a rationale-generation instruction to
+produce a continuous text sequence that ﬁrst presents inter-
+mediate reasoning steps before providing the ﬁnal answer.
+Formally, the CoT inference can be expressed as:
+RCoT = MCoT(Irationale, Q, P), (4)
+2212
+Model Prompt Type Action Category mmWave HW Total
+Upper-body Lower-body Torso Full-body Phoenix IWR6843 IWR1443
+Gemini2.5-ﬂash
+Zero-shot 32.12 23.53 25.00 29.09 28.06 29.14 30.77 28.49
+Few-shot 45.76 24.12 25.71 29.55 34.03 34.29 33.85 34.07
+CoT 37.27 25.29 28.57 30.91 32.10 32.00 29.23 31.86
+Few-shot CoT 46.97 30.59 27.14 29.55 36.13 36.00 35.38 36.05
+Gemini2.5-Pro
+Zero-shot 32.73 24.71 25.71 28.18 27.90 29.71 35.38 28.84
+Few-shot 46.36 26.47 27.14 29.55 35.16 33.71 36.92 35.00
+CoT 41.52 24.71 27.86 29.09 32.90 31.43 35.38 32.79
+Few-shot CoT 47.88 28.24 28.57 30.91 36.45 36.57 36.92 36.51
+GPT-4o
+Zero-shot 29.09 20.59 24.29 28.18 26.13 27.43 26.15 26.40
+Few-shot 45.45 26.47 27.86 30.91 36.77 31.43 29.23 35.12
+CoT 34.85 22.35 25.00 29.09 29.19 30.29 27.69 29.30
+Few-shot CoT 46.97 28.82 29.29 33.18 38.39 33.71 32.31 36.98
+GPT-5
+Zero-shot 32.12 21.76 23.57 28.18 26.45 27.43 26.15 26.63
+Few-shot 45.76 28.82 30.00 31.36 37.42 33.71 30.77 36.16
+CoT 35.45 23.53 27.14 29.55 29.84 32.00 29.23 30.23
+Few-shot CoT 48.48 31.76 31.43 33.64 38.71 37.14 38.46 38.37
+Table 2. Evaluation of various LLMs across different prompt settings and action categories on multiple mmWave HW. All values denote
+accuracy (%), with the best results in bold and the second-best in italic
+where Irationale represents the rationale-generation instruc-
+tion, and RCoT denotes the LLM-generated sequence
+[rationale; ACoT]. The CoT process enables the model to
+generate a rationale that explains inter-frame relationships
+within point clouds, thereby facilitating the derivation of the
+ﬁnal answer. Lastly, we additionally introduce a hybrid in-
+ference strategy that integrates few-shot examples with CoT
+reasoning. All prompt examples and detailed cases are pre-
+sented in the supplementary material.
+5. Experiments
+The proposed mmWave-QA benchmark evaluates commer-
+cial LLMs [19, 36] reasoning on radar-based human activity
+data collected under heterogeneous devices, environments,
+and scene conditions. Quantitative results under different
+prompting strategies are presented ﬁrst, along with analy-
+ses comparing mmWave- and RGB-based QA and examin-
+ing the effect of frame count on performance. Finally, qual-
+itative examples further illustrate how LLMs reason over
+mmWave point cloud inputs. Detailed evaluation settings
+are provided in the supplementary material.
+5.1. Quantitative Results
+Q: Can LLMs understand radar point clouds without
+task-speciﬁc training? To explore this question, we eval-
+uate various prompting strategies, where the results in Ta-
+ble 2 show consistent performance gains-from zero-shot
+to few-shot, CoT, and ﬁnally few-shot CoT prompting-
+across all models. This behavior highlights the comple-
+mentary beneﬁts of in-context learning and rationale-based
+reasoning, demonstrating their potential to enhance under-
+standing of radar-derived motion representations. GPT-5
+achieved the best overall performance in the few-shot CoT
+setting, improving overall accuracy by 1.39 and 1.86 per-
+centage points over GPT-4o and Gemini 2.5-Pro, respec-
+tively. Among action categories, arm motions yield the
+best results, followed by full-body movements, while leg
+and torso actions remain challenging due to subtler motion
+cues and frequent occlusions in radar reﬂections. Across
+mmWave hardware, Phoenix shows the highest accuracy
+owing to its high-quality point clouds enabled by an ad-
+vanced radar antenna conﬁguration, whereas IWR6843 and
+IWR1443 show performance degradation caused by sensor
+noise and environmental variability. These results provide
+empirical evidence that LLMs can reason robustly over het-
+erogeneous radar datasets, suggesting their strong general-
+ization capability even under diverse sensing conditions.
+Q: How effectively do LLMs perform multi-aspect rea-
+soning across human-motion QA tasks? We extend our
+evaluation to multi-aspect reasoning QA tasks, as shown
+in Table 3. For TrajCheck in the zero-shot setting, both
+GPT-4o and Gemini 2.5-ﬂash predominantly classify radar
+samples as “move”, achieving 92.0% and 87.2% accuracy
+for moving cases but only 4.0% and 3.2% for static ones.
+When few-shot examples are provided, the static accuracy
+increases to 32.0% and 27.2%, respectively, suggesting that
+contextual information helps both models better distinguish
+between moving and static cases. For ActNum, even un-
+der the few-shot CoT setting, models achieve stable accu-
+racy for 2–3 actions at 43–58.75%, but sharply decline to
+5-22.5% as the action count increases, indicating difﬁculty
+in sustaining consistent reasoning over extended temporal
+sequences in point clouds. In ActOrder, predictions for the
+present are most accurate, whereas reasoning about previ-
+ous and next actions remains challenging, likely because the
+excessive number of input tokens from dense point clouds
+hinders the model’s ability to capture clear temporal rela-
+tionships. Finally, LimbFocus demonstrates strong recog-
+2213
+Model Prompt Type ActNum ActOrder LimbFocus TrajCheck
+1 2 3 4 Prev Present Next Single Arm/Leg Multiple Static Move
+Gemini2.5-ﬂash
+Zero-shot 9.82 47.50 5.00 7.50 24.80 26.88 27.20 21.67 24.80 28.00 3.20 87.20
+Few-shot 38.39 52.50 36.67 17.50 8.00 30.00 32.00 30.00 31.20 38.00 27.20 43.20
+CoT 11.60 50.00 30.00 15.00 26.40 28.75 28.80 23.33 25.60 32.00 7.20 88.00
+Few-shot-CoT 41.07 55.00 45.00 22.50 30.40 30.63 35.20 35.00 33.60 42.00 62.40 70.40
+GPT-4o
+Zero-shot 11.61 52.50 5.00 5.00 24.80 26.88 27.20 21.67 24.80 28.00 4.00 92.00
+Few-shot 40.18 56.25 35.00 17.50 28.80 28.75 31.20 26.67 28.80 38.00 32.00 44.00
+CoT 30.36 36.25 25.00 12.50 26.40 27.50 29.60 25.00 26.40 34.00 10.40 88.00
+Few-shot-CoT 42.86 58.75 43.33 22.50 31.20 30.63 36.00 38.33 35.20 42.00 68.00 72.80
+Table 3. Evaluation of various LLMs across different prompt settings, including ActNum, ActOrder, LimbFocus, and TrajCheck QA. All
+values denote accuracy (%), with the best results in bold and the second-best in italic.
+
+
+
+
+
+
+
+
+
+$!"
+
+
+
+!
+$$" 
+
+
+
+ 
+RADAR RGB
+
+
+
+
+
+   
+
+
+
+  
+ 
+! " #  %" # %" # 
+
+
+
+
+
+   
+
+
+
+  
+  
+
+
+
+
+
+   
+
+
+
+  
+  
+
+
+
+
+
+
+   
+
+
+
+  
+  
+
+
+
+
+
+   
+
+
+
+  
+ 
+
+
+
+
+
+
+
+
+
+$!"
+
+
+
+!
+$$" 
+
+
+
+ 
+RADAR RGB
+
+
+
+
+
+
+
+
+
+$!"
+
+
+
+!
+$$" 
+
+
+
+  
+RADAR RGB
+
+
+
+
+
+
+
+
+
+$!"
+
+
+
+!
+$$" 
+
+
+
+  
+RADAR RGB
+Figure 4. Top: Comparison of mmWave- and RGB-based QA performance across six scenarios: normal, furnished, rain, smoke, dark, and
+occlusion. Bottom: Performance variation with respect to the number of frames used in each QA task.
+nition for single or limb-speciﬁc motions but lower accu-
+racy in multi-limb scenarios, likely due to multipath inter-
+ference and ghost reﬂections that distort body-part separa-
+bility in complex radar scenes. These ﬁndings promote fu-
+ture studies on understanding the structural composition of
+radar point clouds and selecting temporally salient frames
+to facilitate more effective temporal reasoning.
+5.2. Ablation Studies
+Comparison with RGB Modality. We compare the per-
+formance of mmWave-based QA with its RGB counterpart
+across six scenarios, as shown in the upper part of Fig. 4.
+For the RGB modality, we evaluate using GPT-4o [36],
+which accepts RGB inputs. In normal and furnished en-
+vironments, RGB outperforms radar, as vision models have
+been trained on far larger and more diverse datasets, where
+richer visual cues facilitate easier reasoning for VLMs,
+whereas multipath ghost reﬂections from furniture degrade
+the quality of radar point clouds. However, in rain and
+smoke conditions, both modalities achieve comparable per-
+formance, demonstrating radar’s robustness against visibil-
+ity degradation. Notably, in dark and occlusion scenarios,
+the radar modality surpasses RGB, highlighting its unique
+advantage in perception tasks where visual information is
+heavily corrupted or unavailable. In contrast to other tasks,
+ActNum shows consistently better performance with radar,
+as motion counting relies on temporal Doppler cues that are
+hard for RGB models to capture with limited frames.
+Frame-wise Performance Analysis. As shown in the
+lower part of Fig. 4, the performance varies with the num-
+ber of frames used in each QA task, where we gradually in-
+crease the frame count from 6 to 64 during evaluation. The
+input frame length plays a critical role in interpreting hu-
+man activity from point cloud sequences, as it determines
+both temporal coverage and information density. Across
+most tasks, performance peaks around 16 frames, as too few
+frames limit temporal context, while excessive frames in-
+troduce redundant or noisy information that hinders reason-
+ing. This ﬁnding suggests that radar-based motion reason-
+ing requires an optimal temporal balance–segments should
+be long enough to capture key motion patterns but short
+enough to avoid redundant or noisy points.
+5.3. Qualitative Analysis
+To qualitatively examine reasoning behavior, Fig. 5 illus-
+trates the rationales and responses produced by the VLM
+and LLM given video and point cloud inputs. When RGB
+provides clear visual evidence, its interpretations are largely
+consistent with radar, producing similar answers and rea-
+2214
+  +%'-%&+!** '.&!&+ !*))+
+  )'&+,& &!$+)$(()'.)!% /+&*!'& $#
+ '+ (()!%+)$ /+&*!'&
+   2 )'**'&*,+!-)%*+ *,"+4*&+!)'0%'-*
+*+!$0').)$'& ')!1'&+$!)+!'&.!+ '&*!*+&+$$+)&+!'&
+&*0& )'&!1)%*.!&+0(!$'&+,)$!+ )!*&'*++!'&)0
+*+&$,&('*+,)')!*'$+$!%/+&*!'&!&*++ %'+!'&
+!&!+*,$$'0!*($%&+)'***(3
+ 2 $#3
+  2 ('!&+$',+* '.*'&*!*+&+(++)&'
+%'-%&+$'&+ 1/!*.!+ -)0!&'(($)-$,*!&!+!&').)
+&#.)%'+!'&+0(!$'.$#!& ('!&+*)!*+)!,+!&
+%&&)+ +*,*+*)(+!+!-) 0+ %!%'+!'&'&*!*+&+.!+ .$#!&
+)+ )+ &!*'$+$!%%'-%&+*')*++!'&)0/)!**3
+ 2 $#3
+
+ 
+(
+   +!*+ *!&$%'-!&'0()+!&+ !*('*
+  )% $ &'&
+    -!')%** '.)#*&. )+ *,"+4*'0
+',+$!&!*-!*!$,+$#*$)+!$ )'**'&*,+!-)%*&'!*+!&+
+'))(+!+!-%'+!'&'+ )%*')$*&'&!&+$0!&+!! ,*
+&'*(!!'0()+/ !!+*&'+!$%'-%&+(++)&!+4*!!,$++'
++)%!&&0()!%)0%'+!'&
+  &'&3
+   ('!&+$',* '.*'&&+)+ !  '(($)+!-!+0!&
++ ,(()'0)!'& . !$$'.)'0('!&+*)%!&*+$  !*$'$!1
+%'+!'&(++)&!&!+*+ ++ )%!*+ ()!%)0%'-!&()+3
+  )%3
+ 
+  
+   ! *!&$'0()+!*()!%)!$0%'-!&!&+ !*+!'&
+  )% $ &'&
+    *,"+)%!&*%'*+$0,()! +.!+ %!&!%$$'.)'0
+%'-%&+. !$'&)%$!+*),$$0)'%+ *!+'&'-) 
+('*!+!'&  '&*!*+&+$-+!'&'+ )%&*++!'&)0('*+,)!&!+
+$!)+,(()$!%%'+!'& -)$$+ %'+!'&(++)&$)$0!&+!!*
++  *+ ()!%)0%'-!&'0()+
+ 2 )%3
+  !  '(($))*('&**)%!&$0'*)-)',&+ 
+,(()'0). )*+ $'.)'0/ !!+*%!&!%$%'-%&+
+ !*!*+)!,+!'&*,*+*+ ++ )%!*)*('&*!$')+ ()!%)0%'+!'&
+!&+ *&3
+ 2 )%3
+0
+  &$01!&+ ('!&+$',&%'-%&+(++)&*. +%'+!'&!*
+!&(+,)
+   ''(('+!'& $# &&!* ! &,&
+   2 )%*%!&$0!*($0$+)&+!&. !+&(,)($(++)&*
+.!+ $%'*+&'-!*!$ ,%&*!$ ',++ ,*'+ $'.-!*!!$!+0+ 
+*(!!$!%%'+!'&!* )+'!*)&0++ *,+$()!'! &*
+*,*+&+$) 0+ %!%'-%&+'&*!*+&+.!+ .$#!&3
+ 2$#3
+  2 ))('!&+$',+* '.*'&*!*+&+(++)&'('!&+*
+%'-!&-)+!$$0 .!+ %!&!%$ ')!1'&+$!*($%&+!&!+!&-)+!$
+%'+!'& ('!&+*)'&&+)+)',&&+)$/!*.!+ *$! +
+-)!+!'&*!& ! +*,*+!&&,(.)%'+!'&'*!&$ & !*
+(++)&!*'&*!*+&+.!+ &&!*+!'&. )+  &%'-*
+,(.)*.!+ ',+*!&!!&+$+)$%'-%&+3
+ 2&&!*3
+
+ 
+
+
+
+ 
+ 
+
+  
+ 
+  
+
+ 
+
+
+
+
+
+ 
+
+
+
+
+Figure 5. Qualitative analysis of mmWave-QA. Each example from the ActRec and LimbFocus tasks visualizes temporal changes in
+video and radar point clouds along with corresponding rationales generated by the VLM and the LLM. When both modalities provide
+clear visual evidence, their reasoning remains consistent; however, under degraded conditions (e.g., occlusion or darkness), the VLM often
+hallucinates or misinterpret corrupted frames, whereas radar-based reasoning remains stable and physically grounded.
+soning patterns. However, under visually degraded condi-
+tions such as darkness or occlusion, the RGB-based model
+often exhibits hallucinated reasoning or over-explains cor-
+rupted regions, leading to incorrect predictions (e.g., “al-
+most no visible human”). In contrast, the radar modality
+facilitates Doppler-based motion reasoning, proving effec-
+tive when visual information is degraded or unavailable. In
+ActRec, the LLM correctly infers walking motion by track-
+ing coordinate displacement and Doppler variation across
+frames (e.g., “high-Doppler activity in the upper-body re-
+gion”). That is, LLM reasoning relies on coordinate and
+Doppler cues from radar inputs, while VLM depends on vi-
+sual features, as detailed in the supplementary material.
+6. Conclusion
+In this paper, we present the ﬁrst mmWave-QA bench-
+mark designed to assess a diverse range of human ac-
+tions through natural language QA. Our benchmark inte-
+grates multiple mmWave sensing datasets to capture het-
+erogeneity across devices, environments, and scene con-
+ditions through hardware-aware preprocessing and global
+taxonomy. Through extensive experiments, we demon-
+strate that LLMs can effectively interpret mmWave point
+cloud inputs and perform effective QA tasks. Notably,
+with the same underlying model, LLMs conditioned on
+mmWave point cloud inputs demonstrate greater robustness
+than those conditioned on RGB inputs, especially under vi-
+sually degraded conditions such as low light or occlusion.
+This ﬁnding underscores the potential of leveraging LLMs
+for mmWave understanding to achieve reliable reasoning in
+vision-limited environments. While our study demonstrates
+the promising capabilities of LLMs for radar-based under-
+standing using off-the-shelf models such as GPT and Gem-
+ini, exploration with diverse open-source LLMs remains
+limited. Future work will focus on improving open-source
+models through ﬁne-tuning and exploring broader integra-
+tion with reasoning-oriented frameworks such as retrieval-
+augmented generation systems and intelligent agents. We
+hope our work paves the way toward a broader understand-
+ing of multimodal reasoning that bridges non-visual sensing
+with language-based intelligence.
+2215
+Acknowledgments
+This work was supported in part by the Inno-
+CORE program of the Ministry of Science and
+ICT(No. N10250156) and in part by the National
+Research Foundation of Korea(NRF) grand funded
+by the Korea government(MSIT) (No. RS-2025-
+23525585)
+References
+[1] Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, An-
+toine Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur
+Mensch, Katie Millicah, Malcolm Reynolds, Roman Ring,
+Eliza Rutherford, Serkan Cabi, Tengda Han, Zhitao Gong,
+Sina Samangooei, Marianne Monteiro, Jacob Menick, Se-
+bastian Borgeaud, Andrew Brock, Aida Nematzadeh, Sa-
+hand Sharifzadeh, Mikolaj Binkowski, Ricardo Barreira,
+Oriol Vinyals, Andrew Zisserman, and Karen Simonyan.
+Flamingo: a Visual Language Model for Few-Shot Learning.
+In Proceedings of the 36th International Conference on Neu-
+ral Information Processing Systems, Red Hook, NY, USA,
+2022. Curran Associates Inc. 2
+[2] Mohammed Alloulah and Maximilian Arnold. Look, Ra-
+diate, and Learn: Self-Supervised Localisation via Radio-
+Visual Correspondence. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), pages 17430–17440, 2023. 2
+[3] Sizhe An and Umit Y Ogras. MARS: mmWave-based As-
+sistive Rehabilitation System For Smart Healthcare. ACM
+Transactions on Embedded Computing Systems (TECS), 20
+(5s):1–22, 2021. 2, 3
+[4] Sizhe An and Umit Y Ogras. Fast and Scalable Human Pose
+Estimation using mmWave Point Cloud. In Proceedings of
+the 59th ACM/IEEE Design Automation Conference, pages
+889–894, 2022. 2
+[5] Sizhe An, Yin Li, and Umit Ogras. mRI: Multi-modal 3D
+Human Pose Estimation Dataset using mmWave, RGB-D,
+and Inertial Sensors. In Thirty-sixth Conference on Neural
+Information Processing Systems Datasets and Benchmarks
+Track, 2022. 2, 3
+[6] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Sub-
+biah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakan-
+tan, Pranav Shyam, Girish Sastry, Amanda Askell, Sand-
+hini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom
+Henighan, Rewon Child, Aditya Ramesh, Daniel Ziegler,
+Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric
+Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack
+Clark, Christopher Berner, Sam McCandlish, Alec Radford,
+Ilya Sutskever, and Dario Amodei. Language Models are
+Few-Shot Learners. In Advances in Neural Information Pro-
+cessing Systems, pages 1877–1901. Curran Associates, Inc.,
+2020. 2
+[7] Anjun Chen, Xiangyu Wang, Shaohao Zhu, Yanxu Li, Jim-
+ing Chen, and Qi Ye. mmBody Benchmark: 3D Body
+Reconstruction Dataset and Analysis for Millimeter Wave
+Radar. In Proceedings of the 30th ACM International Con-
+ference on Multimedia, page 3501–3510, New York, NY,
+USA, 2022. Association for Computing Machinery. 3
+[8] Xingyu Chen and Xinyu Zhang. RF Genesis: Zero-Shot
+Generalization of mmWave Sensing through Simulation-
+Based Data Synthesis and Generative Diffusion Models.
+page 28–42, New York, NY, USA, 2024. Association for
+Computing Machinery. 2
+[9] Xi Chen, Xiao Wang, Soravit Changpinyo, AJ Piergiovanni,
+Piotr Padlewski, Daniel Salz, Sebastian Goodman, Adam
+Grycner, Basil Mustafa, Lucas Beyer, Alexander Kolesnikov,
+Joan Puigcerver, Nan Ding, Keran Rong, Hassan Akbari,
+Gaurav Mishra, Linting Xue, Ashish V Thapliyal, James
+Bradbury, Weicheng Kuo, Mojtaba Seyedhosseini, Chao Jia,
+Burcu Karagol Ayan, Carlos Riquelme Ruiz, Andreas Pe-
+ter Steiner, Anelia Angelova, Xiaohua Zhai, Neil Houlsby,
+and Radu Soricut. PaLI: A Jointly-Scaled Multilingual
+Language-Image Model. In The Eleventh International Con-
+ference on Learning Representations, 2023. 2
+[10] Zhe Chen, Jiannan Wu, Wenhai Wang, Weijie Su, Guo Chen,
+Sen Xing, Muyan Zhong, Qinglong Zhang, Xizhou Zhu,
+Lewei Lu, et al. InternVL: Scaling up Vision Foundation
+Models and Aligning for Generic Visual-Linguistic Tasks.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, pages 24185–24198, 2024.
+2
+[11] Jaeho Choi, Soheil Hor, Shubo Yang, and Amin Arbabian.
+MVDoppler-pose: Multi-Modal Multi-View mmWave Sens-
+ing for Long-Distance Self-Occluded Human Walking Pose
+Estimation. In Proceedings of the Computer Vision and Pat-
+tern Recognition Conference, pages 27750–27759, 2025. 2,
+3
+[12] Hyung Won Chung, Le Hou, Shayne Longpre, Barret
+Zoph, Yi Tai, William Fedus, Yunxuan Li, Xuezhi Wang,
+Mostafa Dehghani, Siddhartha Brahma, Albert Webson,
+Shixiang Shane Gu, Zhuyun Dai, Mirac Suzgun, Xinyun
+Chen, Aakanksha Chowdhery, Alex Castro-Ros, Marie Pel-
+lat, Kevin Robinson, Dasha Valter, Sharan Narang, Gaurav
+Mishra, Adams Yu, Vincent Zhao, Yanping Huang, Andrew
+Dai, Hongkun Yu, Slav Petrov, Ed H. Chi, Jeff Dean, Jacob
+Devlin, Adam Roberts, Denny Zhou, Quoc V. Le, and Ja-
+son Wei. Scaling Instruction-Finetuned Language Models.
+J. Mach. Learn. Res., 25(1), 2024. 2
+[13] Wenliang Dai, Junnan Li, DONGXU LI, Anthony Tiong,
+Junqi Zhao, Weisheng Wang, Boyang Li, Pascale N Fung,
+and Steven Hoi. InstructBLIP: Towards General-purpose
+Vision-Language Models with Instruction Tuning. In Ad-
+vances in Neural Information Processing Systems, pages
+49250–49267. Curran Associates, Inc., 2023. 3
+[14] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina
+Toutanova. BERT: Pre-training of Deep Bidirectional Trans-
+formers for Language Understanding. In Proceedings of the
+2019 conference of the North American chapter of the asso-
+ciation for computational linguistics: human language tech-
+nologies, volume 1 (long and short papers), pages 4171–
+4186, 2019. 3
+[15] Chuanwei Ding, Li Zhang, Haoyu Chen, Hong Hong, Xi-
+aohua Zhu, and Changzhi Li. Human Motion Recogni-
+tion with Spatial-Temporal-ConvLSTM Network Using Dy-
+namic Range-Doppler Frames Based on Portable FMCW
+2216
+Radar. IEEE Transactions on Microwave Theory and Tech-
+niques, 70(11):5029–5038, 2022. 3
+[16] Alexey Dosovitskiy. An Image is Worth 16x16 Words:
+Transformers for Image Recognition at Scale. arXiv preprint
+arXiv:2010.11929, 2020. 3
+[17] Yuwei Fang, Willi Menapace, Aliaksandr Siarohin, Tsai-
+Shien Chen, Kuan-Chieh Wang, Ivan Skorokhodov, Graham
+Neubig, and Sergey Tulyakov. VIMI: Grounding Video Gen-
+eration through Multi-modal Instruction. In Proceedings of
+the 2024 Conference on Empirical Methods in Natural Lan-
+guage Processing, pages 4444–4456, Miami, Florida, USA,
+2024. Association for Computational Linguistics. 3
+[18] Tiantian Geng, Jinrui Zhang, Qingni Wang, Teng Wang, Jin-
+ming Duan, and Feng Zheng. LongVALE: Vision-Audio-
+Language-Event Benchmark Towards Time-Aware Omni-
+Modal Perception of Long Videos. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), pages 18959–18969, 2025. 3
+[19] Google DeepMind. Gemini 2.5: Pushing the Frontier with
+Advanced Reasoning, Multimodality, Long Context, and
+Next Generation Agentic Capabilities, 2025. 2, 6, 3
+[20] Yuqiang He, Jun Wang, Yaxin Li, and Yuquan Luo. Dual-
+Path CNN-BiLSTM for mmWave-Based Human Skeletal
+Pose Estimation. IEEE Sensors Journal, 2025. 3
+[21] Soheil Hor, Shubo Yang, Jaeho Choi, and Amin Arbabian.
+MVDoppler: Unleashing the Power of Multi-View Doppler
+for Micromotion-Based Gait Classiﬁcation. Advances in
+Neural Information Processing Systems, 36:58064–58074,
+2023. 2, 3
+[22] Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch,
+Chris Bamford, Devendra Singh Chaplot, Diego de las
+Casas, Florian Bressand, Gianna Lengyel, Guillaume Lam-
+ple, Lucile Saulnier, Lélio Renard Lavaud, Marie-Anne
+Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril,
+Thomas Wang, Timothée Lacroix, and William El Sayed.
+Mistral 7B, 2023. 2
+[23] Zengyuan Lai, Jiarui Yang, Songpengcheng Xia, Lizhou Lin,
+Lan Sun, Renwen Wang, Jianran Liu, Qi Wu, and Ling Pei.
+RadarLLM: Empowering Large Language Models to Under-
+stand Human Motion from Millimeter-wave Point Cloud Se-
+quence, 2025. 3
+[24] Hugo Laurençon, Lucile Saulnier, Thomas Wang, Christo-
+pher Akiki, Albert Villanova del Moral, Teven Le Scao,
+Leandro von Werra, Chenghao Mou, Eduardo González
+Ponferrada, Huu Nguyen, Jörg Frohberg, Mario Šaško,
+Quentin Lhoest, Angelina McMillan-Major, Gérard Dupont,
+Stella Biderman, Anna Rogers, Loubna Benallal, Francesco
+De Toni, Giada Pistilli, Olivier Nguyen, Somaieh Nikpoor,
+Maraim Masoud, Pierre Colombo, Javier de la Rosa, Paulo
+Villegas, Tristan Thrush, Shayne Longpre, Sebastian Nagel,
+Leon Weber, Manuel Romero Muñoz, Jian Zhu, Daniel
+van Strien, Zaid Alyafeai, Khalid Almubarak, Vu Minh
+Chien, Itziar Gonzalez-Dios, Aitor Soroa, Kyle Lo, Manan
+Dey, Pedro Ortiz Suarez, Aaron Gokaslan, Shamik Bose,
+David Ifeoluwa Adelani, Long Phan, Hieu Tran, Ian Yu,
+Suhas Pai, Jenny Chim, Violette Lepercq, Suzana Ilić, Mar-
+garet Mitchell, Sasha Luccioni, and Yacine Jernite. The Big-
+Science ROOTS Corpus: A 1.6TB Composite Multilingual
+Dataset. In Proceedings of the 36th International Conference
+on Neural Information Processing Systems, Red Hook, NY,
+USA, 2022. Curran Associates Inc. 2
+[25] Shih-Po Lee, Niraj Prakash Kini, Wen-Hsiao Peng, Ching-
+Wen Ma, and Jenq-Neng Hwang. HuPR: A Benchmark for
+Human Pose Estimation Using Millimeter Wave Radar. In
+Proceedings of the IEEE/CVF Winter Conference on Appli-
+cations of Computer Vision, pages 5715–5724, 2023. 2
+[26] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi.
+BLIP-2: Bootstrapping Language-Image Pre-training with
+Frozen Image Encoders and Large Language Models. In
+Proceedings of the 40th International Conference on Ma-
+chine Learning. JMLR.org, 2023. 2, 3
+[27] Feng Liang, Bichen Wu, Xiaoliang Dai, Kunpeng Li, Yinan
+Zhao, Hang Zhang, Peizhao Zhang, Peter Vajda, and Diana
+Marculescu. Open-Vocabulary Semantic Segmentation with
+Mask-adapted CLIP. In Proceedings of the IEEE/CVF Con-
+ference on Computer Vision and Pattern Recognition, pages
+7061–7070, 2023. 2
+[28] Kun Liang, Yaxuan Li, He Hao, Hongli Zeng, Anfu Zhou,
+Huadong Ma, Chenshu Wu, Huaizhen Jia, Jianbo Zuo, and
+Jianjun Fan. mmHolmes: Amodal Millimeter-wave Sensing
+by Understanding Human Kinetics. 9(3), 2025. 2
+[29] Haipeng Liu, Kening Cui, Kaiyuan Hu, Yuheng Wang, Anfu
+Zhou, Liang Liu, and Huadong Ma. mTransSee: Enabling
+Environment-Independent mmWave Sensing Based Gesture
+recognition via Transfer Learning. Proceedings of the ACM
+on Interactive, Mobile, Wearable and Ubiquitous Technolo-
+gies, 6(1):1–28, 2022. 2
+[30] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee.
+Visual Instruction Tuning. In Proceedings of the 37th Inter-
+national Conference on Neural Information Processing Sys-
+tems, Red Hook, NY, USA, 2023. Curran Associates Inc. 2,
+3
+[31] Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee.
+Improved Baselines with Visual Instruction Tuning. In Pro-
+ceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), pages 26296–26306, 2024.
+2, 3
+[32] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng
+Zhang, Stephen Lin, and Baining Guo. Swin Transformer:
+Hierarchical Vision Transformer using Shifted Windows. In
+Proceedings of the IEEE/CVF international conference on
+computer vision, pages 10012–10022, 2021. 3
+[33] Jiasen Lu, Christopher Clark, Sangho Lee, Zichen Zhang,
+Savya Khosla, Ryan Marten, Derek Hoiem, and Aniruddha
+Kembhavi. Uniﬁed-IO 2: Scaling Autoregressive Multi-
+modal Models with Vision Language Audio and Action. In
+Proceedings of the IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition (CVPR), pages 26439–26455,
+2024. 3
+[34] Haotian Luo, Yixin Liu, Peidong Liu, and Xianggen Liu.
+Vector-Quantized Prompt Learning for Paraphrase Genera-
+tion. In The 2023 Conference on Empirical Methods in Nat-
+ural Language Processing, 2023. 4
+[35] Sachin Mehta and Mohammad Rastegari. MobileViT: Light-
+weight, General-purpose, and Mobile-friendly Vision Trans-
+former. arXiv preprint arXiv:2110.02178, 2021. 3
+2217
+[36] OpenAI. GPT-4o System Card, 2024. 2, 6, 7, 3
+[37] OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal,
+Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo
+Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anad-
+kat, and .... GPT-4 Technical Report, 2023. 2, 4
+[38] Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Car-
+roll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini
+Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob
+Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda
+Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan
+Lowe. Training language models to follow instructions with
+human feedback. In Proceedings of the 36th International
+Conference on Neural Information Processing Systems, Red
+Hook, NY, USA, 2022. Curran Associates Inc. 2
+[39] Guilherme Penedo, Quentin Malartic, Daniel Hesslow,
+Ruxandra Cojocaru, Hamza Alobeidli, Alessandro Cappelli,
+Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay.
+The ReﬁnedWeb Dataset for Falcon LLM: Outperforming
+Curated Corpora with Web Data Only. In Advances in Neu-
+ral Information Processing Systems, pages 79155–79172.
+Curran Associates, Inc., 2023. 2
+[40] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen
+Krueger, and Ilya Sutskever. Learning Transferable Visual
+Models From Natural Language Supervision. In Proceedings
+of the 38th International Conference on Machine Learning,
+pages 8748–8763. PMLR, 2021. 2
+[41] M Mahbubur Rahman, Ryoma Yataka, Sorachi Kato, Pu
+Wang, Peizhao Li, Adriano Cardace, and Petros Boufounos.
+MMVR: Millimeter-wave Multi-View Radar Dataset and
+Benchmark for Indoor Perception. In European Conference
+on Computer Vision, pages 306–322. Springer, 2024. 3
+[42] Mathieu Ravaut, Aixin Sun, Nancy Chen, and Shaﬁq Joty.
+On Context Utilization in Summarization with Large Lan-
+guage Models. In Proceedings of the 62nd Annual Meeting
+of the Association for Computational Linguistics (Volume 1:
+Long Papers), pages 2764–2781, Bangkok, Thailand, 2024.
+Association for Computational Linguistics. 2
+[43] Victor Sanh, Albert Webson, Colin Raffel, Stephen Bach,
+Lintang Sutawika, Zaid Alyafeai, Antoine Chafﬁn, Arnaud
+Stiegler, Arun Raja, Manan Dey, M Saiful Bari, Canwen Xu,
+Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla,
+Taewoon Kim, Gunjan Chhablani, Nihal Nayak, Debajyoti
+Datta, Jonathan Chang, Mike Tian-Jian Jiang, Han Wang,
+Matteo Manica, Sheng Shen, Zheng Xin Yong, Harshit
+Pandey, Rachel Bawden, Thomas Wang, Trishala Neeraj, Jos
+Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry,
+Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Bi-
+derman, Leo Gao, Thomas Wolf, and Alexander M Rush.
+Multitask Prompted Training Enables Zero-Shot Task Gen-
+eralization. In International Conference on Learning Repre-
+sentations, 2022. 2
+[44] Arindam Sengupta, Feng Jin, Renyuan Zhang, and Siyang
+Cao. mm-Pose: Real-Time Human Skeletal Posture Esti-
+mation Using mmWave Radars and CNNs. IEEE sensors
+journal, 20(17):10032–10044, 2020. 3
+[45] Zhiyao Sheng, Huatao Xu, Qian Zhang, and Dong Wang.
+Facilitating Radar-Based Gesture Recognition With Self-
+Supervised Learning. In 2022 19th Annual IEEE Inter-
+national Conference on Sensing, Communication, and Net-
+working (SECON), pages 154–162. IEEE, 2022. 2
+[46] Xintong Shi, Mondher Bouazizi, and Tomoaki Ohtsuki.
+mmPoint-Attention: A Uniﬁed Attention Framework for Hu-
+man Pose and Activity Recognition From mmWave Radar
+Point Clouds. IEEE Sensors Journal, 2025. 3
+[47] Akash Deep Singh, Sandeep Singh Sandha, Luis Garcia,
+and Mani Srivastava. RadHAR: Human Activity Recog-
+nition from Point Clouds Generated through a Millimeter-
+wave Radar. In Proceedings of the 3rd ACM Workshop on
+Millimeter-wave Networks and Sensing Systems, pages 51–
+56, 2019. 2, 3
+[48] Luca Soldaini, Rodney Kinney, Akshita Bhagia, Dustin
+Schwenk, David Atkinson, Russell Authur, Ben Bogin, Khy-
+athi Chandu, Jennifer Dumas, Yanai Elazar, Valentin Hof-
+mann, Ananya Jha, Sachin Kumar, Li Lucy, Xinxi Lyu,
+Nathan Lambert, Ian Magnusson, Jacob Morrison, Niklas
+Muennighoff, Aakanksha Naik, Crystal Nam, Matthew Pe-
+ters, Abhilasha Ravichander, Kyle Richardson, Zejiang
+Shen, Emma Strubell, Nishant Subramani, Oyvind Tafjord,
+Evan Walsh, Luke Zettlemoyer, Noah Smith, Hannaneh Ha-
+jishirzi, Iz Beltagy, Dirk Groeneveld, Jesse Dodge, and Kyle
+Lo. Dolma: an Open Corpus of Three Trillion Tokens for
+Language Model Pretraining Research. In Proceedings of
+the 62nd Annual Meeting of the Association for Computa-
+tional Linguistics (Volume 1: Long Papers), pages 15725–
+15788, Bangkok, Thailand, 2024. Association for Computa-
+tional Linguistics. 2
+[49] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier
+Martinet, Marie-Anne Lachaux, Timothée Lacroix, Baptiste
+Rozière, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien
+Rodriguez, Armand Joulin, Edouard Grave, and Guillaume
+Lample. LLaMA: Open and Efﬁcient Foundation Language
+Models, 2023. 2
+[50] Fei Wang, Yizhe Lv, Mengdie Zhu, Han Ding, and Jinsong
+Han. XRF55: A Radio Frequency Dataset for Human Indoor
+Action Analysis. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies, 8(1):1–34,
+2024. 2, 3
+[51] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le,
+Ed H. Chi, Sharan Narang, Aakanksha Chowdhery, and
+Denny Zhou. Self-Consistency Improves Chain of Thought
+Reasoning in Language Models. In The Eleventh Interna-
+tional Conference on Learning Representations, 2023. 2
+[52] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, and
+Denny Zhou. Chain-of-Thought Prompting Elicits Reason-
+ing in Large Language Models. In Proceedings of the 36th
+International Conference on Neural Information Processing
+Systems, Red Hook, NY, USA, 2022. Curran Associates Inc.
+2
+[53] Zhi Wu, Dongheng Zhang, Chunyang Xie, Cong Yu, Jinbo
+Chen, Yang Hu, and Yan Chen. RFMask: A Simple Base-
+line for Human Silhouette Segmentation with Radio Signals.
+IEEE Transactions on Multimedia, 25:4730–4741, 2022. 3
+2218
+[54] Jiarui Xu et al. GroupViT: Semantic Segmentation Emerges
+from Text Supervision. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 2022. 2
+[55] Runsen Xu, Xiaolong Wang, Tai Wang, Yilun Chen, Jiang-
+miao Pang, and Dahua Lin. PointLLM: Empowering Large
+Language Models to Understand Point Clouds. In Com-
+puter Vision – ECCV 2024: 18th European Conference, Mi-
+lan, Italy, September 29–October 4, 2024, Proceedings, Part
+XXV, page 131–147, Berlin, Heidelberg, 2024. Springer-
+Verlag. 3
+[56] Runsen Xu, Shuai Yang, Xiaolong Wang, Tai Wang, Yilun
+Chen, Jiangmiao Pang, and Dahua Lin. PointLLM-V2:
+Empowering Large Language Models to Better Understand
+Point Clouds . IEEE Transactions on Pattern Analysis &
+Machine Intelligence, (01):1–15, 5555. 3
+[57] Hongfei Xue, Yan Ju, Chenglin Miao, Yijiang Wang,
+Shiyang Wang, Aidong Zhang, and Lu Su. mmMesh: To-
+wards 3D Real-Time Dynamic Human Mesh Construction
+Using Millimeter-Wave. page 269–282, New York, NY,
+USA, 2021. Association for Computing Machinery. 2
+[58] Hongfei Xue, Qiming Cao, Yan Ju, Haochen Hu, Haoyu
+Wang, Aidong Zhang, and Lu Su. M4esh: mmWave-based
+3D Human Mesh Construction for Multiple Subjects. In Pro-
+ceedings of the 20th ACM Conference on Embedded Net-
+worked Sensor Systems, pages 391–406, 2022. 2
+[59] Hongfei Xue, Qiming Cao, Chenglin Miao, Yan Ju, Haochen
+Hu, Aidong Zhang, and Lu Su. Towards Generalized
+mmWave-based Human Pose Estimation through Signal
+Augmentation. In Proceedings of the 29th Annual Inter-
+national Conference on Mobile Computing and Networking,
+pages 1–15, 2023. 2
+[60] Antoine Yang, Antoine Miech, Josef Sivic, Ivan Laptev, and
+Cordelia Schmid. Zero-Shot Video Question Answering via
+Frozen Bidirectional Language Models. Red Hook, NY,
+USA, 2022. Curran Associates Inc. 2
+[61] Jianfei Yang, He Huang, Yunjiao Zhou, Xinyan Chen, Yue-
+cong Xu, Shenghai Yuan, Han Zou, Chris Xiaoxuan Lu,
+and Lihua Xie. MM-Fi: Multi-Modal Non-Intrusive 4D
+Human Dataset for Versatile Wireless Sensing. In Thirty-
+seventh Conference on Neural Information Processing Sys-
+tems Datasets and Benchmarks Track, 2023. 2, 3
+[62] Xin Yang, Jian Liu, Yingying Chen, Xiaonan Guo, and
+Yucheng Xie. MU-ID: Multi-user Identiﬁcation Through
+Gaits Using Millimeter Wave Radios. In IEEE INFOCOM
+2020 - IEEE Conference on Computer Communications,
+pages 2589–2598, 2020. 2
+[63] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and
+Lucas Beyer. Sigmoid Loss for Language Image Pre-
+Training. In 2023 IEEE/CVF International Conference on
+Computer Vision (ICCV), pages 11941–11952, 2023. 2
+[64] Hang Zhang, Xin Li, and Lidong Bing. Video-LLaMA: An
+Instruction-tuned Audio-Visual Language Model for Video
+Understanding. In Proceedings of the 2023 Conference on
+Empirical Methods in Natural Language Processing: System
+Demonstrations, pages 543–553, Singapore, 2023. Associa-
+tion for Computational Linguistics. 2, 3
+[65] Yuanhan Zhang, Jinming Wu, Wei Li, Bo Li, Zejun Ma, Zi-
+wei Liu, and Chunyuan Li. LLaVA-Video: Video Instruction
+Tuning With Synthetic Data, 2025. 2, 3
+[66] Mingmin Zhao, Tianhong Li, Mohammad Abu Alsheikh,
+Yonglong Tian, Hang Zhao, Antonio Torralba, and Dina
+Katabi. Through-Wall Human Pose Estimation Using Radio
+Signals. In Proceedings of the IEEE conference on computer
+vision and pattern recognition, pages 7356–7365, 2018. 2
+[67] Mingmin Zhao, Yonglong Tian, Hang Zhao, Moham-
+mad Abu Alsheikh, Tianhong Li, Rumen Hristov, Zachary
+Kabelac, Dina Katabi, and Antonio Torralba. RF-Based 3D
+Skeletons. In Proceedings of the 2018 Conference of the
+ACM Special Interest Group on Data Communication, pages
+267–281, 2018. 2
+[68] Peijun Zhao, Chris Xiaoxuan Lu, Jianan Wang, Chang-
+hao Chen, Wei Wang, Niki Trigoni, and Andrew Markham.
+mID: Tracking and Identifying People with Millimeter Wave
+Radar. In 2019 15th International Conference on Distributed
+Computing in Sensor Systems (DCOSS), pages 33–40, 2019.
+2
+[69] Zheng Zhao, Emilio Monti, Jens Lehmann, and Haytham
+Assem. Enhancing Contextual Understanding in Large Lan-
+guage Models through Contrastive Decoding. In Proceed-
+ings of the 2024 Conference of the North American Chap-
+ter of the Association for Computational Linguistics: Hu-
+man Language Technologies (Volume 1: Long Papers), pages
+4225–4237, Mexico City, Mexico, 2024. Association for
+Computational Linguistics. 2
+[70] Chuhao Zhou and Jianfei Yang. HoloLLM: Multisensory
+Foundation Model for Language-Grounded Human Sensing
+and Reasoning, 2025. 3
+[71] Bing Zhu, Zixin He, Weiyi Xiong, Guanhua Ding, Tao
+Huang, and Wei Xiang. ProbRadarM3F: mmWave Radar-
+based Human Skeletal Pose Estimation with Probability Map
+Guided Multi-Format Feature Fusion. IEEE Transactions on
+Aerospace and Electronic Systems, pages 1–11, 2025. 2
+[72] Yilun Zhu, Joel Ruben Antony Moniz, Shruti Bhargava,
+Jiarui Lu, Dhivya Piraviperumal, Site Li, Yuan Zhang, Hong
+Yu, and Bo-Hsiang Tseng. Can Large Language Models Un-
+derstand Context? In Findings of the Association for Com-
+putational Linguistics: EACL 2024, pages 2004–2018, St.
+Julian’s, Malta, 2024. Association for Computational Lin-
+guistics. 2
+2219
+

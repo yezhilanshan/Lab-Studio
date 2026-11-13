@@ -1,0 +1,1218 @@
+WorldMM: Dynamic Multimodal Memory Agent for Long Video Reasoning
+Woongyeong Yeo1∗
+Kangsan Kim1∗
+Jaehong Yoon2†
+Sung Ju Hwang1,3†
+1
+KAIST 2
+NTU Singapore 3
+DeepAuto.ai
+{wgcyeo, kangsan.kim, sungju.hwang}@kaist.ac.kr jaehong.yoon@ntu.edu.sg
+https://worldmm.github.io
+Abstract
+Recent advances in video large language models have
+demonstrated strong capabilities in understanding short
+clips. However, scaling them to hours- or days-long videos
+remains highly challenging due to limited context capac-
+ity and the loss of critical visual details during abstrac-
+tion. Existing memory-augmented methods mitigate this by
+leveraging textual summaries of video segments, yet they
+heavily rely on text and fail to utilize visual evidence when
+reasoning over complex scenes. Moreover, retrieving from
+fixed temporal scales further limits their flexibility in cap-
+turing events that span variable durations. To address
+this, we introduce WorldMM, a novel multimodal memory
+agent that constructs and retrieves from multiple comple-
+mentary memories, encompassing both textual and visual
+representations. WorldMM comprises three types of mem-
+ory: episodic memory indexes factual events across multi-
+ple temporal scales, semantic memory continuously updates
+high-level conceptual knowledge, and visual memory pre-
+serves detailed information about scenes. During inference,
+an adaptive retrieval agent iteratively selects the most rele-
+vant memory source and leverages multiple temporal gran-
+ularities based on the query, continuing until it determines
+that sufficient information has been gathered. WorldMM
+significantly outperforms existing baselines across five long
+video question-answering benchmarks, achieving an aver-
+age 8.4% performance gain over previous state-of-the-art
+methods, showing its effectiveness on long video reasoning.
+1. Introduction
+With the increasing deployment of video large language
+models (video LLMs) [1, 4, 23, 47] in real-world applica-
+tions, such as AI glasses and household robots, these mod-
+els are now required to process and reason over extremely
+long videos from several hours to even days [7, 32, 41].
+Recent works [6, 19, 20] have introduced memory-based
+*Equal contribution; †Equal advising
+approaches that build external memories from abstracted
+video representations. Such methods allow the model to
+focus on essential information by retrieving a small number
+of relevant memories, thereby reducing the number of input
+tokens. This is a more efficient and effective strategy com-
+pared to processing all frames in the video, requiring high
+computational cost as illustrated in Fig. 1(a).
+Despite their promise, most existing approaches remain
+highly dependent on textual representations. Typically, each
+detected event or clip is converted into captions, summaries,
+or structured text descriptions for downstream retrieval and
+reasoning [19, 30, 41]. Although Long et al. [20] incorpo-
+rates visual inputs when building memory, its use of mul-
+timodal features is limited to entity recognition and is not
+fully exploited during inference (Fig. 1(b)). Moreover, ex-
+isting models [20, 41] typically retrieve a fixed number of
+clips with predetermined durations, such as retrieving three
+30-second clips. These rigid architecture designs in video
+memory agents face the following two major limitations.
+First, they fail to adaptively leverage visual information
+from videos in conjunction with textual memory during re-
+trieval and generation. Visual details are essential for many
+real-world tasks requiring attribute recognition, spatial rea-
+soning, or precise scene understanding, while this knowl-
+edge cannot be fully represented in text. Meanwhile, as
+shown in Fig. 1(c), a fixed strategy that always includes
+both captions and frames during response generation yields
+suboptimal results since excessive visual context can even
+distract the model. Therefore, an adaptive mechanism for
+selecting multimodal memories is essential for retrieving
+the most informative references for a given query, which
+remains unexplored in previous works.
+Second, retrieving a fixed number of clips limits the
+model’s ability to handle queries that require varying tem-
+poral scopes. For instance, a question like “Where did
+I leave my glasses?” may require only a few seconds of
+video, whereas “What happened in the second half of the
+soccer match?” demands a much longer temporal context.
+Existing approaches retrieve a predetermined length of seg-
+ments for simplicity [19, 20, 41], which inherently over-
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+25599
+When did I last
+drink beer?
+> 80k frames
+I haven’t drunk beer,
+just a cup of coffee.
+What was the color
+of the can I drank?
+Captions
+“I picked up a coke
+can and drank it ...”
+…
+Text-based
+Retrieval
+It was red.
+What will she ride?
+Too many frames Missing visual data
+Video-Caption pairs
+“Amy said she would
+transfer buses …”
+Subway.
+Distracted by frames
+What magic did Jake perform?
+Episodic
+“Jake unveiled the pigeon…”
+Adaptive memory type selection
+(a) Day-long (1fps) (b) M3-Agent (c) EgoRAG (d) WorldMM (Ours)
+Visual
+Call(Episodic, Jake magic)
+Call(Visual, pigeon)
+Semantic
+Jake made pigeon to …
+Multimodal
+Memory
+…
+Figure 1. Concept Figure. (a) A day-long video sampled at 1 fps has frames that exceed the context limits of video LLMs. (b) M3-
+Agent [20] relies on textual representation of video, which can underrepresent visual information. (c) EgoRAG [41] retrieves both captions
+and the corresponding visual frames, but irrelevant frames may distract model. (d) WorldMM (Ours) constructs multiple memories,
+incorporating both textual and visual representations, and uses adaptive memory retrieval to effectively leverage multimodal information.
+looks the diverse temporal scales of real-world events, lim-
+iting flexibility. Instead, the retriever should dynamically
+gather information at multiple temporal scales, combining
+hour-level summaries with minute-level details as needed.
+To fill this gap, we present WorldMM, a novel memory-
+based agent that constructs separate textual and visual mem-
+ories and employs an adaptive retrieval agent to select the
+optimal memory modality and temporal granularity for each
+query. The textual memory comprises two components:
+episodic memory, which stores multiple events across dif-
+ferent time scales, and semantic memory, which captures
+high-level, long-term knowledge such as relationships and
+habits, organized within knowledge graphs. The visual
+memory divides a long video into short-term segments in-
+dexed within a retrieval corpus, enabling the model to ac-
+cess visual information when required. The retrieval agent
+iteratively selects the most relevant memory across modal-
+ities and timescales, ensuring that the agent retrieves only
+the information necessary for each query. The proposed
+multimodal memory selection design therefore prevents the
+model from being forced to condition on paired yet unnec-
+essary modality memories when retrieving data for a given
+query, minimizing potential distraction during reasoning.
+In addition, WorldMM is able to retrieve information at
+varying levels of granularity over the appropriate time range
+by leveraging multiple graphs operating at different tem-
+poral scales, such as seconds, minutes, and hours. When
+episodic memory is selected for retrieval, the retrieval agent
+searches each memory to gather potentially relevant infor-
+mation from all temporal levels. The collected candidates
+are then jointly examined to determine which pieces of in-
+formation should be used to answer the query. In the end,
+we dynamically access both short- and long-term video con-
+texts to assemble only the necessary information for reason-
+ing. Furthermore, the model performs retrieval in multiple
+turns by iteratively selecting memories and queries, thereby
+expanding the range of possible combinations and allowing
+adaptive selection of the information for each query.
+We evaluate WorldMM with five long video question-
+answering benchmarks from hour- to week-long dura-
+tions. The proposed approach consistently outperforms
+strong baselines, including long video LLMs and memory-
+augmented models. Comprehensive ablation studies further
+demonstrate the effectiveness of our multi-memory, multi-
+scale design. Specifically, episodic memory enables reason-
+ing over events at multiple timescales, visual memory im-
+proves performance on object- and action-centered queries,
+while semantic memory enhances reasoning over long-term
+contexts. When all the memories are adaptively integrated,
+the model achieves the best overall results. These results
+highlight that our multimodal memory system represents a
+promising direction toward robust long video reasoning.
+2. Related Work
+2.1. Long Video Understanding
+Existing video LLMs demonstrate strong understanding ca-
+pabilities for short videos, and recent research has shifted
+toward reasoning over longer videos. Current proprietary
+models, such as GPT-5 [23] and Gemini 2.5 [4], have ad-
+vanced to minute- or hour-level video understanding [2, 7,
+19, 32, 43] by utilizing extended context lengths. However,
+these models still incur high computational costs and uni-
+formly sampling every frame is often suboptimal for ques-
+tions focused on localized events [25, 31].
+To address these challenges, several strategies have been
+explored. Visual token compression [5, 12, 13, 18, 27, 33,
+45] improves efficiency by reducing token counts but of-
+ten loses fine-grained details, limiting the capture of sub-
+tle or sparse events. Key frame selection [29, 37] retains
+only the most informative frames to reduce redundancy but
+fails to detect relevant frames when video streams are too
+long and may miss rare events. More recently, reasoning-
+centric training and inference [24, 35, 36, 38, 44] have en-
+25600
+Multimodal Memory Construction Adaptive Memory Retrieval
+Episodic Memory
+Semantic Memory
+Visual Memory
+… sec-level
+Captions
+… min-level
+… hour-level
+Graph
+Generator
+short-term
+Knowledge Graph
+mid-term
+long-term
+Graph Generation Update Semantics
+0:00-10:00 10:00-20:00 20:00-30:00
+Frame-Timestamp Visual Features
+Multimodal
+Encoder
+1:10:40
+- 1:10:50
+What do I usually have for
+lunch with Alice?
+<think>I’ll find the events having
+lunch with Alice.</think>
+call(episodic, lunch with Alice)
+Episodic Memory Retrieval
+Short-term Mid-term Long-term Retrieved Data
+LLM
+Rerank
+Final Data
+Semantic Memory Retrieval
+<think>I need long-term habit
+information.</think>
+call(semantic, lunch and Alice)
+Turn #1
+Turn #2
+Visual Memory Retrieval
+PPR
+Edge-focused
+PPR
+Response
+Generation
+User
+Final Triplets
+Query
+feature 𝖷
+Visual
+features
+Top Similarity Score Paired Frames
+User Question
+Retrieval History:
+call(episodic,
+lunch with Alice)
+Response
+Agent
+We usually
+have
+Pad Thai
+together.
+Retrieval
+Agent
+<think> It seems we often go to
+Thai restaurant. </think>
+call(visual, Thai food)
+Turn #3
+call(semantic,
+lunch and Alice)
+call(visual,
+Thai food)
+Figure 2. Overview of WorldMM. (Left) Multimodal Memory Construction: WorldMM builds three complementary memories (episodic,
+semantic, and visual memory) that capture temporal events, long-term relations, and visual details from video streams. (Middle) Adaptive
+Memory Retrieval: A retrieval agent iteratively selects and integrates relevant information from diverse memories for a given query. (Right)
+Response Generation: The retrieved content and reasoning history are used by a response agent to produce a grounded response.
+hanced long-range temporal grounding through reinforce-
+ment learning and adaptive test-time scaling, yet still face
+scalability limits on ultra-long videos over ten hours.
+Beyond hour-level videos, emerging benchmarks push
+video understanding and reasoning toward day- or even
+week-long continuous recordings [3, 16, 30, 41]. The afore-
+mentioned strategies struggle in these settings due to the
+massive scale of frames and long-term temporal depen-
+dencies. This highlights the necessity for more efficient,
+context-aware, and scalable approaches to handle extremely
+long videos.
+2.2. Memory-based Video LLMs
+In order to effectively reason over long videos, retrieval-
+augmented generation (RAG) based methods that retrieve
+relevant frames or clips instead of sampled frames have
+been introduced. They typically retrieve query-relevant
+information using textual and visual cues, and allow the
+model to focus on crucial clips [15, 21, 39]. Some recent
+methods extend this approach by constructing graph struc-
+tures to encode multimodal interactions across frames [26,
+28, 40]. However, these models rely on textual representa-
+tion or a simple similarity score between visual and query
+features, limiting their ability to perform holistic under-
+standing and complex reasoning over long video sequences.
+Beyond naive retrieval-based design, memory-based
+methods have emerged to construct structured knowledge
+over video streams. EgoRAG [41] organizes hierarchi-
+cal textual memories that store events from egocentric
+video streams in a hierarchical manner, allowing reasoning
+throughout day-long activities. Ego-R1 [30] extends this
+by leveraging vision-centric tools with iterative reasoning to
+perform long-horizon reasoning. HippoMM [19] proposes
+a dual-process memory using semantic summaries with
+multimodal cues. M3-Agent [20] constructs entity-centric
+long-term memory by processing multimodal contexts and
+adopts iterative reasoning to retrieve relevant knowledge
+from the memory. Despite these advances, existing works
+still struggle to fully integrate multimodal information and
+to dynamically retrieve knowledge across varying temporal
+scales to handle complex, long video scenarios.
+3. WorldMM
+We introduce WorldMM, a novel framework that leverages
+both textual and visual contexts of video streams to build a
+multimodal memory for comprehensive understanding and
+reasoning over long videos. As illustrated in Fig. 2, the
+model operates in three stages: multimodal memory con-
+struction, adaptive memory retrieval, and response genera-
+tion. Given a long video stream, WorldMM first builds mul-
+tiple memories, including two textual memories and one vi-
+sual memory (Sec. 3.1). Next, a retrieval agent iteratively
+collects query-relevant information from different memo-
+ries and timescales until sufficient knowledge is gathered
+to answer the question (Sec. 3.2). Finally, the query is fed
+into a response agent along with the retrieved contents and
+retrieval history to generate a response (Sec. 3.3).
+3.1. Multimodal Memory Construction
+As we described in Sec. 1, an effective memory agent for
+long-form video understanding must address two key re-
+quirements: 1) adaptively leveraging visual information
+alongside text memory, and 2) retrieving knowledge across
+diverse temporal ranges. To achieve this, WorldMM con-
+structs three types of memory, each encoding complemen-
+tary video knowledge across diverse modalities. Episodic
+memory captures diverse events over multiple dynamic
+timescales, semantic memory incrementally updates high-
+level relational knowledge, and visual memory preserves
+spatial and appearance details. Together, they form a com-
+prehensive multimodal memory that supports episodic re-
+trieval, semantic reasoning, and visually grounded under-
+standing of long-form videos.
+25601
+Episodic Memory Construction Episodic memory con-
+sists of multiple textual graphs, each of which encodes
+events at different temporal resolutions. Before construct-
+ing the graphs, we first perform fine-grained captioning on
+the unit temporal scale t0. We divide the video into short
+segments of length t0, each converted into a caption us-
+ing a video LLM. Most existing approaches rely on a fixed
+temporal scale during memory construction [20, 41], over-
+looking the diverse spans of real-world events. In contrast,
+we introduce a multi-scale memory composed of multiple
+temporal resolutions that flexibly encodes information with
+different levels of density:
+  \mathcal {T}=\{t_0, t_1, \dots , t_N\}, \quad t_0<t_1<\cdots <t_N.  (1)
+For each temporal scale ti ∈ T , the video is partitioned
+into non-overlapping segments of length ti. The segments
+are captioned and transformed into factual triplets (entity-
+action-entity) to construct a knowledge graph (KG) Gti
+. Fi-
+nally, episodic memory is represented as a set of KGs:
+  \mathcal {M}_{e} = \{ G_{t_0}, G_{t_1}, \dots , G_{t_N}\}.  (2)
+This multi-scale episodic memory enables temporally
+grounded reasoning that spans both fine-grained event de-
+tails and long-range narrative understanding.
+Semantic Memory Construction Semantic memory
+captures long-term, evolving knowledge about relationships
+and habits within a video. Since episodic graphs are con-
+structed from independent events, they fail to preserve con-
+tinuity across distant scenes and cannot capture high-level
+knowledge. Semantic memory, on the contrary, maintains
+an evolving graph that continuously integrates relational
+and habitual knowledge over time.
+To build this continually updating memory, we first split
+the input video into coarse segments with a fixed timescale
+ts. Textual captions are generated for each segment and
+converted into semantic triplets Tk
+ts
+, focusing on concep-
+tual knowledge rather than event-specific details. These
+triplets are incrementally integrated into an evolving seman-
+tic graph through a consolidation process that merges new
+knowledge while preserving stable relationships. Specifi-
+cally, embedding-based similarity is first used to identify
+overlapping or conflicting triplets between the current graph
+Gk
+ts
+and the newly extracted triplets Tk+1
+ts
+. The matched
+triplets are then provided to an LLM along with the new
+triplets, which determines outdated or conflicting triplets
+Tremove and triplets that should be revised or added Tupdate.
+Formally, the consolidation process can be represented as:
+  \text {Consolidate}(G_{t_s}^k, T_{t_s}^{k+1}) = \big (G_{t_s}^k \setminus T_{\text {remove}}\big ) \cup T_{\text {update}}.  (3)
+The resulting semantic memory is a continuously evolving
+KG Ms = GM
+ts
+, where M denotes the final segment index,
+capturing the video’s long-term knowledge.
+Visual Memory Construction Visual memory captures
+rich visual details that text cannot fully convey, including
+detailed object appearances, scene dynamics, and precise
+spatial context. WorldMM explicitly constructs a visual
+memory to ground reasoning in visual evidence. We con-
+sider two scenarios in which visual memory is invoked,
+when the retrieval agent searches for scenes associated with
+a specific keyword, and when the agent has timestamps
+identified during preceding retrieval steps to inspect the cor-
+responding frames. Therefore, we adopt two complemen-
+tary strategies for building visual memory: feature-based
+retrieval via natural language query, and timestamp-based
+retrieval for precise temporal grounding.
+Specifically, we partition each video into short, fixed-
+length segments of duration tv, encoding each segment V k
+tv
+into a visual feature fk
+v using a multimodal encoder, form-
+ing a feature-based visual memory as a set of embeddings:
+  \mathcal {M}_{v}^{f} = \{f_v^{1}, f_v^{2}, \dots , f_v^{L} \}.  (4)
+In parallel, to support timestamp-based retrieval, each frame
+is paired with its corresponding timestamp:
+  \mathcal {M}_v^I = \{(t_i, I_i) \mid I_i = V(t_i),\ t_i \in [0, \text {len}(V)]\}.  (5)
+This allows direct access to visual evidence at specific mo-
+ments in the video. Finally, the complete visual memory
+integrates both components Mv = Mf
+v ∪ MI
+v by combin-
+ing feature-level embeddings and frame-level indices.
+3.2. Adaptive Memory Retrieval
+In this section, we present how WorldMM dynamically re-
+trieves the most relevant multimodal memories from the ap-
+propriate temporal scope for a given query.
+Retrieval Agent Reasoning over long-form videos re-
+quires integrating heterogeneous information from multiple
+memory sources. To handle this, the retrieval agent iter-
+atively decides which memory to access and what query
+to issue, conditioned on the user question and retrieval his-
+tory. Leveraging the distinct characteristics of each memory
+component, it adaptively selects the most relevant source
+and formulates modality-specific queries [14, 42]. Through
+successive iterations, the agent progressively refines its re-
+trieval strategy and constructs better knowledge collection.
+Formally, we define the retrieval agent R as a multi-
+modal reasoning module that iteratively selects a memory
+source and formulates a corresponding query. At each it-
+eration i, R takes as input the user query q and the set of
+previous retrieval histories r<i = {r1, . . . , ri−1}, and out-
+puts either a memory–query pair or a STOP signal:
+  \mathcal {R}(q, r_{<i}) = \begin {cases} (m_i, q_i) & \small \text {if $r_{<i}$ insufficient and $i\le N$},\\ \texttt {STOP} & \small \text {otherwise}, \end {cases}  (6)
+25602
+where mi ∈ {Me, Ms, Mv} and N denotes the maxi-
+mum number of iterations. If the retriever outputs a mem-
+ory–query pair (mi, qi), it retrieves the relevant information
+from the memory mi with search query qi and proceeds to
+the next iteration with the updated context r≤i. When the
+retriever outputs STOP, it indicates that sufficient informa-
+tion has been collected. The iterative process then termi-
+nates, and all retrieved results {r1, . . . , rn} are passed to
+the response agent for the final response generation.
+Episodic Memory Retrieval Episodic memory retrieval
+is guided by a query q provided by the retriever, which spec-
+ifies the desired information from episodic memory. The
+main challenge lies in determining the appropriate temporal
+scope, as episodic memory contains multiple graphs cover-
+ing different temporal ranges. WorldMM adopts a coarse-
+to-fine, multi-timescale retrieval strategy. Specifically, for
+each temporal graph Gti , the model first retrieves the top-k
+candidate captions using a graph-based retrieval framework
+guided by the Personalized PageRank (PPR) score and the
+query q, following Gutiérrez et al. [11]. Subsequently, an
+LLM serves as a cross-scale reranker, jointly analyzing the
+query and candidates across all timescales. It then selects
+the most relevant temporal range and refines the retrieved
+content, producing the final top-m captions as output. By
+retrieving from multi-scale memory, the model leverages
+both coarse temporal context and fine-grained details.
+Semantic Memory Retrieval The semantic memory,
+also represented as a graph, is queried using a PPR-based
+retrieval algorithm. In contrast to episodic memory retrieval
+which operates over nodes and their temporal structures, se-
+mantic retrieval focuses on relational knowledge encoded
+as edges between entities. Since the standard PPR score
+measures node-level relevance, we adapt it for edge-based
+reasoning by assigning each edge a score equal to the sum
+of the PPR values of its two connected nodes. The top-k
+triplets corresponding to the highest-scoring edges are then
+selected as the final retrieved results.
+Visual Memory Retrieval Following Sec. 3.1, visual
+memory retrieval operates in two complementary modes:
+feature-based search and timestamp-based access. In the
+feature-based mode, the retrieval agent formulates a query
+q, encodes it into a text feature ft using a multimodal en-
+coder, and retrieves the top-k relevant video segments from
+Mf
+v based on the cosine similarity between ft and the vi-
+sual features. In the timestamp-based mode, when specific
+temporal ranges are identified, typically following episodic
+retrieval, the corresponding frames are directly fetched from
+MI
+v. By combining these two modes, WorldMM enables
+flexible and effective access to visual information at both
+semantic and temporal levels.
+3.3. Response Generation
+Finally, once the retrieval agent determines that sufficient
+information has been gathered, the retrieval process is ter-
+minated. The retrieval history, including the selected mem-
+ories, their corresponding queries, and the retrieved results,
+is then passed to the response agent along with the original
+user query. The response agent generates the final answer
+by grounding its response in the retrieved information. This
+clear separation between the retriever and the responder al-
+lows each component to focus on its respective objective,
+ensuring effective retrieval and response generation.
+4. Experiment Results
+4.1. Experimental Setup
+Datasets and Metrics We assess the performance of
+WorldMM across five benchmarks that require reasoning
+over long videos. EgoLifeQA [41] and Ego-R1 Bench [30]
+contain week-long videos, and HippoVlog [19] features
+vlog-style content, requiring comprehension of audio and
+visual streams. We also assess general video understanding
+on LVBench [32] and Video-MME (long) [7] with hour-
+level videos. All benchmarks consist of multiple-choice
+questions, with accuracy used as the evaluation metric.
+Please see additional dataset details in the Sec. A.
+Baselines We compare WorldMM against a comprehen-
+sive set of baselines spanning base video LLMs, long video
+understanding models, RAG systems, and memory-based
+models. Base video LLMs include GPT-5 [23], Gemini 2.5
+Pro [4], and Qwen3-VL-8B-Instruct [1], while long video
+understanding models include VideoChat-Flash [18], Time-
+R1 [35], and Video-RTS [36], which all use uniformly sam-
+pled frames within their input capacity. We further evalu-
+ate RAG approaches, including text retrieval methods like
+LightRAG [10] and HippoRAG [11], which retrieve video
+captions, and Video-RAG [21], which retrieves relevant
+clips. Finally, we compare with memory-based frameworks
+for long video reasoning, including EgoRAG [41], Ego-
+R1 [30], HippoMM [19], and M3-Agent [20].
+Implementations Details We adopt VLM2Vec-V2 [22]
+as a multimodal encoder for visual memory retrieval. Dur-
+ing the memory construction, GPT-5-mini is used for build-
+ing episodic and semantic memories. We experiment ours
+with two video LLMs, GPT-5 and Qwen3-VL-8B-Instruct,
+which serve as the retrieval and response agent, respec-
+tively denoted as WorldMM-GPT and WorldMM-8B. We
+apply dataset-specific timescales for temporal segmentation
+within the episodic memory. For example, we use 30-
+second, 3-minute, 10-minute, and 1-hour intervals for Ego-
+LifeQA. Configurations for other benchmarks, more exper-
+imental details, and the prompts are provided in Sec. B.
+25603
+Table 1. Performance of WorldMM with various baselines across
+long video QA benchmarks. “–” denotes a proprietary backbone.
+Model
+EgoLife
+QA
+Ego-R1
+Bench
+Hippo
+Vlog
+LV
+Bench
+Video-MME
+(L)
+Avg.
+Base Models
+Qwen3-VL-8B [1] 8B 38.6 35.7 74.4 48.3 61.0 51.6
+Gemini 2.5 Pro [4] – 46.4 46.7 72.0 57.0 55.7 55.6
+GPT-5 [23] – 48.6 46.3 75.7 60.4 74.3 61.1
+Long Video LLMs
+VideoChat-Flash [18] 7B 34.2 42.7 58.0 33.2 44.1 42.4
+Time-R1 [35] 7B 48.8 48.0 54.6 31.1 37.6 44.0
+Video-RTS [36] 7B 48.2 47.4 59.0 39.8 47.9 48.6
+RAG-based Video LLMs
+LightRAG [10] – 48.8 52.3 47.4 30.4 46.6 45.1
+HippoRAG [11] – 59.6 56.0 63.2 54.0 52.1 57.0
+Video-RAG [21] – 55.4 49.7 65.1 33.1 55.4 51.7
+Memory-based Video LLMs
+EgoRAG [41] – 52.0 49.0 57.5 32.2 41.1 46.4
+Ego-R1 [30] 3B 53.0 52.0 58.8 34.1 42.7 48.1
+HippoMM [19] – 54.6 53.0 71.9 38.2 41.6 51.8
+M3-Agent [20] 7B 53.5 52.0 65.5 49.3 55.3 55.1
+WorldMM (Ours)
+WorldMM-8B 8B 56.4 52.0 69.7 55.4 66.0 59.9
+WorldMM-GPT – 65.6 65.3 78.3 61.9 76.6 69.5
+4.2. Main Results
+Tab. 1 presents the evaluation results of the proposed
+WorldMM and baseline models. WorldMM significantly
+outperforms all baselines across various long video un-
+derstanding benchmarks. In particular, WorldMM-GPT
+achieves an average score of 69.5%, exceeding the strongest
+baseline by 8.4%. Compared with base models, both vari-
+ants of our model surpass their corresponding baselines by
+more than 8% on average, highlighting the effectiveness
+of our framework in leveraging strong reasoning capabili-
+ties without requiring full video processing. On the other
+hand, models in the long video LLM category show the
+weakest performance, with all results falling below 50% on
+EgoLifeQA and Ego-R1 Bench, indicating that these ap-
+proaches are not effective in days-long videos.
+Meanwhile, retrieval- and memory-based approaches,
+including ours, achieve scores mostly above 52% on Ego-
+LifeQA and Ego-R1 Bench, suggesting that selective re-
+trieval of relevant segments is more effective for long
+video understanding than processing full video sequences.
+Compared with other retrieval-based models such as Hip-
+poRAG and HippoMM, which also rely on GPT backbones,
+our model achieves markedly higher accuracy on average
+(69.5% vs. 57.0% and 51.8%). These demonstrate that inte-
+grating textual and visual memory and adaptively selecting
+temporal scopes are crucial for effective video reasoning.
+4.3. Efficacy of Multimodal Memory
+To examine the contribution of each memory in our frame-
+work, we perform an ablation study that varies the compo-
+sition of available memories. The evaluation results, sum-
+marized in Tab. 2, show a consistent improvement in per-
+formance as additional memories are incorporated. This
+0 10 20 30 40
+Percentage (%)
+EntityLog
+EventRecall
+HabitInsight
+RelationMap
+TaskMaster
+90 100
+Visual
+Semantic
+Episodic
+Figure 3. Memory type utilization of WorldMM on five distinctive
+categories in EgoLifeQA.
+finding confirms that different memories capture comple-
+mentary forms of knowledge. All following experiments in
+this section are conducted using WorldMM-GPT.
+Effect of Episodic Memory To examine the performance
+differences arising from the retrieved data modality in
+WorldMM, we evaluate models using only episodic mem-
+ory (E) and only visual memory (V), and report the re-
+sults in Tab. 2. Using only episodic memory shows 20%
+higher performance than using only visual memory on av-
+erage. This is mostly because textual information can be
+more readily organized into a graph, which enables effec-
+tive retrieval, while indexing visual frames into a structured
+representation remains challenging.
+Effect of Visual Memory Visual memory plays a partic-
+ularly important role in categories that demand perceptual
+understanding, such as object recognition or action inter-
+pretation. In Tab. 2, visual memory significantly enhances
+accuracy in categories like EntityLog and EventRecall of
+EgoLifeQA and Ego-R1 Bench, as well as Visual and Au-
+dio+Visual of HippoVlog. The full configuration (E+S+V)
+surpasses the non-visual configuration (E+S) by an average
+margin of 4.2%. This improvement arises because visual
+information preserves spatial and perceptual details that are
+difficult to represent in text. As shown in Fig. 4(a), when re-
+lying solely on episodic memory, the model fails to capture
+object details such as the type of baked item, leading to an
+incorrect response. In contrast, visual memory provides ac-
+cess to corresponding frames that contain a complete scene,
+enabling accurate interpretation of objects and activities.
+Effect of Semantic Memory Semantic memory proves
+the most beneficial for categories that require reasoning
+over long-term dependencies and abstract relationships.
+This effect is evident in the HabitInsight and Relation-
+Map categories of EgoLifeQA and Ego-R1 Bench. The
+model equipped with full memory achieves 76.9% accuracy
+in HabitInsight, representing a 23% improvement over the
+setting without semantic memory (E+V). This substantial
+gain indicates that semantic memory serves as a structured
+25604
+Table 2. Performance of WorldMM across multiple benchmarks using different memory types. E, S, and V denote episodic, semantic, and
+visual memories, respectively. Combinations with “+” indicate multiple memory types are used.
+Model
+EgoLifeQA Ego-R1 Bench HippoVlog
+LVBench Video-MME
+(L)
+Avg.
+Ent. EvR. Hab. Rel. Task Avg. Ent. EvR. Hab. Rel. Task Avg. Aud. Vis. A+V Summ. Avg.
+E 57.6 61.1 70.5 61.6 69.8 62.6 54.5 70.7 53.9 52.6 57.9 57.0 72.4 73.2 68.4 80.4 73.6 60.6 72.7 64.9
+V 40.8 35.7 36.1 34.4 39.7 37.2 36.5 34.1 23.1 31.6 28.2 34.2 35.2 66.4 54.8 48.8 51.3 47.4 64.2 44.9
+E+S 56.8 61.9 73.8 62.4 71.4 63.4 59.3 68.3 69.2 57.9 60.5 61.0 70.8 75.2 68.8 80.4 73.8 58.8 74.1 66.8
+E+V 59.2 63.5 70.5 60.8 68.8 63.3 65.1 68.3 53.9 47.4 57.9 63.0 73.2 77.2 70.8 79.6 75.2 59.8 76.0 66.9
+E+S+V 62.4 64.3 75.4 62.4 71.4 65.6 64.6 70.7 76.9 57.9 63.2 65.3 75.6 81.6 73.2 82.8 78.3 61.9 76.6 69.5
+Now Tasha suggested finding a container to put the eggs in and
+start baking. What did we bake in the oven last time?
+(a) Sweet Potato (b) Bread (c) Egg Tart (d) Pizza
+(a) Episodic + Visual Memory (b) Episodic + Semantic Memory
+Turn #1 Call(Episodic, Oven Baking)
+I chat as Tasha brings out baked goods and the
+warm aroma washes over me. Shure heads out
+again while I work at the computer. …
+Turn #2 Call(Visual, Sweet Potato)
+Visual context is not represented in text
+Visual information helps better understanding of the scene
+What do I habitually use to wipe after washing kitchenware?
+(a) Kitchen wet wipes (b) Face towel (c) Dry paper towels (d) Cloth
+(a) Sweet Potato
+…
+Turn #1 Call(Episodic, Wiping kitchenware after washing)
+I wash the dishes. Tasha says, "Okay, so
+it's real then." … Tasha laughs. I turn my
+head right, then left. Alice says…
+Turn #2
+Habit cannot be captured within
+a single episode
+Semantic memory can capture long-term habits
+(a) Kitchen wet
+wipes
+I wasn’t able to identify
+specific evidence of the
+baked goods. I’ll refer to the
+visual memory to determine
+the exact characteristics of
+the baked item.
+Retrieval Agent
+Response Agent Response Agent
+I wasn’t able to identify any habitual
+evidence related to wiping
+kitchenware. I’ll refer to the semantic
+memory to determine the most likely
+object used for this task.
+Retrieval Agent
+Call(Semantic, Kitchen wet wipes)
+(I, often use, kitchen wet wipes)
+(Wet wipes, can be used as an alternative to,
+paper towels) …
+Figure 4. Qualitative results. (a) Episodic memory alone cannot capture detailed visual context. The retrieval agent dynamically retrieves
+from visual memory, enabling access to fine-grained visual details. (b) To address the limitations of episodic memory in representing
+relationships or habitual behaviors, the retrieval agent proactively accesses semantic memory, allowing it to incorporate habitual knowledge.
+knowledge base that captures relational or habitual knowl-
+edge accumulated over time. The qualitative example in
+Fig. 4(b) illustrates this behavior, where episodic memory
+alone fails to infer habitual actions that extend beyond a
+single event. By contrast, semantic memory captures the
+repeated use of kitchen wet wipes, allowing the model to
+infer the correct answer through long-term reasoning.
+Adaptive Retrieval on Multimodal Memory To further
+analyze how categories differ in their reliance on distinct
+memory modalities in WorldMM, we quantify the usage
+proportion of each memory across all retrieval iterations
+per category. As shown in Fig. 3, while episodic memory
+plays a foundational role across all tasks, certain categories
+tend to select it more frequently than other memory types:
+HabitInsight and RelationMap depend primarily on seman-
+tic memory, reflecting their reliance on reasoning over long-
+term patterns. In contrast, EntityLog and EventRecall ben-
+efit more from visual memory, which provides fine-grained
+perceptual details not fully captured by text. This selective
+utilization suggests that the model dynamically emphasizes
+the most relevant memory type for each category, leverag-
+ing the strength of each type in a context-dependent man-
+ner. These results confirm that different types of memory
+contribute distinct yet complementary strengths.
+4.4. Dynamic Temporal Scope Retrieval
+We evaluate episodic memory retrieval performance across
+diverse temporal scales of events using temporal intersec-
+tion over union (tIoU), which measures the overlap be-
+tween retrieved and ground truth segments as the ratio
+of their intersection to their union duration. We com-
+pare WorldMM with various models in temporal ground-
+ing, single-modality retrieval, long-form egocentric video
+retrieval, and keyframe selection. Details about baselines
+are given in Sec. C.1. As shown in Tab. 3, WorldMM
+achieves significantly superior tIoU scores than strong base-
+lines. Notably, reasoning-based retrieval and keyframe se-
+lection methods exhibit lower tIoU values, indicating dif-
+ficulty in handling long input contexts. Moreover, Fig. 5
+demonstrates that the superior tIoU is directly correlated
+with higher overall accuracy, particularly in understanding
+long videos.
+4.5. Efficacy of Multi-turn Retrieval
+We validate the effectiveness of our model’s multi-turn ap-
+proach by limiting the maximum number of retrieval steps.
+The results in Fig. 7 show that performance consistently
+improves as the number of iterations increases across all
+benchmarks. Notably, on the EgoLifeQA benchmark, al-
+25605
+Table 3. Average tIoU (%) across three benchmarks.
+Model EgoLifeQA Ego-R1 Bench LVBench
+Time-R1 [35] 0.58 0.59 2.70
+Qwen3 Emb. [46] 4.35 2.87 4.54
+HippoRAG [11] 4.00 3.28 4.30
+InternVideo2 [34] 3.36 2.60 3.55
+EgoRAG [41] 3.60 2.73 3.50
+Ego-R1 [30] 3.70 2.89 3.60
+AKS [29] 2.75 2.30 3.52
+WorldMM (Ours) 10.09 9.17 9.57
+Table 4. Comparison of model variants by changing each module.
+Model
+EgoLifeQA LVBench
+Ent. EvR. Hab. Rel. Task Avg. Acc.
+Episodic Memory
+Fixed Timescale 44.8 51.6 60.7 51.2 58.7 51.8 47.9
+Embedding Retrieval 45.6 52.4 59.0 54.4 52.4 52.0 50.9
+Semantic Memory
+w/o Consolidation 48.8 53.2 57.4 51.2 60.7 53.0 54.2
+Visual Memory
+Feature Retrieval 45.6 51.6 62.3 58.4 55.6 53.6 52.4
+Timestamp Retrieval 41.6 50.0 63.9 56.8 54.0 51.8 52.9
+WorldMM (Ours) 49.6 56.4 63.9 58.4 58.7 56.4 55.4
+0.02 0.04 0.06 0.08 0.10
+Avg. tIoU
+45
+50
+55
+60
+65
+Avg.
+Accuracy
+(%)
+Time-R1
+Qwen3 Emb
+HippoRAG
+InternVideo2
+EgoRAG
+Ego-R1
+AKS
+Ours
+Figure 5. Average tIoU and performance
+of WorldMM and baselines.
+0 20 40 60
+Latency (s)
+40
+50
+60
+Avg.
+Accuracy
+(%)
+Qwen3-VL-8B
+GPT-5
+VideoChat-Flash
+Video-RAG
+HippoMM
+M3-Agent
+Ours
+Figure 6. Average latency and performance
+of WorldMM and baselines.
+1 2 3 4 5
+Maximum Iteration
+60
+70
+Accuracy
+(%)
+EgoLifeQA
+Ego-R1
+HippoVlog
+LVBench
+Video-MME(L)
+Figure 7. Accuracy of WorldMM with dif-
+ferent maximum retrieval steps.
+lowing a maximum of five steps yields a 9.3% improvement
+over single-step retrieval. This gain arises because multiple
+iterations enable the retrieval agent to gather additional rel-
+evant information and refine its retrieval strategy when ear-
+lier attempts are suboptimal. An example of this refinement
+is shown in Sec. F.2, where the model corrects an initially
+irrelevant retrieval to produce a more accurate and contex-
+tually grounded response.
+4.6. Analysis on Efficiency
+To assess the efficiency of our framework, we measure the
+end-to-end latency of WorldMM on 100 randomly sampled
+queries from EgoLifeQA. As shown in Fig. 6, our method
+achieves a superior latency–accuracy trade-off compared
+with baselines. Long-video LLMs incur significantly higher
+inference latency, while still exhibiting relatively low per-
+formance. Although RAG- or memory-based approaches
+offer better latency, they often require substantial prepro-
+cessing and show a significant performance gap. In contrast,
+by allowing the retrieval agent to adaptively finish iterations
+and by retrieving only the relevant segments, WorldMM
+achieves low latency and substantially higher accuracy.
+4.7. Efficacy of Memory Modules
+To enable effective long video reasoning, WorldMM ap-
+plies different strategies for each memory. Tab. 4 reports
+the results of WorldMM-8B under various module config-
+urations with details about each method in Sec. C.2. For
+episodic memory, using a fixed single timescale or embed-
+dings instead of graphs results in a 6.1% and 4.4% drop in
+average accuracy, respectively, highlighting the importance
+of multi-scale structured knowledge. For semantic mem-
+ory, removing the consolidation process results in approxi-
+mately a 7% drop for the category that requires long-term
+reasoning, demonstrating the need for continuous integra-
+tion of knowledge to support long-term reasoning. Finally,
+for visual memory, disabling its dual-mode retrieval leads
+to an accuracy drop of about 3%, indicating that each mode
+contributes complementary benefits for retrieving particular
+scenes or accessing broader temporal ranges.
+5. Conclusion
+We propose WorldMM, a novel memory agent designed to
+perceive and remember the world as represented in long
+video streams. To address the challenges of long video
+reasoning, we introduce a multimodal, multi-scale memory
+that integrates textual and visual information through adap-
+tive retrieval. By constructing separate memories across dif-
+ferent modalities and timescales, together with a retrieval
+agent that iteratively identifies relevant information, our ap-
+proach enables effective and flexible reasoning over long
+videos. We validate our model on multiple benchmarks
+ranging from hour- to week-long videos, demonstrating that
+WorldMM provides a promising solution capable of robust
+performance across various long video reasoning tasks.
+25606
+Acknowledgements
+This work was supported by the Institute for Information
+& communications Technology Technology Planning &
+Evaluation (IITP) grant funded by the Korea government
+(MSIT) (RS-2019-II190075, Artificial Intelligence Gradu-
+ate School Program (KAIST)), the National Research Foun-
+dation of Korea (NRF) grant funded by the Korea gov-
+ernment (MSIT) (RS-2023-00256259), the Korea Machine
+Learning Ledger Orchestration for Drug Discovery Project
+(K-MELLODDY) grant funded by the Ministry of Health
+& Welfare and Ministry of Science and ICT, Republic
+of Korea (RS-2024-00460870), the Institute of Informa-
+tion & communications Technology Planning & Evalua-
+tion (IITP) grant funded by the Ministry of Science and
+ICT (MSIT) of the Republic of Korea in connection with
+the Global AI Frontier Lab International Collaborative Re-
+search (RS-2024-00469482 & RS-2024-00509279), the In-
+stitute of Information & communications Technology Plan-
+ning & Evaluation (IITP) grant funded by the Korea govern-
+ment (MSIT) (RS-2022-II220713, Meta-learning Applica-
+ble to Real-world Problems), and the NTU Start Up grant.
+References
+[1] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui
+Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao,
+Chunjiang Ge, et al. Qwen3-vl technical report. arXiv
+preprint arXiv:2511.21631, 2025. 1, 5, 6, 14, 15
+[2] Keshigeyan Chandrasegaran, Agrim Gupta, Lea M. Hadzic,
+Taran Kota, Jimming He, Cristóbal Eyzaguirre, Zane Du-
+rante, Manling Li, Jiajun Wu, and Li Fei-Fei. Hourvideo:
+1-hour video-language understanding. In Advances in Neu-
+ral Information Processing Systems 38: Annual Conference
+on Neural Information Processing Systems 2024, NeurIPS
+2024, Vancouver, BC, Canada, December 10 - 15, 2024,
+2024. 2
+[3] Guo Chen, Lidong Lu, Yicheng Liu, Liangrui Dong, Li-
+dong Zou, Jixin Lv, Zhenquan Li, Xinyi Mao, Baoqi Pei,
+Shihao Wang, et al. Towards multimodal lifelong under-
+standing: A dataset and agentic baseline. arXiv preprint
+arXiv:2603.05484, 2026. 3
+[4] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice
+Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blis-
+tein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gemini 2.5:
+Pushing the frontier with advanced reasoning, multimodality,
+long context, and next generation agentic capabilities. arXiv
+preprint arXiv:2507.06261, 2025. 1, 2, 5, 6, 14, 15
+[5] Saul José Rodrigues dos Santos, António Farinhas, Daniel C.
+McNamee, and André F. T. Martins. \infty -video: A training-
+free approach to long video understanding via continuous-
+time memory consolidation. In Forty-second International
+Conference on Machine Learning, ICML 2025, Vancouver,
+BC, Canada, July 13-19, 2025, 2025. 2
+[6] Yue Fan, Xiaojian Ma, Rujie Wu, Yuntao Du, Jiaqi Li, Zhi
+Gao, and Qing Li. Videoagent: A memory-augmented mul-
+timodal agent for video understanding. In Computer Vision
+- ECCV 2024 - 18th European Conference, Milan, Italy,
+September 29-October 4, 2024, Proceedings, Part XXII,
+pages 75–92. Springer, 2024. 1
+[7] Chaoyou Fu, Yuhan Dai, Yongdong Luo, Lei Li, Shuhuai
+Ren, Renrui Zhang, Zihan Wang, Chenyu Zhou, Yunhang
+Shen, Mengdan Zhang, Peixian Chen, Yanwei Li, Shaohui
+Lin, Sirui Zhao, Ke Li, Tong Xu, Xiawu Zheng, Enhong
+Chen, Caifeng Shan, Ran He, and Xing Sun. Video-mme:
+The first-ever comprehensive evaluation benchmark of multi-
+modal llms in video analysis. In IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, CVPR 2025,
+Nashville, TN, USA, June 11-15, 2025, pages 24108–24118.
+Computer Vision Foundation / IEEE, 2025. 1, 2, 5, 12, 13
+[8] Sanchit Gandhi, Patrick Von Platen, and Alexander M Rush.
+Distil-whisper: Robust knowledge distillation via large-scale
+pseudo labelling. arXiv preprint arXiv:2311.00430, 2023. 13
+[9] Google DeepMind. Gemini 3 flash model card, 2025. 17
+[10] Zirui Guo, Lianghao Xia, Yanhua Yu, Tu Ao, and Chao
+Huang. LightRAG: Simple and fast retrieval-augmented gen-
+eration. In Findings of the Association for Computational
+Linguistics: EMNLP 2025, pages 10746–10761, Suzhou,
+China, 2025. Association for Computational Linguistics. 5,
+6, 13, 14, 15
+[11] Bernal Jiménez Gutiérrez, Yiheng Shu, Weijian Qi, Sizhe
+Zhou, and Yu Su. From RAG to memory: Non-parametric
+continual learning for large language models. In Forty-
+second International Conference on Machine Learning,
+ICML 2025, Vancouver, BC, Canada, July 13-19, 2025,
+2025. 5, 6, 8, 13, 14, 15, 16
+[12] Bo He, Hengduo Li, Young Kyun Jang, Menglin Jia, Xuefei
+Cao, Ashish Shah, Abhinav Shrivastava, and Ser-Nam Lim.
+MA-LMM: memory-augmented large multimodal model for
+long-term video understanding. In IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, CVPR 2024,
+Seattle, WA, USA, June 16-22, 2024, pages 13504–13514.
+IEEE, 2024. 2
+[13] Sunil Hwang, Jaehong Yoon, Youngwan Lee, and Sung Ju
+Hwang. EVEREST: efficient masked video autoencoder by
+removing redundant spatiotemporal tokens. In Forty-first In-
+ternational Conference on Machine Learning, ICML 2024,
+Vienna, Austria, July 21-27, 2024, 2024. 2
+[14] Soyeong Jeong, Jinheon Baek, Sukmin Cho, Sung Ju
+Hwang, and Jong Park. Adaptive-RAG: Learning to adapt
+retrieval-augmented large language models through question
+complexity. In Proceedings of the 2024 Conference of the
+North American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies (Volume
+1: Long Papers), pages 7036–7050, Mexico City, Mexico,
+2024. Association for Computational Linguistics. 4
+[15] Soyeong Jeong, Kangsan Kim, Jinheon Baek, and Sung Ju
+Hwang. VideoRAG: Retrieval-augmented generation over
+video corpus. In Findings of the Association for Computa-
+tional Linguistics: ACL 2025, pages 21278–21298, Vienna,
+Austria, 2025. Association for Computational Linguistics. 3
+[16] Kangsan Kim, Yanlai Yang, Suji Kim, Woongyeong Yeo,
+Youngwan Lee, Mengye Ren, and Sung Ju Hwang. MA-
+EgoQA: Question answering over egocentric videos from
+25607
+multiple embodied agents. arXiv preprint arXiv:2603.09827,
+2026. 3
+[17] Mingxin Li, Yanzhao Zhang, Dingkun Long, Keqin Chen,
+Sibo Song, Shuai Bai, Zhibo Yang, Pengjun Xie, An
+Yang, Dayiheng Liu, et al. Qwen3-vl-embedding and
+qwen3-vl-reranker: A unified framework for state-of-the-
+art multimodal retrieval and ranking. arXiv preprint
+arXiv:2601.04720, 2026. 17
+[18] Xinhao Li, Yi Wang, Jiashuo Yu, Xiangyu Zeng, Yuhan Zhu,
+Haian Huang, Jianfei Gao, Kunchang Li, Yinan He, Chent-
+ing Wang, Yu Qiao, Yali Wang, and Limin Wang. Videochat-
+flash: Hierarchical compression for long-context video mod-
+eling. In The Fourteenth International Conference on Learn-
+ing Representations, ICLR 2026, Rio de Janeiro, Brazil,
+April 23-27, 2026, 2026. 2, 5, 6, 14, 15
+[19] Yueqian Lin, Qinsi Wang, Hancheng Ye, Yuzhe Fu, Hai Li,
+Yiran Chen, et al. Hippomm: Hippocampal-inspired mul-
+timodal memory for long audiovisual event understanding.
+arXiv preprint arXiv:2504.10739, 2025. 1, 2, 3, 5, 6, 12, 14,
+15
+[20] Lin Long, Yichen He, Wentao Ye, Yiyuan Pan, Yuan Lin,
+Hang Li, Junbo Zhao, and Wei Li. Seeing, listening, re-
+membering, and reasoning: A multimodal agent with long-
+term memory. In The Fourteenth International Conference
+on Learning Representations, ICLR 2026, Rio de Janeiro,
+Brazil, April 23-27, 2026, 2026. 1, 2, 3, 4, 5, 6, 13, 14, 15,
+18
+[21] Yongdong Luo, Xiawu Zheng, Guilin Li, Shukang Yin,
+Haojia Lin, Chaoyou Fu, Jinfa Huang, Jiayi Ji, Fei Chao,
+Jiebo Luo, and Rongrong Ji. Video-RAG: Visually-aligned
+retrieval-augmented long video comprehension. In Advances
+in Neural Information Processing Systems 39: Annual Con-
+ference on Neural Information Processing Systems 2025,
+NeurIPS 2025, San Diego, CA, USA, December 2 - 7, 2025,
+2025. 3, 5, 6, 13, 14, 15
+[22] Rui Meng, Ziyan Jiang, Ye Liu, Mingyi Su, Xinyi Yang,
+Yuepeng Fu, Can Qin, Raghuveer Thirukovalluru, Xuan
+Zhang, Zeyuan Chen, Ran Xu, Caiming Xiong, Yingbo
+Zhou, Wenhu Chen, and Semih Yavuz. VLM2vec-v2: Ad-
+vancing multimodal embedding for videos, images, and vi-
+sual documents. Transactions on Machine Learning Re-
+search, 2026. 5
+[23] OpenAI. Openai gpt-5 system card. arXiv preprint
+arXiv:2601.03267, 2025. 1, 2, 5, 6, 14, 15
+[24] Kun Ouyang, Yuanxin Liu, Linli Yao, Yishuo Cai, Hao Zhou,
+Jie Zhou, Fandong Meng, and Xu Sun. Conan: Progressive
+learning to reason like a detective over multi-scale visual ev-
+idence. arXiv preprint arXiv:2510.20470, 2025. 2
+[25] Jongwoo Park, Kanchana Ranasinghe, Kumara Kahatapitiya,
+Wonjeong Ryu, Donghyun Kim, and Michael S Ryoo. Too
+many frames, not all useful: Efficient strategies for long-
+form video QA. In Workshop on Video-Language Models
+@ NeurIPS 2024, 2025. 2
+[26] Xubin Ren, Lingrui Xu, Long Xia, Shuaiqiang Wang, Dawei
+Yin, and Chao Huang. Videorag: Retrieval-augmented gen-
+eration with extreme long-context videos. arXiv preprint
+arXiv:2502.01549, 2025. 3
+[27] Xiaoqian Shen, Yunyang Xiong, Changsheng Zhao, Lemeng
+Wu, Jun Chen, Chenchen Zhu, Zechun Liu, Fanyi Xiao, Bal-
+akrishnan Varadarajan, Florian Bordes, Zhuang Liu, Hu Xu,
+Hyunwoo J. Kim, Bilge Soran, Raghuraman Krishnamoor-
+thi, Mohamed Elhoseiny, and Vikas Chandra. Longvu: Spa-
+tiotemporal adaptive compression for long video-language
+understanding. In Forty-second International Conference
+on Machine Learning, ICML 2025, Vancouver, BC, Canada,
+July 13-19, 2025, 2025. 2
+[28] Xiaoqian Shen, Wenxuan Zhang, Jun Chen, and Mo-
+hamed Elhoseiny. Vgent: Graph-based retrieval-reasoning-
+augmented generation for long video understanding. In Ad-
+vances in Neural Information Processing Systems 39: An-
+nual Conference on Neural Information Processing Systems
+2025, NeurIPS 2025, San Diego, CA, USA, December 2 - 7,
+2025, 2025. 3
+[29] Xi Tang, Jihao Qiu, Lingxi Xie, Yunjie Tian, Jianbin Jiao,
+and Qixiang Ye. Adaptive keyframe sampling for long video
+understanding. In IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition, CVPR 2025, Nashville, TN,
+USA, June 11-15, 2025, pages 29118–29128. Computer Vi-
+sion Foundation / IEEE, 2025. 2, 8, 14, 16
+[30] Shulin Tian, Ruiqi Wang, Hongming Guo, Penghao Wu,
+Yuhao Dong, Xiuying Wang, Jingkang Yang, Hao Zhang,
+Hongyuan Zhu, and Ziwei Liu. Ego-r1: Chain-of-tool-
+thought for ultra-long egocentric video reasoning. arXiv
+preprint arXiv:2506.13654, 2025. 1, 3, 5, 6, 8, 12, 13, 14,
+15, 16
+[31] Shaoguang Wang, Ziyang Chen, Yijie Xu, Weiyu Guo, and
+Hui Xiong. Less is more: Token-efficient video-qa via adap-
+tive frame-pruning and semantic graph integration. arXiv
+preprint arXiv:2508.03337, 2025. 2
+[32] Weihan Wang, Zehai He, Wenyi Hong, Yean Cheng, Xiao-
+han Zhang, Ji Qi, Ming Ding, Xiaotao Gu, Shiyu Huang,
+Bin Xu, Yuxiao Dong, and Jie Tang. Lvbench: An extreme
+long video understanding benchmark. In IEEE/CVF Inter-
+national Conference on Computer Vision, ICCV 2025, Hon-
+olulu, Hawaii, USA, October 19 - 23, 2025, pages 22958–
+22967. IEEE, 2025. 1, 2, 5, 12
+[33] Xidong Wang, Dingjie Song, Shunian Chen, Junying Chen,
+Zhenyang Cai, Chen Zhang, Lichao Sun, and Benyou Wang.
+LongLLaVA: Scaling multi-modal LLMs to 1000 images ef-
+ficiently via a hybrid architecture. In Findings of the Asso-
+ciation for Computational Linguistics: EMNLP 2025, pages
+21419–21436, Suzhou, China, 2025. Association for Com-
+putational Linguistics. 2
+[34] Yi Wang, Kunchang Li, Xinhao Li, Jiashuo Yu, Yinan He,
+Guo Chen, Baoqi Pei, Rongkun Zheng, Zun Wang, Yansong
+Shi, Tianxiang Jiang, Songze Li, Jilan Xu, Hongjie Zhang,
+Yifei Huang, Yu Qiao, Yali Wang, and Limin Wang. In-
+ternvideo2: Scaling foundation models for multimodal video
+understanding. In Computer Vision - ECCV 2024 - 18th Eu-
+ropean Conference, Milan, Italy, September 29-October 4,
+2024, Proceedings, Part LXXXV, pages 396–416. Springer,
+2024. 8, 14, 16
+[35] Ye Wang, Ziheng Wang, Boshen Xu, Yang Du, Kejun Lin,
+Zihan Xiao, Zihao Yue, Jianzhong Ju, Liang Zhang, Dingyi
+Yang, Xiangnan Fang, Zewen He, Zhenbo Luo, Wenxuan
+25608
+Wang, Junqi Lin, Jian Luan, and Qin Jin. Time-r1: Post-
+training large vision language model for temporal video
+grounding. In Advances in Neural Information Processing
+Systems 39: Annual Conference on Neural Information Pro-
+cessing Systems 2025, NeurIPS 2025, San Diego, CA, USA,
+December 2 - 7, 2025, 2025. 2, 5, 6, 8, 14, 15, 16
+[36] Ziyang Wang, Jaehong Yoon, Shoubin Yu, Md Mohaiminul
+Islam, Gedas Bertasius, and Mohit Bansal. Video-RTS:
+Rethinking reinforcement learning and test-time scaling for
+efficient and enhanced video reasoning. In Proceedings
+of the 2025 Conference on Empirical Methods in Natural
+Language Processing, pages 28126–28140, Suzhou, China,
+2025. Association for Computational Linguistics. 2, 5, 6, 14,
+15
+[37] Ziyang Wang, Shoubin Yu, Elias Stengel-Eskin, Jaehong
+Yoon, Feng Cheng, Gedas Bertasius, and Mohit Bansal.
+Videotree: Adaptive tree-based video representation for
+LLM reasoning on long videos. In IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, CVPR 2025,
+Nashville, TN, USA, June 11-15, 2025, pages 3272–3283.
+Computer Vision Foundation / IEEE, 2025. 2
+[38] Yuan Xie, Tianshui Chen, Zheng Ge, and Lionel Ni. Video-
+mtr: Reinforced multi-turn reasoning for long video under-
+standing. arXiv preprint arXiv:2508.20478, 2025. 2
+[39] Zeyu Xu, Junkang Zhang, Qiang Wang, and Yi Liu. E-vrag:
+Enhancing long video understanding with resource-efficient
+retrieval augmented generation. arXiv preprint 2508.01546,
+2025. 3
+[40] Zhucun Xue, Jiangning Zhang, Xurong Xie, yuxuan cai,
+Yong Liu, Xiangtai Li, and Dacheng Tao. AdavideoRAG:
+Omni-contextual adaptive retrieval-augmented efficient long
+video understanding. In Advances in Neural Information
+Processing Systems 39: Annual Conference on Neural Infor-
+mation Processing Systems 2025, NeurIPS 2025, San Diego,
+CA, USA, December 2 - 7, 2025, 2025. 3
+[41] Jingkang Yang, Shuai Liu, Hongming Guo, Yuhao Dong, Xi-
+amengwei Zhang, Sicheng Zhang, Pengyun Wang, Zitang
+Zhou, Binzhu Xie, Ziyue Wang, Bei Ouyang, Zhengyu Lin,
+Marco Cominelli, Zhongang Cai, Bo Li, Yuanhan Zhang,
+Peiyuan Zhang, Fangzhou Hong, Joerg Widmer, Francesco
+Gringoli, Lei Yang, and Ziwei Liu. Egolife: Towards ego-
+centric life assistant. In IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, CVPR 2025, Nashville, TN,
+USA, June 11-15, 2025, pages 28885–28900. Computer Vi-
+sion Foundation / IEEE, 2025. 1, 2, 3, 4, 5, 6, 8, 12, 13, 14,
+15, 16
+[42] Woongyeong Yeo, Kangsan Kim, Soyeong Jeong, Jinheon
+Baek, and Sung Ju Hwang. Universalrag: Retrieval-
+augmented generation over corpora of diverse modalities and
+granularities. arXiv preprint arXiv:2504.20734, 2025. 4
+[43] Emmanouil Zaranis, António Farinhas, Saul Santos, Beat-
+riz Canaverde, Miguel Moura Ramos, Aditya K Surikuchi,
+André Viveiros, Baohao Liao, Elena Bueno-Benito, Nithin
+Sivakumaran, et al. Movie facts and fibs (mf2
+): A
+benchmark for long movie understanding. arXiv preprint
+arXiv:2506.06275, 2025. 2
+[44] Congzhi Zhang, Zhibin Wang, Yinchao Ma, Jiawei Peng, Yi-
+han Wang, Qiang Zhou, Jun Song, and Bo Zheng. Rewatch-
+r1: Boosting complex video reasoning in large vision-
+language models through agentic data synthesis. In The
+Fourteenth International Conference on Learning Represen-
+tations, ICLR 2026, Rio de Janeiro, Brazil, April 23-27,
+2026, 2026. 2
+[45] Pan Zhang, Xiaoyi Dong, Yuhang Cao, Yuhang Zang, Rui
+Qian, Xilin Wei, Lin Chen, Yifei Li, Junbo Niu, Shuangrui
+Ding, et al. Internlm-xcomposer2.5-omnilive: A comprehen-
+sive multimodal system for long-term streaming video and
+audio interactions. arXiv preprint arXiv:2412.09596, 2024.
+2
+[46] Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang,
+Huan Lin, Baosong Yang, Pengjun Xie, An Yang, Dayiheng
+Liu, Junyang Lin, et al. Qwen3 embedding: Advancing text
+embedding and reranking through foundation models. arXiv
+preprint arXiv:2506.05176, 2025. 8, 14, 16
+[47] Yuanhan Zhang, Jinming Wu, Wei Li, Bo Li, Zejun Ma, Zi-
+wei Liu, and Chunyuan Li. LLaVA-Video: Video Instruc-
+tion Tuning With Synthetic Data. Trans. Mach. Learn. Res.,
+2025, 2025. 1
+25609
+

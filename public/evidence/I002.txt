@@ -1,0 +1,1385 @@
+可以。我会把它正式设计成一个 **Semantic-LIF Tokenizer（语义脉冲 Tokenizer）**。核心思想不是“用 SNN 网络处理雷达”，而是**借用 LIF 神经元的状态积累、阈值触发、自适应阈值和重置机制，决定什么时候结束当前语义状态并产生一个 Token**。
+
+最关键的一点是：
+
+> **积分的不是时间，也不是运动强度，而是“当前运动已经不再属于当前语义状态”的证据。**
+
+---
+
+# 一、整体结构
+
+完整网络可以非常简单：
+
+```text
+Continuous mmWave
+        │
+        ↓
+Radar Frame Encoder
+        │
+        ↓
+Temporal Encoder
+        │
+ F1 F2 F3 ... FT
+        │
+        ↓
+┌────────────────────────────┐
+│   Semantic-LIF Tokenizer   │
+│                            │
+│  Current Semantic State C  │
+│            ↓               │
+│  Semantic Novelty Detector │
+│            ↓               │
+│     Novelty Current It     │
+│            ↓               │
+│      LIF Membrane Vt       │
+│            ↓               │
+│       Fire / No Fire       │
+└────────────┬───────────────┘
+             │
+      Z1 Z2 ... ZN
+             │
+             ↓
+          Projector
+             ↓
+            LLM
+             ↓
+ Continuous Description
+```
+
+其中最重要的四个量是：
+
+$$
+F_t,\quad C_t,\quad V_t,\quad S_t
+$$
+
+分别表示：
+
+| 变量      | 含义                   |
+| ------- | -------------------- |
+| \(F_t\) | 第 \(t\) 帧的时序雷达特征     |
+| \(C_t\) | 当前正在进行的语义状态          |
+| \(V_t\) | “这个动作是不是已经发生变化”的累积证据 |
+| \(S_t\) | 是否触发一个新 Token        |
+
+---
+
+# 二、第一步：Temporal Encoder 得到 \(F_t\)
+
+前面的编码器不需要特别复杂。
+
+例如：
+
+```text
+Radar
+ ↓
+Frame Encoder
+ ↓
+f1 f2 ... fT
+ ↓
+Dilated TCN / Mamba
+ ↓
+F1 F2 ... FT
+```
+
+这里一定要让 \(F_t\) 已经包含一小段时间上下文。
+
+因为直接比较原始单帧点云会有严重问题：
+
+```text
+走路：
+
+左腿前
+↓
+右腿前
+↓
+左腿前
+↓
+右腿前
+```
+
+每帧差异其实很大。
+
+但经过 Temporal Encoder 后应该学成：
+
+```text
+F20 ≈ walking state
+F21 ≈ walking state
+F22 ≈ walking state
+```
+
+这样后面的“语义变化检测”才有意义。
+
+---
+
+# 三、第二步：维护当前语义状态 \(C_t\)
+
+假设当前人在走路。
+
+前面已经处理：
+
+$$
+F_1,\cdots,F_{20}
+$$
+
+那么：
+
+$$
+C_{20}
+$$
+
+代表：
+
+> 当前这段行为到现在为止的语义原型。
+
+最简单的更新方法是：
+
+$$
+\tilde C_t
+=
+(1-g_t)C_{t-1}
++
+g_tF_t
+$$
+
+但这里的 \(g_t\) 不应该固定。
+
+我建议：
+
+$$
+g_t=
+(1-n_t)
+\cdot
+\sigma
+\left(
+W_g[F_t,C_{t-1}]
+\right)
+$$
+
+注意这里有个：
+
+$$
+1-n_t
+$$
+
+原因非常重要。
+
+如果模型觉得：
+
+> 当前帧已经明显不像之前的动作，
+
+那么就**不要再把这个新动作塞进旧的 \(C\)**。
+
+---
+
+# 四、第三步：计算 Semantic Novelty
+
+这是整个方案最核心的部分。
+
+比较：
+
+$$
+F_t
+$$
+
+和：
+
+$$
+C_{t-1}
+$$
+
+计算：
+
+$$
+n_t=
+\sigma
+\left(
+MLP
+[
+F_t,\,
+C_{t-1},\,
+|F_t-C_{t-1}|,\,
+1-\cos(F_t,C_{t-1})
+]
+\right)
+$$
+
+其中：
+
+$$
+n_t\in[0,1]
+$$
+
+含义是：
+
+> 当前运动相对于正在进行的运动状态有多“新”。
+
+例如：
+
+### 一直走路
+
+$$
+F_t\approx C_{t-1}
+$$
+
+所以：
+
+$$
+n_t\approx0
+$$
+
+---
+
+### 从走路开始坐下
+
+$$
+F_t\not\approx C_{t-1}
+$$
+
+所以：
+
+$$
+n_t\uparrow
+$$
+
+---
+
+# 五、不要直接把 \(n_t\) 积分
+
+这是和我前面 CIF 方案最重要的区别。
+
+如果直接：
+
+$$
+V_t=\lambda V_{t-1}+n_t
+$$
+
+即使：
+
+$$
+n_t=0.05
+$$
+
+只要时间足够长还是可能积起来。
+
+所以必须引入一个：
+
+# Novelty Baseline
+
+设：
+
+$$
+b\in[0,1]
+$$
+
+只有新颖度超过正常波动：
+
+$$
+n_t>b
+$$
+
+才真正给“语义神经元”输入电流。
+
+定义：
+
+$$
+\boxed{
+I_t=
+\operatorname{ReLU}(n_t-b)
+}
+$$
+
+例如：
+
+```text
+普通走路波动
+
+n_t = 0.08
+b   = 0.20
+
+I_t = 0
+```
+
+所以走一小时都不会累计。
+
+而真正动作变化：
+
+```text
+走路 → 坐下
+
+n_t = 0.65
+b   = 0.20
+
+I_t = 0.45
+```
+
+才产生明显输入。
+
+这一步非常关键。
+
+---
+
+# 六、第四步：Semantic LIF 神经元
+
+现在就可以真正使用 LIF 思想了。
+
+定义变化膜电位：
+
+$$
+\boxed{
+\tilde V_t
+=
+\lambda V_{t-1}
++
+I_t
+}
+$$
+
+其中：
+
+$$
+0<\lambda<1
+$$
+
+是泄漏系数。
+
+比如：
+
+$$
+\lambda=0.8
+$$
+
+---
+
+## 情况 A：只有一个异常帧
+
+毫米波突然抖了一下：
+
+```text
+正常 正常 正常 噪声 正常 正常
+              ↑
+```
+
+那么：
+
+$$
+I_{20}=0.4
+$$
+
+导致：
+
+$$
+V_{20}=0.4
+$$
+
+但之后：
+
+$$
+I_{21}\approx0
+$$
+
+于是：
+
+$$
+V_{21}=0.8\times0.4=0.32
+$$
+
+再下一帧：
+
+$$
+V_{22}=0.256
+$$
+
+逐渐消失。
+
+不会触发。
+
+---
+
+## 情况 B：真正动作发生变化
+
+例如：
+
+```text
+走路
+↓
+开始减速
+↓
+身体下降
+↓
+继续下降
+↓
+坐下
+```
+
+连续几帧：
+
+$$
+I_t>0
+$$
+
+于是：
+
+$$
+V_t
+$$
+
+不断增加：
+
+```text
+V
+
+1.0 ─────────────── θ
+                  ╱
+              ╱
+          ╱
+      ╱
+0 ───────────────────→ time
+```
+
+当：
+
+$$
+V_t\geq\theta_t
+$$
+
+就触发一次：
+
+$$
+S_t=1
+$$
+
+即：
+
+> **产生一个新的语义事件。**
+
+---
+
+# 七、第五步：Fire
+
+定义：
+
+$$
+S_t=
+H(\tilde V_t-\theta_t)
+$$
+
+其中 \(H\) 是阶跃函数：
+
+$$
+S_t=
+\begin{cases}
+1,&V_t\geq\theta_t\\
+0,&V_t<\theta_t
+\end{cases}
+$$
+
+当：
+
+$$
+S_t=0
+$$
+
+继续更新当前 Token：
+
+```text
+Ft
+ ↓
+still same semantic state
+ ↓
+update C
+```
+
+当：
+
+$$
+S_t=1
+$$
+
+则：
+
+```text
+当前 C
+  ↓
+结束
+  ↓
+输出 Zk
+
+Ft
+ ↓
+初始化新的 C
+```
+
+即：
+
+$$
+\boxed{
+Z_k=P(C_{t-1})
+}
+$$
+
+然后：
+
+$$
+C_t=F_t
+$$
+
+开始构造下一个 Token。
+
+---
+
+# 八、这里我建议把“变化检测状态”和“Token 内容”分开
+
+这是一个很重要的设计。
+
+不要直接把：
+
+$$
+C_t
+$$
+
+既当检测器又当最后的 Token。
+
+最好同时维护：
+
+### 语义状态
+
+$$
+C_t
+$$
+
+负责：
+
+> 和未来帧比较。
+
+以及：
+
+### Token 内容累积器
+
+$$
+M_t
+$$
+
+负责：
+
+> 保存当前整段动作的信息。
+
+例如：
+
+$$
+M_t=M_{t-1}+a_tF_t
+$$
+
+其中：
+
+$$
+a_t=\sigma(W_aF_t)
+$$
+
+同时：
+
+$$
+A_t=A_{t-1}+a_t
+$$
+
+当 Fire 时：
+
+$$
+\boxed{
+Z_k=
+\frac{M_t}{A_t}
+}
+$$
+
+这样：
+
+```text
+C_t
+↓
+负责判断“变没变”
+
+M_t
+↓
+负责保存“这段动作是什么”
+```
+
+会比只使用一个 \(C_t\) 更合理。
+
+---
+
+# 九、完整状态更新
+
+这样一个 Semantic-LIF Neuron 每一帧实际上执行：
+
+### ① 输入
+
+$$
+F_t
+$$
+
+### ② Semantic Novelty
+
+$$
+n_t=
+Novelty(F_t,C_{t-1})
+$$
+
+### ③ 转换成输入电流
+
+$$
+I_t=
+ReLU(n_t-b)
+$$
+
+### ④ 膜电位积分
+
+$$
+\tilde V_t
+=
+\lambda V_{t-1}+I_t
+$$
+
+### ⑤ 判断是否 Fire
+
+$$
+S_t=H(\tilde V_t-\theta_t)
+$$
+
+### ⑥ 如果没有 Fire
+
+$$
+C_t=(1-g_t)C_{t-1}+g_tF_t
+$$
+
+继续更新：
+
+$$
+M_t=M_{t-1}+a_tF_t
+$$
+
+---
+
+### ⑦ 如果 Fire
+
+输出：
+
+$$
+Z_k=\frac{M_{t-1}}{A_{t-1}}
+$$
+
+然后：
+
+$$
+C_t=F_t
+$$
+
+$$
+M_t=a_tF_t
+$$
+
+$$
+A_t=a_t
+$$
+
+并重置：
+
+$$
+V_t=0
+$$
+
+于是：
+
+```text
+        Semantic Neuron
+
+Ft ────────────────┐
+                   ↓
+              compare Ct
+                   ↓
+              novelty nt
+                   ↓
+            ReLU(nt - b)
+                   ↓
+              current It
+                   ↓
+        Vt = λVt-1 + It
+                   ↓
+              Vt > θ ?
+                /      \
+              No       Yes
+              ↓          ↓
+        update Ct     emit Zk
+        update Mt     reset state
+```
+
+---
+
+# 十、自适应阈值：解决过分割
+
+普通固定：
+
+$$
+\theta
+$$
+
+还是容易出现：
+
+```text
+站立 → 开始坐 → 坐下 → 接触椅子 → 稳定
+          ↑       ↑        ↑
+        Fire     Fire      Fire
+```
+
+一个“坐下”可能触发很多次。
+
+所以我会直接借鉴 Adaptive LIF。
+
+定义：
+
+$$
+\theta_t
+=
+\theta_0+\alpha R_t
+$$
+
+其中 \(R_t\) 是自适应变量：
+
+$$
+R_t=
+\rho R_{t-1}
++
+S_{t-1}
+$$
+
+每 Fire 一次：
+
+$$
+R_t\uparrow
+$$
+
+于是阈值暂时升高。
+
+随后：
+
+$$
+R_t
+$$
+
+逐渐衰减。
+
+效果：
+
+```text
+第一次 Fire
+     ↓
+threshold suddenly ↑
+     │
+     │   小变化无法再触发
+     │
+     ↓
+slowly decay
+```
+
+非常像神经元的 refractory / adaptive threshold。
+
+---
+
+# 十一、为什么这个机制不会把长动作切成很多 Token？
+
+现在可以非常明确地解释。
+
+假设一个人一直走路：
+
+$$
+F_t\approx C_t
+$$
+
+于是：
+
+$$
+n_t<b
+$$
+
+所以：
+
+$$
+I_t=0
+$$
+
+进一步：
+
+$$
+V_t=\lambda V_{t-1}
+$$
+
+最终：
+
+$$
+V_t\rightarrow0
+$$
+
+因此：
+
+$$
+S_t=0
+$$
+
+无论：
+
+```text
+走5秒
+走20秒
+走2分钟
+```
+
+理论上都可以保持一个 Token。
+
+因此 Token 数量取决于：
+
+$$
+\boxed{\text{有多少次持续的语义状态变化}}
+$$
+
+而不是：
+
+$$
+\text{序列长度}
+$$
+
+---
+
+# 十二、举一个完整例子
+
+雷达序列：
+
+```text
+站立        走路             坐下
+──────│────────────────│────────
+```
+
+### 站立
+
+```text
+n:
+0.04 0.03 0.05 0.04
+
+I:
+0    0    0    0
+
+V:
+0    0    0    0
+```
+
+一直更新：
+
+$$
+C
+$$
+
+---
+
+### 开始走路
+
+```text
+n:
+0.25 0.48 0.62 0.71
+
+假设 b=0.2
+
+I:
+0.05 0.28 0.42 0.51
+```
+
+那么：
+
+```text
+V:
+0.05
+↓
+0.32
+↓
+0.68
+↓
+1.05   ← 超过 θ
+```
+
+Fire：
+
+$$
+Z_1=\text{standing}
+$$
+
+然后：
+
+```text
+Reset
+
+C = walking
+V = 0
+```
+
+---
+
+### 一直走路
+
+重新建立 walking prototype 后：
+
+$$
+n_t\downarrow
+$$
+
+所以：
+
+$$
+I_t\approx0
+$$
+
+于是：
+
+```text
+walking walking walking walking...
+                     ↓
+             始终没有 Fire
+```
+
+最后出现坐下：
+
+$$
+n_t\uparrow
+$$
+
+再次积累并 Fire：
+
+$$
+Z_2=\text{walking}
+$$
+
+序列结束：
+
+$$
+Z_3=\text{sitting}
+$$
+
+最终：
+
+$$
+\boxed{Z_1,Z_2,Z_3}
+$$
+
+---
+
+# 十三、训练时怎么解决 Fire 不可导？
+
+这点非常重要。
+
+因为：
+
+$$
+H(V-\theta)
+$$
+
+阶跃函数不可导。
+
+直接借鉴 SNN 最经典的方法：
+
+> **Surrogate Gradient，替代梯度。**
+
+前向：
+
+$$
+S_t=H(V_t-\theta_t)
+$$
+
+保持真正的离散 Fire。
+
+反向传播时，把：
+
+$$
+\frac{\partial S}{\partial V}
+$$
+
+近似成一个平滑函数，例如：
+
+$$
+\frac{\partial S}{\partial V}
+\approx
+\frac{1}
+{(1+\beta|V-\theta|)^2}
+$$
+
+于是：
+
+```text
+Forward:
+hard spike
+
+Backward:
+soft gradient
+```
+
+这样整个 Semantic-LIF Tokenizer 都可以端到端训练。
+
+---
+
+# 十四、训练目标我会设计成 4 个
+
+## ① 最终语言生成
+
+$$
+L_{caption}
+$$
+
+保证：
+
+```text
+Z1 Z2 Z3
+↓
+LLM
+↓
+正确动作描述
+```
+
+这是最终任务。
+
+---
+
+## ② Token 数量约束
+
+如果训练文本/标签中存在：
+
+```text
+站立 → 走路 → 坐下
+```
+
+共 \(K=3\) 个语义阶段。
+
+预测数量：
+
+$$
+\hat K=1+\sum_tS_t
+$$
+
+那么：
+
+$$
+L_{count}
+=
+|\hat K-K|
+$$
+
+训练初期可以用 soft spike：
+
+$$
+p_t=
+\sigma
+\left(
+\frac{V_t-\theta_t}{\tau}
+\right)
+$$
+
+计算：
+
+$$
+\hat K_{soft}
+=
+1+\sum_tp_t
+$$
+
+会稳定很多。
+
+---
+
+# 十五、③ Semantic Alignment
+
+将动作文本：
+
+```text
+standing
+walking
+sitting down
+```
+
+经过 Text Encoder：
+
+$$
+E_1,E_2,E_3
+$$
+
+然后：
+
+$$
+Z_1\leftrightarrow E_1
+$$
+
+$$
+Z_2\leftrightarrow E_2
+$$
+
+$$
+Z_3\leftrightarrow E_3
+$$
+
+例如：
+
+$$
+L_{align}
+=
+\frac1K
+\sum_k
+[1-\cos(P(Z_k),E_k)]
+$$
+
+这样 Semantic Neuron 不仅知道：
+
+> “什么时候变化”，
+
+还被要求：
+
+> “每次 Fire 后得到的 Token 确实代表一个有意义的运动阶段。”
+
+---
+
+# 十六、④ 防止重复 Fire
+
+这是我认为非常重要的一个额外损失。
+
+如果：
+
+$$
+Z_k
+$$
+
+和：
+
+$$
+Z_{k+1}
+$$
+
+非常相似，那么很可能是同一个动作被切了两次。
+
+所以：
+
+$$
+L_{redundancy}
+=
+\frac1{K-1}
+\sum_k
+\max
+\left(
+0,
+\cos(Z_k,Z_{k+1})-m
+\right)
+$$
+
+意思是：
+
+> 相邻两个 Token 如果几乎一样，就惩罚它。
+
+这专门抑制：
+
+```text
+walking
+↓
+Z2
+
+walking
+↓
+Z3
+```
+
+这种无意义过分割。
+
+---
+
+# 十七、最终 Loss
+
+我第一版会用：
+
+$$
+\boxed{
+L=
+L_{caption}
++
+\lambda_1L_{align}
++
+\lambda_2L_{count}
++
+\lambda_3L_{redundancy}
+}
+$$
+
+如果你的数据有真实动作边界，也可以加入：
+
+$$
+L_{fire}
+$$
+
+训练初期指导 Spike 靠近动作转换区域。
+
+但我会把它定位成：
+
+> **辅助训练，而不是网络推理必须依赖的 Boundary Head。**
+
+---
+
+# 十八、如果继续利用你的 3D 骨架，我反而会这样用
+
+这套结构里，骨架监督可以用得非常漂亮。
+
+训练阶段：
+
+```text
+3D Skeleton
+     ↓
+Joint Motion Encoder
+     ↓
+Pose Semantic Novelty
+     ↓
+teacher novelty signal
+
+              ↓ distillation
+
+Radar Semantic Novelty nt
+```
+
+也就是：
+
+> 不让骨架告诉雷达“动作类别是什么”，而是告诉它“什么时候人体运动状态真的发生了变化”。
+
+例如根据关节：
+
+$$
+P_t\in R^{J\times3}
+$$
+
+计算：
+
+* 关节速度；
+* 关节方向变化；
+* 身体质心变化；
+* 姿态结构变化。
+
+形成一个：
+
+$$
+n_t^{pose}
+$$
+
+然后：
+
+$$
+L_{pose-novelty}
+=
+\|n_t^{radar}-n_t^{pose}\|
+$$
+
+推理阶段完全删掉骨架。
+
+我认为这比“直接用骨架回归监督 Radar Encoder”与这个新架构结合得更自然。
+
+---
+
+# 十九、我建议第一版不要真的做很多 SNN 神经元
+
+第一版只需要：
+
+$$
+\boxed{\text{一个 Semantic-LIF unit}}
+$$
+
+因为它不是拿 Spike 做神经计算，而只是利用：
+
+```text
+integrate
++
+leak
++
+threshold
++
+fire
++
+reset
++
+adaptive threshold
+```
+
+控制 Token 化。
+
+也就是说：
+
+> **SNN 是 Tokenization mechanism，不是 feature backbone。**
+
+不要做：
+
+```text
+Point Encoder
+↓
+Spiking Transformer
+↓
+SNN
+↓
+SNN
+```
+
+那样会把一个很漂亮的思想做复杂。
+
+---
+
+# 二十、最终我推荐的版本
+
+完整架构就是：
+
+```text
+                   Continuous mmWave
+                          │
+                          ↓
+                   Radar Encoder
+                          │
+                          ↓
+                  Temporal Encoder
+                          │
+                 F1 F2 ... FT
+                          │
+                          ↓
+              ┌────────────────────┐
+              │ Semantic-LIF Unit  │
+              │                    │
+          ┌──→│ Semantic State C   │
+          │   │        │           │
+          │   │        ↓           │
+          │   │ Novelty Detector   │
+          │   │        │ nt        │
+          │   │        ↓           │
+          │   │ ReLU(nt - baseline)│
+          │   │        │ It        │
+          │   │        ↓           │
+          │   │ Membrane V         │
+          │   │        │           │
+          │   │      V > θ ?       │
+          │   │       /   \        │
+          │   │     No    Yes      │
+          │   │     │      │       │
+          └───│update C   FIRE     │
+              │            │       │
+              └────────────┼───────┘
+                           ↓
+                   Z1 Z2 ... ZN
+                           │
+                           ↓
+                       Projector
+                           ↓
+                          LLM
+                           ↓
+                 Continuous Caption
+```
+
+这套方法真正值得写进论文的核心不是：
+
+> “我们用了 SNN。”
+
+而应该是：
+
+> **把连续毫米波语义压缩建模为一个事件驱动过程：模型只在持续积累到足够的运动语义变化证据时触发 Token，从而使 Token 数量由运动状态变化而非序列长度决定。**
+
+这句话我认为已经可以构成一个非常明确的方法主线。
+
+而且如果后面继续深入，我认为最值得研究的不是增加模块，而是把 **\(n_t\) 的定义、Semantic-LIF 的动态方程、以及如何用文本/姿态弱监督 Fire** 这三件事情做扎实。

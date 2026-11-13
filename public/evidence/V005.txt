@@ -1,0 +1,428 @@
+硬件同步的核心不是“对齐时间戳”，而是让**相机和雷达在同一个电气触发信号下开始采样**。对于你这种“毫米波 + Femto Bolt + 3D 骨架监督”，最推荐的是用一个独立的同步源同时触发两台设备。
+
+最标准的结构是：
+
+```text
+                同一个硬件触发源
+             （MCU / FPGA / GPIO）
+                      │
+              15 Hz Trigger Pulse
+                 ┌────┴────┐
+                 │         │
+                 ▼         ▼
+        Femto Bolt      mmWave Radar
+         VSYNC_IN         SYNC_IN
+             │               │
+          Depth Frame     Radar Frame
+             │               │
+             └──── 同一时刻 ──┘
+```
+
+Femto Bolt 的 8-pin 接口确实提供 **VSYNC_IN、VSYNC_OUT、TIMER_SYNC_IN、TIMER_SYNC_OUT 和 GND**。其中 VSYNC_IN 就是外部同步采集触发输入；VSYNC_OUT 可以向其他设备输出同步触发信号。([Orbbec 文档][1])
+
+以 TI xWR 系列毫米波为例，很多芯片也支持：
+
+$$
+\text{SYNC\_IN rising edge}
+\rightarrow
+\text{start radar frame}
+$$
+
+把雷达配置为 `HWTRIGGER` 后，每次 SYNC_IN 收到上升沿，都会触发一帧 Radar Frame。TI 的接口文档明确规定了这种工作方式。([德州仪器下载][2])
+
+### 最简单的方案：两台设备都跑 15 FPS
+
+你的雷达本来就是：
+
+$$
+15\text{ FPS}
+$$
+
+Femto Bolt 也可以配置到 15 FPS，所以最简单：
+
+```text
+MCU/同步器产生：
+
+      ┌─┐             ┌─┐             ┌─┐
+______│ │_____________│ │_____________│ │______
+      0 ms           66.67 ms       133.33 ms
+
+        │                │                │
+        ├── Camera #0    ├── Camera #1    ├── Camera #2
+        │
+        └── Radar #0     └── Radar #1     └── Radar #2
+```
+
+因此天然形成：
+
+$$
+R_0\leftrightarrow C_0
+$$
+
+$$
+R_1\leftrightarrow C_1
+$$
+
+$$
+R_2\leftrightarrow C_2
+$$
+
+这种情况下基本不需要做 30→15 FPS Pose 插值。
+
+---
+
+### 如果你坚持相机 30 FPS、雷达 15 FPS
+
+也完全可以，只是同步器要产生一个共同的基础时钟，例如 30 Hz：
+
+```text
+30 Hz Master Clock
+
+Camera:
+C0------C1------C2------C3------C4
+↑       ↑       ↑       ↑       ↑
+0     33 ms    67 ms   100 ms  133 ms
+
+Radar:
+R0--------------R1--------------R2
+↑               ↑               ↑
+0              67 ms           133 ms
+```
+
+相机每个 pulse 都触发：
+
+$$
+30Hz
+$$
+
+雷达则使用一个 **÷2 frequency divider**，只接受每两个 pulse 中的一个：
+
+$$
+30Hz/2=15Hz
+$$
+
+这样：
+
+$$
+R_0\leftrightarrow C_0
+$$
+
+$$
+R_1\leftrightarrow C_2
+$$
+
+$$
+R_2\leftrightarrow C_4
+$$
+
+这比软件时间戳匹配更干净。
+
+---
+
+## 具体接线应该是什么样
+
+假设最终你的 TI Radar 把 `SYNC_IN` 引出来了：
+
+```text
+         MCU / FPGA
+       3.3 V GPIO Pulse
+             │
+             ├─────────────┐
+             │             │
+             ▼             ▼
+       Level/interface   Level/interface
+             │             │
+             ▼             ▼
+Femto Bolt VSYNC_IN    Radar SYNC_IN
+
+Femto Bolt GND ───────── Radar GND
+             │
+           MCU GND
+```
+
+最重要的是：
+
+$$
+\boxed{\text{三者必须共地}}
+$$
+
+否则逻辑高低电平没有共同参考。
+
+但是**不要在没查规格的情况下直接把两个引脚用一根线连起来**。
+
+因为要确认三个参数：
+
+$$
+\boxed{
+Voltage\ Level,\ Pulse\ Width,\ Edge\ Polarity
+}
+$$
+
+Femto Bolt 的同步接口默认逻辑电平是 **1.8 V**，但通过 `SYNC_VCC` 可以设置到 3.3 V 或 5 V。([Orbbec 文档][1])
+
+而一些 TI 雷达的 SYNC_IN 使用 **3.3 V trigger**；例如 TI 对 IWR6843AOPEVM 的说明就是 3.3 V PWM / trigger 输入。([TI E2E][3])
+
+所以如果你的雷达是 3.3 V：
+
+```text
+Femto:
+SYNC_VCC = 3.3 V
+
+MCU trigger = 3.3 V
+```
+
+这样接口电平就比较容易统一。
+
+---
+
+## 能不能直接让 Femto Bolt 当 Master？
+
+理论上也可以。
+
+因为它有：
+
+$$
+VSYNC\_OUT
+$$
+
+官方定义就是：
+
+> synchronous trigger signal，用于触发后级设备同步采集。([Orbbec 文档][1])
+
+所以可能做成：
+
+```text
+Femto Bolt
+ VSYNC_OUT
+     │
+     ▼
+   Radar
+ SYNC_IN
+```
+
+相机：
+
+```text
+Capture #0
+     │
+     └─ VSYNC_OUT pulse
+              │
+              ▼
+         Radar frame #0
+```
+
+然后：
+
+$$
+C_i\rightarrow R_i
+$$
+
+但我**更推荐独立 MCU/FPGA 做 Master**。
+
+因为这样没有谁依赖谁：
+
+```text
+          Master Trigger
+          /            \
+      Camera          Radar
+```
+
+而不是：
+
+```text
+Camera
+  ↓
+Radar
+```
+
+前者调试更容易，也方便以后加入第二个雷达或其他传感器。
+
+---
+
+## Radar 能不能真的这样触发？
+
+以 TI xWR 系列而言，芯片层面支持。
+
+设置：
+
+$$
+TRIGGER\_SELECT=HWTRIGGER
+$$
+
+之后：
+
+$$
+SYNC\_IN\uparrow
+\rightarrow
+Radar\ Frame
+$$
+
+TI 给出的单芯片模式数据大约是：
+
+$$
+SYNC\_IN
+\xrightarrow[\text{约5 ns uncertainty}]{\sim160ns}
+Radar\ transmission
+$$
+
+也就是说硬件触发本身的时间误差远小于你 66.7 ms 的 Radar Frame 周期。([德州仪器下载][2])
+
+这就是硬件同步真正强的地方。
+
+软件同步可能是：
+
+$$
+\pm5\sim20ms
+$$
+
+甚至更大。
+
+硬件触发则完全是另一个量级。
+
+---
+
+## 但有一个坑：芯片支持 ≠ 开发板直接给你接口
+
+这点非常重要。
+
+例如 **IWR1843BOOST**，TI 自己做硬件同步实验时，SYNC_IN 可以从 **J6 pin 9** 获取。([Texas Instruments Git][4])
+
+但 **IWR6843AOPEVM** 就不是这样。TI 明确说：
+
+> EVM 上没有直接暴露 SYNC_IN pin/test point。
+
+需要通过 DCA1000 / MMWAVEICBOOST，或者对板子上的对应节点进行硬件处理才能把 SYNC_IN 引出来。([TI E2E][3])
+
+所以以后你选雷达时，千万不要只问：
+
+> “IWR6843 支不支持同步？”
+
+应该问：
+
+> **“我买的这一块具体 EVM 有没有直接暴露 SYNC_IN？”**
+
+两个问题完全不一样。
+
+---
+
+## TIMER_SYNC 又是什么？
+
+Femto Bolt 还有：
+
+$$
+TIMER\_SYNC\_IN
+$$
+
+这个不是“触发拍一帧”，而主要是：
+
+$$
+\boxed{\text{同步/重置设备硬件 timestamp}}
+$$
+
+官方定义中：
+
+* `VSYNC_IN`：同步**采集**
+* `TIMER_SYNC_IN`：同步**hardware timestamp**
+
+([Orbbec 文档][1])
+
+所以完整的高质量系统实际上可以同时做：
+
+```text
+                 Master
+               /        \
+          Trigger       Time Reset
+             │               │
+             ▼               ▼
+Camera VSYNC_IN       TIMER_SYNC_IN
+Radar  SYNC_IN        Radar clock sync
+```
+
+这样你既得到：
+
+$$
+\boxed{\text{物理采样同步}}
+$$
+
+又得到：
+
+$$
+\boxed{\text{时间戳同步}}
+$$
+
+但对于你目前的科研实验，前者最关键。
+
+---
+
+## 我建议你最终这么搭
+
+你的目的不是高速工业测量，而是：
+
+$$
+Radar
+\rightarrow
+Pose\ Guided\ Training
+$$
+
+因此推荐：
+
+```text
+                STM32 / ESP32 / FPGA
+                    15 Hz Trigger
+                         │
+               ┌─────────┴─────────┐
+               │                   │
+               ▼                   ▼
+       Femto Bolt VSYNC_IN      TI SYNC_IN
+          15 FPS Depth          15 FPS Radar
+               │                   │
+               ▼                   ▼
+           3D Skeleton          Radar Data
+               │                   │
+               └────────┬──────────┘
+                        ▼
+                Radar_i ↔ Pose_i
+```
+
+同时**仍然保存双方 timestamp**。
+
+因为即使有硬件同步，也可能发生：
+
+* USB 丢帧
+* Radar 数据传输丢包
+* 相机 tracking 某一帧失败
+* 软件保存线程阻塞
+
+所以最好的系统不是：
+
+$$
+Hardware\ Sync
+$$
+
+或者：
+
+$$
+Timestamp\ Sync
+$$
+
+二选一，而是：
+
+$$
+\boxed{
+\text{Hardware Trigger}
++
+\text{Timestamp Verification}
+}
+$$
+
+也就是**硬件保证“什么时候采”，时间戳保证“采到的数据有没有错位/丢失”**。
+
+如果你最后使用的是 **IWR6843、AWR1843、IWR1843 或其他具体板卡**，我建议下一步直接根据那个型号看原理图，因为这会直接决定：**SYNC_IN 在哪一个针脚、需不需要 DCA1000、能不能和 Femto Bolt 直接接。**
+
+[1]: https://doc.orbbec.com/documentation/Orbbec%20Femto%20Bolt%20Documentation/Synchronize%20Multiple%20Femto%20Bolt%20Devices?utm_source=chatgpt.com "DOC"
+[2]: https://dr-download.ti.com/software-development/firmware/MD-XRrFQlHOcy/06.04.01.00/mmWave-Radar-Interface-Control.pdf?utm_source=chatgpt.com "mmWave Radar Interface"
+[3]: https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1459152/iwr6843aopevm-iwr6843aopevm?utm_source=chatgpt.com "IWR6843AOPEVM: IWR6843AOPEVM - Sensors forum - Sensors - TI E2E support forums"
+[4]: https://git.ti.com/cgit/mmwave_radar/mmwave_ti_ros/tree/ros2_driver/src/ti_mmwave_rospkg/docs/Multi_sensor_time_synchronization.md?utm_source=chatgpt.com "Multi_sensor_time_synchronization.md « docs « ti_mmwave_rospkg « src « ros2_driver - mmwave_radar/mmwave_ti_ros - Unnamed repository; edit this file 'description' to name the repository."
+
+
+

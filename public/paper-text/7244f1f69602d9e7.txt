@@ -1,0 +1,1544 @@
+1
+Dual-Stream Alignment for Action Segmentation
+Harshala Gammulle, Member, IEEE, Clinton Fookes, Senior Member, IEEE, Sridha Sridharan, Life Senior
+Member, IEEE, Simon Denman, Member, IEEE.
+Abstract—Action segmentation is a challenging yet active
+research area that involves identifying when and where specific
+actions occur in continuous video streams. Most existing work
+has focused on single-stream approaches that model the spatio-
+temporal aspects of frame sequences. However, recent research
+has shifted toward two-stream methods that learn action-wise
+features to enhance action segmentation performance.
+In this work, we propose the Dual-Stream Alignment Network
+(DSA Net) and investigate the impact of incorporating a second
+stream of learned action features to guide segmentation by
+capturing both action and action-transition cues. Communication
+between the two streams is facilitated by a Temporal Context
+(TC) block, which fuses complementary information using cross-
+attention and Quantum-based Action-Guided Modulation (Q-
+ActGM), enhancing the expressive power of the fused features.
+To the best of our knowledge, this is the first study to introduce
+a hybrid quantum-classical machine learning framework for
+action segmentation. Our primary objective is for the two
+streams (frame-wise and action-wise) to learn a shared feature
+space through feature alignment. This is encouraged by the
+proposed Dual-Stream Alignment Loss, which comprises three
+components: relational consistency, cross-level contrastive, and
+cycle-consistency reconstruction losses.
+Following prior work, we evaluate DSA Net on several diverse
+benchmark datasets: GTEA, Breakfast, 50Salads, and EgoProcel.
+We further demonstrate the effectiveness of each component
+through extensive ablation studies. Notably, DSA Net achieves
+state-of-the-art performance, significantly outperforming existing
+methods.
+Index Terms—Action Segmentation, Spatio-Temporal Feature
+Fusion, Dual-Stream Alignment.
+I. INTRODUCTION
+REAL-WORLD human actions are inherently continuous
+and context-dependent. In such settings, understanding
+not only what an action is but also when it starts and ends
+is crucial for effective analysis and decision-making. This
+challenge is addressed through action segmentation, which
+focuses on recognising the boundaries of actions in time and
+space.
+The continuous and complex nature of human actions has
+driven significant research interest in action segmentation [1]–
+[3], action localisation [4]–[6], and action detection [7] over
+the past decade. While all three approaches aim to recognise
+and temporally localise human actions, action segmentation
+provides a comparatively fine-grained understanding by as-
+signing action labels at the frame level, enabling detailed mod-
+elling of complex sequential behaviours. Early action segmen-
+tation methods were either frame-based [8], [9] or sequential
+H. Gammulle, C. Fookes, S. Sridharan and S. Denman are with the Signal
+Processing, Artificial Intelligence and Vision Technologies (SAIVT) Lab,
+Queensland University of Technology, Brisbane, Australia.
+E-mail: pranali.gammule@qut.edu.au
+Dual-Stream Alignment
+Loss
+Relational-Consistency
+Cross-Level Contrastive
+Cycle-Consistency
+Reconstruction
+Cross-Attentions
+Action
+Tokens
+(Learnable) Action Segmentation
+Frame
+Features
+FUSION
+Q-ActGM
+𝜃
+𝜃
+𝜃
+𝜃
+𝜃
+𝜃
+𝜃
+𝜃
+Fig. 1. The Dual-Stream Alignment Network (DSA Net) supports action
+segmentation by aligning two streams of features, namely frame features
+and learnable action tokens, via the Dual-Stream Alignment Loss. Feature
+fusion across streams is facilitated by the Temporal Context (TC) block,
+which integrates cross-attention with quantum properties through the proposed
+Quantum-based Action-Guided Modulation (Q-ActGM) layer.
+models that utilised CRFs [10]–[12] and LSTMs [13]. How-
+ever, these methods are not easily parallelised and are limited
+in their ability to capture long-term temporal dependencies.
+This motivated the introduction of deep temporal models such
+as temporal convolutional networks (TCNs) [1], [14], which
+have been widely used in both single-stage [14] and multi-
+stage [1], [15] frameworks. More recently, transformer-based
+methods [16]–[18] have demonstrated superior performance in
+action segmentation, in particular through a reduction in over-
+segmentation errors, which cause long actions to be incorrectly
+broken into multiple smaller actions. This improved accuracy
+comes at a cost, however, as transformers suffer from high
+computational complexity as sequence length increases, either
+due to higher frame rates, longer video sequences, or both.
+While the TCN and transformer methods discussed above
+typically use a single stream of data, that being the input
+video, Lu et al. [2] recently proposed an alternative two-
+stream approach. In [2], one branch of the network captures
+conventional frame-wise features to extract low-level details,
+while the second captures high-level action dependencies via
+learned action-wise features. Action tokens are learned using
+a matching loss that ensures each token uniquely encodes an
+action segment, and a cross-attention mechanism is used to
+facilitate communication between the two data streams. Over-
+all, this approach was found to enhance action segmentation
+performance, though there is a significant cost when using
+cross-attention with long sequences.
+arXiv:2510.07652v1
+[cs.CV]
+9
+Oct
+2025
+2
+Our proposed approach, the Dual-Stream Alignment Net-
+work (DSA Net), takes inspiration from [2], as well as re-
+cent advancements in state-space models and hybrid quantum
+methods. Similar to [2], DSA Net employs two data streams
+(frame-wise and action-wise) for long-term temporal action
+segmentation. In contrast to [2] and other recent approaches
+that employ convolution-based [1], [14], [15] or transformer-
+based [16]–[18] encoders, our method leverages state-space
+models [19]. We formulate a simple yet effective Temporal
+Encoder (TE) block based on a state-space representation that
+employs a selective gating mechanism to filter out irrelevant
+features. We demonstrate the effectiveness of this approach for
+temporal modelling in action segmentation.
+Following [2], we define the action-wise features as learn-
+able action tokens; however, unlike [2], we learn these tokens
+via a dual-stream alignment loss. This loss is itself composed
+of three components, designed to encourage the deep distil-
+lation of complementary information and promote alignment
+between the two streams. A relational consistency component
+encourages pairwise similarity between frames to be reflected
+in the action tokens. A cross-level consistency term seeks
+to align action-token embeddings with the frame embeddings
+they attend to, while separating them from less relevant frames.
+Finally, a cycle-consistency reconstruction term encourages the
+learning of cross-stream relationships by ensuring that action
+tokens can be used to reconstruct frame features and vice
+versa. Together, these three components encourage the learning
+of more discriminative segment-wise representations, thereby
+better capturing action semantics.
+To enhance the sharing of information across the two data
+streams, we incorporate ideas from quantum machine learning
+and the feature-wise linear modulation approach of [20].
+Similar to [2], we also utilise cross-attention to facilitate cross-
+branch communication; however, drawing inspiration from
+[20], we enhance cross-stream communication by adopting
+feature-wise linear modulation for cross-stream information
+fusion. Specifically, we perform cross-stream attention-based
+fusion while modulating frame features based on action-
+context embeddings. This is further enhanced by estimating
+feature-modulation parameters using a parameterised quantum
+circuit (PQC), leveraging the quantum properties of superpo-
+sition and entanglement to improve feature expressiveness. To
+the best of our knowledge, this is the first work to explore
+quantum-based feature modulation and the first to introduce a
+hybrid quantum-classical approach for action segmentation.
+A summary of our contributions is listed below:
+• We propose a novel action segmentation framework,
+DSA Net, which aligns frame-wise and action-wise fea-
+ture streams to learn richer representations than single-
+stream counterparts.
+• We introduce the Temporal Context (TC) block, designed
+to fuse information from the two streams using cross-
+attention. To further enhance the expressiveness of the
+fused features, we incorporate quantum-based estima-
+tion of modulation parameters through the proposed Q-
+ActGM layer. To the best of our knowledge, this is the
+first work to apply a hybrid quantum-classical machine
+learning formulation to the task of action segmentation.
+• To encourage alignment between frame and action fea-
+tures, we propose a dual-stream alignment loss composed
+of three components: relational consistency, cross-level
+contrastive loss, and cycle-consistency reconstruction.
+Together, these losses enable the network to distil comple-
+mentary information more effectively from each stream.
+• We conduct extensive evaluations on four diverse bench-
+mark datasets, complemented by ablation studies, to
+demonstrate the effectiveness of our contributions.
+II. RELATED WORK
+Action segmentation has become a core task in video
+understanding, focusing on identifying distinct human actions
+and their transitions within a video sequence. Capturing both
+spatial and temporal features is therefore critical for accurately
+recognising actions and their boundaries.
+Considering the continuous and sequential nature of the
+action segmentation task, temporal models have been widely
+investigated. Early works focused on classical models such as
+Hidden Markov Models (HMMs) [21], [22], Conditional Ran-
+dom Fields (CRFs) [23], [24], and grammar-based approaches
+[25], [26], which aimed to learn the hierarchical structure of
+actions or activities. However, these traditional methods relied
+on handcrafted features, making them incapable of learning
+complex spatio-temporal patterns and unable to capture long-
+term temporal dependencies. This limitation motivated the
+adoption of deep temporal models, with the earliest methods
+based on recurrent networks such as RNNs [27], LSTMs [28],
+and GRUs [29]. Yet, due to their limited ability to model long-
+range temporal patterns, recurrent models struggled to achieve
+high performance on videos of longer durations.
+Subsequently, attention shifted toward Temporal Convolu-
+tional Networks (TCNs). Since the introduction of the initial
+TCN methods [14], numerous TCN-based approaches have
+been developed [1], [3], [15], [30]–[32] to better capture tem-
+poral patterns and reduce over-segmentation errors. However,
+the effectiveness of TCNs in modelling temporal relations is
+strongly dependent on the size of their receptive fields.
+Following the emergence of transformer architectures in
+other domains, ASFormer [33] introduced a transformer en-
+coder–decoder for action segmentation. Since then, several
+transformer-based approaches [2], [17], [18], [34] have demon-
+strated significant improvements in segmentation performance.
+These performance gains, however, are tempered by the
+quadratic growth in computational complexity that transform-
+ers suffer with respect to video sequence length. Recently,
+new methods [35], [36] have leveraged advances in state-space
+models, such as Mamba [19], to capture long-range temporal
+patterns for video-based action understanding. Although these
+developments are promising, the application of Mamba-based
+architectures to action segmentation remains in its early stages.
+Most of the methods discussed so far rely primarily on
+frame-wise features. In contrast, [2] introduced a two-branch
+approach with a second stream that learns action-segment-wise
+features. Prior to this, several action segmentation methods ex-
+plored the use of action relations [37]–[40]. However, in these
+methods, action features were learned only after the initial
+3
+frame features and predictions had been obtained. In [2], the
+authors demonstrated that jointly learning action-wise features
+and leveraging them to refine frame-wise features through
+fusion is more effective for improving action segmentation
+performance. Their approach employed a bidirectional cross-
+attention mechanism and learned action tokens via a matching
+loss. By contrast, our proposed framework achieves this using
+a dual-stream alignment loss together with a Temporal Context
+block, which enables interactions between the streams through
+attention and feature modulation.
+The fusion of features from multiple data streams is in-
+herently challenging, and numerous methods have been pro-
+posed to enable dynamic and effective integration of informa-
+tion. In [20], the authors introduced the feature-wise linear
+modulation layer, demonstrating its effectiveness in visual
+question answering, where linguistic inputs modulated visual
+feature representations in neural networks. Following this
+work, subsequent studies have explored feature modulation as
+a mechanism for multimodal fusion [41], [42]. These works
+have primarily focused on directly fusing modalities such
+as audio and visual data for tasks like event prediction and
+anomaly detection. Our proposed method differs from these
+earlier works in that the second feature stream (i.e., action
+tokens) is learned jointly during training, while also supporting
+action-segment–aware learning of frame-wise features.
+To further enhance the fusion process, we consider the use
+of hybrid classical–quantum machine learning, an emerging
+area that has shown promising recent progress [43]–[45].
+Various hybrid approaches have been introduced across do-
+mains such as healthcare [44], surveillance [46], [47], and
+cybersecurity [43]. In the context of fusion-based methods,
+however, only a limited number of hybrid approaches have
+been proposed [44], [45]. In these cases, fusion has typically
+relied on simple concatenation (either direct or attention-
+based), or on straightforward PQC, which limits the depth
+of interaction between feature streams. In contrast, our ap-
+proach introduces quantum-based feature modulation, a more
+expressive mechanism that conditions and reshapes feature
+representations, enabling deeper cross-stream integration. This
+richer fusion leads to significant gains in action segmentation
+performance, highlighting the potential of quantum-enhanced
+modelling in video understanding.
+III. METHODS
+A. Overview
+In action segmentation, the goal is to provide dense, frame-
+wise predictions that identify both the action classes and
+their temporal boundaries. Given an input video X1:T =
+(X1, . . . , XT ) with T frames, the goal is to predict the frame-
+wise class labels Y1:T = Y1, . . . , YT . As these videos often
+contain a large number of frames and multiple action segments
+and transitions which flow in a continuous manner, it is crucial
+to capture long-term temporal cues.
+In this work, we introduce the Dual-Stream Alignment Net-
+work (DSA Net) for action segmentation. An overview of the
+proposed framework is presented in Figure 2. Inspired by the
+recent two-stream approach of Lu et al. [2], we adopt a similar
+strategy in DSA Net, maintaining two distinct information
+streams: a frame stream and an action stream. Through this
+dual-stream alignment formulation, we aim to capture deep
+spatio-temporal cues from both streams to support the final
+action segmentation task. The main components of DSA Net
+are discussed in detail in the following sections.
+B. DSA Net Architecture
+Inputs: As DSA Net is a two-stream network, we maintain
+frame-wise and action-wise input features. Frame-wise inputs
+for DSA Net are pre-extracted frame-wise spatio-temporal
+features denoted by Xf ∈ RL×df
+, while the action-wise
+features are denoted by Xa ∈ RM×da
+. Here, L and M
+are the lengths of the frame and action feature sequences,
+respectively, while df and da represent their corresponding
+feature dimensions. Similar to [2], our action features Xa are
+defined as learnable action tokens and initialised as Xa = 0.
+In action segmentation, temporal order plays a critical role
+in understanding actions and their transitions. Therefore, we
+incorporate a positional encoding to obtain temporally aware
+frame-wise and action-wise features. However, to maintain
+simplicity, we omit the inclusion of the positional encoding
+from the following equations.
+Our proposed DSA Net consists of a Global Encoder block
+that learns the spatio-temporal representations of the action-
+wise features, and a Temporal Sequence Alignment (TSA)
+module that models spatio-temporal features from the frame-
+wise feature sequence, while also facilitating alignment be-
+tween the two streams (i.e., the frame stream and the action
+stream) to support action segmentation. The following sections
+discuss these components in detail.
+1) Global Encoder (GE) Block: The Global Encoder (GE)
+aims to capture temporal patterns across the learned action
+tokens to support the temporal alignment of action-related cues
+that flow from the two input streams. Given its lightweight
+architecture and effective temporal modelling, we adopt the
+single-stage network proposed in [1] as our Global Encoder
+(GE) block,
+X′
+a = fGE(Xa), (1)
+where X′
+a ∈ RM×dat . Here, dat is the output feature dimen-
+sion of the GE block.
+2) Temporal Sequence Alignment (TSA) Module: We design
+the TSA module to model spatio-temporal features and to learn
+the alignment between the two streams. The TSA module is
+composed of Temporal Encoder (TE) and Temporal Context
+(TC) Blocks, which are described below.
+a) Temporal Encoder (TE) Block: The TE block aims
+to perform temporal modelling to capture long-term temporal
+cues from the frame-wise feature sequences. The formulation
+of the Temporal Encoder is inspired by the Mamba architecture
+[19], and we utilise state-spaces together with a state-space
+selection mechanism in a simplified manner as described
+below.
+Following the Temporal Encoder block, the frame features
+Xf are projected to an expanded feature space through a linear
+transformation,
+Xproj = Wf Xf + bf , (2)
+4
+Temporal
+Sequence
+Alignment
+(TSA)
+Stream 1: Frame Features Stream 2: Action Tokens
+Temporal Encoder
+(Input_level)
+Global Encoder
+Classi
+fi
+er
+L
+M
+Cross-Level
+Contrastive Loss
+R
+e
+l
+a
+t
+i
+o
+n
+a
+l
+C
+o
+n
+s
+i
+s
+t
+e
+n
+c
+y
+L
+o
+s
+s
+Cycle-
+Consistency
+Reconstruction
+Loss
+Output: Action Labels
+Temporal Context Block
+Temporal Encoder
+Q-ActGM
+TSA X N
+Dual-Stream
+Alignment
+Loss
+X′
+￼
+a
+Xa
+X′
+￼
+f
+Xf
+Cross-Attention
+Based Fusion
+X′
+￼
+a
+Fig. 2. Overview of the proposed DSA Net: The model maintains two streams of features, frame features and action tokens, while modelling their temporal
+dynamics through Temporal Encoders (TE) and a Global Encoder (GE), respectively. Feature fusion is performed via the Temporal Context (TC) block, within
+the Temporal Sequence Alignment (TSA) block. The TC block integrates a cross-attention mechanism with the proposed Quantum-based Action-Guided
+Modulation (Q-ActGM), which introduces quantum properties to enhance expressive power. Feature alignment is encouraged through the proposed Dual-
+Stream Alignment loss.
+where Wf and bf are a learnable projection matrix and bias
+term, respectively. This transformation to a higher-dimensional
+space allows the model to capture more detailed features from
+the input feature sequence, allowing later steps to better model
+temporal dynamics and feature dependencies. After the feature
+projection, state space transformations are applied,
+S = tanh(WAX⊺
+proj), (3)
+S′
+= GELU(WBS + WC), (4)
+where WA, WB, WC are learnable parameters, and the tanh
+and GELU activations introduce non-linearities and aid in
+stabilising the training process by smoothing the activation
+values. Then, a gating mechanism is applied to select only
+the relevant state spaces. The gate is defined using a sigmoid
+function (σ),
+G = σ(WgXf + bg), (5)
+where Wg, bg are the learnable gating matrix and the bias
+term, respectively. Once the gate is defined, the gated state
+is computed,
+S = [S′
+]⊺
+⊙ G, (6)
+where ⊙ represents the element-wise multiplication. The out-
+put of the TE block is obtained by projecting the gated state
+(i.e.S) back to the original feature dimension,
+X′
+f = WoutS + bout, (7)
+where Wout is a learnable transformation matrix while bout is
+a bias term.
+The TE first block that is applied directly to the frame
+features at the input level (see Figure 2) serves as an encoder
+to compress the input features to a lower-dimensional feature
+space. Subsequent TE blocks within the TSA module, how-
+ever, have identical input and output dimensions, dh, allowing
+multiple TSA blocks to be stacked.
+b) Temporal Context (TC) Block: The TC block merges
+information that flows through the two streams (frame and
+action streams), facilitating the dual-stream alignment loss
+(discussed in sec.III-C).
+The TC block uses the frame-wise and action-wise features
+that are passed from the preceding TE and GE blocks, and
+applies linear projections through attention. Q, K and V
+values are calculated as follows,
+Q = X′
+f Wq + bq, (8)
+K = X′
+aWk + bk, (9)
+V = X′
+aWv + bv, (10)
+where Wq, Wk and Wv, and bq, bk and bv are the weights
+and the biases respectively.
+Q values are derived from the frame-wise features, X′
+f ;
+while K and V values are derived from action token features,
+X′
+a. Cross-attention is then applied as follows,
+A = fsoftmax(QKT
+/
+p
+dh), (11)
+A′
+= AV, (12)
+5
+where fsoftmax refers to the softmax activation function.
+Once A′
+is calculated, modulation parameters γ and β are
+computed to perform feature-wise affine transformations. To
+determine modulation parameters, we introduce a Quantum-
+based Action-Guided Modulation (Q-ActGM) layer inspired
+by [20]. However, we adapt the feature modulation to achieve
+cross-stream fusion instead of the modulation of a single
+feature stream. Our proposed Q-ActGM module is repre-
+sented as a parameterised quantum circuit. The quantum-based
+formulation allows the model to explore quantum-enhanced
+representations for conditioning feature maps. In Algorithm 1,
+we illustrate the functionality of the proposed Q-ActGM layer,
+and we further discuss the step-by-step process below.
+To prepare the embedding, A′
+, for Q-ActGM, we use a
+linear projection to match the embedding to the quantum input
+size,
+Xq = flinear(A′
+t), (13)
+where Xq ∈ RL×nq
+, and nq refers to the number of qubits.
+Then the computed Xq is used to encode the data into a
+parameterised quantum circuit. Each vector at each timestep
+Xi
+q (where i = 1, .., L) is used as the input to the quantum
+circuit,
+Zi
+= Uθ(Xi
+q), (14)
+where Uθ is a parameterised quantum circuit (PQC) that
+consists of data encoding operations and a trainable entangling
+layer. Through applying a PQC, we add non-linearity and
+entanglement properties to the modulation. In Equation 14,
+Zi
+returns expectation values of quantum observables (e.g.
+Pauli-Z), one per qubit. Once the expectation values are cal-
+culated, the quantum outputs are mapped back to the classical
+modulation parameters using a classical linear projection.
+[γi
+, βi
+] = f′
+linear(Zi
+). (15)
+As the above calculations are performed at each timestep
+separately, we next reshape the modulation parameters to
+match the temporal structure. Let γ′
+and β′
+be the reshaped
+modulation parameters. Then the frame feature modulation is
+performed using,
+X∗
+f = γ′
+⊙ X′
+f + β′
+, (16)
+to obtain the TSA module output.
+Our DSA Net is formulated by stacking N TSA blocks
+to map the spatio-temporal cues of the feature streams. By
+stacking TSA blocks, we achieve refinement of features with
+each successive block.
+The output of the final TSA block is passed through
+a classification model to obtain a frame-wise action label
+sequence,
+Yout = fclassify(X∗
+f,N ), (17)
+where X∗
+f,N is the output of the Nth
+TSA block.
+Algorithm 1: Quantum-based Action-Guided Modula-
+tion (Q-ActGM) Circuit
+Input: Classical feature vector X′
+f , quantum weights
+Θ ∈ Rnql×nq×np
+, number of qubits nq, number
+of layers nql, number of parameters per qubit
+np
+Output: Quantum output vector ⃗
+Z ∈ Rnq
+Initialize quantum device D with nq qubits;
+Embedding Rotation:
+for i ← 1 to nq do
+Apply RY (X′
+f,i) on qubit i;
+Parameterized Strongly Entangling Layers:
+for ℓ ← 1 to nql do
+for i ← 1 to nq do
+Apply RY (Θℓ,i,0) on qubit i;
+Apply RZ(Θℓ,i,1) on qubit i;
+Apply RX(Θℓ,i,2) on qubit i;
+for i ← 1 to nq − 1 do
+Apply CNOT from qubit i to i + 1;
+Measurement:
+for i ← 1 to nq do
+Measure expectation value of Z on qubit i and
+store in ⃗
+Zi;
+return ⃗
+Z
+c) Q-ActGM Circuit Operation: We present the operation
+of the Q-ActGM circuit in Algorithm 1. We first initialise the
+quantum device and set up the quantum circuit with nq qubits.
+We then apply an embedding rotation, where for each qubit i, a
+rotation around the Y-axis (through an RY gate [48]) is applied
+based on the input feature X′
+f,i. Superpositions are introduced
+at this step, where superposition refers to the qubit’s ability to
+exist in a combination of both 0 and 1 states simultaneously
+(whereas classical bits can exist only as either 0 or 1). Through
+this process, the classical data is embedded into a quantum
+state.
+After rotation, we establish entanglement. To achieve this,
+we employ a parameterised strongly entangling layer consist-
+ing of nql layers. In each layer, three parameterised rotations
+(around the Y, Z, and X axes) are applied to each qubit,
+followed by CNOT (Controlled-NOT) gates [49] between
+adjacent qubits to entangle them. The final output is stored
+in the output vector ⃗
+Z ∈ Rnq
+, which represents a quantum-
+enhanced feature vector derived from the transformed input.
+C. Dual-Stream Alignment Loss Formulation
+Our dual-stream alignment loss comprises 3 components:
+a relational consistency loss, a cross-level contrastive loss,
+and a cycle consistency reconstruction loss. These losses are
+designed to distil information between the frame and the action
+streams, and support their alignment.
+The Relational Consistency Loss (Lrel) encourages pair-
+wise similarity between frames to be reflected as a similarity
+6
+in the structure of the action tokens. Let hf and ha be the
+flattened feature output from the Nth
+TSA block (i.e. the final
+TSA block) and the flattened action tokens, respectively. Here,
+hf ∈ RL×dh
+and ha ∈ RM×da
+, where dh and da refer to
+the hidden dimension of the TSA output feature and the GE
+blocks, respectively. To calculate Lrel, we first compute the
+gram similarity matrices per sample, considering frame and
+action streams,
+Gf
+= hf [hf ]⊺
+, (18)
+Ga
+= ha[ha]⊺
+, (19)
+where Gf
+and Ga
+matrices are of shape L×L and M ×M,
+respectively. Once the similarity matrices are calculated, we
+downsample Gf
+to M ×M through average pooling each non-
+overlapping block of size [L/M]. Let the downsampled Gf
+be
+denoted Ḡf
+, then Lrel is calculated by normalising Ḡf
+and
+Ga
+by their Frobenius norms, and computing the difference
+between them,
+Lrel =
+Ḡf
+∥Ḡf ∥F
+−
+Ga
+∥Ga∥F
+2
+F
+. (20)
+This ensures that the similarity between frames is mirrored
+in the action tokens stream, aligning their geometric structure.
+The Cross-Level Contrastive Loss (Lclc) is designed to
+align action token embeddings with the frame embeddings that
+they attend to, while separating them from less relevant frames.
+Let an,t denote the attention weight between action token n
+and frame t (defined in Eq. 11). For each token n, we regard all
+frames as potential matches, but we weight their contribution
+using the attention scores an,t. In other words, the attended
+frames form a soft positive set for token n, while the remaining
+frames act as negatives.
+Following the InfoNCE formulation [50], we define a
+temperature-scaled contrastive objective:
+Lclc = −
+M
+X
+n=1
+L
+X
+t=1
+an,t log
+exp
+
+sim(ha
+n, hf
+t )/τ
+
+PL
+t′=1 exp
+
+sim(ha
+n, hf
+t′ )/τ
+,
+(21)
+where sim(u, v) = u⊤
+v
+∥u∥∥v∥ is the cosine similarity and τ
+is a temperature parameter. This loss encourages each action
+token, ha
+n, to stay close to the frame embeddings it attends
+to (proportional to an,t), while being pushed away from other
+frames. The soft weighting allows the model to dynamically
+determine which frames act as positives versus negatives
+within each batch.
+The Cycle-consistency Reconstruction Loss (Lcyc) en-
+courages the learning of cross-stream relationships. Specifi-
+cally, we ensure that action tokens can be used to reconstruct
+frame features and vice versa, as follows:
+• (token → frame) reconstruction: Let Pa
+be the token
+predicted class logits (pre-softmax) and at,n ∈ RL×M
+be
+the frame to action token attention (computed in Eq.11).
+Then the frame logits can be reconstructed using,
+P̄f
+t =
+M
+X
+n=1
+at,nPa
+n . (22)
+The token to frame reconstruction loss can then be
+defined using the cross-entropy between the ground truth
+frame labels (yf
+t ),
+Lf
+cyc =
+1
+L
+X
+t
+CE(P̄f
+t , yf
+t ). (23)
+• (frame → token) reconstruction: Let ρ be the token to
+frame attention computed by swapping the K and Q
+vectors in Eq. 11 (reversing the direction of action) and
+Pf
+be the frame stream based class logits. Following
+a similar approach, we can calculate P̄a
+t and the cross-
+entropy with the token-level pseudo labels, which are
+derived from frames. This can be defined as,
+P̄a
+t =
+L
+X
+n=1
+ρt,nPf
+n , (24)
+La
+cyc =
+1
+M
+X
+t
+CE(P̄a
+t , ya
+t ). (25)
+Then Lcyc can be computed,
+Lcyc = La
+cyc + Lf
+cyc. (26)
+Once all three loss components are calculated, they are
+combined to compute the final dual-stream alignment loss,
+Ltot = Lcef
++ Lcea
++ Lrel + Lclc + Lcyc, (27)
+where Lcef
+and Lcea
+are the frame-based and action token-
+based cross-entropy losses calculated using labels predicted
+from each stream.
+IV. EXPERIMENTS
+Following the state-of-the-art methods, we evaluate our
+DSA Net on four diverse datasets: Breakfast [21], GTEA [51],
+50 Salads [52], and EgoProceL [53]. We compare the obtained
+results with the current state-of-the-art on each dataset and also
+perform ablation experiments to demonstrate the contributions
+of the important components of the proposed DSA Net.
+A. Datasets
+GTEA is based on 7 daily kitchen tasks recorded through
+a head-mounted GoPro video camera. The dataset contains
+28 videos with a total of 4 hours of recordings. This dataset
+includes 11 distinct actions, and each video contains an
+average of 33 segments. The Breakfast dataset consists of
+scenarios where people prepare breakfast, and is captured
+through a static RGB camera. In total, the dataset contains
+1716 video clips recorded over around 77 hours with 48
+distinct actions. On average, there are 6.9 action segments per
+video. 50 Salads contains videos preparing 50 different salads
+and is recorded through an overhead Kinect camera. Videos
+7
+average 6 minutes in length, and 20 segments per video.
+Compared to these datasets, EgoProceL contains a diverse set
+of tasks that are performed in different environment settings
+(e.g. assembling furniture, repairing cars, etc.). Overall, the
+dataset contains 1055 videos with 130 unique actions, with
+videos including 21 action segments on average.
+B. Evaluation Metrics
+Following earlier studies on action segmentation [1], [2], we
+report frame-wise accuracy (Acc) and segmentation metrics
+such as segmental edit distance (Edit), segmental F1 scores
+at 10%, 25%, and 50% overlaps (F1@10, 25, 50). Following
+[17], we also report the average score (Avg) across five metrics
+(i.e. F1@10, 25, 50, Edit, and Acc) as a single compact value
+summarising the overall frame-wise and segmentation quality
+of the model.
+C. Implementation Details
+As inputs to the frame stream of the DSA Net, we used
+I3D features [54], where the frame-wise feature dimensionality
+df = 2048. The action token feature dimension, da = 64,
+while we follow a similar approach to [2] by maintaining a
+fixed action token length (M), which we determined experi-
+mentally.
+The TE block directly following the input acts as a feature
+encoder that reduces the initial frame feature dimension (df )
+from 2048 to 64. However, for the TE blocks within the
+TSA module, we set the feature input and output feature
+dimensionality to 64. The number of TSA blocks, N=3, is
+decided experimentally for each dataset. The quantum circuit
+within the TC block is designed with nq = 4, and within
+the TC block, we repeated the number of Q-ActGM layers
+(nql), where the values for nql = 3 and nq = 4 are derived
+experimentally. For all experiments, we use the Adam opti-
+miser with a learning rate of 0.0001. We implemented classical
+deep learning components using the PyTorch framework [55],
+and quantum components using the PennyLane [56] library
+that integrates quantum computing with machine learning, thus
+enabling hybrid quantum-classical computation.
+D. Comparison to State-of-the-Art
+In Tables I–IV, we report evaluation results across four
+datasets and compare them with state-of-the-art methods. For
+all datasets, our proposed DSA Net outperforms existing ap-
+proaches by a significant margin in both frame-wise accuracy
+and segmentation metrics.
+Regarding frame-wise accuracy (Acc), we observe consis-
+tent improvements across all datasets, ranging from 1.4% to
+2.4%. Our method also delivers notable gains in segmentation
+performance: the Edit score improves by approximately 0.7%
+for the GTEA and Breakfast datasets, and by 2.6% and 3.0%
+for the EgoProceL and 50Salads datasets, respectively.
+Compared to the initial dual-branch based approach pro-
+posed in [2], our method achieves average performance (Avg)
+improvements of 1.1%, 1.2%, and 2.0% on the GTEA,
+Method F1@10 F1@25 F1@50 Edit Acc Avg
+ED-TCN [14] 72.2 69.3 56.0 64.0 - -
+TDRN [32] 79.2 74.4 62.7 74.1 70.1 72.1
+SSA-GAN [9] 80.6 79.1 74.2 76.0 43.3 70.6
+Bridge-Prompt [57] 94.1 92.0 83.0 91.6 81.2 88.4
+MSTCN [1] 87.5 85.4 74.6 81.4 79.2 81.6
+MSTCN++ [15] 88.8 85.7 76.0 83.5 80.1 82.8
+ASRF [58] 89.4 87.8 79.8 83.7 77.3 83.6
+HASR [37] 90.9 88.6 76.4 87.5 77.4 84.2
+ASFormer [33] 90.1 88.8 79.2 84.6 79.7 84.5
+MVGA [59] 91.3 90.0 79.3 86.4 80.3 85.5
+TCTr [34] 91.3 90.1 80.0 87.9 81.1 86.1
+UVAST [38] 92.7 91.3 81.0 92.1 80.2 87.5
+RTK [39] 91.2 90.6 83.4 87.9 80.3 86.7
+DiffAct [17] 92.5 91.5 84.7 89.6 82.2 88.1
+FACT [2] 93.5 92.1 84.1 91.4 86.1 89.4
+DSA Net (Ours) 94.2 92.8 85.2 92.1 88.3 90.5
+TABLE I
+ACTION SEGMENTATION RESULTS ON THE GTEA DATASET. THE BEST
+RESULTS ARE HIGHLIGHTED IN BOLD.
+Method F1@10 F1@25 F1@50 Edit Acc Avg
+SSA-GAN [9] - - - - 43.3
+MSTCN [1] 52.6 48.1 37.9 61.7 63.3 52.7
+MSTCN++ [15] 64.1 58.6 45.9 64.9 67.6 60.2
+MuCon [60] 73.2 66.1 48.4 76.3 62.8 65.4
+ASRF [58] 74.3 68.9 56.1 72.4 67.6 67.9
+HASR [37] 74.7 69.5 57.0 71.9 69.6 68.5
+ASFormer [33] 76.0 70.6 57.4 75.0 73.5 70.5
+DTL [61] 78.8 74.5 62.9 77.7 75.4 73.9
+MVGA [59] 75.6 72.1 59.7 76.8 72.3 71.3
+TCTr [34] 76.6 71.1 58.5 76.1 77.5 72.0
+UVAST [38] 76.9 71.5 58.0 77.1 69.7 70.6
+RTK [39] 76.9 72.4 60.5 76.1 73.2 71.8
+LTContext [18] 77.6 72.6 60.1 77.0 74.2 72.3
+DiffAct [17] 80.3 75.9 64.6 78.4 76.4 75.1
+FACT [2] 81.4 76.5 66.2 79.7 76.2 76.0
+DSA Net (Ours) 82.0 77.7 68.1 80.4 78.0 77.2
+TABLE II
+ACTION SEGMENTATION RESULTS ON THE BREAKFAST DATASET. THE
+BEST RESULTS ARE HIGHLIGHTED IN BOLD.
+Breakfast, and EgoProceL datasets, respectively. Even greater
+improvements are observed compared to [17], with gains
+of 2.4%, 2.3%, 2.6%, and 3.1% on the GTEA, Breakfast,
+50Salads, and EgoProceL datasets, respectively.
+These improvements highlight the overall effectiveness of
+our proposed approach for action segmentation. To further
+validate the contributions of each component in DSA Net, we
+conduct ablation experiments, as detailed in Sec. IV-E.
+E. Ablation Experiments
+We performed a series of ablation experiments to systemat-
+ically evaluate the contribution of each innovation proposed
+through our DSA Net framework. The following sections
+discuss the effect of adding each of the key innovations.
+1) Effect of the number of TSA Modules: As discussed in
+Sec. III, our proposed TSA block integrates temporal encoding
+8
+Method F1@10 F1@25 F1@50 Edit Acc Avg
+MS-TCN++ [15] 80.7 78.5 70.1 74.3 83.7 77.5
+SSTDA [30] 83.0 81.5 73.8 75.8 83.2 79.5
+GTRM [40] 75.4 72.8 63.9 67.5 82.6 72.4
+BCN [62] 82.3 81.3 74.0 74.3 84.4 79.3
+MTDA [30] 82.0 80.1 72.5 75.2 83.2 78.6
+G2L [63] 80.3 78.0 69.8 73.4 82.2 76.7
+HASR [37] 86.6 85.7 78.5 81.0 83.9 83.1
+ASRF [58] 84.9 83.5 77.3 79.3 84.5 81.9
+ASFormer [33] 85.1 83.4 76.0 79.6 85.6 81.9
+UARL [64] 85.3 83.5 77.8 78.2 84.1 81.8
+DPRN [65] 87.8 86.3 79.4 82.0 87.2 84.5
+SEDT [66] 89.9 88.7 81.1 84.7 86.5 86.2
+TCTr [34] 87.5 86.1 80.2 83.4 86.6 84.8
+FAMMSDTN [67] 86.2 84.4 77.9 79.9 86.4 82.9
+DTL [61] 87.1 85.7 78.5 80.5 86.9 83.7
+UVAST [38] 89.1 87.6 81.7 83.9 87.4 85.9
+DiffAct [17] 90.1 89.2 83.7 85.0 88.9 87.4
+DSA Net (Ours) 92.7 92.3 87.1 88.8 91.3 90.4
+TABLE III
+ACTION SEGMENTATION RESULTS ON THE 50SALADS DATASET. THE BEST
+RESULTS ARE HIGHLIGHTED IN BOLD.
+Method F1@10 F1@25 F1@50 Edit Acc Avg AccB
+MSTCN++ [15] 60.3 57.0 46.5 62.4 69.3 59.1 82.5
+ASFormer [33] 63.3 60.9 51.0 64.9 71.1 62.2 84.9
+UVAST [38] 60.5 58.3 46.6 67.7 67.8 60.2 83.2
+LTContext [18] 64.2 61.3 51.2 61.3 70.3 61.7 84.7
+DiffAct [17] 67.5 65.4 54.6 68.4 77.0 66.6 86.6
+FACT [2] 73.0 69.8 60.8 75.7 77.6 71.4 88.0
+DSA Net (Ours) 75.1 72.6 62.1 78.3 79.0 73.4 89.7
+TABLE IV
+ACTION SEGMENTATION RESULTS ON THE EGOPROCEL DATASET. THE
+BEST RESULTS ARE HIGHLIGHTED IN BOLD.
+with the Q-ActGM fusion mechanism. Table V presents the
+impact of varying the number of TSA blocks (denoted as N)
+on action segmentation performance. The model achieved its
+best results on the 50Salads dataset with N = 3, and beyond
+this point, performance begins to decline.
+This suggests that stacking TSA blocks facilitates pro-
+gressive feature refinement, enhancing the model’s ability
+to capture spatio-temporal dependencies crucial for accurate
+action classification and segmentation. Notably, even with a
+single TSA block, the model achieves considerable accuracy,
+indicating the effectiveness of the proposed approach. How-
+ever, increasing the number of blocks helps reduce misclassi-
+fications and over-segmentation errors. These findings suggest
+that a moderate number of TSA blocks is sufficient to balance
+performance and model complexity.
+2) Effect of Training Losses: In the proposed work, the
+dual-stream alignment loss plays a critical role in guiding
+the frame and action branches to learn action segmentation-
+relevant features through feature distribution alignment. As
+discussed, this loss comprises three components: a relational
+consistency loss (Lrel), a cross-level contrastive (Lclc) loss,
+and a cycle-consistency reconstruction loss (Lcyc).
+Table VI presents an ablation study evaluating the impact
+of these components, alongside the frame-wise (Lcef ) and
+N F1@10, 25, 50 Edit Acc
+1 74.2, 70.7, 68.1 72.3 76.0
+2 89.8, 89.4, 82.2 85.3 88.7
+3 92.7, 92.3, 87.1 88.8 91.3
+4 92.3, 92.2, 87.2 88.6 91.1
+5 91.8, 91.7, 85.8 87.0 89.9
+TABLE V
+EFFECT OF THE NUMBER OF TSA BLOCKS (N) ON THE 50SALADS
+DATASET.
+A B C D E F1@{10, 25, 50} Edit Acc
+✓ 84.2, 83.9, 78.8 80.1 84.7
+✓ ✓ 86.9, 85.7, 80.2 83.4 85.6
+✓ ✓ ✓ 90.7, 90.5, 85.2 87.2 90.5
+✓ ✓ ✓ ✓ 91.5, 91.1, 86.9 88.4 91.1
+✓ ✓ ✓ ✓ ✓ 92.7, 92.3, 87.1 88.8 91.3
+TABLE VI
+ABLATION STUDY CONSIDERING THE FIVE LOSS TERMS. HERE A, B, C, D
+AND E REPRESENT THE CROSS-ENTROPY LOSSES CORRESPONDING TO
+FRAME BRANCH (Lcef ) AND ACTION BRANCH (Lcea ), AND THE 3 LOSS
+COMPONENTS OF THE DUAL-STREAM ALIGNMENT LOSS: RELATIONAL
+CONSISTENCY (Lrel), CROSS-LEVEL CONTRASTIVE (Lclc) AND
+CYCLE-CONSISTENCY RECONSTRUCTION (Lcyc) LOSSES. EXPERIMENTS
+ARE PERFORMED USING THE 50 SALADS DATASET.
+action-wise (Lcea) cross-entropy losses. The model already
+achieves strong performance using only the cross-entropy
+losses. However, the addition of each alignment loss compo-
+nent leads to consistent and significant improvements.
+Specifically, incorporating Lrel, Lclc, and Lcyc results in
+accuracy gains of 4.9%, 5.5%, and 5.7%, respectively, over the
+baseline. Corresponding improvements in the Edit score are
+3.8%, 5.0%, and 5.4%, respectively. These results highlight the
+effectiveness of the dual-stream alignment loss in enhancing
+the model’s ability to capture spatio-temporal relationships for
+accurate action segmentation.
+3) Effect of Q-ActGM: In the Temporal Context (TC) block,
+we adopt the concept of feature modulation via the ActGM
+layer to fuse action-wise tokens with frame-wise features. To
+further enhance the expressive capacity of the TC block, we
+introduce quantum properties through the proposed Q-ActGM
+layer. Table VII reports results for an ablation study comparing
+the fusion with and without integrating the quantum properties
+in the proposed ActGM module (i.e. ActGM vs Q-ActGM).
+The results demonstrate that the Q-ActGM layer signif-
+icantly improves both frame-wise and segmentation perfor-
+mance. Specifically, Q-ActGM achieves an improvement of
+2.6% in accuracy and 2.5% in Edit score over ActGM,
+highlighting its superior expressive power in capturing spatio-
+temporal dependencies for action segmentation.
+4) Effect of Quantum-based Hyperparameters: As dis-
+cussed earlier, features are projected to a number of qubits
+(nq) before being passed through the Q-ActGM layer. Within
+the Q-ActGM circuit (see Sec. III-B2c), the entangling layers
+are repeated nql times. Table VIII presents results for various
+combinations of nq and nql. Our experiments indicate that the
+hybrid quantum-classical model achieves its best performance
+when nq = 3 and nql = 3.
+The results suggest that moderately deep circuits with a
+9
+TC Block F1@10, 25, 50 Edit Acc
+with ActGM 89.6, 88.9, 83.3 86.3 88.7
+with Q-ActGM 92.7, 92.3, 87.1 88.8 91.3
+TABLE VII
+EFFECT OF THE QUANTUM-BASED FEATURE MODULATION (Q-ACTGM)
+ON 50SALADS DATASET.
+limited number of qubits are sufficient to effectively model
+temporal action features during the fusion process. We believe
+this configuration reflects a balance between expressivity and
+resource efficiency.
+nq nql F1@10 F1@25 F1@50 Edit Acc
+2 1 83.9 80.1 68.9 80.0 86.1
+2 3 82.0 77.3 68.0 78.2 87.9
+2 5 83.5 80.2 69.0 77.6 87.9
+3 1 89.3 83.2 70.1 83.7 88.8
+3 3 92.7 92.3 87.1 88.8 91.3
+3 5 90.3 87.9 85.5 85.8 84.1
+4 1 83.9 80.1 78.6 80.6 82.5
+4 3 79.7 76.8 63.6 76.1 82.3
+4 5 73.0 71.0 59.3 71.9 78.5
+TABLE VIII
+EFFECT OF THE QUANTUM-BASED HYPERPARAMETERS, nq AND nql, ON
+THE 50SALADS DATASET.
+V. QUALITATIVE RESULTS
+In this section, we further illustrate the performance of
+the proposed DSA Net with qualitative results. In Figures 3,
+4, 5, 6, we visualise and compare the predictions obtained
+for the four datasets with their corresponding ground truth
+annotations.
+Across all datasets, we observe occasional discrep-
+ancies in the timing of action transitions, where pre-
+dicted transitions are either slightly early or delayed
+compared to the ground truth. For instance, in the
+Breakfast dataset (see Figure 3), transitions such as
+fry pancake → take plate and pour milk → stir dough
+were predicted slightly earlier than the ground truth,
+whereas transitions like spoon flour → pour milk and
+take plate → put pancake2plate were delayed.
+In the GTEA dataset, the proposed DSA Net demon-
+strated strong performance in segmenting actions, even with
+frequent action transitions. However, minor confusion was
+noted between background frames (non-action segments) and
+action classes (see Figure 4). For the 50Salads and Ego-
+ProceL datasets, some action misclassifications were ob-
+served. For example, in 50Salads, the model briefly predicted
+cut tomato while the actual action cut lettuce was being
+performed (see top timeline in Figure 5). Nevertheless, the
+model was able to quickly correct these errors and continued
+with accurate predictions. A similar pattern was observed
+in EgoProceL, where during remove the SMPS, the model
+briefly predicted remove the cabinet cover, but corrected it-
+self shortly thereafter. Additionally, in EgoProceL, background
+frames were occasionally misclassified as actions such as
+remove the RAM, remove the cabinet cover, break eggs, or
+pour the egg mixture (see Figure 6).
+Despite these occasional misclassifications, DSA Net con-
+sistently demonstrated robust performance across all four
+datasets, achieving significant improvements in action seg-
+mentation results and outperforming existing state-of-the-art
+methods.
+As discussed in the previous section (Sec. IV-E3), the
+conversion of the proposed ActGM model to its proposed
+quantum-based model (i.e. Q-ActGM) has significantly im-
+proved the overall action segmentation performance, where
+an improvement of 2.6% in accuracy and 2.5% in Edit score
+was achieved. To further provide a deeper understanding of
+the learned feature representations, in Fig. 7 we visualise
+the feature embeddings using t-SNE plots for the experi-
+ments with and without the quantum-based feature modu-
+lation, providing a qualitative comparison of the clustering
+behaviour and class separability achieved by the models.
+Without quantum feature modulation (see left sub-figure in
+Fig. 7), the clusters in the t-SNE visualisation appear less
+distinct, with noticeable overlap between semantically simi-
+lar actions (e.g., add oil and add vinegar). In contrast, the
+visualisation with Q-ActGM (see right sub-figure in Fig. 7)
+demonstrates improved separation and tighter clustering of
+several action classes, such as add pepper, add dressing,
+place tomato in the bowl, cut lettuce, and action end. The
+qualitative evidence supports the effectiveness of Q-ActGM in
+improving complementary information fusion between frame-
+level and action-related features, leading to better temporal
+action segmentation.
+VI. CONCLUSION
+In this paper, we introduced DSA Net, a novel framework
+for action segmentation that integrates frame-wise and action-
+wise representations through a two-stream architecture, guided
+by the proposed Dual-Stream Alignment Loss. To the best
+of our knowledge, this is the first application of a hybrid
+quantum-classical machine learning model in this domain,
+leveraging quantum properties to enhance information fusion
+via the Q-ActGM module. Our method achieves state-of-the-
+art performance across four benchmark datasets, demonstrat-
+ing the effectiveness of our dual-stream design and alignment
+strategy. Extensive ablation studies further validate the contri-
+butions of each component.
+Future work could explore avenues to improve efficiency,
+particularly for real-time deployment, and the application of
+DSA Net to other video understanding tasks. Moreover, this
+work also opens new directions towards integrating quantum
+principles into deep learning architectures for video analysis,
+setting the stage for further exploration in hybrid quantum-
+classical learning systems.
+ACKNOWLEDGMENTS
+This research was supported by an Australian Research
+Council (ARC) Discovery grant DP250103634.
+10
+Ground Truth
+Predictions
+SIL
+crack_egg
+fry_pancake
+pour_dough2pan
+pour_milk
+put_pancake2plate
+spoon_flour stir_dough take_plate
+Ground Truth
+Predictions
+SIL
+butter_pan
+crack_egg
+fry_pancake
+pour_dough2pan
+pour_milk
+pour_oil
+put_pancake2plate
+spoon_flour
+stir_dough
+take_plate
+Fig. 3. Visualisation of the action segmentation results on the Breakfast dataset.
+Ground Truth
+Predictions
+background
+close
+open
+pour
+put
+scoop
+spread stir take
+Ground Truth
+Predictions
+background
+close
+fold
+open
+pour
+put
+shake stir take
+Fig. 4. Visualisation of the action segmentation results on the GTEA dataset.
+Ground Truth
+Predictions
+action_end
+action_start
+add_dressing
+add_oil
+add_pepper
+add_salt
+add_vinegar
+cut_cheese
+cut_cucumber
+cut_lettuce
+cut_tomato
+mix_dressing
+mix_ingredients
+peel_cucumber
+place_cheese_into_bowl
+place_cucumber_into_bowl
+place_lettuce_into_bowl
+place_tomato_into_bowl
+serve_salad_onto_plate
+Ground Truth
+Predictions
+action_end
+action_start
+add_dressing
+add_oil
+add_pepper
+add_salt
+add_vinegar
+cut_cheese
+cut_cucumber
+cut_lettuce
+cut_tomato
+mix_dressing
+mix_ingredients
+peel_cucumber
+place_cheese_into_bowl
+place_cucumber_into_bowl
+place_lettuce_into_bowl
+place_tomato_into_bowl
+serve_salad_onto_plate
+Fig. 5. Visualisation of the action segmentation results on the 50 Salads dataset.
+Ground Truth
+Predictions
+background
+remove_the_CPU
+remove_the_CPU_Fan
+remove_the_Hard_disk
+remove_the_RAM
+remove_the_SMPS
+remove_the_cabinet_cover
+remove_the_cabinet_fan
+remove_the_motherboard unplug_the_wires
+Ground Truth
+Predictions
+add_salt
+background
+break_eggs
+flip_the_mixture
+mix_egg_mixture pour_oil_in_the_pan pour_the_egg_mixture_in_the_pan put_omelette_in_the_plate
+Fig. 6. Visualisation of the action segmentation results on the EgoProceL dataset.
+11
+Without Quantum (FiLM) With Quantum (QFiLM)
+cut_tomato
+place_tomato_into_bowl
+cut_cheese
+place_cheese_into_bowl
+cut_lettuce
+place_lettuce_into_bowl
+add_salt
+add_vinegar
+add_oil
+add_pepper
+mix_dressing
+peel_cucumber
+cut_cucumber
+place_cucumber_into_bowl
+add_dressing
+mix_ingredients
+serve_salad_onto_plate
+action_start
+action_end
+Fig. 7. Visualisation of the feature embeddings using t-SNE plots using the ActGM (left) and Q-ActGM (right) formulations corresponding to Tab. VII.
+The visualisation with Q-ActGM demonstrates improved separation and tighter clustering of several action classes, such as add pepper, add dressing,
+place tomato in the bowl, cut lettuce, and action end.
+12
+REFERENCES
+[1] Y. A. Farha and J. Gall, “Ms-tcn: Multi-stage temporal convolutional
+network for action segmentation,” in Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition, 2019, pp. 3575–
+3584.
+[2] Z. Lu and E. Elhamifar, “Fact: Frame-action cross-attention temporal
+modeling for efficient action segmentation,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2024, pp. 18 175–18 185.
+[3] H. Gammulle, S. Denman, S. Sridharan, and C. Fookes, “Tmmf: Tempo-
+ral multi-modal fusion for single-stage continuous gesture recognition,”
+IEEE Transactions on Image Processing, vol. 30, pp. 7689–7701, 2021.
+[4] W. Luo, H. Ren, T. Zhang, W. Yang, and Y. Zhang, “Adaptive prototype
+learning for weakly-supervised temporal action localization,” IEEE
+Transactions on Image Processing, 2024.
+[5] G. Li, D. Cheng, N. Wang, J. Li, and X. Gao, “Neighbor-guided pseudo-
+label generation and refinement for single-frame supervised temporal
+action localization,” IEEE Transactions on Image Processing, vol. 33,
+pp. 2419–2430, 2024.
+[6] Y. Liu, L. Wang, Y. Wang, X. Ma, and Y. Qiao, “Fineaction: A fine-
+grained video dataset for temporal action localization,” IEEE transac-
+tions on image processing, vol. 31, pp. 6937–6950, 2022.
+[7] X. Liu, Q. Wang, Y. Hu, X. Tang, S. Zhang, S. Bai, and X. Bai, “End-
+to-end temporal action detection with transformer,” IEEE Transactions
+on Image Processing, vol. 31, pp. 5427–5441, 2022.
+[8] H. Gammulle, T. Fernando, S. Denman, S. Sridharan, and C. Fookes,
+“Coupled generative adversarial network for continuous fine-grained
+action segmentation,” in 2019 IEEE Winter Conference on Applications
+of Computer Vision (WACV). IEEE, 2019, pp. 200–209.
+[9] H. Gammulle, S. Denman, S. Sridharan, and C. Fookes, “Fine-grained
+action segmentation using the semi-supervised action gan,” Pattern
+Recognition, vol. 98, p. 107039, 2020.
+[10] E. Mavroudi, D. Bhaskara, S. Sefati, H. Ali, and R. Vidal, “End-to-
+end fine-grained action segmentation and recognition using conditional
+random field models and discriminative sparse coding,” in 2018 IEEE
+Winter Conference on Applications of Computer Vision (WACV). IEEE,
+2018, pp. 1558–1567.
+[11] G. A. Sigurdsson, S. Divvala, A. Farhadi, and A. Gupta, “Asynchronous
+temporal fields for action recognition,” in Proceedings of the IEEE
+conference on Computer Vision and Pattern Recognition, 2017, pp. 585–
+594.
+[12] C. Xu and J. J. Corso, “Actor-action semantic segmentation with
+grouping process models,” in Proceedings of the IEEE conference on
+computer vision and pattern recognition, 2016, pp. 3083–3092.
+[13] M. Sadegh Aliakbarian, F. Sadat Saleh, M. Salzmann, B. Fernando,
+L. Petersson, and L. Andersson, “Encouraging lstms to anticipate actions
+very early,” in Proceedings of the IEEE International Conference on
+Computer Vision, 2017, pp. 280–289.
+[14] C. Lea, M. D. Flynn, R. Vidal, A. Reiter, and G. D. Hager, “Tempo-
+ral convolutional networks for action segmentation and detection,” in
+Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), 2017, pp. 156–165.
+[15] S.-J. Li, Y. AbuFarha, Y. Liu, M.-M. Cheng, and J. Gall, “Ms-tcn++:
+Multi-stage temporal convolutional network for action segmentation,”
+IEEE Transactions on Pattern Analysis and Machine Intelligence, pp.
+1–1, 2020.
+[16] F. Yi, H. Wen, and T. Jiang, “Asformer: Transformer for action segmen-
+tation,” in The British Machine Vision Conference (BMVC), 2021.
+[17] D. Liu, Q. Li, A.-D. Dinh, T. Jiang, M. Shah, and C. Xu, “Diffusion
+action segmentation,” in Proceedings of the IEEE/CVF international
+conference on computer vision, 2023, pp. 10 139–10 149.
+[18] E. Bahrami, G. Francesca, and J. Gall, “How much temporal long-
+term context is needed for action segmentation?” in Proceedings of
+the IEEE/CVF International Conference on Computer Vision, 2023, pp.
+10 351–10 361.
+[19] T. Dao and A. Gu, “Transformers are ssms: Generalized models and ef-
+ficient algorithms through structured state space duality,” in Proceedings
+of the International Conference on Machine Learning (ICML), 2024.
+[20] E. Perez, F. Strub, H. De Vries, V. Dumoulin, and A. Courville, “Film:
+Visual reasoning with a general conditioning layer,” in Proceedings of
+the AAAI conference on artificial intelligence, vol. 32, no. 1, 2018.
+[21] H. Kuehne, A. Arslan, and T. Serre, “The language of actions: Recov-
+ering the syntax and semantics of goal-directed human activities,” in
+Proceedings of the IEEE conference on computer vision and pattern
+recognition, 2014, pp. 780–787.
+[22] J. C. Niebles, C.-W. Chen, and L. Fei-Fei, “Modeling temporal structure
+of decomposable motion segments for activity classification,” in Euro-
+pean conference on computer vision. Springer, 2010, pp. 392–405.
+[23] F. Sener and N. Ikizler-Cinbis, “Two-person interaction recognition via
+spatial multiple instance embedding,” Journal of Visual Communication
+and Image Representation, vol. 32, pp. 63–73, 2015.
+[24] Y. Wang and G. Mori, “Hidden part models for human action recogni-
+tion: Probabilistic versus max margin,” IEEE Transactions on Pattern
+Analysis and Machine Intelligence, vol. 33, no. 7, pp. 1310–1323, 2010.
+[25] N. N. Vo and A. F. Bobick, “From stochastic grammar to bayes network:
+Probabilistic parsing of complex activity,” in Proceedings of the IEEE
+conference on computer vision and pattern recognition, 2014, pp. 2641–
+2648.
+[26] H. Pirsiavash and D. Ramanan, “Parsing videos of actions with seg-
+mental grammars,” in Proceedings of the IEEE conference on computer
+vision and pattern recognition, 2014, pp. 612–619.
+[27] D. E. Rumelhart, G. E. Hinton, R. J. Williams et al., “Learning internal
+representations by error propagation,” 1985.
+[28] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural
+computation, vol. 9, no. 8, pp. 1735–1780, 1997.
+[29] K. Cho, B. Van Merriënboer, C. Gulcehre, D. Bahdanau, F. Bougares,
+H. Schwenk, and Y. Bengio, “Learning phrase representations using
+rnn encoder-decoder for statistical machine translation,” arXiv preprint
+arXiv:1406.1078, 2014.
+[30] M.-H. Chen, B. Li, Y. Bao, G. AlRegib, and Z. Kira, “Action seg-
+mentation with joint self-supervised temporal domain adaptation,” in
+Proceedings of the IEEE/CVF conference on computer vision and
+pattern recognition, 2020, pp. 9454–9463.
+[31] C. Lea, A. Reiter, R. Vidal, and G. D. Hager, “Segmental spatiotemporal
+cnns for fine-grained action segmentation,” in Computer Vision–ECCV
+2016: 14th European Conference, Amsterdam, The Netherlands, October
+11-14, 2016, Proceedings, Part III 14. Springer, 2016, pp. 36–52.
+[32] P. Lei and S. Todorovic, “Temporal deformable residual networks for
+action segmentation in videos,” in Proceedings of the IEEE conference
+on computer vision and pattern recognition, 2018, pp. 6742–6751.
+[33] F. Yi, H. Wen, and T. Jiang, “Asformer: Transformer for action seg-
+mentation,” in Proceedings of the British Machine Vision Conference
+(BMVC), 2021.
+[34] N. Aziere and S. Todorovic, “Multistage temporal convolution trans-
+former for action segmentation,” Image and Vision Computing, vol. 128,
+p. 104567, 2022.
+[35] S. Chaudhuri and S. Bhattacharya, “Simba: Mamba augmented u-
+shiftgcn for skeletal action recognition in videos,” arXiv preprint
+arXiv:2404.07645, 2024.
+[36] A. Sinha, M. S. Raj, P. Wang, A. Helmy, and S. Das, “Ms-temba: Multi-
+scale temporal mamba for efficient temporal action detection,” arXiv
+preprint arXiv:2501.06138, 2025.
+[37] H. Ahn and D. Lee, “Refining action segmentation with hierarchical
+video representations,” in Proceedings of the IEEE/CVF international
+conference on computer vision, 2021, pp. 16 302–16 310.
+[38] N. Behrmann, S. A. Golestaneh, Z. Kolter, J. Gall, and M. Noroozi,
+“Unified fully and timestamp supervised temporal action segmentation
+via sequence to sequence translation,” in European conference on
+computer vision. Springer, 2022, pp. 52–68.
+[39] B. Jiang, Y. Jin, Z. Tan, and Y. Mu, “Video action segmentation
+via contextually refined temporal keypoints,” in Proceedings of the
+IEEE/CVF International Conference on Computer Vision, 2023, pp.
+13 836–13 845.
+[40] Y. Huang, Y. Sugano, and Y. Sato, “Improving action segmentation
+via graph-based temporal reasoning,” in Proceedings of the IEEE/CVF
+conference on computer vision and pattern recognition, 2020, pp.
+14 024–14 034.
+[41] M. Brousmiche, J. Rouat, and S. Dupont, “Multimodal attentive fusion
+network for audio-visual event recognition,” Information Fusion, vol. 85,
+pp. 52–59, 2022.
+[42] A. Ghadiya, P. Kar, V. Chudasama, and P. Wasnik, “Cross-modal
+fusion and attention mechanism for weakly supervised video anomaly
+detection,” in Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, 2024, pp. 1965–1974.
+[43] M. Islam, M. Chowdhury, Z. Khan, and S. M. Khan, “Hybrid quantum-
+classical neural network for cloud-supported in-vehicle cyberattack
+detection,” IEEE Sensors Letters, vol. 6, no. 4, pp. 1–4, 2022.
+[44] Z. Qu, Y. Li, and P. Tiwari, “Qnmf: A quantum neural network based
+multimodal fusion system for intelligent diagnosis,” Information Fusion,
+vol. 100, p. 101913, 2023.
+[45] P. Tiwari, L. Zhang, Z. Qu, and G. Muhammad, “Quantum fuzzy neural
+network for multimodal sentiment and sarcasm detection,” Information
+Fusion, vol. 103, p. 102085, 2024.
+13
+[46] R. Majumder, S. M. Khan, F. Ahmed, Z. Khan, F. Ngeni, G. Com-
+ert, J. Mwakalonge, D. Michalaka, and M. Chowdhury, “Hybrid
+classical-quantum deep learning models for autonomous vehicle traf-
+fic image classification under adversarial attack,” arXiv preprint
+arXiv:2108.01125, 2021.
+[47] Z. Khan, J. M. Tine, S. M. Khan, R. Majumdar, A. T. Comert, D. Rice,
+G. Comert, D. Michalaka, J. Mwakalonge, and M. Chowdhury, “Hybrid
+quantum-classical neural network for incident detection,” in 2023 26th
+International Conference on Information Fusion (FUSION). IEEE,
+2023, pp. 1–8.
+[48] M. Schuld, A. Bocharov, K. M. Svore, and N. Wiebe, “Circuit-centric
+quantum classifiers,” Physical Review A, vol. 101, no. 3, p. 032308,
+2020.
+[49] M. Schuld and N. Killoran, “Quantum machine learning in feature
+hilbert spaces,” Physical review letters, vol. 122, no. 4, p. 040504, 2019.
+[50] A. v. d. Oord, Y. Li, and O. Vinyals, “Representation learning with
+contrastive predictive coding,” arXiv preprint arXiv:1807.03748, 2018.
+[51] A. Fathi, X. Ren, and J. M. Rehg, “Learning to recognize objects in
+egocentric activities,” in CVPR 2011. IEEE, 2011, pp. 3281–3288.
+[52] S. Stein and S. J. McKenna, “Combining embedded accelerometers with
+computer vision for recognizing food preparation activities,” in Proceed-
+ings of the 2013 ACM international joint conference on Pervasive and
+ubiquitous computing, 2013, pp. 729–738.
+[53] S. Bansal, C. Arora, and C. Jawahar, “My view is the best view:
+Procedure learning from egocentric videos,” in European Conference
+on Computer Vision. Springer, 2022, pp. 657–675.
+[54] J. Carreira and A. Zisserman, “Quo vadis, action recognition? a new
+model and the kinetics dataset,” in proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition, 2017, pp. 6299–6308.
+[55] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury et al., “Pytorch: An
+imperative style, high-performance deep learning library,” in Advances
+in Neural Information Processing Systems (NeurIPS), 2019, pp. 8024–
+8035.
+[56] V. Bergholm, J. Izaac, M. Schuld, C. Gogolin, S. Ahmed, V. Ajith,
+M. S. Alam, G. Alonso-Linaje, B. AkashNarayanan, A. Asadi et al.,
+“Pennylane: Automatic differentiation of hybrid quantum-classical com-
+putations,” arXiv preprint arXiv:1811.04968, 2018.
+[57] M. Li, L. Chen, Y. Duan, Z. Hu, J. Feng, J. Zhou, and J. Lu, “Bridge-
+prompt: Towards ordinal action understanding in instructional videos,”
+in Proceedings of the IEEE/CVF conference on computer vision and
+pattern recognition, 2022, pp. 19 880–19 889.
+[58] Y. Ishikawa, S. Kasai, Y. Aoki, and H. Kataoka, “Alleviating over-
+segmentation errors by detecting action boundaries,” in Proceedings of
+the IEEE/CVF winter conference on applications of computer vision,
+2021, pp. 2322–2331.
+[59] N. Aziere and S. Todorovic, “Markov game video augmentation for
+action segmentation,” in Proceedings of the IEEE/CVF International
+Conference on Computer Vision, 2023, pp. 13 505–13 514.
+[60] Y. Souri, M. Fayyaz, L. Minciullo, G. Francesca, and J. Gall, “Fast
+weakly supervised action segmentation using mutual consistency,” IEEE
+Transactions on Pattern Analysis and Machine Intelligence, vol. 44,
+no. 10, pp. 6196–6208, 2021.
+[61] Z. Xu, Y. Rawat, Y. Wong, M. S. Kankanhalli, and M. Shah, “Don’t
+pour cereal into coffee: Differentiable temporal logic for temporal action
+segmentation,” Advances in Neural Information Processing Systems,
+vol. 35, pp. 14 890–14 903, 2022.
+[62] Z. Wang, Z. Gao, L. Wang, Z. Li, and G. Wu, “Boundary-aware cascade
+networks for temporal action segmentation,” in Computer Vision–ECCV
+2020: 16th European Conference, Glasgow, UK, August 23–28, 2020,
+Proceedings, Part XXV 16. Springer, 2020, pp. 34–51.
+[63] S.-H. Gao, Q. Han, Z.-Y. Li, P. Peng, L. Wang, and M.-M. Cheng,
+“Global2local: Efficient structure search for video action segmentation,”
+in Proceedings of the IEEE/CVF conference on computer vision and
+pattern recognition, 2021, pp. 16 805–16 814.
+[64] L. Chen, M. Li, Y. Duan, J. Zhou, and J. Lu, “Uncertainty-aware
+representation learning for action segmentation.” in IJCAI, vol. 2, 2022,
+p. 6.
+[65] J. Park, D. Kim, S. Huh, and S. Jo, “Maximization and restoration: Ac-
+tion segmentation through dilation passing and temporal reconstruction,”
+Pattern Recognition, vol. 129, p. 108764, 2022.
+[66] G.-h. Kim and E. Kim, “Stacked encoder–decoder transformer with
+boundary smoothing for action segmentation,” Electronics Letters,
+vol. 58, no. 25, pp. 972–974, 2022.
+[67] Z. Du and Q. Wang, “Dilated transformer with feature aggregation
+module for action segmentation,” Neural Processing Letters, vol. 55,
+no. 5, pp. 6181–6197, 2023.
+14
+VII. BIOGRAPHY SECTION
+Harshala Gammulle received her BSc (Hons)
+in Computer Science from the University of Per-
+adeniya, Sri Lanka, and her PhD from the Queens-
+land University of Technology (QUT), Australia. She
+is currently a Postdoctoral Research Fellow in the
+Signal Processing, Artificial Intelligence, and Vision
+Technologies (SAIVT) research program within the
+School of Electrical Engineering and Robotics at
+QUT. Dr Gammulle is the recipient of the 2019 QUT
+Executive Dean’s Commendation for Outstanding
+Doctoral Thesis Award and the QUT Early Career
+Researcher Award in 2023. Her research expertise lies in machine learning and
+computer vision, with a strong focus on spatio-temporal modelling for human
+behaviour understanding and the development of hybrid quantum-classical
+machine learning models.
+Clinton Fookes received the B.Eng. in
+Aerospace/Avionics, the MBA degree, and the Ph.D.
+degree in computer vision. He is currently the As-
+sociate Dean Research, a Professor of Vision and
+Signal Processing, and Co-Director of the SAIVT
+Lab (Signal Processing, Artificial Intelligence and
+Vision Technologies) with the Faculty of Engineer-
+ing at the Queensland University of Technology,
+Brisbane, Australia. His research interests include
+computer vision, machine learning, signal process-
+ing, and artificial intelligence. He serves on the
+editorial boards for IEEE TRANSACTIONS ON IMAGE PROCESSING and
+Pattern Recognition. He has previously served on the Editorial Board for IEEE
+TRANSACTIONS ON INFORMATION FORENSICS AND SECURITY. He
+is a Fellow of the International Association of Pattern Recognition, a Fellow
+of the Australian Academy of Technological Sciences and Engineering, and a
+Fellow of the Asia-Pacific Artificial Intelligence Association. He is a Senior
+Member of the IEEE and a multi-award winning researcher including an
+Australian Institute of Policy and Science Young Tall Poppy, an Australian
+Museum Eureka Prize winner, Engineers Australia Engineering Excellence
+Award, Australian Defence Scientist of the Year, and a Senior Fulbright
+Scholar.
+Sridha Sridharan has obtained an MSc (Commu-
+nication Engineering) degree from the University
+of Manchester, UK, and a PhD degree from the
+University of New South Wales, Australia. He is
+currently with the Queensland University of Tech-
+nology (QUT) where he is a Professor in the School
+of Electrical Engineering and Robotics. He has pub-
+lished over 600 papers consisting of publications in
+journals and in refereed international conferences in
+the areas of Image and Speech technologies during
+the period 1990-2023. During this period he has also
+graduated 85 PhD students in the areas of Image and Speech technologies.
+Prof Sridharan has also received a number of research grants from various
+funding bodies including the Commonwealth competitive funding schemes
+such as the Australian Research Council (ARC) and the National Security
+Science and Technology (NSST) unit. Several of his research outcomes have
+been commercialised.
+Simon Denman is an Associate Professor in the
+School of Electrical Engineering and Robotics at
+Queensland University of Technology (QUT). Simon
+actively researches in the fields of computer vision
+and machine learning, including action and event
+recognition, trajectory prediction, video analytics,
+biometrics, and medical signal processing. Simon
+has published over 200 papers in the areas of com-
+puter vision and machine learning, and co-leads the
+Applied Data Science research programme within
+the QUT Centre for Data Science.
+

@@ -1,0 +1,1226 @@
+Academic Editor: Toshifumi
+Moriyama
+Received: 27 February 2026
+Revised: 24 March 2026
+Accepted: 3 April 2026
+Published: 7 April 2026
+Copyright: © 2026 by the authors.
+Licensee MDPI, Basel, Switzerland.
+This article is an open access article
+distributed under the terms and
+conditions of the Creative Commons
+Attribution (CC BY) license.
+Article
+Tac-Mamba: A Pose-Guided Cross-Modal State Space Model
+with Trust-Aware Gating for mmWave Radar Human
+Activity Recognition
+Haiyi Wu 1,2 , Kai Zhao 1,2 , Wei Yao 1 and Yong Xiong 1,*
+1 Science and Technology on Micro-System Laboratory, Shanghai Institute of Microsystem and Information
+Technology, Chinese Academy of Sciences, Shanghai 200050, China; haiyiwu@mail.sim.ac.cn (H.W.);
+kaizhao@mail.sim.ac.cn (K.Z.); weiyao@mail.sim.ac.cn (W.Y.)
+2 School of Electronic, Electrical and Communication, University of Chinese Academy of Sciences,
+Beijing 100049, China
+* Correspondence: yong.xiong@mail.sim.ac.cn
+Abstract
+Millimeter-wave (mmWave) radar point clouds offer a privacy-preserving solution for Hu-
+man Activity Recognition (HAR), but their inherent sparsity and noise limit single-modal
+performance. While multimodal fusion mitigates this issue, existing methods often suffer
+from severe negative transfer during visual degradation and incur high computational
+costs, unsuitable for edge devices. To address these challenges, we propose Tac-Mamba, a
+lightweight cross-modal state space model. First, we introduce a topology-guided distil-
+lation scheme that uses a Spatial Mamba teacher to extract structural priors from visual
+skeletons. These priors are then explicitly distilled into a Point Transformer v3 (PTv3)
+radar student with a modality dropout strategy. We also developed a Trust-Aware Cross-
+Modal Attention (TACMA) module to prevent negative transfer. It evaluates the reliability
+of visual features through a SiLU-activated cross-modal bilinear interaction, smoothly
+degrading to a pure radar-driven fallback projection when visual inputs are corrupted.
+Finally, a Lightweight Temporal Mamba Block (LTMB) with a Zero-Parameter Cross-Gating
+(ZPCG) mechanism captures long-range kinematic dependencies with linear complexity.
+Experiments on the public MM-Fi dataset under strict cross-environment protocols demon-
+strate that Tac-Mamba achieves competitive accuracies of 95.37% (multimodal) and 87.54%
+(radar-only) with only 0.86M parameters and 1.89 ms inference latency. These results
+highlight the model’s exceptional robustness to modality missingness and its feasibility for
+edge deployment.
+Keywords: mmWave radar; multimodal fusion; human activity recognition; human pose
+estimation; transformer; mamba
+1. Introduction
+The rapid evolution of the Internet of Things (IoT) and ubiquitous computing has led
+to the emergence of Human Activity Recognition (HAR) as a foundational technology for
+various applications, such as smart healthcare, human-computer interaction, and elderly
+monitoring [1]. Traditional HAR systems rely mainly on optical cameras or wearable
+sensors. However, vision-based approaches are highly sensitive to variations in lighting
+and raise serious privacy concerns, which limits their use in private spaces. Although
+wearable devices offer reliable measurements, they suffer from limited battery life and low
+Electronics 2026, 15, 1535 https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 2 of 25
+user compliance during long-term monitoring. Although reliable measurements are offered
+by wearable devices, they are limited by low user compliance during long-term monitoring
+and by battery life. Therefore, millimeter-wave (mmWave) radar has gained significant
+attention as a device-free, privacy-preserving sensing modality, as shown in Figure 1. As
+mentioned in multimodal fusion sensing [2], mmWave radar is robust to adverse lighting
+conditions. Furthermore, its ability to detect non-metallic obstructions makes the invisible
+seen [3], which demonstrates its great potential for through-wall HAR [4].
+Figure 1. Comparison of Human Activity Recognition (HAR) scenarios.
+Recently, the intersection of deep learning and radar sensing has significantly ad-
+vanced the field of HAR. Related learning-based neural structures have also been explored
+in constrained sensing and reconstruction tasks, such as phase retrieval and image re-
+construction [5]. Early approaches usually converted raw radar echoes into either 2D
+spectrograms or 3D voxel grids. However, these methods introduce quantization errors
+and have a cubic increase in computational overhead with resolution, which limits real-time
+edge deployment. To address this, point-based architectures that can directly process sparse
+radar point clouds have emerged. Researchers have applied classic visual and point-cloud
+networks, such as PointNet++ [6], Graph Neural Networks (GNNs) [7], and advanced
+point Transformers like PTv3 [8] to radar applications. These improvements have made
+significant progress in fine-grained human semantic segmentation tasks [9].
+Despite these advances, effective deployment and maintenance of robust HAR systems
+in real-world environments are still challenging due to two primary obstacles. On the one
+hand, the inherent sparsity and noise of radar data limit the upper bound on representa-
+tion. Unlike dense RGB images, which contain rich semantic textures, radar point clouds
+are sparse and unstructured. This makes it difficult for single-modal radar networks to
+construct accurate human topological priors. On the other hand, traditional multimodal
+fusion suffers from severe negative transfer and computational redundancy. Recent works
+attempt to fuse radar with cameras [10,11], Wi-Fi [12], or spatial-temporal features in gait
+recognition [13]. But these works often rely on heavy network backbones. More impor-
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 3 of 25
+tantly, corrupted visual features often affect the radar representations when the visual
+modality is impaired (e.g., in dim lighting or due to camera obstruction), which results in a
+significant decline in performance. Although many multimodal foundation models have
+emerged, the large number of parameters in these models makes them unsuitable for use
+on edge devices.
+Resolving the conflict between multimodal dependency and single-modal fragility
+requires a lightweight framework that absorbs visual knowledge during training yet op-
+erates robustly on radar during inference. Lately, State Space Models (SSMs) like Mamba
+have become popular alternatives to complex Transformers. They offer linear computa-
+tional complexity while maintaining a global receptive field. Motivated by these insights,
+we propose Tac-Mamba, a lightweight cross-modal distillation framework for mmWave
+radar. It utilizes a Spatial Mamba teacher to distill structural topologies into a PTv3 radar
+student with modality dropout, establishing environment-invariant human priors. To pre-
+vent negative transfer, a Trust-Aware Consistency Gate (TACG) assesses visual reliability
+and suppresses noise, ensuring a smooth fallback to pure radar sensing. Additionally, a
+Lightweight Temporal Mamba Block (LTMB) efficiently captures long-range dependencies.
+The main contributions of this paper are summarized as follows:
+• We propose a novel, lightweight spatial-temporal architecture that leverages explicit
+topological knowledge transfer to overcome the intrinsic sparsity of mmWave radar
+signals. Specifically, we design a dual-stream spatial encoder where a Spatial Mamba
+teacher extracts structural priors from visual skeletons via a discrete spatial scan-
+ning mechanism. Driven by a modality dropout strategy and an auxiliary 3D pose
+regression task, this environment-invariant topological knowledge is distilled into
+a serialized PTv3 student network. This forces the radar encoder to construct ac-
+curate human models independently, ensuring robust sensing even under severe
+visual occlusion.
+• To mitigate the prevalent issue of negative transfer in multimodal fusion, we pro-
+pose the TACMA module, which incorporates a novel TACG. Unlike static fusion
+mechanisms, TACG evaluates the reliability of incoming visual features through a
+SiLU-activated cross-modal bilinear interaction. This mathematical constraint acts as a
+dynamic confidence filter. It achieves optimal feature synergy under ideal conditions,
+while seamlessly degrading to a deterministic, purely radar-driven fallback projection
+when visual inputs are severely corrupted. This strictly prevents the pollution of the
+radar representation.
+• We develop the LTMB to efficiently capture long-range kinematic dependencies with
+pure linear complexity. This module first employs a large-kernel 1D depthwise con-
+volution to extract local temporal micro-motions, followed by parallel Forward and
+Backward SSMs. Crucially, instead of utilizing additional dense layers for bidirectional
+fusion, we introduce a Zero-Parameter Cross-Gating (ZPCG) mechanism. It leverages
+the Sigmoid-activated hidden sequence of the forward SSM to explicitly gate the back-
+ward SSM, and vice versa. This explicitly filters future noise using historical states,
+achieving deep non-linear temporal context fusion with minimal parameter overhead.
+The remainder of this paper is organized as follows. Section 2 reviews the related work.
+Section 3 presents the proposed Tac-Mamba framework. Section 4 reports the experimental
+results, including robustness, generalization, and deployment analyses. Section 5 provides
+the ablation studies. Finally, Section 6 concludes the paper.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 4 of 25
+2. Related Work
+2.1. mmWave Radar for Human Activity Recognition
+Extracting robust spatial-temporal features from mmWave radar data has been a focal
+point in wireless sensing. Early radar HAR methods usually converted radar echoes into
+2D spectrograms or 3D voxel grids, which made it easier to reuse visual backbones but also
+introduced quantization errors and high computational cost. As the processing paradigm
+shifted toward point clouds, PointNet and its variants demonstrated the feasibility of
+learning directly from unstructured point sets.
+Subsequently, GNNs were introduced to model the topological connections between
+moving points. For instance, directed GNNs [14] and classic skeleton-based networks
+such as AGCN [15] and CTRGCN [16] have been adapted to radar point clouds to capture
+topology-aware local geometric structures. Compared with point-wise encoders, these
+methods better exploit local connectivity and motion dependency. Recently, attention-based
+models have further pushed the boundaries of radar HAR. Shi et al. proposed mmPoint-
+Attention [17], a unified framework that directly utilizes multi-frame radar point clouds
+for joint pose estimation and activity recognition without voxelization. Overall, this line
+of work reflects a clear trend from coarse signal representations to more structure-aware
+point-level modeling. Despite achieving competitive results, these single-modal radar
+networks fundamentally struggle to construct accurate human structural priors due to the
+severe sparsity and noise intrinsic to mmWave signals.
+2.2. Cross-Modal Learning and Knowledge Distillation
+Multimodal fusion and cross-modal learning have been widely explored as a means
+of overcoming the physical limitations of single sensors. Datasets such as MM-Fi [18]
+have provided standardized baselines for fusing radar, LiDAR, and camera data. Recently,
+the emergence of multimodal foundation models has dominated this field. For example,
+FM-Fi 2.0 [19] explores translating knowledge from vision-based foundation models into
+RF features. Chen et al. proposed X-Fi [20], a modality-invariant foundation model utilizing
+a flexible Transformer structure to accommodate arbitrary sensor combinations. Similarly,
+MMSense [21] aligns heterogeneous sensors into a unified semantic space via a Large
+Language Model (LLM) backbone, while MASTER [22] further extends foundation models
+for generalized activity recognition. Additionally, direct radar-camera supervision [23] has
+been shown to be effective for skeletal analysis.
+While these models achieve good multimodality, their massive parameter sizes hinder
+real-time edge deployment. Moreover, stronger multimodal fusion often comes with
+weaker robustness under modality degradation. When high-quality modalities such as
+vision are corrupted, simple or overly coupled fusion can transfer noisy information to the
+radar branch, resulting in negative transfer. Therefore, multimodal accuracy alone is not
+sufficient; robustness under degraded modalities is also important.
+To achieve robust single-modal inference, cross-modal knowledge distillation (Teacher–
+Student networks) has been widely explored. Notably, Huang et al. proposed SkeFi [24],
+an advanced framework that transfers high-quality topological knowledge from data-rich
+visual modalities to noisy wireless sensors via Temporal Correlation Adaptive Graph
+Convolution. Compared with direct multimodal fusion, this line is better aligned with the
+practical goal of robust single-modal deployment. Inspired by these works, our Tac-Mamba
+takes a step further by employing a modality dropout strategy and a TACG, ensuring
+not only efficient knowledge transfer but also suppression of negative transfer during
+dynamic deployment.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 5 of 25
+2.3. State Space Models in Deep Learning
+Transformers have long dominated sequence modeling, but their quadratic computa-
+tional complexity with respect to sequence length limits their application in high-frame-rate
+radar sensing. Recently, SSMs such as Mamba have provided a highly scalable alternative.
+Mamba uses a selective scan mechanism for context-aware reasoning with linear-time and
+linear-memory complexity, overcoming the Transformer bottleneck.
+The integration of Mamba into point cloud processing and time-series sensing is
+rapidly evolving. In the radar domain, Chen et al. introduced STPM [25], a Spatial-
+Temporal Point Mamba designed specifically to capture temporal dependencies in mmWave
+signals. Furthermore, Zhang et al. proposed LSTPointGMN [26], integrating lightweight
+graph Mamba networks for spatial-temporal gesture recognition. These studies suggest a
+broader transition from heavy attention-based temporal modeling to more efficient long-
+sequence architectures. Building upon these advances, our work designs a customized
+vision-based Spatial Mamba teacher and the LTMB, enabling effective long-sequence
+modeling while maintaining deployment efficiency.
+3. Proposed Method
+3.1. Framework Overview
+To address the severe performance degradation of human sensing in visually denied
+environments, we propose Tac-Mamba, a lightweight cross-modal state space model. As
+illustrated in Figure 2, the framework operates as a teacher-student cross-modal distillation
+pipeline. We treat mmWave radar point clouds and 2D visual skeletons as two hetero-
+geneous input streams. Specifically, the framework processes these inputs through four
+tightly coupled stages:
+Figure 2. The overall architecture of the proposed Tac-Mamba framework. It comprises a dual-
+stream spatial representation learning stage driven by modality dropout, a Trust-Aware Cross-Modal
+Attention (TACMA) module for robust fusion, and a Lightweight Temporal Mamba Block (LTMB) for
+capturing long-term kinematic dependencies.
+First, the dual-stream inputs are processed by the Spatial Representation Learning
+module (Fspatial). This module independently extracts geometric features from sparse
+radar points and topological features from visual joints. It generates frame-level spatial
+representations for both modalities:
+Xr, Xv = Fspatial(Pradar, Vskeleton), (1)
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 6 of 25
+where Pradar denotes the input radar point clouds, Vskeleton represents the visual skeleton
+sequences, and Xr, Xv ∈ RT×d are the extracted high-dimensional spatial features for the
+T frames.
+Second, the modality dropout strategy (Fdrop) is applied during training. It ran-
+domly masks the visual features to force the radar student network to learn human
+topology independently:
+X̃v = Fdrop(Xv, p), (2)
+where p is the dropout probability, and X̃v denotes the masked visual feature. The modality
+dropout operates on the encoded visual feature Xv, not on the raw visual input. It is applied
+after the visual encoder to obtain the masked feature X̃v.
+Moreover, the feature streams are fed into the Trust-Aware Cross-Modal Attention
+module (FTACMA). This module calculates a confidence score based on cross-modal in-
+teractions to adaptively fuse the two modalities. It ensures a deterministic fallback when
+vision is absent:
+Xf use = FTACMA(Xr, X̃v) ∈ RT×d
+, (3)
+where Xf use represents the robust fused features.
+Finally, the fused sequence is sent to the LTMB (FLTMB), which captures long-range
+temporal dynamics. The final action category is predicted through a temporal pooling layer
+and a fully connected classifier:
+ŷ = FC(Pool(FLTMB(Xf use))) ∈ RNcls , (4)
+where Pool(·) denotes temporal average pooling, FC(·) is the fully connected classifier, and
+Ncls indicates the total number of action classes.
+The proposed framework does not replace all modules with Mamba. Mamba is mainly
+used in the visual topology modeling stage and the temporal modeling stage, where long-
+sequence modeling is most important. By contrast, PTv3 is retained for sparse point cloud
+encoding, and TACMA is kept as a lightweight module for cross-modal fusion. In this
+way, the framework combines PTv3 for spatial point modeling and Mamba for efficient
+sequence modeling.
+3.2. Dual-Stream Spatial Representation Learning
+3.2.1. Radar Encoder (Student Network)
+Millimeter-wave radar point clouds exhibit severe background clutter and are highly
+spatially sparse. To effectively extract geometric features, we adopt a stacked PTv3 archi-
+tecture as the radar encode.
+For the t-th frame, the input point set is defined as Pt ∈ RN×5. Each point contains
+a 5D physical state: 3D coordinates (x, y, z), Doppler velocity v, and reflection intensity I.
+Traditional point-based networks heavily rely on K-Nearest Neighbors (KNN) to group
+local features, which inherently introduces irregular memory access and severe compu-
+tational bottlenecks. Instead, PTv3 overcomes this by mapping unstructured 3D points
+into structured 1D arrays via space-filling curves (e.g., Morton or Hilbert curves), enabling
+highly efficient serialized attention.
+Following a linear embedding layer that projects the raw 5D states into a d-dimensional
+feature space, we utilize the localized Vector Attention mechanism. To update the semantic
+state hi of the i-th point, the aggregation rule over its serialized local neighborhood Ω(i) is
+formulated as:
+h′
+i = ∑
+j∈Ω(i)
+ρ Wqhi − Wkhj + pij
+
+⊙ (Wvhj + pij), (5)
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 7 of 25
+where h′
+i represents the updated semantic feature of point i, and Ω(i) denotes its local
+spatial neighborhood constructed via KNN. The terms hi and hj are the current semantic
+states of points i and j. The learnable projection matrices Wq, Wk, Wv generate the query,
+key, and value vectors, respectively. The term pij = MLP(ci − cj) acts as the relative
+position encoding based on the 3D coordinate differences between point i and j. This
+explicitly provides spatial geometric priors for unstructured points. The function ρ(·)
+denotes the Softmax normalization along the neighborhood dimension, and ⊙ represents
+element-wise multiplication.
+After multiple attention layers and a global max-pooling operation along the point
+dimension N, the radar encoder outputs the frame-level spatial representation Xr ∈ RT×d.
+This extracts the most salient topological structures of the human body, which converts the
+unstructured point features into a unified frame-level spatial representation.
+3.2.2. Topology-State Skeleton Encoder (Teacher Network)
+To provide accurate topological supervision signals, we propose a Topology-State
+Skeleton Encoder, which integrates a Point-wise MLP with a Spatial Mamba network.
+First, we utilize a Point-wise MLP to map the low-dimensional 2D visual skeleton
+coordinates V ∈ RT×J×2 into a high-dimensional semantic space. For each joint coordinate
+vt,j, the initial node embedding e
+(t,j)
+v is generated via:
+e
+(t,j)
+v = W2 · GELU LayerNorm(W1vt,j)
+
+, (6)
+where W1 and W2 are the weights of two consecutive linear layers, expanding the feature
+dimension to d. This yields the embedded skeleton tensor Ev ∈ RT×J×d.
+Subsequently, we treat the J joints within a single frame as a spatial sequence. We
+adopt the SSM as the core of our Spatial Mamba. Geometrically, a continuous-time SSM
+maps a 1D sequence x(t) to an output response y(t) through a hidden state h(t), governed
+by the following linear ordinary differential equations (ODEs):
+ḣ(t) = Ah(t) + Bx(t), y(t) = Ch(t), (7)
+where A represents the evolution matrix, and B, C are the projection parameters. To
+process the discrete skeleton spatial sequence, we introduce a data-dependent spatial step
+parameter ∆k and apply the zero-order hold (ZOH) discretization rule:
+Āk = exp(∆kA), B̄k = (∆kA)−1
+(Āk − I) · ∆kB. (8)
+The discrete spatial scanning process for the k-th joint is expressed as:
+sk = Āksk−1 + B̄kev,k, yk = Csk, (9)
+where ev,k is the input embedding of the k-th joint. The term sk represents the hidden
+topological state, and yk is the output response. This scanning mechanism traverses all
+skeleton joints with linear complexity O(J).
+Finally, we apply global average pooling across the J joints, aggregating the joint-level
+topological responses into a unified frame-level visual representation Xv ∈ RT×d.
+3.3. Modality-Missing Robust Fusion
+3.3.1. Trust-Aware Cross-Modal Attention (TACMA)
+After obtaining the dual-stream representations, we employ a cross-modal attention
+mechanism to align features. We treat the radar feature Xr as the Query (Q), and the
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 8 of 25
+visual feature X̃v as the Key (K) and Value (V). The preliminary fused feature Xcross is
+computed by:
+Q = XrWQ, K = X̃vWK, V = X̃vWV, (10)
+Xcross = Softmax
+QK⊤
+√
+d
+!
+V, (11)
+where WQ, WK, WV are linear projection matrices, and d is the scaling factor representing
+the feature dimension.
+However, when the visual modality is absent during inference, X̃v collapses to a zero
+tensor. This causes V = 0, meaning Xcross becomes entirely corrupted by noise, leading
+to network failure. To tackle this, we integrate a TACG into the attention mechanism, as
+depicted in Figure 3.
+Figure 3. The architecture of the Trust-Aware Cross-Modal Attention (TACMA) module. A SiLU-
+activated bilinear interaction explicitly evaluates the reliability of the visual features, generating a
+deterministic gate to prevent multimodal negative transfer.
+It evaluates feature reliability through bilinear cross-modal interactions:
+G = σ
+
+SiLU(WrXr) ⊙ SiLU(WvX̃v) + Wf bXr
+
+, (12)
+where G ∈ (0, 1) is the generated confidence gate. The function σ(·) denotes the Sigmoid
+activation. The Swish activation (SiLU) is specifically employed to extract non-linear,
+high-order representations from each modality prior to their element-wise interaction. The
+matrices Wr, Wv ∈ Rd×d align the cross-modal features, while Wf b provides a deterministic
+fallback projection driven purely by the radar features.
+The final robust fused feature Xf use is adaptively modulated by the gate:
+Xf use = G ⊙ Xcross + (1 − G) ⊙ Xr. (13)
+3.3.2. Modality Dropout Strategy
+To reduce the radar student’s over-reliance on the vision teacher, we use a modality
+dropout strategy. During training, the visual representation Xv is randomly masked with a
+probability p = 0.3:
+X̃v = M · Xv, M ∼ Bernoulli(1 − p). (14)
+This dropout strategy forms a mathematical closed-loop with our TACMA module.
+When dropout is triggered (X̃v = 0), the bilinear interaction term SiLU(WvX̃v) strictly
+collapses to zero. Consequently, the gate deterministically degrades to G = σ(Wf bXr),
+forcing the network to seamlessly fall back to the pure radar feature Xr for robust inference.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 9 of 25
+3.4. Lightweight Temporal State-Space Modeling (LTMB)
+To model long-term action dynamics over hundreds of frames, traditional bidirec-
+tional Mamba (Bi-Mamba) utilizes additional linear projections to concatenate features,
+introducing redundant parameters. Here, we propose the LTMB, equipped with a novel
+ZPCG mechanism, whose detailed topology is shown in Figure 4.
+Figure 4. The internal structure of the Lightweight Temporal Mamba Block (LTMB). It employs a
+large-kernel depthwise convolution (k = 9) and parallel bidirectional state-space models, utilizing a
+ZPCG mechanism to fuse historical and future contexts.
+Given the fused sequence Xf use ∈ RT×d, we first apply a 1D Depthwise Convolution
+(DWConv1D). By employing a large temporal receptive field (kernel size k = 9, padding
+p = 4), this local convolution effectively captures sudden kinematic variations and micro-
+motions before feeding the sequence into the global SSM operators. A local residual
+connection is added to preserve original sequence integrity:
+Z = LayerNorm
+
+DWConv1D(Xf use; k = 9, p = 4) + Xf use
+
+. (15)
+Let zt denote the feature at time step t. We employ forward and backward discrete-
+state-space operators to capture global temporal evolution independently. The forward
+SSM processes the sequence from t = 1 to T:
+−
+→
+h t = Āf wd
+−
+→
+h t−1 + B̄f wdzt, −
+→
+y t = Cf wd
+−
+→
+h t, (16)
+where
+−
+→
+h t is the forward hidden state containing past historical contexts, and −
+→
+y t is the
+forward temporal response. Conversely, the backward SSM processes the sequence from
+t = T down to 1:
+←
+−
+h t = Ābwd
+←
+−
+h t+1 + B̄bwdzt, ←
+−
+y t = Cbwd
+←
+−
+h t, (17)
+where
+←
+−
+h t encodes future temporal contexts. Let
+−
+→
+H and
+←
+−
+H denote the collections of
+forward and backward responses for the entire sequence.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 10 of 25
+Instead of learning a new weight matrix for fusion, we use the Sigmoid-activated
+features of one direction to gate the other. The output Hout is modulated as:
+Hout =
+−
+→
+H ⊙ σ(
+←
+−
+H )
+
++
+←
+−
+H ⊙ σ(
+−
+→
+H )
+
++ Xf use. (18)
+This ZPCG explicitly filters future noise using historical states and vice versa. It
+achieves deep non-linear temporal fusion without introducing any additional parameters
+or computational overhead.
+3.5. Loss Function
+To optimize the teacher-student framework effectively, we formulate an end-to-end
+joint loss function. It consists of a standard classification loss and an auxiliary coordinate
+regression loss:
+Ltotal = LHAR + λLHPE, (19)
+where LHAR is the standard Cross-Entropy loss for action recognition. It measures the
+discrepancy between the predicted probabilities ŷ and the ground-truth labels ygt:
+LHAR = −
+Ncls
+∑
+c=1
+y
+(c)
+gt log(ŷ(c)
+), (20)
+where Ncls represents the total number of action categories. The term y
+(i,c)
+gt ∈ {0, 1}
+is the binary indicator from the one-hot encoded ground truth for sample i belonging
+to class c. The term ŷ(i,c) is the corresponding predicted probability outputted by the
+Softmax classifier.
+And LHPE is the auxiliary Human Pose Estimation (HPE) loss. It computes the Mean
+Squared Error (MSE) between the 3D skeleton joints Ppred predicted by the radar student
+and the ground-truth joints Pgt provided by the vision teacher:
+LHPE =
+1
+T · J · 3
+T
+∑
+t=1
+J
+∑
+j=1
+P
+(t,j)
+pred − P
+(t,j)
+gt
+2
+2
+. (21)
+Here, T denotes the sequence length (number of frames), J is the total number of
+human joints per frame, and 3 accounts for the 3D spatial coordinates. The vectors P
+(i,t,j)
+pred
+and P
+(i,t,j)
+gt represent the predicted and ground-truth 3D coordinates for the j-th joint at
+the t-th frame of the i-th sample. The hyperparameter λ balances the two objectives. This
+explicit regression forces the radar student to reconstruct human topology in the latent
+space, which is a key constraint for achieving modality-missing robustness.
+4. Experiments Results
+4.1. Datasets and Experimental Settings
+To comprehensively evaluate the modality-missing robustness and environmental
+generalizability of the proposed Tac-Mamba, we conducted extensive experiments on the
+large-scale public dataset: MM-Fi [18].
+4.1.1. MM-Fi Dataset
+We use the MM-Fi dataset to provide a fair and rigorous benchmark against state-
+of-the-art (SOTA) methods. Unlike traditional vision-centric datasets, MM-Fi provides
+synchronized multimodal sensor data that supports versatile, non-intrusive human sensing.
+The mmWave radar point clouds were collected using a TI IWR6843AOP mmWave radar
+with 3 transmit (Tx) and 4 receive (Rx) antennas. This device operates in the 60–64 GHz
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 11 of 25
+frequency band. The radar was strategically positioned 3 m from the human subjects during
+data recording. To establish the visual teacher modality, a calibrated dual-camera setup
+(Intel RealSense D435 RGB-D cameras) was synchronously deployed to generate precise
+3D pose annotations. High-quality 2D skeleton keypoints were then extracted from these
+annotations using the HRNet algorithm. All multimodal data streams were temporally
+aligned using software synchronization and uniformly sampled at 10 FPS.
+The dataset includes 27 human activities, 14 of which are daily activities and 13 of
+which are rehabilitation exercises. To evaluate the model’s ability to capture long-term
+dynamics, each action sequence is either padded or truncated to fit within a fixed time
+window of T = 297 frames. For the radar modality, we extract a 5D physical state vector
+for each point: (x, y, z, v, I), representing the 3D Cartesian coordinates, radial Doppler
+velocity, and signal reflection intensity. The visual modality provides J = 17 structural
+keypoints (u, v) to supervise the topological learning. Table 1 summarizes the specific
+action categories and comprehensive evaluation protocols of the MM-Fi dataset.
+Table 1. Overview of the MM-Fi Dataset: Action Categories and Evaluation Protocols.
+Dataset Attributes Detailed Description
+Action Categories
+Daily Activities (14)
+A01: Walking, A02: Sitting down, A03: Standing up, A04: Picking up an
+item, A05: Drinking water, A06: Reading, A07: Writing, A08: Typing,
+A09: Brushing teeth, A10: Washing hands, A11: Sweeping,
+A12: Mopping, A13: Wiping desk, A14: Washing face.
+Rehab Exercises (13)
+A15: Chest expansion, A16: Squatting, A17: Arm raising, A18: Lunges,
+A19: Waist twisting, A20: Leg raising, A21: Stretching,
+A22: Cross-stepping, A23: Kicking, A24: Bending, A25: Arm circling,
+A26: Torso rotation, A27: Lateral bending.
+Evaluation Protocols
+Protocol 1: Cross-Subject Split: Train on 32 subjects, Test on 8 unseen subjects.
+Protocol 2: Random Split Split: 80% of all samples for training, 20% for testing.
+Protocol 3: Cross-Environment
+Split: Train on 3 environments (E01, E02, E03), Test on 1 unseen
+environment (E04).
+4.1.2. Evaluation Protocol (Cross-Environment)
+To rigorously evaluate the model’s robustness against environmental variations and
+background clutter, we employ the strict Cross-Environment (Protocol 3) evaluation strat-
+egy defined in the MM-Fi benchmark. Unlike random splits, this protocol ensures that the
+environments in the test set are completely unseen during training. Specifically, data col-
+lected in three distinct environments (E01, E02, E03) are used for training, while data from
+a completely different environment (E04) is reserved exclusively for validation and testing.
+4.2. Implementation Details
+All experiments were implemented in PyTorch (version 2.2.0) on a computer equipped
+with an Intel Core i7-13600KF CPU and an NVIDIA GeForce RTX 4090 GPU.
+In this work, we directly use the mmWave radar point clouds released in the public
+MM-Fi benchmark. Therefore, the proposed framework does not start from raw radar ADC
+signals or redesign the low-level radar signal processing pipeline. Instead, it focuses on
+downstream spatial-temporal representation learning and HAR based on the benchmark-
+provided point cloud data.
+To preserve the geometric information of the radar point clouds, we do not use a fixed
+point count. Instead, the data loader keeps all valid radar reflection points in each frame
+and applies dynamic batch-wise padding. In each batch, the point cloud sequences are
+padded to the maximum number of valid points in that batch, which usually reaches up to
+about 96 points. This variable-length input is directly supported by the PTv3 radar encoder.
+Therefore, the model is trained with dynamic point clouds rather than a fixed setting. The
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 12 of 25
+embedding dimensions for both the radar student encoder (PTv3) and the vision teacher
+encoder (Spatial Mamba) were unified to d = 128. For the Spatial Mamba network, the
+state expansion factor was set to 2 and the hidden state dimension to 16. In the LTMB, the
+1D depthwise convolution was configured with a kernel size of k = 9, a stride of s = 1, and
+a padding of p = 4.
+The model was trained end-to-end for 150 epochs using the Adam optimizer with a
+batch size of 32. The initial learning rate was set to 1 × 10−3 and was progressively decayed
+to ensure stable convergence. The network was supervised by a joint loss function, with the
+balance hyperparameter λhpe empirically set to 0.01. During training, the modality dropout
+probability was strictly set to p = 0.3.
+During the inference phase, to validate the effectiveness of our TACG and Modality-
+Missing Robust Fusion mechanism, we designed a dual-scenario testing strategy: the
+Multimodal Setting (Radar + Vision) and the Radar-Only Setting (vision masked).
+Figure 5 presents the confusion matrices for the Tac-Mamba model under both testing
+scenarios. Overall, the model demonstrated strong classification performance, achieving
+an average Top-1 accuracy of 95.37% under the multimodal fusion setting (Figure 5a) and
+87.54% under the pure radar setting (Figure 5b).
+(a) Multimodal Setting (Radar + Vision) (b) Radar-Only Setting (Vision Masked)
+Figure 5. Confusion matrices for the proposed Tac-Mamba model on the MM-Fi dataset under two
+distinct inference scenarios. (a) The multimodal fusion setting achieves an average Top-1 accuracy of
+95.37%. (b) The pure radar setting maintains a robust accuracy of 87.54% even when visual inputs
+are completely denied.
+4.3. Comparison with SOTA Methods
+To comprehensively demonstrate the superiority of Tac-Mamba, we compare it against
+several recent SOTA architectures on the MM-Fi dataset. The baselines encompass single-
+modal networks, the latest multimodal foundation models, and advanced cross-modal
+distillation frameworks. Specifically, we adopt the following baselines for comparison:
+• AGCN [15]: The Adaptive Graph Convolutional Network (AGCN) is a classic skeleton-
+based action recognition model. Rather than relying on a fixed physical structure, it
+introduces a dynamic graph construction mechanism that adaptively learns the graph
+topology for different action samples.
+• CTRGCN [16]: The Channel-wise Topology Refinement Graph Convolution (CTRGCN)
+is an advancement in graph modeling that learns different network topologies for
+different feature channels. This enables the model to capture finer and more diverse
+spatial correlations among joints.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 13 of 25
+• MM-Fi Baseline [18]: The official multimodal benchmark model is provided by the
+MM-Fi dataset. It uses a flattened MLP architecture to extract spatial features and
+employs recurrent units (e.g., Bi-GRU) or standard Transformers to fuse multimodal
+sequences over time.
+• X-Fi [20]: This is a recently proposed, modality-invariant foundation model designed
+for multimodal human sensing. It uses a flexible Transformer structure to handle
+different input sizes and incorporates a X-fusion mechanism. This enables the model
+to handle any combination of sensor modalities without extensive retraining.
+• MMSense [21]: This is a multi-task foundation model that adapts vision-based archi-
+tectures for wireless sensing. It incorporates a modality gating mechanism and uses a
+vision-based large language model (LLM) backbone to align features from multiple
+sensors (radar, vision, and LiDAR) into a unified semantic space.
+• SkeFi [24]: A cutting-edge cross-modal knowledge transfer framework. It is explicitly
+designed to transfer high-quality topological knowledge from data-rich visual modal-
+ities to noisy wireless sensors (e.g., mmWave). It employs an enhanced Temporal
+Correlation Adaptive Graph Convolution (TC-AGC) to mitigate the noise caused by
+missing frames in wireless sensing.
+We conduct the benchmark tests under the strict Cross-Environment setting (Protocol 3)
+of the MM-Fi dataset. This protocol ensures that the background clutter in the test set is
+never seen during training. Furthermore, to comprehensively evaluate the performance
+upper bound under ideal conditions and the modality-missing robustness in extreme
+environments, we report the Top-1 Accuracy (%) under two distinct inference scenarios:
+• Multimodal Setting: Both radar point clouds and visual skeletons are provided to the
+network during both training and inference phases. This setting assesses the upper
+bound of cross-modal fusion performance when comprehensive sensor information
+is available.
+• Radar-Only Setting: The model is jointly optimized using multimodal data during
+the training phase, leveraging the topological supervision from the vision teacher.
+However, during validation and inference, the visual input is completely masked (i.e.,
+replaced by all-zero tensors). This setting explicitly simulates real-world modality-
+missing conditions caused by low nighttime illumination, severe physical occlu-
+sions, or visual sensor failures. It rigorously validates the network’s robustness for
+environment-invariant sensing, relying exclusively on the mmWave radar modality
+and entirely decoupled from visual dependencies.
+The quantitative results are summarized in Table 2.
+Table 2. Performance Comparison with SOTA Methods on the MM-Fi Dataset under the Cross-
+Environment Setting (Protocol 3). ‘-’ denotes the metric is not applicable or not reported.
+Method Inference Modality
+Acc Acc
+(Radar-Only) % (Multi-Modal) %
+Single-Modal/Knowledge Distillation Networks
+CTRGCN (Radar) [16] Radar 60.97 -
+SkeFi [24] Radar (Distilled) 62.98 -
+AGCN (Radar) [15] Radar 65.25 -
+Multi-Modal Networks
+MM-Fi Baseline [18] Radar + Vision 85.00 66.90
+X-Fi [20] Radar + Vision 85.70 73.40
+MMSense [21] Radar + Vision + LiDAR - 87.66
+Tac-Mamba (Ours) Radar + Vision 87.54 95.37
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 14 of 25
+As demonstrated in Table 2, the proposed Tac-Mamba establishes a new SOTA perfor-
+mance, exhibiting superiority in both multimodal and single-modal inference scenarios.
+The fundamental reasons driving this superior performance can be attributed to our specific
+architectural innovations:
+A critical observation from Table 2 is the severe negative transfer observed in tra-
+ditional multimodal models under the Cross-Environment protocol. Because the visual
+modality is highly sensitive to environmental and illumination changes, it introduces
+significant noise in unseen testing environments. Consequently, the multimodal fusion
+accuracies of the MM-Fi Baseline (66.90%) and the foundation model X-Fi (73.40%) are
+paradoxically much lower than their pure Radar-Only counterparts (85.00% and 85.70%,
+respectively). The simple concatenation or attention mechanisms in these baselines fail to
+isolate the corrupted visual features, leading to polluted joint representations.
+In stark contrast, Tac-Mamba avoids this degradation entirely and achieves a competi-
+tive accuracy of 95.37% in the multimodal setting, outperforming the massive MMSense
+model (87.66%). This advantage is driven by our proposed TACG. Unlike static fusion,
+TACG utilizes bilinear cross-modal interactions to dynamically evaluate the reliability of
+incoming visual features. When the visual input is corrupted by environmental shifts, the
+gate deterministically suppresses the noisy visual branch, ensuring that the fusion process
+is constructively enhanced rather than polluted.
+In the strictly Radar-Only scenario, Tac-Mamba retains a robust accuracy of 87.54%.
+Traditional graph-based networks, such as AGCN and CTRGCN, fail to capture the unstruc-
+tured geometry of radar clouds. This results in accuracy rates below 66%. Furthermore, the
+dedicated cross-modal distillation framework SkeFi achieves only 62.98% on single-modal
+inference. This indicates that its graph-based transfer has difficulty overcoming the inherent
+sparsity of mmWave data.
+Tac-Mamba’s performance in the pure-radar setting is superior, with a score of 87.54%.
+This score slightly surpasses the foundation model X-Fi’s score of 85.70%. This is primarily
+attributed to the modality dropout strategy combined with the PTv3 encoder. During
+training, the random masking of the vision teacher forces the PTv3 student to map sparse 3D
+coordinates independently to high-dimensional topological representations. This explicit
+distillation, which is supervised by the Spatial Mamba teacher, guarantees that the radar
+branch learns an environment-invariant human structural prior. This ensures that Tac-
+Mamba can maintain reliable sensing capabilities, even when cameras are disabled in
+real-world edge deployments.
+4.4. Robustness to Radar Point Cloud Sparsity
+In practical deployments, the number of valid mmWave radar points may change
+with distance, clutter, and body motion. To examine the robustness of Tac-Mamba to sparse
+radar point clouds, we conducted an additional inference-time sparsity test.
+During training, the model used the original dynamic point clouds with batch-wise
+padding, where the maximum number of valid points in each batch generally reached up
+to about 96. During evaluation, we randomly downsampled the valid radar points in each
+frame to fixed densities of N ∈ {64, 32, 16, 8}. We then tested both the Radar-Only and
+Multi-Modal settings. The results are summarized in Table 3.
+As shown in Table 3, the recognition accuracy decreases as the radar point cloud
+becomes sparser. When the input is downsampled to 64 points, Tac-Mamba still maintains
+81.94% accuracy in the Radar-Only setting and 92.13% accuracy in the Multi-Modal setting.
+When the point cloud becomes much sparser, the performance drops more clearly in
+both settings.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 15 of 25
+Table 3. Robustness Analysis under Different Radar Point Densities.
+Radar Point Density
+Accuracy (%)
+Multi-Modal Radar-Only
+N = 96 (Original dynamic points) 95.37 87.54
+N = 64 92.13 81.94
+N = 32 76.85 50.00
+N = 16 63.43 35.19
+N = 8 53.70 25.46
+In low-density point cloud scenarios, the Multi-Modal setting remains consistently
+better than the Radar-Only setting. For example, when N = 8, the Radar-Only accuracy
+drops to 25.46%, while the Multi-Modal accuracy remains at 53.70%. This result suggests
+that the fusion framework, including TACG, helps compensate for the loss of radar spatial
+information under sparse input conditions. Overall, these results show that the proposed
+framework is not limited to one fixed point count and has reasonable robustness to varying
+radar point densities.
+4.5. Robustness to Visual Pose Estimator Quality
+The proposed framework uses a Spatial Mamba teacher to provide visual structural
+guidance during training. To examine whether the final radar-only performance is sensitive
+to the quality of this visual teacher, we conducted a visual noise injection test.
+Specifically, during training, we added Gaussian noise N (0, σ2) to the 3D visual
+skeleton coordinates to simulate degraded pose estimation quality. Two degradation levels
+were considered: σ = 0.05 and σ = 0.10. All models were trained under the Cross-
+Environment protocol, and the final Radar-Only accuracy was evaluated on the clean test
+set. For comparison, we also trained the official MM-Fi baseline under the same noisy
+visual conditions. The results are summarized in Table 4.
+Table 4. Sensitivity of Radar-Only Accuracy to the Quality of the Visual Teacher during Training.
+Visual Teacher Quality (Training) MM-Fi Baseline Tac-Mamba (Ours)
+Clean Skeletons (σ = 0.00) 85.00% 87.54%
+Mild Degradation (σ = 0.05) 76.42% 86.12%
+Severe Degradation (σ = 0.10) 68.35% 84.85%
+As shown in Table 4, the radar-only performance of the MM-Fi baseline is strongly
+affected by degraded visual supervision during training. In contrast, Tac-Mamba remains
+relatively stable. When σ = 0.10, the MM-Fi baseline drops from 85.00% to 68.35%,
+while Tac-Mamba only decreases from 87.54% to 84.85%. These results show that Tac-
+Mamba is less sensitive to imperfect visual supervision and can maintain robust radar-only
+performance even when the visual teacher quality degrades.
+4.6. Statistical Significance and Stability Analysis
+To further examine the stability of the proposed framework, we repeated the evaluation
+under multiple independent runs with different random seeds. Specifically, we retrained
+the full Tac-Mamba model from scratch using three random seeds, i.e., S ∈ {0, 42, 1024}.
+We report the sample mean µ, standard deviation σ, and the 95% confidence interval of the
+mean accuracy:
+µ =
+1
+|S| ∑
+i∈S
+Ai, σ =
+s
+1
+|S| − 1 ∑
+i∈S
+(Ai − µ)2 (22)
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 16 of 25
+CI95% =
+"
+µ − t0.975,|S|−1
+σ
+p
+|S|
+, µ + t0.975,|S|−1
+σ
+p
+|S|
+#
+(23)
+where Ai denotes the Top-1 accuracy under seed i, and t0.975,|S|−1 is the critical value of the
+Student’s t distribution.
+The quantitative results are summarized in Table 5. In the Radar-Only setting, the mean
+accuracy is 87.36% with a standard deviation of 0.58%, and the 95% confidence interval is
+[85.93%, 88.79%]. In the Multi-Modal setting, the mean accuracy is 95.31% with a standard
+deviation of 0.30%, and the 95% confidence interval is [94.56%, 96.05%]. These results show
+that the proposed framework achieves stable performance across repeated runs.
+Table 5. Statistical Significance and Stability Analysis Results over Multiple Independent Runs.
+Modality Setting Mean Accuracy (%) Std. Dev. (%) 95% CI of Mean (%)
+Radar-Only 87.36 0.58 [85.93, 88.79]
+Multi-Modal (Ours) 95.31 0.30 [94.56, 96.05]
+4.7. Cross-Environment Generalization Analysis
+Evaluating the model under unseen physical environments is important for examining
+its generalization ability. Although cross-dataset validation is often used for this purpose,
+it is not directly feasible for Tac-Mamba under the current training setting. The proposed
+cross-modal distillation framework requires synchronized mmWave point clouds and 3D
+visual skeletons during training. At present, MM-Fi is one of the few public benchmarks
+that provides this dual-modal pairing.
+To further examine cross-environment generalization, we conducted a Leave-One-
+Environment-Out (LOEO) evaluation across the four environments (E01 to E04) in the MM-
+Fi dataset. According to the dataset specification, these environments cover two different
+rooms and two sensor deployment orientations. As a result, they involve different spatial
+layouts and multipath conditions. In each fold, the model was trained on three environ-
+ments and tested on the remaining unseen one. The results are summarized in Table 6.
+Table 6. Comprehensive Cross-Environment Generalization Analysis (Leave-One-Environment-Out).
+The model is trained on three environments and tested on the remaining unseen environment.
+Testing Environment Training Environments Radar-Only Acc. Multi-Modal Acc.
+E01 E02, E03, E04 86.39% 94.56%
+E02 E01, E03, E04 85.80% 93.60%
+E03 E01, E02, E04 80.31% 93.98%
+E04 (Protocol 3) E01, E02, E03 87.54% 95.37%
+As shown in Table 6, Tac-Mamba maintains stable recognition performance across
+all unseen environments. In the Multi-Modal setting, the accuracy ranges from 93.60% to
+95.37%. In the Radar-Only setting, the accuracy ranges from 80.31% to 87.54%. When tested
+on E03, the Radar-Only accuracy drops to 80.31%, which may be related to stronger back-
+ground multipath interference in that environment. Even so, the Multi-Modal framework
+still achieves 93.98% accuracy on E03. These results show that the proposed framework has
+good robustness across different unseen environments and does not simply overfit to one
+specific environment.
+4.8. Training Efficiency and Complexity Analysis
+While Tac-Mamba is designed for efficient edge inference, training multi-modal net-
+works on 4D point cloud sequences typically requires substantial computational resources.
+To empirically validate the training efficiency and the theoretical linear complexity (O(L)) of
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 17 of 25
+the proposed architecture, we conducted a controlled profiling experiment comparing our
+Temporal Mamba block with a standard Multi-Head Self-Attention Transformer Encoder.
+To isolate the temporal modeling efficiency from the spatial feature extraction over-
+head, we evaluated the standalone temporal modules under identical parameter settings
+(hidden dimension D = 256, 4 layers, batch size 16) on an NVIDIA RTX 4090 GPU. We
+recorded the peak GPU memory allocation (VRAM) and the average training time per
+iteration across varying sequence lengths (L). The results are summarized in Table 7.
+Table 7. Comparison of Training Efficiency between Transformer and Mamba Temporal Modules
+across Varying Sequence Lengths (Batch Size = 16).
+Sequence Length (L)
+Transformer Encoder Temporal Mamba (Ours)
+VRAM (MB) Time/Iter (ms) VRAM (MB) Time/Iter (ms)
+297 (Standard) 672 13.2 314 8.0
+1024 2078 47.8 877 9.9
+2048 4077 141.7 1670 20.1
+4096 (Extended) 8043 468.1 3262 40.2
+As shown in Table 7, at the standard MM-Fi sequence length of L = 297, the Mamba
+module reduces memory consumption by 53.2% and training time by 39.3% compared
+to the Transformer baseline. As the sequence length scales to 4096 frames (representing
+continuous monitoring scenarios), the performance gap widens significantly. The self-
+attention mechanism in Transformers incurs a quadratic computational complexity (O(L2)),
+leading to a rapid increase in memory usage (8043 MB) and training time (468.1 ms).
+In contrast, the State Space Model (SSM) processes the temporal dynamics with
+a linear complexity (O(L)). At L = 4096, the Mamba module requires only 3262 MB
+of VRAM and 40.2 ms per iteration, achieving an 11.6× speedup over the Transformer.
+This scaling behavior confirms that Tac-Mamba provides a highly memory- and time-
+efficient foundation for processing long-term continuous human sensing data, lowering
+the hardware threshold required for training.
+4.9. Edge Deployment Validation on Jetson Nano
+To evaluate the practical deployment feasibility of the proposed framework, we
+conducted on-device inference benchmarking on an NVIDIA Jetson Nano B01 developer
+kit, as shown in Figure 6. The device is equipped with a 128-core NVIDIA Maxwell GPU, a
+quad-core ARM Cortex-A57 CPU, and 4 GB LPDDR4 memory. During testing, the power
+mode was set to MAXN (10 W mode).
+Figure 6. NVIDIA Jetson Nano B01 developer kit.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 18 of 25
+We compared Tac-Mamba with our reimplementation of the official MM-Fi dual-modal
+baseline under the same hardware setting. According to the original MM-Fi paper, this
+baseline uses a 3-layer 1D convolutional network for radar feature extraction, a 2-layer MLP
+for visual skeleton embedding, feature concatenation, and a 2-layer BiGRU for temporal
+modeling, followed by an MLP classifier.
+For both models, the input was a dual-modal sequence of 297 frames. The models
+were evaluated with batch size 1. The latency was measured with CUDA synchronization
+(torch.cuda.synchronize()) for accurate timing. We report the average latency over 100 test
+runs after 20 warm-up runs. The results are summarized in Table 8.
+Table 8. Edge Deployment Performance on NVIDIA Jetson Nano for a Complete 297-Frame Sequence.
+Method Params (M) GFLOPs/Seq Latency (ms/Seq)
+MM-Fi Baseline (1D-CNN + BiGRU) 0.65 0.93 164.19 ± 0.56
+Tac-Mamba (Ours) 0.86 3.82 148.23 ± 1.01
+As shown in Table 8, the MM-Fi baseline achieves 0.93 GFLOPs and 164.19 ± 0.56 ms
+inference latency, while Tac-Mamba has 3.82 GFLOPs and 148.23 ± 1.01 ms latency. Al-
+though Tac-Mamba has higher theoretical complexity, it achieves lower actual latency on
+the Jetson Nano. Both models have fewer than 1M parameters, and Tac-Mamba contains
+0.86 M parameters.
+This result shows that Tac-Mamba is suitable for edge deployment. The lower latency
+mainly comes from the parallel computation pattern of the state space model, while the
+BiGRU baseline is limited by its sequential dependency. Since a 297-frame sequence
+corresponds to about 10 s of human activity, the measured latency is sufficient for real-time
+inference in this task.
+5. Ablation Study
+To thoroughly validate the effectiveness of our proposed modules and architectural
+choices, we conduct extensive ablation studies on the MM-Fi dataset under the strict Cross-
+Environment setting (Protocol 3). In this section, the primary evaluation metric is the Top-1
+Accuracy (%) under both the Multimodal and Radar-Only inference scenarios. Furthermore,
+to evaluate the deployment feasibility on resource-constrained edge devices, we also report
+the model parameter size (Params in Millions), computational complexity (GFLOPs), and
+inference latency (ms). Specifically, GFLOPs are calculated using the thop library on a
+standardized input tensor, and inference latency is measured by averaging the execution
+times of 100 independent forward passes after a 20-iteration warm-up on a single NVIDIA
+RTX 4090 GPU with a batch size of 1. All ablated versions are trained and evaluated under
+identical settings to ensure fairness.
+5.1. Effectiveness of Key Structural Components
+In this section, we examine how the components developed in the Tac-Mamba frame-
+work affect the model’s overall performance. We systematically degrade the full model by
+replacing our innovative modules with traditional counterparts. Specifically, we implement
+three ablated versions for comparison: (1) replacing the vision Spatial Mamba encoder
+with a standard MLP (denoted as w/o Spatial Mamba (replace with MLP)); (2) substitut-
+ing the LTMB with a bidirectional GRU (denoted as w/o LTMB (replace with Bi-GRU));
+(3) removing the TACG to resort to a simple addition fusion (denoted as w/o TACG (replace
+with Addition)); and (4) removing the auxiliary coordinate regression loss during training
+(denoted as w/o HPE Loss). The results are reported in Table 9.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 19 of 25
+Table 9. Ablation Study on Key Structural Components.
+Model Configuration
+Accuracy (%)
+Multi-Modal Radar-Only
+w/o Spatial Mamba (replace with MLP) 90.54 84.72
+w/o LTMB (replace with Bi-GRU) 86.57 82.41
+w/o TACG (replace with Addition) 93.98 82.19
+w/o HPE Loss (λHPE = 0) 93.60 80.90
+Tac-Mamba (Full Model) 95.37 87.54
+Table 9 clearly shows that modifying or removing any of the core modules leads
+to noticeable performance degradation, explicitly validating the effectiveness of each
+developed module. In detail, we analyze the impact of these design components as follows.
+In multimodal settings, replacing LTMB with dual GRUs results in a significant drop in
+accuracy (from 95.37% to 86.57%). This confirms that our linear, global receptive field design
+is essential for refining hierarchical feature representations across hundreds of frames. This
+design successfully overcomes the issues of gradient vanishing and memory forgetting
+that are inherent in traditional recurrent networks. Moreover, removing the TACG module
+significantly decreased pure radar positioning accuracy by more than 5% (from 87.54% to
+82.19%). This confirms that adaptive modality weighting is critical for managing variations
+in modality reliability under extreme sensing conditions. During single-modal inference,
+the masked visual branch introduces zero-tensor noise that degrades radar representations.
+TACG effectively filters out this interference to preserve feature integrity. Also, replacing
+the Spatial Mamba with an MLP results in a performance drop. This indicates that explicitly
+modeling the topological sequence of human joints in a hardware-friendly way provides
+much stronger structural priors than naive flattened feature mapping. When the auxiliary
+HPE loss is removed (w/o HPE Loss), the Multi-Modal accuracy drops from 95.37% to
+93.60%, and the Radar-Only accuracy drops from 87.54% to 80.90%. This result shows
+that LHPE is not redundant. It provides useful structural supervision during training and
+improves the discriminative ability of the radar branch, especially when visual inputs are
+degraded or unavailable.
+Overall, the Tac-Mamba model performs consistently well in both scenarios, showing
+that its innovative components work together to improve cross-modal fusion capacity and
+robustness when one modality is missing.
+5.2. Impact of Modality Dropout Probability
+The modality dropout strategy is used to prevent the network from over-relying on
+the visual modality. Randomly masking the vision teacher during training forces the radar
+student to learn human topological priors independently. We systematically evaluate the
+impact of the dropout probability p ∈ {0.0, 0.3, 0.5, 0.8, 1.0}. The comparative results are
+summarized in Table 10.
+Table 10. Impact of modality dropout Probability (p) on Action Recognition Accuracy.
+Dropout Prob. (p)
+Accuracy (%)
+Multi-Modal Radar-Only
+p = 0.0 98.15 14.81
+p = 0.5 90.28 87.50
+p = 0.8 85.19 84.72
+p = 1.0 83.80 84.26
+p = 0.3 (Ours) 95.37 87.54
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 20 of 25
+As illustrated in Table 10, the dropout probability strictly governs the trade-off between
+the multimodal fusion upper bound and the single-modal inference robustness. When
+p = 0.0 (no dropout), the network achieves a near-perfect multimodal accuracy of 98.15%.
+However, its radar-only accuracy drops to 14.81%. This reveals a severe modality laziness
+issue. The network heavily overfits the structured visual features and entirely ignores
+the radar representations during joint optimization. In contrast, an aggressive dropout
+(p = 1.0) completely severs the cross-modal interactions, suppressing the multimodal
+upper bound to 83.80%.
+Setting p = 0.3 strikes the optimal balance. It successfully distills topological knowl-
+edge from the vision teacher while forcing the radar branch to maintain independent
+sensing capabilities. Consequently, Tac-Mamba achieves the highest modality-missing
+robustness (87.54%) alongside a strong multimodal accuracy (95.37%).
+5.3. Sensitivity Analysis of the Auxiliary Loss Weight
+In Equation (19), the hyperparameter λ controls the balance between the primary
+HAR objective and the auxiliary pose estimation objective. To justify the choice of λ, we
+conducted a sensitivity analysis with λ ∈ {0, 0.001, 0.005, 0.01, 0.05, 0.1}. Here, λ = 0
+denotes the model without the auxiliary HPE loss. For a fair comparison, all other training
+settings were kept unchanged. We report the final action recognition accuracy under both
+the Multi-Modal and Radar-Only settings. The results are shown in Table 11.
+Table 11. Sensitivity Analysis of the Auxiliary Pose Estimation Loss Weight λ on HAR Accuracy.
+Loss Weight (λ)
+Accuracy (%)
+Multi-Modal Radar-Only
+0 (w/o HPE Loss) 93.60 80.90
+0.001 93.83 81.09
+0.005 94.76 84.97
+0.01 (Ours) 95.37 87.54
+0.05 94.44 84.02
+0.1 93.76 83.80
+As shown in Table 11, the HAR performance follows a clear inverted-U trend as λ
+increases. When the auxiliary HPE loss is removed (λ = 0), the Radar-Only accuracy drops
+to 80.90%. This result shows that the radar branch benefits from the structural supervision
+introduced during training. When λ increases from 0 to 0.01, both the Multi-Modal and
+Radar-Only accuracies improve steadily. The best result is achieved at λ = 0.01, where the
+Multi-Modal and Radar-Only accuracies reach 95.37% and 87.54%, respectively. When λ is
+further increased to 0.05 or 0.1, the recognition accuracy declines. This result indicates that
+a very large auxiliary loss weight puts too much emphasis on the pose regression objective
+and weakens the optimization of the primary HAR task. Therefore, λ = 0.01 was selected
+as the default setting in the proposed framework.
+5.4. Comparison of Fusion Mechanisms
+To further justify the design of TACG, we evaluate its performance against mainstream
+feature fusion strategies, including Simple Concatenation, Simple Addition, and Standard
+Cross-Attention (without consistency gating). The quantitative comparisons are presented
+in Table 12.
+Table 12 reveals an essential trade-off between multimodal overfitting and single-
+modal robustness. Naive fusion approaches, such as Simple Concatenation and Simple
+Addition, tend to overfit the dominant visual modality during training. While they yield
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 21 of 25
+high multimodal accuracies (98.15% and 97.69%, respectively), their performance drops
+significantly to 80.56% and 83.80% when visual input is denied. This indicates that without
+a dynamic gating constraint, the radar representations fail to learn sufficient topological
+structures independently.
+Table 12. Comparison of Different Feature Fusion Mechanisms.
+Fusion Mechanism
+Accuracy (%)
+Multi-Modal Radar-Only
+Simple Concatenation 98.15 80.56
+Simple Addition 97.69 83.80
+Standard Cross-Attention 93.98 82.19
+TACG (Ours) 95.37 87.54
+Moreover, the Standard Cross-Attention mechanism performs poorly in the radar-only
+scenario (82.19%). Since it relies on visual features as Keys and Values, masking the vision
+branch introduces zero-tensor noise, disrupting the computation of the attention matrix.
+In contrast, our proposed TACG leverages bilinear cross-modal interactions to dynami-
+cally assess the reliability of the incoming visual features. It filters out unreliable modalities
+and ensures a smooth fallback to the pure radar representations. Consequently, TACG
+achieves the most robust radar-only accuracy of 87.54% without sacrificing the multimodal
+fusion capability (95.37%).
+5.5. Superiority over Latest Spatial and Temporal Modules
+To further validate the architectural advancement of Tac-Mamba, we replace our
+key spatial and temporal components with several SOTA architectures. Specifically, we
+divide the ablation into three aspects: (1) replacing the radar spatial encoder, PTv3, with
+Point-Mamba [27] and DuoMamba [28]; (2) replacing the vision spatial encoder, Spatial
+Mamba, with BlockGCN [29] and SkateFormer [30]; and (3) substituting the temporal
+modeler, LTMB, with Temporal xLSTM [31] and Mamba-2 (SSD) [32]. The comprehensive
+performance and efficiency comparisons are presented in Table 13.
+Table 13. Performance and Efficiency Comparison by Replacing Tac-Mamba’s Key Modules with
+Recent SOTA Architectures.
+Alternative Module Strategy Replaced Component
+Accuracy (%)
+Params (M) GFLOPs Latency (ms)
+Multi-Modal Radar-Only
+Point-Mamba [27] PTv3 88.43 75.46 0.84 4.06 1.60
+DuoMamba [28] PTv3 73.61 73.15 0.99 3.98 2.38
+BlockGCN [29] Spatial Mamba 86.11 81.48 0.79 3.91 1.47
+SkateFormer [30] Spatial Mamba 83.80 81.84 1.04 4.49 1.89
+xLSTM [31] LTMB 92.13 86.11 1.18 4.05 3.73
+Mamba-2 (SSD) [32] LTMB 83.22 81.89 0.54 3.85 1.71
+Tac-Mamba (Full Model) - 95.37 87.54 0.86 3.82 1.89
+As detailed in Table 13, substituting our carefully chosen components with these
+generic SOTA modules results in suboptimal performance in both accuracy and computa-
+tional efficiency.
+In the spatial domain, replacing the PTv3 encoder with modern point-cloud architec-
+tures (e.g., Point-Mamba or DuoMamba) results in noticeable accuracy drops, particularly
+under the radar-only setting (decreasing to 75.46% and 73.15%). This indicates that these
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 22 of 25
+generalized modules struggle to extract sufficient topological features from sparse mmWave
+signals. Interestingly, when the vision teacher module (Spatial Mamba) is replaced by Block-
+GCN or SkateFormer, not only does the multimodal accuracy degrade, but the radar-only
+accuracy also drops below 82%. This demonstrates that a stronger vision teacher explicitly
+built on the Mamba architecture provides superior topological supervision, which directly
+translates into a more robust PTv3 radar student during the knowledge distillation process.
+In the temporal domain, the xLSTM module demonstrates strong temporal modeling,
+achieving a multimodal accuracy of 92.13%. However, its recurrent nature introduces
+substantial computational overhead, resulting in 4.05 GFLOPs and a notably high inference
+latency of 3.73 ms. In contrast, Mamba-2 (SSD) successfully minimizes the parameter
+count to 0.54 M. However, its accuracy drops to 83.22%. This suggests that generalized
+state-space duality struggles to capture fine-grained kinematic dependencies over long
+temporal sequences.
+Overall, Tac-Mamba achieves the highest classification accuracies while maintaining
+the lowest computational cost (3.82 GFLOPs) and a low latency (1.89 ms). This proves
+that our customized spatial-temporal design provides the best trade-off between sensing
+reliability and edge deployment efficiency.
+5.6. Controlled Profiling of Temporal Modules
+To further examine the efficiency of the temporal modeling module, we conducted a
+controlled profiling experiment on an NVIDIA RTX 4090 GPU. We compared a standard
+4-layer Transformer encoder with our 4-layer Temporal Mamba module under matched
+parameter counts. Both modules contain 1.75M parameters. The hidden dimension was set
+to D = 256, and the batch size was set to 16.
+This experiment isolates the temporal modeling stage from the front-end point cloud
+encoder. Therefore, it can directly reflect the memory and time cost of the sequence
+modeling module itself. We recorded the peak GPU memory allocation (VRAM) and the
+average training time per iteration under different sequence lengths. The results are shown
+in Table 14.
+Table 14. Controlled Profiling of Transformer and Mamba Temporal Modules under Matched
+Parameter Counts (1.75 M).
+Sequence Length (L)
+Transformer Encoder Temporal Mamba (Ours)
+VRAM (MB) Time/Iter (ms) VRAM (MB) Time/Iter (ms)
+297 288 6.2 271 4.0
+1024 909 33.1 835 9.6
+2048 1764 107.8 1629 19.7
+4096 3460 381.9 3221 40.3
+As shown in Table 14, the Mamba module is more efficient than the Transformer
+baseline at all tested sequence lengths. At the standard sequence length of L = 297, Mamba
+reduces VRAM from 288 MB to 271 MB and reduces the training time per iteration from
+6.2 ms to 4.0 ms. When the sequence length increases to 4096, the Transformer requires
+3460 MB of VRAM and 381.9 ms per iteration, while Mamba requires 3221 MB and 40.3 ms.
+These results show that the time efficiency advantage of Mamba becomes much more
+evident as the sequence length increases. This trend is consistent with the difference
+between self-attention-based temporal modeling and state space sequence modeling. In
+the full Tac-Mamba framework, the front-end point cloud encoder still accounts for a
+large part of the total training cost. However, this controlled experiment confirms that
+the Temporal Mamba block provides a more scalable temporal modeling choice than a
+standard Transformer encoder.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 23 of 25
+6. Conclusions
+In this paper, we propose Tac-Mamba, a lightweight spatial-temporal framework
+for human activity recognition from sparse mmWave radar point clouds. The proposed
+topology-guided cross-modal distillation scheme leverages a Spatial Mamba teacher to
+supervise a PTv3 radar student. This design enables the network to construct accurate
+geometric topologies independently, effectively overcoming the inherent sparsity of radar
+point clouds. To address the negative transfer issue in visually denied environments, the
+TACMA module incorporates a TACG mechanism. This mechanism uses cross-modal
+bilinear consistency to adaptively adjust the feature fusion and ensures that unreliable
+visual noise does not affect the radar representations. Furthermore, the LTMB utilizes
+bidirectional state-space operators and a Zero-Parameter Cross-Gating (ZPCG) mechanism
+to efficiently capture long-term kinematic dependencies. Experimental results on the MM-Fi
+dataset demonstrate that Tac-Mamba achieves strong performance in both multimodal and
+single-modal inference scenarios with a small parameter count of 0.86 M and 3.82 GFLOPs.
+However, the current study still has several limitations. First, the proposed framework
+is mainly evaluated under the single-person setting of the MM-Fi benchmark, and its
+effectiveness in more complex multi-person scenarios remains to be further validated.
+Second, the current study is validated on a single public dataset, MM-Fi. Although we
+added cross-environment experiments to strengthen the generalization evidence, the cross-
+dataset generalization of Tac-Mamba still needs further investigation. Third, the proposed
+training framework requires synchronized visual skeletons and mmWave radar data, which
+limits direct evaluation on many existing single-modal radar HAR datasets. In addition,
+some baseline comparisons are not fully equivalent because existing methods differ in
+modality setting, supervision form, and deployment objective. Therefore, these comparison
+results should be interpreted within the scope of the current benchmark and protocol.
+Future work will focus on developing techniques to separate spatial instances to address
+multi-person interference and occlusion issues in complex environments. Additionally,
+we aim to extend the trust-aware gating mechanism to accommodate more heterogeneous
+sensor data, such as WiFi CSI or LiDAR, further enhancing the system’s generalized
+perception capabilities on edge devices.
+Author Contributions: Conceptualization, H.W. and K.Z.; methodology, H.W.; software, H.W.;
+validation, H.W. and K.Z.; formal analysis, H.W. and Y.X.; investigation, H.W.; resources, Y.X.; data
+curation, H.W.; writing—original draft preparation, H.W.; writing—review and editing, H.W., K.Z.,
+W.Y., and Y.X.; visualization, H.W.; supervision, W.Y. and Y.X.; project administration, W.Y. and Y.X.;
+funding acquisition, Y.X. All authors have read and agreed to the published version of the manuscript.
+Funding: This research was funded by the Shanghai Gerontechnology Innovation Park Research and
+Development and Testing Public Service Platform Construction Project under Grant 24YL1901302.
+Data Availability Statement: The data are available from the corresponding author upon reason-
+able request.
+Conflicts of Interest: The authors declare no conflicts of interest.
+References
+1. Huang, Y.; Li, W.; Dou, Z.; Zou, W.; Zhang, A.; Li, Z. Activity Recognition Based on Millimeter-Wave Radar by Fusing Point
+Cloud and Range–Doppler Information. Signals 2022, 3, 266–283. [CrossRef]
+2. Wang, S.; Mei, L.; Liu, R.; Jiang, W.; Yin, Z.; Deng, X.; He, T. Multi-Modal Fusion Sensing: A Comprehensive Review of
+Millimeter-Wave Radar and Its Integration with Other Modalities. IEEE Commun. Surv. Tutor. 2025, 27, 322–352. [CrossRef]
+3. Li, T.; Fan, L.; Zhao, M.; Liu, Y.; Katabi, D. Making the Invisible Visible: Action Recognition Through Walls and Occlusions. In
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV); IEEE Computer Society: Los Alamitos, CA, USA,
+2019; pp. 872–881.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 24 of 25
+4. Huang, L.; Lei, D.; Zheng, B.; Chen, G.; An, H.; Li, M. Lightweight Multi-Domain Fusion Model for Through-Wall Human
+Activity Recognition Using IR-UWB Radar. Appl. Sci. 2024, 14, 9522. [CrossRef]
+5. Osorio Quero, C.; Leykam, D.; Rondon Ojeda, I. Res-u2net: Untrained deep learning for phase retrieval and image reconstruction.
+J. Opt. Soc. America A 2024, 41, 766–773. . [CrossRef]
+6. Qi, C.R.; Yi, L.; Su, H.; Guibas, L.J. PointNet++: Deep Hierarchical Feature Learning on Point Sets in a Metric Space. In Advances
+in Neural Information Processing Systems; Curran Associates, Inc.: Red Hook, NY, USA, 2017; Volume 30.
+7. Shi, W.; Rajkumar, R. Point-GNN: Graph Neural Network for 3D Object Detection in a Point Cloud. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2020.
+8. Wu, X.; Jiang, L.; Wang, P.S.; Liu, Z.; Liu, X.; Qiao, Y.; Ouyang, W.; He, T.; Zhao, H. Point Transformer V3: Simpler Faster Stronger.
+In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2024;
+pp. 4840–4851.
+9. Shi, R.; Wang, S.; Mei, L.; Zhang, X.; Xu, Z.D.; Wang, S. mmSeg: Leveraging mmWave Radar for Fine-grained Human Semantic
+Segmentation. ACM Trans. Internet Things 2026, 7, 10. [CrossRef]
+10. Yi, J.; Zou, H.; Ling, M.; Gao, J.; Murphey, Y.L. M2FM: A Multimodal Fusion Model for Human Action Recognition with Camera
+and Millimeter-Wave Radar. IEEE Internet Things J. 2025, 12, 45610–45623. [CrossRef]
+11. Sun, H.; Sahin, B.K.; Stettinger, G.; Bernhard, M.; Schubert, M.; Wille, R. CaRaFFusion: Improving 2D Semantic Segmentation
+with Camera-Radar Point Cloud Fusion and Zero-Shot Image Inpainting. IEEE Robot. Autom. Lett. 2025, 10, 7007–7014. [CrossRef]
+12. Chen, Z.; Sun, Y.; Qu, L. Research on Cross-Scene Human Activity Recognition Based on Radar and Wi-Fi Multimodal Fusion.
+Electronics 2025, 14, 1518. [CrossRef]
+13. Cui, Y.; Kang, Y. Multi-Modal Gait Recognition via Effective Spatial-Temporal Feature Fusion. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2023; pp. 17949–17957.
+14. Shi, L.; Zhang, Y.; Cheng, J.; Lu, H. Skeleton-Based Action Recognition with Directed Graph Neural Networks. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2019; pp. 7912–7921.
+15. Shi, L.; Zhang, Y.; Cheng, J.; Lu, H. Two-Stream Adaptive Graph Convolutional Networks for Skeleton-Based Action Recognition.
+In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2019;
+pp. 12026–12035.
+16. Chen, Y.; Zhang, Z.; Yuan, C.; Li, B.; Deng, Y.; Hu, W. Channel-Wise Topology Refinement Graph Convolution for Skeleton-Based
+Action Recognition. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV); IEEE Computer Society:
+Los Alamitos, CA, USA,2021; pp. 13359–13368.
+17. Shi, X.; Bouazizi, M.; Ohtsuki, T. mmPoint-Attention: A Unified Attention Framework for Human Pose and Activity Recognition
+From mmWave Radar Point Clouds. IEEE Sens. J. 2025, 25, 26794–26805. [CrossRef]
+18. Yang, J.; Huang, H.; Zhou, Y.; Chen, X.; Xu, Y.; Yuan, S.; Zou, H.; Lu, C.X.; Xie, L. MM-Fi: Multi-Modal Non-Intrusive 4D Human
+Dataset for Versatile Wireless Sensing. In Proceedings of the Advances in Neural Information Processing Systems; Curran Associates,
+Inc.: Red Hook, NY, USA, 2023; Volume 36, pp. 18756–18768.
+19. Weng, Y.; Zheng, T.; Yang, Y.; Luo, J. FM-Fi 2.0: Foundation Model for Cross-Modal Multi-Person Human Activity Recognition.
+IEEE Trans. Mob. Comput. 2026, 25, 566–582. [CrossRef]
+20. Chen, X.; Yang, J. X-fi: A modality-invariant foundation model for multimodal human sensing. arXiv 2024, arXiv:2410.10167.
+[CrossRef]
+21. Li, Z.; Luo, X.; Ge, X.; Zhou, L.; Lin, X.; Liu, Y. MMSense: Adapting Vision-based Foundation Model for Multi-task Multi-modal
+Wireless Sensing. arXiv 2025, arXiv:2511.12305. [CrossRef]
+22. Zhu, G.; Zhao, D.; Li, C.; Zhao, M.; Zhang, Z.; Quan, H.; Ma, H. MASTER: A Multi-modal Foundation Model for Human Activity
+Recognition. Proc. ACM Interact. Mob. Wearable Ubiquitous Technol. 2025, 9, 157. [CrossRef]
+23. Jiang, Z.; Ke, F.; Kang, W.; Zhai, Y.; Zhang, Q.; Zhang, X.Y.; Xu, X. Learning to Analyze Human Skeletal by Radar–Camera
+Supervision. IEEE Trans. Instrum. Meas. 2025, 74, 2518816. [CrossRef]
+24. Huang, S.; Zhou, Y.; Yang, J. SkeFi: Cross-Modal Knowledge Transfer for Wireless Skeleton-Based Action Recognition. IEEE
+Internet Things J. 2026, 13, 13888–13898. [CrossRef]
+25. Chen, Y.; Guo, Z.; Zhang, H.; Xu, M. STPM: Spatial-Temporal Point Mamba for Activity Recognition Using mmWave Radar Point
+Clouds. In Proceedings of the 2025 IEEE International Conference on Multimedia and Expo (ICME); IEEE: Los Alamitos, CA, USA, 2025;
+pp. 1–6. [CrossRef]
+26. Zhang, J.; Wang, C.; Li, Z.; Zhang, L. LSTPointGMN: Lightweight Spatial-Temporal Graph Mamba Network for Gesture
+Recognition Using Millimeter-Wave Radar. In Proceedings of the 2025 International Joint Conference on Neural Networks (IJCNN);
+IEEE: Los Alamitos, CA, USA, 2025; pp. 1–8. [CrossRef]
+27. Liang, D.; Zhou, X.; Xu, W.; Zhu, X.; Zou, Z.; Ye, X.; Tan, X.; Bai, X. PointMamba: A Simple State Space Model for Point Cloud
+Analysis. In Advances in Neural Information Processing Systems; Curran Associates, Inc.: Red Hook, NY, USA, 2024; Volume 37,
+pp. 32653–32677.
+https://doi.org/10.3390/electronics15071535
+Electronics 2026, 15, 1535 25 of 25
+28. Nguyen, K.; Hassan, G.M.; Mian, A. Occlusion-aware Text-Image-Point Cloud Pretraining for Open-World 3D Object Recognition.
+In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA, USA, 2025;
+pp. 16965–16975.
+29. Zhou, Y.; Yan, X.; Cheng, Z.Q.; Yan, Y.; Dai, Q.; Hua, X.S. BlockGCN: Redefine Topology Awareness for Skeleton-Based Action
+Recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR); IEEE: Los Alamitos, CA,
+USA, 2024; pp. 2049–2058.
+30. Do, J.; Kim, M. SkateFormer: Skeletal-Temporal Transformer for Human Action Recognition. In Proceedings of the European
+Conference on Computer Vision (ECCV); Springer: Cham, Switzerland, 2024; pp. 401–420.
+31. Beck, M.; Pöppel, K.; Spanring, M.; Auer, A.; Prudnikova, O.; Kopp, M.; Klambauer, G.; Brandstetter, J.; Hochreiter, S. xLSTM:
+Extended Long Short-Term Memory. In Advances in Neural Information Processing Systems; Curran Associates, Inc.: Red Hook, NY,
+USA, 2024; Volume 37, pp. 107547–107603.
+32. Dao, T.; Gu, A. Transformers are ssms: Generalized models and efficient algorithms through structured state space duality.
+arXiv 2024, arXiv:2405.21060. [CrossRef]
+Disclaimer/Publisher’s Note: The statements, opinions and data contained in all publications are solely those of the individual
+author(s) and contributor(s) and not of MDPI and/or the editor(s). MDPI and/or the editor(s) disclaim responsibility for any injury to
+people or property resulting from any ideas, methods, instructions or products referred to in the content.
+https://doi.org/10.3390/electronics15071535
+

@@ -1,0 +1,2152 @@
+Received 11 February 2026; revised 12 March 2026; accepted 31 March 2026. Date of publication 3 April 2026; date of current version 7 April 2026.
+Digital Object Identifier 10.1109/OJCOMS.2026.3680457
+6G-Bench: An Open Benchmark for Semantic
+Communication and Network-Level Reasoning With
+Foundation Models in AI-Native 6G Networks
+MOHAMED AMINE FERRAG 1 (Senior Member, IEEE),
+ABDERRAHMANE LAKAS 1 (Senior Member, IEEE),
+AND MÉROUANE DEBBAH 2 (Fellow, IEEE)
+1Department of Computer and Network Engineering, College of Information Technology, United Arab Emirates University, Al Ain, United Arab Emirates
+2Research Institute for Digital Future, Khalifa University of Science and Technology, Abu Dhabi, United Arab Emirates
+CORRESPONDING AUTHOR: M. A. FERRAG (mohamed.ferrag@uaeu.ac.ae)
+This work was supported in part by United Arab Emirates University Program for Advanced Research (UPAR) under Grant G00005016, and in part by the Khalifa
+University of Science and Technology.
+ABSTRACT Emerging sixth-generation (6G) networks are increasingly envisioned as AI-native, intent-
+driven systems in which foundation models act as high-level reasoning and coordination layers above
+standardized network functions. However, existing evaluations of large language models (LLMs) in wireless
+and networking domains largely focus on isolated tasks or treat networks as numeric constraints, leaving
+network-level semantic reasoning over intent, policy, trust, and multi-agent coordination insufficiently
+explored. This paper introduces 6G-Bench, an open benchmark for evaluating semantic communication and
+network-level reasoning in AI-native 6G networks. 6G-Bench defines a taxonomy of 30 decision-making
+tasks (T1–T30) extracted from ongoing 6G and AI-agent standardization activities in 3GPP, IETF, ETSI,
+ITU-T, and the O-RAN Alliance, and organizes them into five standardization-aligned capability categories.
+Starting from 113,475 scenarios, we generate a balanced pool of 10,000 very-hard multiple-choice questions
+using task-conditioned prompts that enforce multi-step quantitative reasoning under uncertainty and worst-
+case regret minimization over multi-turn horizons. After automated filtering and expert human validation,
+3,722 questions are retained as a high-confidence evaluation set, while the full pool is released to support
+training and fine-tuning of 6G-specialized models. Using 6G-Bench, we evaluate 22 foundation models
+spanning dense and mixture-of-experts architectures, short- and long-context designs (up to 1M tokens),
+and both open-weight and proprietary systems. Across models, deterministic single-shot accuracy (pass@1)
+ranges from 0.22 to 0.82, highlighting substantial variation in semantic reasoning capability. Leading models
+achieve intent and policy reasoning accuracy in the range 0.87–0.89, while selective robustness analysis
+on reasoning-intensive tasks shows pass@5 values ranging from 0.20 to 0.91. To support open science and
+reproducibility, we release the 6G-Bench dataset on IEEEDataport: https://dx.doi.org/10.21227/c8pt-hc87
+INDEX TERMS AI-native 6G networks, large language models, semantic communication, network-level
+reasoning, benchmarking and evaluation.
+I. INTRODUCTION
+EMERGING visions for 6G suggest that large lan-
+guage models (LLMs) may play a complementary
+role as intent-based interfaces and high-level reasoning
+components within AI-native network architectures, rather
+than as replacements for standardized network functions.
+This view is consistent with ongoing discussions in 3GPP,
+where artificial intelligence and machine learning are treated
+as implementation choices, while standardization efforts
+emphasize data exposure, analytics capabilities, and model
+lifecycle governance [1]. Similar perspectives are reflected in
+ITU-T and O-RAN Alliance studies, which identify genera-
+tive AI as an enabling technology for network intelligence,
+intent interpretation, and cross-layer orchestration, while
+maintaining clear functional boundaries and interoperabil-
+ity requirements [2], [3]. In this context, LLMs can be
+positioned above existing network functions, operating as
+reasoning and coordination layers that interact with stan-
+dardized interfaces rather than directly controlling protocol
+behavior.
+VOLUME 7, 2026
+2026 The Authors. This work is licensed under a Creative Commons Attribution 4.0 License.
+For more information, see https://creativecommons.org/licenses/by/4.0/
+3305
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+Beyond long-standing physical-layer advances such as
+massive multiple-input multiple-output (MIMO) [4], [5],
+recent 6G research has introduced reconfigurable intelligent
+surfaces (RIS) [6] as a means to partially control the wire-
+less propagation environment itself. While these technologies
+significantly expand the degrees of freedom available for
+link-level optimization, they remain fundamentally metric-
+driven and operate within predefined protocol abstractions.
+As networks evolve toward AI-native 6G architectures, the
+increasing programmability of radio, compute, and sensing
+resources exemplified by RIS-enabled environments raises
+decision-making challenges that extend beyond signal pro-
+cessing, requiring reasoning over intent, policy, trust, and
+cross-domain semantics.
+By processing heterogeneous inputs such as network ana-
+lytics, radio access network measurements, service require-
+ments, and policy constraints, LLMs can help translate
+high-level intents into actionable guidance for established
+optimization and automation functions. This aligns with
+emerging work in the IETF on AI-assisted network man-
+agement, intent-based interfaces, and AI agent commu-
+nication protocols, which explore how reasoning agents
+can consume telemetry, exchange structured knowledge,
+and support closed-loop control without violating proto-
+col modularity [7], [8], [9]. From a service perspective,
+such intent translation is particularly relevant for support-
+ing diverse 6G service classes, including enhanced Mobile
+Broadband (eMBB), ultra-reliable low-latency communica-
+tions (URLLC), and massive machine-type communications
+(mMTC), where requirements span throughput, latency, reli-
+ability, and energy efficiency across multiple domains [10].
+Moreover, ongoing ETSI activities on experiential networked
+intelligence, multi-agent systems, and AI-native manage-
+ment architectures further emphasize the need for scalable,
+explainable, and governable AI integration in future net-
+works [11], [12], [13], [14]. While current 5G-Advanced
+systems largely assume offline-trained models and deter-
+ministic control logic, these standardization efforts suggest
+that 6G may incrementally incorporate intent-based and
+reasoning-driven AI capabilities to enhance cross-domain
+coordination and service differentiation.
+Recent work has explored the use of foundation-model-
+based architectures to enhance semantic communication
+under latency constraints. For example, Zhang et al. [15] pro-
+pose a hierarchical cloud–edge–device framework in which
+compact feature models operating at the network edge are
+periodically refined by larger foundation models deployed
+in the cloud. Their approach focuses on improving the
+robustness of semantic representations while maintaining
+low end-to-end latency through coordinated model evo-
+lution and resource-aware scheduling. Therefore, recent
+advances toward AI-native 6G networks have highlighted
+the transformative role of large language models (LLMs)
+and foundation models in enabling semantic-aware com-
+munication, intelligent control, and autonomous network
+reasoning across heterogeneous environments. A growing
+body of work demonstrates that LLMs can move beyond
+traditional data-driven learning to perform high-level rea-
+soning, decision-making, and cross-layer optimization in
+complex wireless systems. For example, LLM-driven frame-
+works have been proposed for zero-trust security automation
+in space–air–ground integrated networks (SAGIN) [16], zero-
+touch network security management [17], resilient MAC
+protocol design [18], and collaborative large–small AI archi-
+tectures for green 6G operation [19]. In parallel, LLMs have
+been successfully applied to physical-layer and link-layer
+tasks such as predictive beamforming in near-field ISAC
+systems [6], intelligent metasurface control [20], multimodal
+beam prediction for V2X [21], and semantic-level multimedia
+transmission [22], illustrating their broad potential across the
+6G protocol stack.
+Despite these promising results, existing studies are largely
+evaluated in task-specific, closed experimental settings, using
+customized datasets, simulators, and performance metrics
+that hinder fair comparisons and systematic analysis. Even
+large-scale efforts such as SAG-Attack for SAGIN security
+evaluation [16] or BATTLE-FIELD environments for auto-
+mated defense validation [17] are tailored to narrow problem
+domains and do not generalize across communication, sens-
+ing, security, and control tasks. Similarly, LLM-enabled
+solutions for V2X beamforming [6], [21], covert NR V2X
+scheduling under intelligent eavesdroppers [23], and token-
+based MAC protocols [18] employ disparate assumptions,
+input representations, and evaluation criteria. This fragmen-
+tation obscures fundamental questions about how foundation
+models reason over network-level semantics, how they scale
+across heterogeneous scenarios, and how their reasoning
+capability translates into measurable performance gains in
+AI-native 6G networks.
+The key contributions of this work are summarized as
+follows:
+• We introduce 6G-Bench, an open and standardized
+benchmark for evaluating semantic communication and
+network-level reasoning with foundation models in AI-
+native 6G networks. 6G-Bench defines a taxonomy
+of 30 decision-making tasks (T1–T30) extracted from
+ongoing 6G and AI-agent standardization activities in
+3GPP, IETF, ETSI, ITU-T, and the O-RAN Alliance,
+and organizes them into five capability categories: intent
+and policy reasoning, network slicing and resource
+management, trust and security awareness, AI-native
+networking and agentic control, and distributed intelli-
+gence and emerging 6G use cases.
+• We design a task-conditioned MCQ construction
+pipeline for network-level semantic reasoning. Start-
+ing from 113,475 scenarios in α3-Bench, we develop
+task-specific prompts that enforce very-hard difficulty,
+multi-step quantitative reasoning under uncertainty,
+and worst-case regret minimization over multi-turn
+horizons. This process yields a balanced pool of
+10,000 MCQs across all 30 tasks, generated using a
+3306 VOLUME 7, 2026
+heterogeneous set of state-of-the-art reasoning models
+and refined through automatic deduplication and anti-
+heuristic constraints.
+• We establish a rigorous two-stage validation pipeline
+that combines automated structural and logical checks
+with expert human review. From the initial 10,000
+generated questions, 3,722 MCQs are retained as a
+high-confidence evaluation set after filtering for seman-
+tic correctness, quantitative soundness, and uniqueness
+under worst-case reasoning. The remaining questions
+serve as a complementary resource for training and
+fine-tuning foundation models for 6G-specific semantic
+communication and network reasoning use cases.
+• We curate and evaluate a diverse suite of 22 contempo-
+rary foundation models, spanning code-specialized and
+general-purpose systems, multimodal and long-context
+architectures, dense and mixture-of-experts designs, and
+both open-weight and proprietary models. For each
+model, we characterize the architectural scale, con-
+text length, release timeline, and functional category,
+providing a deployment-oriented view of the current
+foundation-model landscape relevant to AI-native 6G
+semantic networking.
+• We propose an evaluation methodology that combines
+deterministic pass@1 accuracy with selective pass@k
+analysis on reasoning-intensive tasks, together with
+task- and group-level aggregation aligned with the five
+defined capability categories. Using this methodology,
+we conduct a comprehensive empirical study of all
+evaluated models on 6G-Bench, showing that mid-scale
+models can outperform larger ones in determinis-
+tic accuracy, while trust-, security-, and distributed-
+intelligence tasks remain the most challenging.
+• We analyze the implications of these findings for AI-
+native 6G deployment and standardization, identifying
+which classes of foundation models are already suit-
+able as semantic reasoning layers above standardized
+network functions, and where further architectural inno-
+vation, alignment strategies, or domain-specific training
+are required to meet the reliability, accountability, and
+safety expectations of future 6G networks.
+The remainder of this paper is organized as follows.
+Section II reviews related work on benchmarking and evalu-
+ating large language models in telecommunications and wire-
+less networking. Section III presents the design of 6G-Bench,
+including the standardization-driven task taxonomy, semantic
+state and action abstractions, dataset construction, validation
+pipeline, and evaluation protocol. Section IV reports the
+performance evaluation of contemporary foundation mod-
+els on 6G-Bench, providing task-level, group-level, and
+robustness (pass@k) analyses across all capability categories.
+Finally, Section V concludes the paper by summarizing key
+findings, discussing implications for AI-native 6G deploy-
+ment and standardization, and outlining directions for future
+research.
+II. RELATED WORK
+This section reviews recent research on the systematic evalu-
+ation of large language models in the telecommunication and
+wireless communication domains. We organize the related
+work according to the primary evaluation focus of existing
+studies, encompassing benchmarks for general telecommu-
+nications knowledge, reasoning over structured standards
+artifacts such as tables and specifications, agentic capabil-
+ities in realistic telecommunication service scenarios, and
+advanced mathematical reasoning and constrained optimiza-
+tion in wireless systems. Table 1 presents a structured
+comparison between 6G-Bench and existing benchmarks,
+indicating whether each benchmark explicitly supports, par-
+tially supports, or does not support the key capabilities
+required for semantic communication and reasoning at the
+AI-native 6G network-level.
+A. TELECOMMUNICATIONS KNOWLEDGE BENCHMARKS
+Maatouk et al. [24] propose TeleQnA, which is a domain-
+specific benchmark designed to rigorously evaluate large
+language models (LLMs) in telecommunications, comprising
+10,000 multiple-choice questions curated from approxi-
+mately 25,000 pages and 6 million words of open-access
+standards, research publications, surveys, and telecom lex-
+icons. The dataset is systematically distributed across five
+categories, namely lexicon (5%), research overview (20%),
+research publications (45%), standards overview (10%), and
+standards specifications (20%), in order to capture both
+general and highly specialized telecom knowledge. An auto-
+mated question–answer generation pipeline based on two
+GPT-3.5 agents, acting as generator and validator, and com-
+plemented by two stages of human expert validation and
+clustering-based redundancy removal, ensures both scal-
+ability and quality control. Using TeleQnA, the authors
+benchmark GPT-3.5 and GPT-4, reporting overall accuracies
+of 67% and 74%, respectively, where GPT-4 reaches up to
+87% accuracy on lexicon-related questions but only 64% on
+standards specifications, revealing persistent limitations in
+handling complex, standards-driven content. Moreover, the
+study shows that incorporating contextual information yields
+a 22.5% relative accuracy gain in standards-related tasks,
+enabling GPT-3.5 to approach GPT-4 performance.
+B. REASONING OVER TELECOMMUNICATIONS
+STANDARDS AND TABLES
+Ezzakri et al. [25] propose TeleTables, a benchmark specif-
+ically designed to assess the ability of large language
+models (LLMs) to interpret and reason over tabular infor-
+mation in telecommunications standards, with a particular
+focus on 3GPP technical specifications. The benchmark con-
+sists of 500 multiple-choice questions generated from 2,220
+tables automatically extracted from 13 3GPP specifications
+spanning Releases 18 and 19, where tables are repre-
+sented in multiple formats, including HTML, JSON, Mark-
+down, and high-resolution images. A multi-stage pipeline
+VOLUME 7, 2026 3307
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+TABLE 1. Comparison of related benchmarks for standardization-aligned, network-level semantic reasoning in AI-native 6G networks.
+leveraging multimodal and reasoning-oriented LLMs, fol-
+lowed by systematic validation and human-in-the-loop fil-
+tering, is employed to ensure correctness and controlled
+difficulty, resulting in a balanced set of basic and difficult
+questions. Extensive benchmarking across non-reasoning,
+multimodal, and reasoning open-weight models reveals that
+smaller models below 10B parameters achieve limited perfor-
+mance, with pass@1 scores as low as 26.15%, while larger
+reasoning models such as Qwen3-32B and GPT-OSS-120B
+reach up to 91.18% and 90.90% pass@1, respectively, when
+optimal table representations are provided. The study further
+demonstrates that table format has a substantial impact on
+performance, with HTML consistently yielding the highest
+accuracy for most models, while image-only representations
+incur significant degradation despite high token costs. More-
+over, performance decreases monotonically with increasing
+table complexity, as measured by HTML token length, high-
+lighting the difficulty of reasoning over large, hierarchical
+tables.
+C. AGENTIC EVALUATION IN TELECOMMUNICATION
+SERVICE SCENARIOS
+Lee et al. [26] propose TelAgentBench, a multifaceted
+industry-oriented benchmark to systematically evaluate
+agents of large language models (LLM) in realistic telecom-
+munication service environments. The benchmark comprises
+more than 1,700 synthetically generated and expert-validated
+instances in Korean, designed to assess five core agen-
+tic capabilities: Reasoning, Planning, Action (tool use),
+Retrieval-Augmented Generation (RAG), and Instruction
+Following. Each capability is instantiated through a dedicated
+dataset module, including 225 multi-hop reasoning ques-
+tions, 200 multi-constraint planning tasks, 757 tool-calling
+scenarios spanning up to 23 business support system APIs,
+258 RAG instances with realistic distractor documents, and
+300 multi-turn instruction-following dialogues incorporat-
+ing telecom-specific and linguistic constraints. The dataset
+construction follows a four-stage pipeline encompassing sce-
+nario design from real-world telecom use cases, development
+of domain-specific execution and retrieval environments,
+large-scale data generation and augmentation, and rigorous
+human-in-the-loop validation by telecom service agents and
+language experts. Extensive evaluation across 15 proprietary
+and open-source LLMs reveals consistent and significant per-
+formance gaps between thinking-enabled and non-thinking
+models, with explicit reasoning improving accuracy across
+all dimensions, for example, exceeding 85% accuracy in rea-
+soning tasks and yielding up to a 12% gain in action-oriented
+evaluations.
+D. REASONING AND OPTIMIZATION IN WIRELESS
+COMMUNICATIONS
+Lin et al. [27] propose the LDOT benchmark for evaluat-
+ing the advanced reasoning and domain-specific capabilities
+of large language models (LLMs) in wireless communi-
+cations, beyond the limits of existing telecom datasets.
+LDOT comprises 2,341 carefully filtered question–answer
+pairs spanning three categories: 208 conceptual questions,
+1,650 mathematical and wireless logical problems, and
+483 complex network optimization tasks, with optimization
+questions exhibiting an average length of 2,573.9 characters
+and requiring detailed multi-step derivations. The dataset
+is constructed through a multi-stage pipeline that combines
+large-scale literature retrieval, data sanitization, automated
+multi-agent question generation, agentic retrieval-augmented
+generation for optimization problems, adversarial filtering,
+and expert human validation. Extensive evaluations of a wide
+range of open-source and closed-source LLMs, including
+GPT-4o, DeepSeek R1, Qwen2.5-32B, and o3-mini, reveal
+that while general-purpose models achieve reasonable per-
+formance on conceptual telecom questions, they perform
+poorly on reasoning-intensive mathematical and optimiza-
+tion tasks, with the best-performing model achieving only
+0.440 accuracy under strict evaluation criteria. The analysis
+further demonstrates that retrieval augmentation substantially
+improves performance on conceptual questions but offers
+limited gains for optimization problems, where failures stem
+primarily from inadequate reasoning rather than missing
+knowledge.
+E. SECURITY-CONSTRAINED WIRELESS
+COMMUNICATION BENCHMARKS
+Liu et al. [28] introduce CovertComBench, a domain-
+specific benchmark designed to rigorously evaluate large
+language models in wireless covert communication (CC),
+where performance optimization must satisfy strict detection-
+theoretic constraints. Unlike conventional communication
+tasks, CC requires maximizing transmission utility under a
+covertness constraint formulated via Kullback–Leibler diver-
+gence bounds, posing a challenging constrained optimization
+problem. CovertComBench is a fully human-verified bench-
+mark comprising 517 questions across three task categories:
+3308 VOLUME 7, 2026
+Multiple-Choice Questions (MCQs), Optimization Deriva-
+tion Questions (ODQs), and Code Generation Questions
+(CGQs), covering modern CC scenarios including IRS-,
+NOMA-, and MIMO-based systems. Extensive evaluation in
+state-of-the-art LLMs shows strong performance in concep-
+tual understanding (up to 81% accuracy) and code generation
+(up to 83%), but substantially weaker results in mathematical
+derivation tasks, with ODQ accuracy ranging from 18% to
+55%. The study further analyzes the reliability of automated
+evaluation using an LLM-as-Judge framework, revealing
+notable discrepancies from expert scoring in mathematically
+intensive tasks. These findings indicate that current LLMs
+are effective implementation assistants, but remain unreli-
+able as autonomous solvers for security-constrained wireless
+optimization, motivating future integration with external
+symbolic computation tools.
+F
+. POSITIONING OF 6G-BENCH
+The benchmarks reviewed above have substantially advanced
+the evaluation of large language models in telecommuni-
+cations, yet they remain limited in scope with respect to
+AI-native 6G requirements. Knowledge-centric benchmarks
+such as TeleQnA [24] primarily assess factual understand-
+ing of telecom concepts and standards, without evaluating
+decision-making under evolving network conditions. Table-
+and specification-oriented benchmarks like TeleTables [25]
+focus on structured artifact interpretation, but abstract away
+the semantic dynamics of intent, policy, and network control.
+Agentic benchmarks such as TelAgentBench [26] evalu-
+ate service-level workflows and tool usage, but do not
+explicitly model network-level semantics, worst-case reason-
+ing, or multi-turn decision regret under uncertainty. Simi-
+larly, optimization- and security-focused benchmarks (e.g.,
+LDOT [27] and CovertComBench [28]) target mathemati-
+cally constrained problems or narrowly defined communi-
+cation scenarios, rather than holistic network-level reasoning
+across heterogeneous 6G operational domains.
+In contrast, 6G-Bench is explicitly designed to evalu-
+ate semantic communication and network-level reasoning
+as first-class capabilities in AI-native 6G networks. The
+benchmark departs from metric-driven or task-isolated evalu-
+ations by grounding all benchmark tasks in meaning-bearing
+abstractions such as intents, policies, slices, trust relation-
+ships, and agent coordination. Its taxonomy of 30 tasks
+is systematically extracted from ongoing 6G and AI-agent
+standardization activities in 3GPP, IETF, ETSI, ITU-T, and
+the O-RAN Alliance, ensuring that benchmarked capabili-
+ties directly reflect emerging architectural and operational
+requirements rather than ad hoc problem formulations.
+Moreover, 6G-Bench uniquely emphasizes worst-case,
+uncertainty-aware, and multi-turn reasoning through task-
+conditioned multiple-choice questions derived from realistic
+episodes, with oracle decisions defined via regret minimiza-
+tion rather than instantaneous performance optimization. This
+design enables direct assessment of whether foundation mod-
+els can support deployment-relevant decisions in safety-,
+Algorithm 1 6G-Bench Benchmark Construction
+Input: Standards S; episode set E from α3-Bench /
+UAVBench
+Output: Benchmark dataset D
+1 Extract semantic capabilities from S and define tasks
+{T1, . . . , T30} grouped into G = {G1, . . . , G5}.
+2 D ← ∅
+3 foreach episode e ∈ E do
+4 Parse dialogue turns dt = (rt, at, ot, nt).
+5 Reconstruct semantic states st = (it, nt, pt, xt).
+6 Identify decision turns Te.
+7 foreach t ∈ Te do
+8 Determine action space At.
+9 Obtain oracle action a⋆
+t via worst-case regret
+minimization.
+10 Form truncated trajectory s1:t.
+11 Construct MCQ with candidates
+At = {A, B, C, D} and label y.
+12 Assign task identifier Tk.
+13 Validate instance (automatic + expert review).
+14 if valid then
+15 Add (Se, q, y, Tk) to D.
+16 return D
+trust-, and SLA-critical contexts. As such, 6G-Bench com-
+plements existing telecom benchmarks by filling a critical
+gap: the systematic, standardized evaluation of foundation
+models as semantic reasoning layers above network functions
+in AI-native 6G systems, rather than as isolated solvers or
+knowledge engines.
+III. BENCHMARK DESIGN AND EVALUATION
+METHODOLOGY
+Figure 1 presents an overview of the 6G-Bench bench-
+mark design and evaluation pipeline. The process begins by
+collecting 6G-related standardization and technical reports
+from 3GPP, ETSI, IETF, ITU-T, and the O-RAN Alliance,
+from which canonical semantic capabilities are extracted
+and organized into five capability categories and a task
+taxonomy of 30 tasks. Using multi-turn episodes from the
+α3-Bench dataset, 6G-Bench reconstructs semantic commu-
+nication states and corresponding semantic action spaces that
+expose intent-, policy-, and network-level abstractions. The
+Network-level semantic reasoning is then applied to instan-
+tiate multiple-choice benchmark instances conditioned on
+the task. Prior to evaluation, all generated instances undergo
+automated validation and human-in-the-loop expert review to
+ensure semantic correctness and alignment with standardiza-
+tion intent. Finally, models are evaluated using task-level and
+category-level performance metrics, enabling fine-grained
+assessment of semantic reasoning capabilities across hetero-
+geneous 6G operational domains.
+VOLUME 7, 2026 3309
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+FIGURE 1. Overview of the 6G-Bench benchmark design, task construction, validation, and evaluation pipeline.
+A. PROBLEM FORMULATION AND EPISODE SOURCE
+The Algorithm 1 summarizes the end-to-end construction
+of 6G-Bench, from standardization-driven capability extrac-
+tion and semantic state reconstruction to task-conditioned
+multiple-choice benchmark instantiation and validation.
+1) EPISODE SOURCE
+6G-Bench is constructed on top of α3-Bench [29] and
+UAVBench [30], a large-scale benchmark that models
+autonomous UAV missions as multi-turn, language-mediated
+control loops operating under dynamic 6G network condi-
+tions. Each episode corresponds to a structured conversa-
+tional interaction between an LLM-based UAV agent and
+a supervisory entity, where decisions must satisfy mission
+objectives, safety policies, protocol constraints, and time-
+varying network conditions.
+Formally, an episode is defined as a finite dialog trajectory:
+E = {dt}T
+t=1, (1)
+where each dialog turn dt is represented as:
+dt = (rt, at, ot, nt). (2)
+See [29] for details on episode generation, validation, and
+network modeling.
+2) SEMANTIC NETWORK STATE
+At each dialog turn t, the 6G network context is represented
+by the semantic network state vector:
+nt = (slicet, ℓt, jt, ρt, τt, et), (3)
+3310 VOLUME 7, 2026
+FIGURE 2. Network condition diversity in 6G-Bench. Subfigures (a)–(c) show the proportion of MCQ questions operating under different latency, throughput, and edge-compute
+load regimes.
+where slicet ∈ {URLLC, eMBB, mMTC} denotes the active
+network slice, ℓt is the end-to-end latency, jt the jitter, ρt the
+packet loss rate, τt the achievable throughput, and et ∈ [0, 1]
+the normalized edge-compute load. These parameters are
+explicitly injected into the conversational context and evolve
+dynamically during the episode.
+Figure 2 characterizes the operating regimes under which
+benchmark decisions are instantiated, providing a regime-
+level view of network stress conditions. As shown in
+Figure 2a, severely degraded latency exceeding 50 ms
+appears in 55.3% of the questions, while an additional
+30.7% operate in the intermediate 20–50 ms range, indicating
+that the benchmark predominantly targets performance-
+critical and degraded conditions rather than nominal opera-
+tion. Figure 2b illustrates that achievable throughput spans
+from constrained regimes below 50 Mbps (16.9%) to high-
+capacity regimes above 400 Mbps (25.5%), reflecting real-
+istic transitions between URLLC-dominated safety phases
+and eMBB-oriented data-intensive operation. Figure 2c fur-
+ther shows that near-saturated edge-compute load conditions
+above 0.8 occur in 24.3% of the instances, while moder-
+ate load regimes remain common, underscoring that many
+tasks—such as graceful degradation, preemptive autonomy
+downgrade, and compute placement—are evaluated under
+edge contention consistent with ETSI MEC and AI-native
+orchestration assumptions [31].
+3) SEMANTIC COMMUNICATION MODEL
+We define semantic communication as the exchange of
+meaning-bearing abstractions rather than raw symbols.
+Accordingly, the semantic state at turn t is defined as:
+st = (it, nt, pt, xt), (4)
+where it represents mission or network intent, nt is the 6G
+network state, pt denotes policy and service-level constraints,
+and xt captures the UAV operational state (e.g., battery level,
+speed, and position). This state captures the information
+communicated at the intent, policy, and network levels in AI-
+native 6G systems.
+Figure 3 complements the regime-level analysis by pre-
+senting the distribution of per-question maximum network
+metrics, thereby exposing the extremal conditions under
+which oracle decisions are derived. The boxplots reveal
+heavy-tailed, highly dispersed distributions for latency,
+throughput, edge-compute load, and packet loss, with max-
+imum latency exceeding several hundred milliseconds and
+edge-compute load frequently approaching full saturation.
+Packet loss similarly reaches extreme values, confirming that
+a substantial subset of benchmark instances requires reason-
+ing under severe reliability degradation. These observations
+demonstrate that 6G-Bench systematically emphasizes worst-
+case and uncertainty-aware decision-making, directly align-
+ing the dataset construction with the minimax regret objective
+used to determine oracle actions and reflecting deployment-
+relevant conditions in AI-native 6G networks, where future
+network evolution, policy compliance, and safety margins
+must be anticipated rather than reactively optimized.
+4) DECISION SPACE AND STATE EVOLUTION
+At each turn, the agent selects a semantic action:
+at ∈ A, (5)
+where A includes slice selection, compute offloading, auton-
+omy adjustment, sensing requests, and agent-to-agent coor-
+dination.
+The system evolves according to:
+st+1 = f (st, at, ξt), (6)
+where f (·) denotes the environment transition function and ξt
+captures uncertainty arising from network variability, sensing
+noise, and environmental disturbances.
+5) OBJECTIVE: NETWORK-LEVEL SEMANTIC
+REASONING
+Rather than optimizing instantaneous performance, agents
+must reason over future consequences under uncertainty.
+Given a finite horizon H, the decision objective is formulated
+as:
+a⋆
+t = arg min
+a∈A
+max
+ξt:t+H
+t+H
+X
+k=t
+C(sk, ak), (7)
+where C(·) captures mission degradation, safety risk, and
+SLA violation penalties.
+VOLUME 7, 2026 3311
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+FIGURE 3. Distribution of per-question maximum network metrics in 6G-Bench, including latency, throughput, edge-compute load, and packet loss.
+The cost function C(sk, ak) aggregates three components:
+(i) mission degradation (e.g., delayed task completion or
+degraded service quality), (ii) SLA violations (e.g., latency,
+throughput, packet loss, or jitter exceeding predefined thresh-
+olds), and (iii) safety or policy violations (e.g., unsafe
+operation or trust constraint breaches). Each component con-
+tributes a normalized penalty, and the total cost is computed
+as their sum.
+The disturbance term ξt represents bounded variations in
+network conditions such as latency, packet loss, throughput,
+and edge-compute load. These variations are restricted to
+realistic operating ranges derived from the scenario genera-
+tion process. The inner maximization therefore evaluates the
+worst-case network evolution within these bounded limits.
+The horizon H corresponds to the remaining steps of the
+truncated semantic episode (typically two to three steps). For
+each candidate action a ∈ A, we simulate the subsequent
+state evolution under worst-case bounded disturbances and
+compute the cumulative cost over the horizon. The oracle
+label a⋆
+t is the action that yields the smallest worst-case cumu-
+lative cost. If two actions produce identical costs, preference
+is given to the action that better preserves safety and policy
+compliance.
+This formulation reflects network-level semantic reason-
+ing, in which decisions are evaluated based on worst-case
+future regret rather than on immediate network metrics.
+6) BENCHMARK INSTANTIATION IN 6G-BENCH
+6G-Bench instantiates this formulation by transforming
+α3-Bench episodes into task-conditioned multiple-choice
+reasoning problems. Each benchmark instance corresponds
+to:
+(s1:t, At, a⋆
+t ), (8)
+where s1:t is a truncated semantic trajectory, At =
+{a(A), a(B), a(C), a(D)} is a finite set of candidate actions, and
+a⋆
+t minimizes worst-case regret.
+A model succeeds if it correctly identifies a⋆
+t based solely
+on semantic communication artifacts and network-aware
+reasoning.
+B. TASK TAXONOMY AND STANDARDIZATION-ALIGNED
+CATEGORIES
+To evaluate semantic communication and network-level rea-
+soning in AI-native 6G systems, 6G-Bench defines a set of
+30 tasks (T1–T30) organized into five capability-oriented
+categories. These categories reflect recurring architectural
+themes and control challenges identified in ongoing 6G and
+AI agent standardization activities in 3GPP [1], IETF [7],
+[8], [9], ETSI [11], [12], [13], [14], ITU-T [2] and the
+O-RAN Alliance [3]. Rather than targeting isolated network
+functions, the taxonomy emphasizes decision-making over
+meaning-bearing abstractions such as intents, policies, slices,
+trust relationships, and agent coordination.
+1) INTENT & POLICY REASONING PERFORMANCE
+Intent interpretation and policy alignment form the founda-
+tion of AI-native network operation [32]. In the intent-based
+networking frameworks studied by the IETF and 3GPP
+SA2, high-level intents express desired mission or ser-
+vice outcomes, while the network remains responsible for
+assessing feasibility, enforcing policies, and adapting exe-
+cution as conditions evolve. As a result, intents must be
+continuously evaluated against network state, operational
+constraints, and policy rules throughout the mission lifecy-
+cle [33]. In realistic deployments, network observability is
+often imperfect due to missing signals, delayed KPIs, or noisy
+sensing streams. Consequently, intent- and policy-aware rea-
+soning must explicitly account for telemetry uncertainty
+rather than assuming complete or timely network state
+information.
+From a semantic communication perspective, intent repre-
+sents a persistent abstraction that bears meaning and spans
+multiple dialog turns. An AI-native agent [34] must not only
+interpret the initial intent correctly, but also ensure that subse-
+quent decisions remain consistent with that intent as network
+conditions, uncertainty, and policy constraints change [35].
+Failures in this capability may lead to infeasible mission exe-
+cution, implicit policy violations, or inconsistent decisions
+between replanning events [36].
+3312 VOLUME 7, 2026
+The following tasks explicitly evaluate these aspects of
+intent- and policy-aware reasoning [37]:
+• T1: Intent Feasibility Assessment evaluates whether a
+model can determine if a given mission and associated
+6G intent message are feasible under current network
+conditions, and whether adjustments are required to
+maintain compliance.
+• T2: Intent Conflict Resolution examines the ability to
+resolve conflicts between mission intent and network
+or operator policies, requiring semantic reconciliation
+rather than simple rejection.
+• T3: Intent Drift Detection assesses whether a model
+can detect subtle changes in network intent that emerge
+during mission execution, even when no explicit intent
+update is issued.
+• T12: Conservative Continuation Decision evaluates
+whether the model can decide to continue, hold, or abort
+a mission when network state or sensing information
+is incomplete, delayed, or uncertain, balancing safety
+and intent preservation against premature termination or
+unsafe persistence.
+• T15: Decision Consistency under Replanning mea-
+sures the ability to avoid contradictory decisions across
+turns when replanning occurs due to updated intent inter-
+pretation, network feedback, or policy constraints.
+2) NETWORK SLICING & RESOURCE MANAGEMENT
+PERFORMANCE
+Adaptive allocation of communication and compute
+resources lies at the core of AI-native 6G system design [38].
+Through service differentiation across ultra-reliable low-
+latency communication (URLLC), enhanced mobile broad-
+band (eMBB), and massive machine-type communication
+(mMTC), 3GPP architectures enable heterogeneous perfor-
+mance guarantees tailored to mission and service semantics.
+At the same time, the ETSI MEC frameworks [31] highlight
+the importance of flexible computing placement and proac-
+tive workload adaptation to sustain service levels under edge
+congestion and fluctuating demand.
+In this context, semantic reasoning about resources
+requires more than reacting to instantaneous metrics. An AI-
+native agent must interpret network signals in light of mission
+objectives, multi-agent interactions, and anticipated future
+conditions, often choosing stability or controlled degrada-
+tion over short-term optimization [1], [3], [11], [14]. Energy
+efficiency and environmental sustainability have emerged
+as first-class objectives in 6G operator strategies. AI-native
+agents must therefore reason not only about latency, through-
+put, and SLA compliance, but also about energy consumption
+and carbon impact when selecting slices, placing com-
+pute workloads, or scheduling inference and training across
+device, edge, and cloud resources. Resource-aware reasoning
+is examined through a set of tasks that capture distinct but
+interrelated decision challenges:
+• T4: Slice Selection Reasoning probes whether a model
+can choose among URLLC, eMBB, or hybrid slic-
+ing options and justify the selection based on mission
+requirements and network characteristics [39].
+• T5: Slice Switching Decision focuses on the abil-
+ity to recognize scenarios in which refraining from
+slice switching is preferable, even when degradation is
+observed.
+• T6: Slice Fairness vs. Safety examines how contention
+among multiple agents is resolved when fairness objec-
+tives conflict with safety-critical needs.
+• T7: Compute Placement Decision evaluates reason-
+ing over onboard versus edge- or cloud-based inference
+under latency, reliability, SLA, and energy efficiency
+constraints, including trade-offs between performance
+and energy or carbon-aware operation.
+• T8: Graceful Degradation under Edge Overload
+assesses whether autonomy or service quality can be
+reduced specifically in response to imminent edge over-
+load or SLA violation risk, with the goal of stabilizing
+compute or network resources while preserving mission
+continuity.
+• T10: SLA Violation Prediction measures the ability to
+forecast impending SLA violations from early network
+signals rather than relying on reactive responses.
+• T11: Preemptive Autonomy Downgrade examines
+proactive reductions in autonomy triggered by antici-
+pated failures beyond pure resource overload, including
+security risks, mobility instability, battery depletion,
+or channel quality deterioration.
+• T13: Swarm-Level Slice Negotiation captures collab-
+orative reasoning over slice allocation among multiple
+agents sharing constrained network resources.
+• T14: Scheduler Reconfiguration Adaptation evalu-
+ates the consistency of decisions following changes in
+network or AI scheduling behavior.
+3) TRUST, SECURITY & SLA AWARENESS
+PERFORMANCE
+As AI-native networks increasingly expose control inter-
+faces, data streams, and compute resources to autonomous
+agents, performance can no longer be considered in isola-
+tion from trust and security. Current directions in IETF [9],
+ETSI [12], [13], and ITU-T [2] emphasize zero-trust network-
+ing, policy-driven authorization, and service-level agreement
+(SLA) enforcement as foundational mechanisms for safe and
+accountable network operation.
+Within this setting, semantic reasoning must account for
+who is requesting access, what is being exposed, and under
+which guarantees services are delivered. Decisions that opti-
+mize latency or throughput may still be unacceptable if
+they violate trust assumptions, regulatory constraints, or con-
+tractual SLAs [40], [41]. In addition to adversarial threats,
+AI-native networks must handle non-malicious faults such
+as hardware failures, software crashes, misconfigurations,
+VOLUME 7, 2026 3313
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+and cascading outages, which require distinct reasoning and
+recovery strategies.
+Trust- and security-aware reasoning is explored through
+tasks that reflect these trade-offs:
+• T9: Trust-Aware Offloading evaluates whether a
+model can correctly reject edge offloading requests
+when trust, policy, or authorization constraints outweigh
+performance benefits.
+• T16: Network-Exposed Compute Marketplace exam-
+ines reasoning about whether and how operator edge
+or cloud compute resources should be exposed to third
+parties, including pricing and allocation considerations.
+• T18: AI Agent Identity & Onboarding assesses the
+ability to authorize, authenticate, and register AI agents,
+as well as to decide appropriate identity mapping and
+digital representation policies.
+• T26: Trust-Aware Third-Party Agent Exposure eval-
+uates decisions on the level of data, API, or compute
+exposure granted to third-party agents based on trust
+relationships, regulatory constraints (e.g., data resi-
+dency, lawful intercept), operator policies, and user
+consent.
+• T30: Network Security Detection & Response
+Automation examines whether a model can reason
+about automated detection, isolation, and recov-
+ery actions for both adversarial incidents and non-
+adversarial network faults, ensuring service continuity
+while respecting policy and SLA constraints.
+4) AI-NATIVE NETWORKING & AGENTIC CONTROL
+PERFORMANCE
+Emerging 6G architectures increasingly position AI agents as
+integral components of the network control plane rather than
+as external applications. This shift, reflected in O-RAN [3],
+3GPP SA6, and ITU discussions, envisions AI-driven orches-
+tration, closed-loop automation, and agent-based interaction
+as core mechanisms for network operation and service man-
+agement.
+Within such agent-centric environments, semantic reason-
+ing extends beyond local decision-making to include coor-
+dination, knowledge exchange, and lifecycle-aware control
+across multiple agents and network domains. An AI-native
+system must determine not only how agents act, but also how
+they communicate, collaborate, and evolve over time under
+policy and resource constraints.
+These capabilities are examined through tasks that capture
+key aspects of agentic control [7]:
+• T17: Network-Knowledge RAG Augmentation eval-
+uates whether a model can decide which network
+telemetry and knowledge should be exposed to support
+retrieval-augmented generation [42], [43] under latency
+and policy constraints.
+• T19: AI Agent Interoperability & Federation exam-
+ines reasoning about compatibility, data sharing, and
+coordination when multiple AI agents from different
+administrative domains or operators must collaborate,
+including inter-operator trust models, roaming con-
+straints, and cross-domain policy alignment.
+• T20: Agent-to-Agent Communication Management
+assesses decisions on routing, quality of service, and
+security policies for horizontal communication between
+AI agents [44], either directly or via network relays.
+• T21: Device-Network Task Offload Arbitration eval-
+uates whether AI tasks should be executed on-device,
+offloaded to peer agents, or delegated to edge or cloud
+resources, given latency, energy, capability, and trust
+considerations.
+• T27: Agent Lifecycle & Management examines rea-
+soning about agent instantiation, scaling, migration, and
+retirement in accordance with operator policies and SLA
+constraints.
+• T28: 6G Model Training-as-a-Service Decision evalu-
+ates whether network-facilitated model training requests
+should be accepted, considering resource availability,
+privacy implications, and quality-of-service impact.
+5) DISTRIBUTED INTELLIGENCE & EMERGING 6G USE
+CASE PERFORMANCE
+Beyond conventional data transport, 6G networks are
+expected to enable distributed intelligence, integrated sens-
+ing, and mission-critical services. Current 3GPP [1],
+ETSI [11], [14], ITU-T [2], and O-RAN Alliance [3] studies
+highlight use cases such as integrated sensing and communi-
+cation (ISAC) [45], digital twins assisted by the network [46],
+and public safety operations, where communication, percep-
+tion, and reasoning are closely intertwined.
+In these scenarios, semantic reasoning must span multiple
+agents, heterogeneous data sources, and time-sensitive net-
+work services. Decisions often involve coordinating learning,
+sensing, and control across distributed entities while respect-
+ing latency, privacy, and resource constraints.
+Such capabilities are evaluated through tasks that reflect
+emerging 6G application domains:
+• T22: Federated / Collaborative Learning Orches-
+tration examines whether a model can decide when
+and how to schedule federated training or collaborative
+model updates across devices and edge nodes while
+meeting privacy and resource limits [47].
+• T23: Network-Assisted Digital Twin Control evalu-
+ates reasoning about how the network should supply
+sensing, telemetry, and command channels to maintain
+and act on real-time digital twins [48].
+• T24: Sensing-Enhanced Decisioning (ISAC) assesses
+decisions on which sensing streams and fusion strategies
+the network should provide to support time-sensitive
+perception tasks [49].
+• T25: AI-Agent-based Disaster / Public-Safety Coor-
+dination examines coordination among agents, slice and
+sensing allocation, and command escalation policies in
+disaster response and public-safety scenarios.
+3314 VOLUME 7, 2026
+• T29: Immersive / AR Resource Prioritization evalu-
+ates allocation of network slices and edge resources to
+multi-modal immersive sessions, balancing throughput,
+latency, and fairness [50].
+6) QUANTITATIVE VALIDATION AND RELIABILITY
+ANALYSIS
+The generation pipeline produced 10,000 candidate
+MCQs. From this pool, 4,000 questions were selected for
+expert human validation using a task-balanced sampling
+strategy to ensure proportional representation across all
+30 benchmark tasks (T1–T30). This design preserves struc-
+tural coverage of the taxonomy and avoids task imbalance
+in the evaluation subset. The 4,000 selected questions were
+reviewed by domain experts in wireless networking, AI-
+native systems, and UAV autonomous operations. During
+expert validation, 278 questions (6.95% of the reviewed
+subset) were rejected due to semantic ambiguity, under-
+specified constraints, inconsistencies with UAV operational
+assumptions, or multiple defensible answers under valid
+interpretations. After this two-stage validation process, 3,722
+MCQs were retained as the final high-confidence evaluation
+set used for all reported benchmark results. The remaining
+questions are released as part of the broader training pool but
+are not used for evaluation.
+Figure 4 summarizes the structural coverage of 6G-Bench
+across its task taxonomy and capability-oriented categories.
+Figure 4a shows the distribution of the 3,722 MCQ instances
+across the five standardization-aligned capability groups,
+confirming that the benchmark spans intent and policy rea-
+soning, network slicing and resource management, trust and
+security awareness, AI-native agentic control, and distributed
+intelligence for emerging 6G use cases. Figure 4b further
+details the number of instances assigned to each of the
+30 benchmark tasks (T1–T30), demonstrating that no task is
+sparsely represented. This distribution ensures that evaluation
+results reflect a broad spectrum of semantic decision-making
+challenges, including intent feasibility assessment, slice
+selection and negotiation, trust-aware offloading, agent life-
+cycle management, and network-assisted digital twin control,
+rather than being driven by a narrow subset of network func-
+tions.
+7) SYNTHETIC GENERATION AND PROMPT DESIGN
+CONSIDERATIONS
+6G-Bench is constructed through a multi-stage synthetic pro-
+cess, including benchmark-generated episodes, LLM-based
+MCQ construction, automated filtering, and expert review.
+This construction approach may raise concerns regarding
+stylistic bias or template sensitivity. To mitigate this risk,
+the MCQ generator is governed by a strict task-conditioned
+system prompt that enforces quantitative and structural con-
+straints. For example, the prompt requires that each question
+be labeled ‘‘very_hard’’ and that a correct solution must
+require at least four reasoning steps, including numeric
+extraction, derivation of at least one quantitative margin,
+Algorithm 2 6G-Bench Evaluation Protocol
+Input: Dataset D; model M; optional k for pass@k
+Output: Accuracy and pass@k metrics
+1 Initialize counters for overall, per-task, and group-level
+statistics.
+2 foreach instance (Se, q, y, Tk) ∈ D do
+3 Build standardized task-conditioned prompt.
+4 Query model M with deterministic decoding.
+5 Parse prediction ŷ ∈ {A, B, C, D} using robust
+extraction.
+6 Update overall and per-task correctness counts.
+7 Store evaluation record for analysis.
+8 Compute overall accuracy Accoverall.
+9 Compute per-task accuracies AccTk .
+10 Compute group-level accuracies as unweighted means
+over tasks in each Gj.
+11 if k > 1 then
+12 foreach instance in reasoning-intensive subset do
+13 Sample k stochastic predictions.
+14 Mark pass@k if any sample matches ground
+truth.
+15 Compute pass@k statistics overall and per task.
+16 return accuracy metrics and evaluation logs.
+reasoning under worst-case uncertainty, and comparison of
+regret across the next 1–3 turns. The prompt explicitly states:
+‘‘The correct answer MUST NOT be identifiable by a single
+metric alone.’’
+The multiple-choice formulation operates at a defined
+abstraction level. The benchmark does not attempt to emulate
+low-level continuous optimization processes (e.g., resource
+allocation or scheduling algorithms). Instead, it evaluates
+high-level semantic decision-making and policy-aware rea-
+soning, where each option represents a structured control
+decision (such as slice selection, offloading strategy, or trust-
+aware exposure). In practical 6G systems, such high-level
+decisions would trigger underlying continuous optimization
+mechanisms within standardized network functions. 6G-
+Bench therefore targets the semantic reasoning layer of
+AI-native 6G architectures rather than the full continuous
+control stack.
+Non-semantic heuristics and surface-level cues are explic-
+itly restricted. The prompt requires that no option be
+eliminated solely by narrative framing and that multiple dis-
+tractor types (e.g., myopic or uncertainty-neglect options)
+be included. In addition, it prevents number hallucination
+through the rule: ‘‘NO INVENTED BASE NUMBERS: All
+base numeric tokens MUST appear verbatim in the episode
+summary.’’ Derived values are restricted to a minimal and
+auditable work field. Scenario styles are rotated to reduce
+repetitive phrasing patterns. Finally, automated filtering and
+expert review remove ambiguous or structurally exploitable
+instances. While synthetic generation cannot fully eliminate
+VOLUME 7, 2026 3315
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+FIGURE 4. Coverage of 6G-Bench across tasks and capability categories. Subfigure a shows that questions are distributed across the five standardization-aligned capability
+categories, while Subfigure b details the number of MCQ instances for each individual task T1–T30.
+stylistic effects, these safeguards substantially reduce tem-
+plate memorization and ensure that benchmark performance
+primarily reflects multi-step quantitative reasoning under
+uncertainty.
+C. EVALUATION PROTOCOL AND METRICS
+6G-Bench is designed to evaluate models in a unified,
+task-aware, and episode-conditioned setting. Each evaluation
+instance is a multiple-choice question (MCQ) derived from
+an α3-Bench episode and annotated with a target task Tk
+from the taxonomy described above. Algorithm 2 specifies
+the unified evaluation protocol of 6G-Bench, including task-
+conditioned prompt construction, robust answer extraction,
+and the computation of overall, per-task, group-level, and
+pass@k performance metrics.
+1) EPISODE–QUESTION PAIRS
+The dataset is organized as paired files containing raw
+episodes and their corresponding MCQs. For each episode
+e, we store:
+• the original dialogue and initial state (environment,
+airspace, UAV, policy), and
+• a set of MCQs {qe,1, . . . , qe,ne }, each associated with a
+task identifier t ∈ {T1, . . . , T30} and a correct answer
+y ∈ {A, B, C, D}.
+During evaluation, we only consider episodes for which
+both the raw episode file and the MCQ file are present. For
+each such episode, a compact textual summary is constructed
+using the same procedure as in the MCQ generation stage: ini-
+tial state fields (environment, airspace, UAV, policy, success)
+are followed by a truncated dialogue trace (up to 12 turns),
+including intents, actions, observations, and network
+telemetry.
+2) TASK-CONDITIONED PROMPT CONSTRUCTION
+Given an episode summary Se and a question q targeting task
+Tk, we build a standardized evaluation prompt. Each prompt
+contains:
+1) the target task metadata: TASK_ID, TASK_NAME, and
+the formal definition of Tk from the task list;
+2) the episode summary Se describing the mission, net-
+work state, and dialogue context;
+3) the question stem as written in the MCQ; and
+4) the four answer options A–D.
+The model is instructed to act as an expert 6G network AI
+agent evaluator and to respond only with a JSON object of the
+form
+{"answer": "\ldots"}
+where the value must be one of "A", "B", "C", or "D".
+Temperature is set to zero (or a very low value), and an
+optional seed is derived deterministically from the episode
+identifier and task identifier to improve reproducibility across
+runs.
+Formally, for a model M and a question instance (Se, q)
+targeting task Tk, we obtain a prediction
+ŷ = fM (Tk, Se, q) ∈ {A, B, C, D}, (9)
+where fM denotes the behavior of M under the standardized
+system and user prompts.
+3) ANSWER EXTRACTION AND ROBUST PARSING
+In practice, some models may return additional text or non-
+canonical JSON. To make the evaluation robust, we first
+attempt to parse the response as JSON and extract a field
+named "answer", "choice", "label", or "option"
+if present. If this fails, a fallback regex search over the raw text
+is applied to identify a single letter in {A,B,C,D}. If no valid
+3316 VOLUME 7, 2026
+option can be recovered, the prediction is treated as invalid
+and counted as incorrect.
+Each evaluated question thus yields a tuple
+(episode_id, Tk, q, y, ŷ, meta), (10)
+where y is the ground-truth option, ŷ is the parsed model
+prediction, and meta includes difficulty, source turn, and raw
+model output for later analysis.
+4) OVERALL ACCURACY
+Let D denote the full set of evaluation questions, and let each
+instance i ∈ D be associated with a task ti ∈ {T1, . . . , T30},
+a correct label yi, and a model prediction ŷi. The primary eval-
+uation metric is the overall multiple-choice question (MCQ)
+accuracy, defined as
+Accoverall(M) =
+1
+|D|
+X
+i∈D
+⊮
+
+ŷi = yi
+
+, (11)
+where ⊮[·] denotes the indicator function.
+5) PER-TASK ACCURACY
+To analyze semantic communication and reasoning perfor-
+mance at a finer granularity, we compute per-task accuracy.
+For each task Tk, the per-task accuracy of model M is defined
+as
+AccTk (M) =
+1
+|DTk |
+X
+i∈DTk
+⊮
+
+ŷi = yi
+
+, (12)
+where
+DTk = {i ∈ D | ti = Tk}
+denotes the subset of evaluation questions labeled with
+task Tk.
+6) GROUP-LEVEL ACCURACY
+To capture higher-level semantic and operational capabilities,
+we further aggregate per-task accuracies into group-level
+accuracy scores. Let G = {G1, . . . , G5} denote the five evalu-
+ation groups corresponding to (i) intent and policy reasoning,
+(ii) network slicing and resource management, (iii) trust,
+security, and SLA awareness, (iv) AI-native networking and
+agentic control, and (v) distributed intelligence and emerging
+6G use cases. Each group Gj is associated with a predefined
+subset of tasks TGj ⊆ {T1, . . . , T30}.
+The group-level accuracy of model M on group Gj is
+defined as the (unweighted) mean of the per-task accuracies
+within that group:
+AccGj (M) =
+1
+|TGj |
+X
+Tk ∈TGj
+AccTk (M). (13)
+This aggregation ensures that each task contributes equally
+to its corresponding capability dimension, independent of
+task-specific sample sizes, and enables balanced comparison
+of model performance across heterogeneous semantic and
+operational domains. For each evaluated question, 6G-Bench
+records a detailed evaluation entry containing identifiers, task
+metadata, difficulty, the model’s prediction, the ground truth,
+and the raw model output. These records are stored both
+globally and per task, enabling fine-grained error analysis,
+difficulty breakdowns, and qualitative inspection of failure
+modes.
+7) STOCHASTIC PASS@K ACCURACY
+In addition to deterministic single-shot accuracy, we report
+pass@k accuracy for a selected subset of reasoning-intensive
+tasks. For each evaluation instance i, the model is sam-
+pled k times under stochastic decoding, yielding predictions
+ŷ
+(1)
+i , . . . , ŷ
+(k)
+i . The pass@k indicator for instance i is defined
+as
+pass@ki(M) = ⊮
+h
+∃ j ∈ {1, . . . , k} : ŷ
+(j)
+i = yi
+i
+. (14)
+Let Dpass ⊆ D denote the subset of evaluation questions
+associated with the selected reasoning-intensive tasks. The
+overall pass@k accuracy of model M is then defined as
+pass@koverall(M) =
+1
+|Dpass|
+X
+i∈Dpass
+pass@ki(M). (15)
+Similarly, the per-task pass@k accuracy for a task Tk is
+given by
+pass@kTk
+(M) =
+1
+|DTk |
+X
+i∈DTk
+pass@ki(M), (16)
+where DTk ⊆ Dpass denotes the set of evaluation instances
+labeled with task Tk.
+By construction, pass@k is monotonically non-decreasing
+in k, with pass@1 equivalent to deterministic single-shot
+accuracy. Larger values of k therefore quantify robustness
+and completeness of the semantic reasoning under stochastic
+decoding, rather than retry-based execution in deployment.
+IV. PERFORMANCE EVALUATION
+This section evaluates the behavior of state-of-the-art foun-
+dation models on 6G-Bench, with a focus on deployment-
+relevant semantics for AI-native 6G systems. The analysis
+proceeds in three steps. First, the benchmark setup is
+described, including the construction and validation of a
+10,000-question MCQ pool derived from α3-Bench [29]
+and the selection of evaluated foundation models. Second,
+task- and group-level accuracies are reported across intent
+and policy reasoning, network slicing and resource man-
+agement, trust and security awareness, AI-native networking
+and agentic control, and distributed intelligence use cases.
+Third, robustness under stochastic decoding (pass@k) and
+the impact of model scale on deterministic pass@1 accuracy
+are examined, highlighting the trade-offs between semantic
+reliability, computational efficiency, and deployability in AI-
+native 6G environments.
+VOLUME 7, 2026 3317
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+A. BENCHMARK SETUP
+1) QUESTION GENERATION AND TASK COVERAGE
+We generated a total of 10,000 multiple-choice ques-
+tions (MCQs) to construct 6G-Bench, using top-performing
+reasoning-oriented foundation models under a strictly task-
+conditioned generation protocol. Question generation is
+grounded in 113,475 scenarios from α3-Bench [29], which
+provides a large and diverse corpus of AI-native 6G oper-
+ational contexts, including intent expression, policy con-
+straints, network telemetry, trust boundaries, and multi-agent
+interactions. Each MCQ targets exactly one of the 30 bench-
+mark tasks (T1–T30), with a dedicated, task-specific prompt
+that encodes the formal task definition, decision semantics,
+and expected reasoning scope. Generation is performed using
+a heterogeneous pool of large-scale, state-of-the-art language
+models, namely anthropic/claude-opus-4.6, openai/gpt-5.2-
+pro, and google/gemini-3-pro-preview, to reduce model-
+specific stylistic bias and increase semantic diversity across
+questions.
+To ensure that the benchmark probes genuine high-level
+semantic reasoning rather than surface heuristics, all gen-
+erated questions are constrained to the very hard difficulty
+level. Each MCQ requires a minimum of four distinct rea-
+soning steps, including the extraction of multiple numeric
+values from the scenario, the derivation of at least one
+quantitative margin or projection, explicit reasoning under
+uncertainty or worst-case bounds, and comparison of future
+regret across alternative actions over a multi-turn horizon
+(typically one to three turns). The questions integrate at
+least four numeric parameters drawn from multiple cate-
+gories, such as network performance metrics (e.g., latency,
+jitter, throughput, edge load), mission or platform param-
+eters (e.g., battery level, distance, speed), and policy or
+SLA limits. This structure enforces multi-factor decision-
+making consistent with AI-native 6G control scenarios,
+where no single metric is sufficient to determine the correct
+action.
+Generation is explicitly balanced across tasks and capa-
+bility groups to prevent over-representation of simpler or
+more templated decision types. Automatic deduplication and
+semantic similarity filtering are applied to remove exact and
+near-duplicate questions arising from scenario overlap or
+template instantiation. In addition, anti-heuristic constraints
+are enforced during generation to avoid trivial patterns, such
+as always favoring URLLC slices or optimizing instanta-
+neous performance. Instead, each question is constructed
+so that all options incur quantifiable downsides, and the
+correct answer corresponds to the least-bad decision under
+worst-case future evolution. The full generation process is
+completed over approximately one week, yielding a diverse
+and balanced pool of 10,000 MCQs. Beyond evaluation, this
+complete set is explicitly intended for training and fine-tuning
+large language models for specialized 6G use cases, including
+semantic network control, intent-aware orchestration, and AI-
+native management agents.
+2) HUMAN EXPERT VALIDATION AND SEMANTIC
+CORRECTNESS
+From the 10,000 generated MCQs, we retain 3,722 questions
+as the final evaluation set following a rigorous two-stage
+validation process that combines automated filtering with
+human expert review. In the first stage, an automated vali-
+dation script enforces strict structural and logical constraints,
+removing questions with formatting violations, inconsistent
+answer keys, insufficient numeric grounding, or residual
+duplication. Questions that do not meet the quantitative, tem-
+poral, or uncertainty-related requirements embedded in the
+generation prompt are automatically discarded at this stage.
+In the second stage, domain experts with expertise in
+6G architecture, semantic communications, and AI-native
+networking manually review the remaining questions over
+approximately 2 weeks. The expert validation focuses on
+semantic well-posedness, uniqueness, and correctness of the
+labeled answer under worst-case reasoning, and alignment
+with realistic 6G operational assumptions. Particular scrutiny
+is applied to tasks involving safety-, trust-, and policy-critical
+decisions, such as intent conflict resolution, conservative
+continuation under uncertainty, trust-aware offloading, inter-
+agent coordination, and network security detection and
+response. Questions exhibiting unresolved ambiguity, under-
+specified constraints, or multiple defensible answers under
+valid interpretations are refined or removed, even if they
+satisfy all automated checks.
+The resulting curated set of 3,722 MCQs forms a high-
+confidence evaluation core for 6G-Bench and is used exclu-
+sively for all reported performance results, including pass@1
+and selective pass@k metrics. By separating the full 10,000-
+question pool, which is suitable for training and fine-tuning,
+from the human-validated evaluation subset, we ensure
+methodological rigor and prevent leakage between training
+and evaluation. This validation pipeline ensures that bench-
+mark performance reflects true semantic decision correctness
+under uncertainty and temporal evolution, rather than artifacts
+of prompt construction or generative bias, thereby aligning
+the evaluation with the reliability and accountability require-
+ments of AI-native 6G deployment and standardization.
+3) EVALUATED FOUNDATION MODELS FOR 6G-BENCH
+Table 2 presents the foundation models considered in
+6G-Bench, ordered by release date from July 2024 to
+February 2026, reflecting the rapid acceleration of model
+development for AI-native 6G systems. The selection
+spans code-specialized agentic models, general-purpose
+conversational models, multimodal vision–language sys-
+tems, and compact models designed for efficiency. Context
+lengths range from 16k tokens, as observed in Phi-4 and
+Llama 3.1 8B, up to 1,048k tokens in Llama 4 Maver-
+ick and GPT-4.1 Nano. This wide spectrum is essential
+for benchmarking semantic communication workloads tar-
+geted by 6G-Bench, including reasoning-intensive tasks,
+long-horizon code synthesis, tool-assisted workflows, and
+3318 VOLUME 7, 2026
+TABLE 2. Models evaluated on 6G-Bench, ordered by release date (newest to oldest). Params are reported in billions (B). For MoE models, we give ‘‘total (active)’’ parameters;
+context is the maximum input length in tokens.
+multi-step semantic inference, all of which impose strong
+requirements on both memory and contextual reasoning
+capacity.
+Architecturally, the models in Table 2 illustrate a pro-
+nounced shift toward efficiency-oriented scaling strategies
+that align closely with deployment constraints in future 6G
+networks. Several recent models adopt Mixture-of-Experts
+(MoE) designs, notably Qwen3-Coder-Next with 80B total
+parameters and only 3B active per token, Hunyuan-A13B
+with 80B total and 13B active parameters, and Llama 4 Mav-
+erick with 400B total and 17B active parameters. These
+configurations enable frontier-level semantic reasoning and
+coding performance while substantially reducing per-token
+compute, a property that is particularly relevant for dis-
+tributed inference across radio access networks, edge clouds,
+and core network intelligence layers. In parallel, smaller
+dense models such as Granite 4.0 H Micro (3B), LFM 2.2 6B,
+and Llama 3.2 1B represent a complementary design
+point, supporting low-latency semantic processing, localized
+decision-making, and resource-constrained deployments at
+the network edge.
+The table further highlights the strategic role of open-
+ness in the evolving AI-native 6G ecosystem. A substantial
+portion of the evaluated models are open-weight, including
+those released by Alibaba (Qwen), Meta (Llama), Mistral
+AI, Google (Gemma), IBM, Microsoft, Tencent, DeepSeek,
+and AllenAI, facilitating reproducibility, fine-tuning, and
+integration into experimental and pre-standard 6G semantic
+frameworks. Proprietary models from OpenAI, Anthropic,
+and Amazon are also included due to their maturity and
+demonstrated capability in coding, reasoning, and conver-
+sational tasks, serving as reference points for upper-bound
+performance. Taken together, the models summarized in
+Table 2 capture the key trade-offs among scale, efficiency,
+openness, and deployability that are central to the design and
+standardization of semantic, AI-native 6G systems.
+4) RATIONALE FOR SELECTIVE PASS@K EVALUATION
+While 6G-Bench primarily targets deterministic, single-
+shot decision making that reflects safety- and SLA-critical
+network control, we report pass@k (k ∈ {3, 5}) only
+for a selected subset of tasks that inherently involve
+multi-constraint semantic reasoning and non-trivial decision
+ambiguity. Specifically, tasks such as T2 (Intent Con-
+flict Resolution), T12 (Conservative Continuation Decision),
+and T9/T26 (Trust-Aware Decisions) require reconciling
+VOLUME 7, 2026 3319
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+TABLE 3. Intent & policy reasoning performance. Models are described in Table 2.
+competing objectives, for example, mission intent versus
+policy, performance versus trust, or progress versus safety,
+where multiple plausible reasoning paths may exist before
+converging to a correct action. Similarly, T19/T20 (Agent
+Coordination and Inter-Agent Communication Management)
+and T30 (Network Security Detection and Response Automa-
+tion) involve distributed reasoning, partial observability, and
+anticipation of downstream effects, which are known to
+induce higher variance under stochastic decoding. In contrast,
+tasks that involve reactive, metric-driven, or procedurally
+constrained decisions admit little semantic ambiguity and are
+therefore best evaluated solely using deterministic accuracy.
+Restricting pass@k to reasoning-intensive tasks thus avoids
+inflating performance in safety-critical control decisions,
+while providing a meaningful measure of robustness and
+reasoning completeness consistent with prior LLM reasoning
+benchmarks.
+B. INTENT & POLICY REASONING PERFORMANCE
+Table 3 presents the performance of representative founda-
+tion models on intent- and policy-aware reasoning tasks (T1,
+T2, T3, T12, and T15), together with the aggregated group-
+level accuracy AccG1 . Overall, strong models achieve AccG1
+values in a relatively narrow range between 0.87 and 0.89,
+indicating that intent-centric reasoning is a competitive but
+not yet saturated capability. The best group-level performance
+is obtained by qwen/qwen3-coder-next with AccG1 = 0.886,
+followed closely by mistral-small-creative (0.885) and meta-
+llama/llama-4-maverick (0.881). This clustering at the top
+suggests that accurate interpretation of network intent and
+policy constraints increasingly depends on the quality of fine-
+grained reasoning rather than on model scale alone.
+At the task level, distinct difficulty profiles emerge.
+For intent feasibility assessment (T1), mistral-small-creative
+achieves the highest accuracy of 0.878, slightly outperform-
+ing llama-4-maverick (0.870), reflecting the structured and
+constraint-driven nature of feasibility reasoning. Intent con-
+flict resolution (T2), which requires semantic reconciliation
+between mission intent and operator policies, remains more
+challenging, with qwen/qwen3-coder-next achieving the best
+result at AccT2 = 0.867, while several frontier models
+remain below 0.85. In contrast, intent drift detection (T3)
+yields the highest absolute accuracies across all tasks, with
+qwen/qwen3-coder-next reaching AccT3 = 0.973 and mul-
+tiple models exceeding 0.93, indicating that detecting latent
+semantic inconsistencies across dialog turns is comparatively
+easier than resolving normative conflicts.
+Tasks involving uncertainty and temporal consistency
+expose sharper model differences. For conservative contin-
+uation decisions under uncertainty (T12), openai/gpt-5.2-
+chat attains the highest accuracy at 0.916, outperforming
+mistral-small-creative (0.897) and llama-4-maverick (0.860),
+suggesting an advantage for models with stronger risk-
+aware alignment. For decision consistency under replanning
+(T15), anthropic/claude-haiku-4.5 achieves the top score of
+AccT15 = 0.938, marginally exceeding llama-4-maverick
+(0.930) and gpt-5.2-chat (0.922). Finally, smaller models
+exhibit a pronounced performance collapse, with gemma-3-
+4b reaching only AccG1 = 0.643 and llama-3.2-1b dropping
+3320 VOLUME 7, 2026
+TABLE 4. Network slicing & resource management performance. Models are described in Table 2.
+to 0.179, underscoring that intent and policy reasoning in AI-
+native 6G systems is fundamentally non-trivial and cannot be
+reliably achieved by shallow or low-capacity models.
+C. NETWORK SLICING & RESOURCE MANAGEMENT
+PERFORMANCE
+Table 4 presents the performance of foundation models on
+network slicing and resource management tasks (T4, T5,
+T6, T7, T8, T13, T14, T16, and T29), together with the
+aggregated group-level accuracy AccG2 . Compared to intent
+reasoning, this capability group exhibits a wider performance
+spread, with top models achieving AccG2 values between
+0.76 and 0.81, and the best overall result obtained by meta-
+llama/llama-4-maverick at AccG2 = 0.805. This is followed
+by qwen/qwen3-coder-next (0.786) and qwen/qwen3-235b
+(0.769), indicating that resource-aware reasoning in AI-
+native 6G systems remains more challenging and sensitive
+to model design choices. The broader dispersion reflects the
+multidimensional nature of slicing decisions, which require
+joint reasoning across latency, reliability, compute availabil-
+ity, fairness, and anticipated future demand, as emphasized in
+the 3GPP and ETSI AI-native management frameworks.
+At the task level, complementary strengths emerge across
+models. For slice selection reasoning (T4), llama-4-maverick
+achieves the highest accuracy of 0.840, highlighting its ability
+to map mission semantics to URLLC, eMBB, or hybrid slices.
+Slice switching decisions (T5), which require recognizing
+when not to react to transient degradation, are best handled
+by qwen/qwen3-coder-next and gpt-4o-mini, both reaching
+AccT5 = 0.814. In contrast, slice fairness versus safety
+(T6) remains difficult, with the top performance of AccT6 =
+0.856 achieved by gpt-5.2-codex, suggesting that balancing
+multi-agent fairness against safety-critical constraints bene-
+fits from stronger optimization-oriented reasoning. For com-
+pute placement decisions (T7), qwen/qwen3-235b achieves
+the highest accuracy of 0.880, reflecting the complexity of
+reasoning about onboard versus edge inference under latency
+and SLA constraints.
+Tasks involving proactive and coordinated resource adap-
+tation further differentiate models. For graceful degrada-
+tion under edge overload (T8), both llama-4-maverick and
+mistral-small-creative achieve the highest score of 0.823,
+indicating effective anticipation of congestion-driven SLA
+risks. Swarm-level slice negotiation (T13) is best handled
+by deepseek-v3.2 with AccT13 = 0.836, underscoring the
+difficulty of collaborative resource reasoning across multiple
+agents. Scheduler reconfiguration adaptation (T14) yields the
+highest accuracy of AccT14 = 0.907 for gpt-5.2-codex,
+suggesting strong temporal consistency under control-plane
+changes. Finally, smaller models exhibit a pronounced degra-
+dation, with gemma-3-4b achieving AccG2 = 0.522 and
+llama-3.2-1b collapsing to 0.274, reinforcing that network
+slicing and resource management in AI-native 6G networks
+requires deep semantic and anticipatory reasoning that cannot
+be reliably supported by low-capacity models.
+D. TRUST, SECURITY & SLA AWARENESS
+PERFORMANCE
+Table 5 presents the performance of foundation models on
+trust-, security-, and SLA-aware reasoning tasks (T9, T10,
+VOLUME 7, 2026 3321
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+TABLE 5. Trust, security & SLA awareness performance. Models are described in Table 2.
+T26, and T30), together with the aggregated group-level
+accuracy AccG3 . Compared to intent and slicing, this capabil-
+ity group exhibits a distinct performance structure, reflecting
+the normative and risk-sensitive nature of security decisions
+in AI-native 6G networks. The strongest overall performance
+is achieved by deepseek/deepseek-v3.2 with AccG3 = 0.838,
+followed by its experimental variant (0.817) and a cluster
+of leading models around 0.81. This result highlights that
+trust-aware reasoning benefits from models that integrate
+predictive risk assessment and policy compliance, rather than
+purely optimizing operational metrics, in line with emerg-
+ing zero-trust and SLA-governed architectures in 3GPP and
+ETSI.
+Examining individual tasks reveals asymmetric difficulty
+across trust dimensions. For trust-aware offloading decisions
+(T9), qwen/qwen3-coder-next achieves the highest accu-
+racy at AccT9 = 0.835, indicating strong capability in
+rejecting performance-driven actions when authorization or
+trust constraints dominate. SLA violation prediction (T10)
+is comparatively well learned, with deepseek-v3.2 reach-
+ing a peak accuracy of 0.913, substantially higher than
+most peers and suggesting effective anticipation of ser-
+vice degradation from early network signals. In contrast,
+trust-aware third-party exposure (T26) proves more chal-
+lenging, with the best performance of 0.789 achieved by
+mistral-small-creative, while several otherwise strong models
+remain below 0.74, underscoring the complexity of reasoning
+over regulatory, contractual, and consent-related constraints
+that are not easily inferred from performance telemetry
+alone.
+Network security detection and response automation (T30)
+further differentiates models along safety alignment lines.
+The highest accuracy, AccT30 = 0.890, is jointly achieved
+by qwen/qwen3-coder-next and openai/gpt-5.2-chat, reflect-
+ing strong reasoning about automated mitigation, isolation,
+and recovery actions under adversarial conditions. However,
+smaller, lightweight models show pronounced degradation
+across all trust-related tasks, with gemma-3-4b reaching only
+AccG3 = 0.544 and llama-3.2-1b collapsing to 0.251. These
+results confirm that trust, security, and SLA awareness con-
+stitute a fundamentally more challenging semantic reasoning
+layer in AI-native 6G systems, requiring models to internalize
+normative rules, anticipate worst-case outcomes, and priori-
+tize safety over short-term performance gains.
+E. AI-NATIVE NETWORKING & AGENTIC CONTROL
+PERFORMANCE
+Table 6 presents the accuracy of evaluated models on AI-
+native networking and agentic control tasks (T11, T17, T18,
+T19, T20, and T27), summarized by the group-level metric
+AccG4 . This capability cluster is particularly relevant for
+deployment, as it reflects whether models can participate
+in closed-loop control, agent coordination, and lifecycle
+management as envisioned in 3GPP SA6, O-RAN, and ITU
+work on AI-native control planes. The highest group-level
+performance is obtained by meta-llama/llama-4-maverick
+with AccG4 = 0.855, followed by openai/gpt-5.2-codex
+at 0.840, openai/gpt-5.2-chat at 0.838, and qwen/qwen3-
+coder-next also at 0.838. Several additional models
+(mistral-small-creative, olmo-3.1-32b, deepseek-v3.2-exp,
+3322 VOLUME 7, 2026
+TABLE 6. AI-native networking & agentic control performance. Models are described in Table 2.
+and qwen3-235b) remain in the 0.80–0.83 band, indicating
+that a broad family of contemporary models can sustain
+reasonably robust agentic behavior, while still leaving a
+non-trivial gap to the reliability levels expected for fully
+autonomous deployment in operational networks.
+Looking inside the group, one sees a clear hierarchy
+of task difficulty. Preemptive autonomy downgrade deci-
+sions (T11), which encode safety-aware control choices
+under anticipated degradation, are effectively handled by the
+best models: qwen/qwen3-coder-next and gpt-5.2-codex both
+reach AccT11 = 0.958, with several others at or above 0.95
+(for example, mistral-small-creative and llama-4-maverick at
+0.950). By contrast, network-knowledge RAG augmentation
+(T17) and AI agent identity and onboarding (T18) are more
+discriminative. Llama-4-maverick achieves the top scores on
+both, with AccT17 = 0.877 and AccT18 = 0.885, while most
+competing models remain in the range 0.80–0.83 for T17
+and 0.77–0.83 for T18. This suggests that reasoning about
+what telemetry and knowledge should be exposed, and how
+agents are registered and authenticated, is an area where only
+a handful of models are currently suitable for deployment as
+first-class control-plane participants.
+The multi-agent and inter-domain aspects of AI-native net-
+works are captured by interoperability and federation (T19),
+agent-to-agent communication management (T20), and agent
+lifecycle and management (T27). Llama-4-maverick again
+leads on T19 with AccT19 = 0.922, while several mod-
+els including gpt-5.2-codex, gpt-5.2-chat, qwen3-coder-next,
+and hermes-4-70b achieve values above 0.87, indicating that
+the high-level semantics of federation are reasonably well
+captured. In contrast, agent-to-agent communication man-
+agement (T20) remains challenging: the best accuracy of
+AccT20 = 0.800 is shared by gpt-5.2-codex and gpt-5.2-
+chat, with many otherwise strong models dropping into the
+0.69–0.76 band. Lifecycle management (T27) shows a sim-
+ilar pattern, with gpt-5.2-codex and gpt-5.2-chat reaching
+AccT27 = 0.811, while other top-tier models remain between
+0.70 and 0.78. At the other end of the spectrum, compact
+models such as gemma-3-4b (AccG4 = 0.633), nova-micro
+(0.612), hunyuan-a13b (0.593), and especially llama-3.2-1b
+(0.235) fall far below the thresholds that would be acceptable
+for in-band control-plane deployment, underscoring that AI-
+native networking and agentic control semantics require both
+substantial capacity and dedicated alignment to meet the
+reliability expectations of 6G operational environments.
+F
+. DISTRIBUTED INTELLIGENCE & EMERGING 6G Use
+CASE PERFORMANCE
+Table 7 presents model performance on distributed intelli-
+gence and emerging 6G use cases (T21, T22, T23, T24,
+T25, and T28), aggregated by AccG5 . This group captures
+deployment-facing scenarios where communication, sensing,
+learning, and control are tightly coupled across heteroge-
+neous entities. The highest group-level accuracy is achieved
+by meta-llama/llama-4-maverick with AccG5 = 0.806,
+followed by qwen/qwen3-coder-next (0.799) and mistral-
+small-creative (0.792). A second tier of strong performers,
+including qwen3-235b (0.777), ministral-14b (0.770), and
+gpt-5.2-codex (0.764), indicates that several contemporary
+models can reason effectively in distributed settings, though
+VOLUME 7, 2026 3323
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+TABLE 7. Distributed intelligence & emerging 6G use case performance. Models are described in Table 2.
+none approach saturation. The wider spread relative to earlier
+groups reflects the compounded uncertainty and coordination
+demands inherent to multi-agent, sensing-driven 6G applica-
+tions emphasized in current 3GPP, ETSI, ITU-T, and O-RAN
+studies.
+Task-level results reveal that perception- and sensing-
+centric decisions are comparatively well learned, while
+learning orchestration and resource admission remain harder.
+For device–network task offload arbitration (T21), the top
+accuracy of 0.780 is shared by llama-4-maverick and qwen3-
+235b, suggesting that models can often balance on-device
+execution against edge or peer offloading when latency
+and capability cues are explicit. Federated and collabora-
+tive learning orchestration (T22) is more discriminative:
+deepseek-v3.2-exp achieves the highest score at AccT22 =
+0.778, while several otherwise strong models drop below
+0.70, highlighting the difficulty of scheduling learning under
+privacy, resource, and participation constraints. Network-
+assisted digital twin control (T23) reaches its peak with
+gpt-5.2-chat at AccT23 = 0.842, indicating that maintaining
+synchronized sensing and actuation loops is within reach
+for frontier models, but still sensitive to representation and
+temporal reasoning quality.
+Sensing-enhanced decisioning for ISAC (T24) stands out
+as the strongest-performing task across the group, with
+qwen/qwen3-coder-next achieving AccT24 = 0.913 and
+llama-4-maverick closely following at 0.899, reflecting the
+relative maturity of perception-driven inference when seman-
+tics are tightly coupled to sensing inputs. Disaster and public-
+safety coordination (T25) also yields high accuracies for
+leading models, with llama-4-maverick reaching AccT25 =
+0.893 and qwen3-coder-next at 0.884, suggesting promis-
+ing readiness for coordinated emergency response scenarios.
+In contrast, training-as-a-service admission decisions (T28)
+remain challenging, with the best score of 0.728 achieved
+by mistral-small-creative, underscoring unresolved trade-offs
+between resource availability, privacy exposure, and quality-
+of-service impact. As in other groups, compact models
+degrade sharply—gemma-3-4b attains AccG5 = 0.476 and
+llama-3.2-1b collapses to 0.159—confirming that distributed
+intelligence in AI-native 6G networks requires substantial
+semantic capacity and anticipatory reasoning to support
+deployment-grade operation.
+G. ROBUSTNESS ANALYSIS VIA PASS@K EVALUATION
+Table 8 presents the overall pass@k performance on 6G-
+Bench, where pass@1 corresponds to deterministic single-
+shot accuracy and pass@3 and pass@5 quantify robustness
+under stochastic decoding on selected reasoning-intensive
+tasks. Several deployment-relevant trends emerge. First,
+the strongest single-shot performance is achieved by meta-
+llama/llama-4-maverick with pass@1 = 0.829, closely
+followed by qwen/qwen3-coder-next (0.818) and mistral-
+small-creative (0.811). However, when allowing multiple
+reasoning attempts, deepseek-v3.2-exp achieves the highest
+robustness at pass@3 = 0.888, while qwen/qwen3-coder-
+next attains the best pass@5 = 0.916. This divergence
+between pass@1 and pass@k rankings highlights that models
+with similar deterministic accuracy can differ substantially
+3324 VOLUME 7, 2026
+TABLE 8. Overall pass@k performance on 6G-Bench. pass@k is reported only on
+selected reasoning-intensive tasks, while pass@1 corresponds to overall single-shot
+accuracy. Models are described in Table 2.
+in their ability to recover correct decisions under stochastic
+exploration, a property that is critical for off-line analysis
+and decision-support scenarios but less acceptable for in-band
+autonomous control.
+The task-centric results in Table 9 provide deeper insight
+into the origins of robustness gains. For intent conflict resolu-
+tion (T2), pass@5 values reach 0.912 for deepseek-v3.2-exp
+and 0.912 for ministral-14b, compared to pass@1 values
+around 0.83–0.86, indicating that alternative reasoning paths
+frequently converge to the correct semantic reconciliation.
+Similar behavior is observed for conservative continua-
+tion under uncertainty (T12), where several models exceed
+pass@5 = 0.93 (for example, gpt-5.2-codex at 0.944 and
+claude-haiku-4.5 at 0.963), even when pass@1 is below 0.90.
+In contrast, trust-aware offloading (T9) and trust-aware third-
+party exposure (T26) exhibit more limited robustness gains,
+with pass@5 improvements typically below 0.15, reflecting
+the sharper normative constraints and reduced ambiguity
+inherent in trust and authorization decisions.
+Multi-agent and security-oriented tasks further illustrate
+the deployment implications of pass@k behavior. For agent
+interoperability and federation (T19), several models achieve
+very high robustness, with pass@5 reaching 0.946 for llama-
+4-maverick and deepseek-v3.2-exp, suggesting that coordina-
+tion semantics are often recoverable given multiple reasoning
+attempts. Network security detection and response automa-
+tion (T30) shows the strongest overall robustness gains, with
+deepseek-v3.2-exp achieving pass@5 = 0.972 and multi-
+ple models exceeding 0.90, indicating that threat-response
+reasoning admits multiple valid inference paths before con-
+verging to a correct action. At the same time, compact
+models display unstable or even degraded pass@k behav-
+ior (for example, llama-3.2-1b remains at 0.448 across all
+k), underscoring that robustness under stochastic decoding
+is not a substitute for sufficient semantic capacity. Taken
+together, these results justify the selective use of pass@k
+in 6G-Bench: while it provides valuable insight into rea-
+soning completeness and ambiguity resolution, deterministic
+pass@1 accuracy remains the appropriate primary metric for
+safety- and SLA-critical AI-native 6G deployment.
+H. MODEL SCALE EFFECTS ON PASS@1 PERFORMANCE
+Table 8, together with Fig. 5, presents the pass@1 accu-
+racy of the evaluated models, grouped by parameter scale
+into large, medium, small, and tiny categories. A first-order
+observation is that pass@1 accuracy does not grow monoton-
+ically with model size. Among large models, pass@1 values
+cluster tightly between 0.789 and 0.796, with qwen3-235b-
+a22b-2507 achieving 0.796, gpt-5.2-chat reaching 0.794,
+gpt-5.2-codex at 0.790, and deepseek-v3.2-exp at 0.789. This
+narrow spread suggests that, at very large scales, performance
+on semantic and network-level reasoning saturates under
+deterministic decoding, and further parameter increases yield
+diminishing returns without corresponding gains in architec-
+tural or alignment design.
+In contrast, medium-scale models exhibit the strongest
+overall pass@1 performance. As shown in Fig. 5b,
+meta-llama/llama-4-maverick achieves the highest pass@1
+accuracy of 0.829, outperforming all larger models, while
+qwen3-coder-next follows closely at 0.818. Other medium
+models such as gpt-4o-mini (0.773), claude-haiku-4.5
+(0.764), and hermes-4-70b (0.762) form a second tier. This
+regime highlights a critical deployment-relevant insight:
+models in the medium parameter range appear to offer
+the best balance between capacity and controllability for
+AI-native 6G reasoning, aligning with standardization expec-
+tations that future network intelligence components must
+remain efficient, auditable, and deployable at scale rather than
+relying on extreme model sizes.
+The degradation trend becomes more pronounced as the
+model size decreases. Small models (Fig. 5c) span a wide
+range, from mistral-small-creative at 0.811 and ministral-
+14b-2512 at 0.798, down to hunyuan-a13b-instruct at 0.514.
+Tiny models (Fig. 5d) show another collapse, with the best-
+performing ministral-8b-2512 reaching 0.783, while many
+others remain between 0.56 and 0.66, and the weakest con-
+figurations falling below 0.60. These results indicate that
+while carefully designed small models can still support
+limited semantic reasoning, ultra-compact models lack the
+representational depth required for reliable intent, trust, and
+coordination decisions. From a 6G deployment perspective,
+this reinforces that AI-native control-plane intelligence will
+likely converge on a mid-scale model regime, where semantic
+reasoning accuracy, robustness, and operational feasibility
+intersect most effectively.
+I. INFERENCE EFFICIENCY AND THROUGHPUT
+ANALYSIS
+Table 10 reveals pronounced efficiency gaps between local
+single-GPU inference and API-hosted deployments across
+VOLUME 7, 2026 3325
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+TABLE 9. Pass@k performance per selected reasoning-intensive task. Pass@1 corresponds to deterministic single-shot accuracy, while pass@3 and pass@5 measure
+robustness under stochastic decoding. Models are described in Table 2.
+FIGURE 5. 6G-Bench pass@1 accuracy by model size category. Each subfigure shows pass@1 accuracy for models within a single parameter scale: (a) Large,
+(b) Medium, (c) Small, and (d) Tiny.
+a wide range of model scales. Inference services provided
+by Amazon Bedrock, IBM Cloudflare, Liquid AI, Ope-
+nAI, Mistral, and DeepInfra consistently deliver substantially
+higher throughput than local execution on a single NVIDIA
+A100, often exceeding it by an order of magnitude. Notably,
+lightweight offerings such as Amazon Nova Micro v1 and
+IBM Granite-4.0-H Micro achieve the highest throughput
+(approximately 0.86 Q/s), corresponding to average latencies
+of approximately 1 second per query, while models served
+via OpenAI, Anthropic, and Mistral maintain competitive
+3326 VOLUME 7, 2026
+TABLE 10. Inference runtime and efficiency on 6G-Bench for local deployments and LLM API providers.
+throughput (approximately 0.3–0.5 Q/s) despite substantially
+larger model capacities. In contrast, local inference exhibits
+steep scaling inefficiencies with model size: models above
+30B parameters incur per-question latencies exceeding 20–
+40 s, resulting in throughput below 0.05 Q/s, and even smaller
+local models remain 6–15× slower than their API counter-
+parts. These results indicate that provider-managed inference
+stacks, which leverage optimized kernels, request batch-
+ing, and multi-accelerator parallelism, substantially mitigate
+latency and throughput bottlenecks, positioning hosted infer-
+ence as the dominant solution for latency-sensitive and
+high-throughput evaluation workloads, while local deploy-
+ments primarily trade efficiency for increased controllability
+and deployment autonomy.
+J. IMPLICATIONS FOR 6G SEMANTIC COMMUNICATION
+SYSTEMS
+The results in Table 10 have direct implications for the design
+of future 6G semantic communication systems. The sub-
+stantial throughput gap between single-GPU local inference
+and API-hosted deployments suggests that telecom opera-
+tors aiming to support latency-sensitive semantic services
+will need to move beyond isolated accelerators and instead
+provision clustered GPU infrastructures at the network edge
+or core. By adopting multi-GPU serving architectures similar
+to those employed by commercial API providers, operators
+can approach comparable inference efficiency while retain-
+ing full control over data locality, model configuration, and
+operational policies. Such an approach enables semantic pro-
+cessing to be integrated within the trusted telecom domain,
+thereby preserving data privacy and regulatory compliance,
+which are critical requirements in 6G applications involving
+user-generated content, industrial telemetry, and mission-
+critical communications.
+K. SCENARIO SCOPE AND GENERALIZABILITY
+Although the task taxonomy of 6G-Bench (T1–T30) is
+derived from broader AI-native 6G architectural themes,
+the present benchmark instances are instantiated using UAV
+mission episodes as a controlled semantic testbed. These
+episodes originate from α3-Bench and provide dynamic,
+safety-critical, and resource-constrained conditions under
+which network-level reasoning can be evaluated.
+The UAV-centered setting offers several advantages: it
+naturally couples communication, computation, sensing, and
+control under uncertainty; it introduces mission objectives
+VOLUME 7, 2026 3327
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+and safety constraints; and it requires anticipatory deci-
+sions across multiple network slices and trust domains.
+These properties make UAV scenarios well suited for study-
+ing semantic reasoning in AI-native 6G systems. However,
+our benchmark does not exhaustively represent all possi-
+ble 6G deployment domains. While the underlying deci-
+sion abstractions—intent interpretation, slicing arbitration,
+trust-aware offloading, agent coordination, and distributed
+intelligence—are domain-agnostic, their empirical instan-
+tiation is presently grounded in UAV-enabled use cases.
+Future extensions of 6G-Bench may incorporate additional
+scenario families, including industrial IoT systems, vehic-
+ular networks, immersive and AR services, and large-scale
+edge intelligence deployments, to further broaden empiri-
+cal coverage while preserving the same regret-based oracle
+methodology.
+V. CONCLUSION
+In this paper, we proposed 6G-Bench, an open and stan-
+dardized benchmark for evaluating semantic communication
+and network-level reasoning with foundation models in
+AI-native 6G networks, grounded in ongoing 6G and AI-
+agent standardization activities in 3GPP, IETF, ETSI, ITU-T,
+and the O-RAN Alliance. We extracted a taxonomy of
+30 decision-making tasks spanning intent and policy rea-
+soning, network slicing and resource management, trust and
+security awareness, AI-native networking and agentic con-
+trol, and distributed intelligence, and instantiated them using
+10,000 very-hard multiple-choice questions generated from
+113,475 scenarios under task-conditioned prompts enforc-
+ing multi-step quantitative reasoning, uncertainty awareness,
+and worst-case regret minimization. After automated fil-
+tering and expert human validation, 3,722 questions were
+retained as a high-confidence evaluation set, and we eval-
+uated 22 contemporary foundation models spanning dense
+and mixture-of-experts architectures, short- and long-context
+designs (up to 1M tokens), and both open-weight and pro-
+prietary systems. The results reveal substantial variability in
+semantic reasoning capability, with deterministic single-shot
+performance (pass@1) ranging from 0.228 to 0.829, intent
+and policy reasoning accuracy for leading models clustered
+between 0.87 and 0.89, and selective robustness on reasoning-
+intensive tasks reaching pass@5 = 0.916. These findings
+indicate that mid-scale foundation models currently offer the
+most favorable balance between accuracy, robustness, and
+deployability, while trust-aware, security-critical, and dis-
+tributed intelligence tasks remain key bottlenecks.
+While 6G-Bench adopts a multiple-choice formulation to
+ensure reproducible and verifiable evaluation, future exten-
+sions may incorporate additional task formats, including
+structured output generation, open-ended decision-making,
+and dynamic multi-agent simulation settings, to more closely
+approximate fully open 6G control environments and evaluate
+runtime coordination behaviors. Overall, 6G-Bench provides
+a quantitative and reproducible foundation for assessing the
+readiness of foundation models as semantic reasoning layers
+above standardized network functions, with direct implica-
+tions for AI-native 6G deployment and future standardization.
+REFERENCES
+[1] 3GPP, Study on 6G Use Cases and Service Requirements, document TR
+22.870, 2025.
+[2] International Telecommunication Union. (Mar. 2025). Potential Require-
+ments and Methodology for Deploying and Assessing Generative Ai
+Models in Telecom Networks. [Online]. Available: https://www.itu.int/
+dmspub/itu-t/opb/tut/T-TUT-AI4N-2025-1-PDF-E.pdf
+[3] (Jan. 2025). Generative Ai Use Cases and Requirements on 6G
+Network. [Online]. Available: https://www.o-ran.org/research-reports/
+generative-ai-use-cases-and-requirements-on-6g-network
+[4] B. Chong, H. Lu, D. Niyato, and A. Nallanathan, ‘‘Large language model-
+driven channel prediction in cell-free mMIMO systems,’’ IEEE J. Sel.
+Areas Commun., vol. 44, pp. 3412–3426, 2026.
+[5] J. Yang et al., ‘‘Large language models for beam prediction under the
+mmWave massive MIMO hybrid-field channels,’’ IEEE Commun. Lett.,
+vol. 30, pp. 627–631, 2026.
+[6] H. Huang et al., ‘‘LLM in V2I: A data-driven predictive beamforming
+framework for vehicle tracking in near-field ISAC systems,’’ IEEE J. Sel.
+Areas Commun., vol. 44, pp. 2510–2527, 2026.
+[7] E. Stephan, R. Schott, D. Lopez, X. Duan, and L. Morand. (Oct. 2025). Ai
+Agent Protocols for 6G Systems. [Online]. Available: https://datatracker.
+ietf.org/doc/draft-stephan-ai-agent-6g/
+[8] C. Yang et al. (Jul. 2025). Requirements and Enabling Technologies of
+Agent Protocols for 6G Networks. [Online]. Available: https://www.ietf.
+org/archive/id/draft-hw-ai-agent-6g-00.html
+[9] J. Rosenberg and C. Jennings, ‘‘Framework, use cases and requirements for
+AI agent protocols,’’ Internet Engineering Task Force (IETF), Tech. Rep.,
+May 2025. [Online]. Available: https://www.ietf.org/archive/id/draft-
+rosenberg-ai-protocols-00.html
+[10] Z. Jing, J. Mu, Y. Zhu, L. Xu, and F. Qi, ‘‘LLM-driven multicast network
+slicing for 6G non-terrestrial networks,’’ IEEE Trans. Broadcast., vol. 72,
+no. 1, pp. 29–45, Mar. 2026.
+[11] ETSI, Integrated Sensing and Communications (ISAC); Use Cases and
+Deployment Scenarios, document GR ISC 001, Mar. 2025.
+[12] Experiential Networked Intelligence (ENI); Study on AI Agents Based
+Next-Generation Network Slicing, Standard GR ENI 051 V4.1.1,
+Feb. 2025.
+[13] Use Cases and Requirements for AI Agents Based Core Network, document
+ENI ISG 055, Jun. 2025.
+[14] Multiple Access Techniques (mat); Classification of Candidate Multiple
+Access Techniques for 6G and Their Comparison With Specified 3GPP
+Features, document GR MAT 001, ETSI, Jan. 2026.
+[15] H. Zhang, B. Di, H. Zhang, D. Niyato, and L. Song, ‘‘Feature-foundation
+model evolution for low-latency semantic communication,’’ IEEE Trans.
+Wireless Commun., vol. 25, pp. 11915–11931, 2026.
+[16] X. Cao et al., ‘‘Exploring LLM-based multi-agent situation awareness
+for zero-trust space-air-ground integrated network,’’ IEEE J. Sel. Areas
+Commun., vol. 43, no. 6, pp. 2230–2247, Jun. 2025.
+[17] X. Cao et al., ‘‘Advancing LLM-based security automation with cus-
+tomized group relative policy optimization for zero-touch networks,’’ IEEE
+J. Sel. Areas Commun., vol. 44, pp. 2669–2686, 2026.
+[18] Y. Kim, J. Park, M. Bennis, and J. Choi, ‘‘Resilient LLM-driven
+token-based MAC protocols via zero-shot adaptation and knowledge dis-
+tillation,’’ IEEE J. Sel. Areas Commun., vol. 44, pp. 2701–2717, 2026.
+[19] Y. Huang, H. Zhan, H. Jiang, J. Chen, and J. Wang, ‘‘Collaborative large–
+small AI models for 6G,’’ IEEE J. Sel. Areas Commun., vol. 44, pp. 2574–
+2590, 2026.
+[20] Y. Huang, H.-M. Wang, Q. Yan, and Z. Wang, ‘‘LLM-RIMSA: Large
+language models driven reconfigurable intelligent metasurface antenna
+systems,’’ IEEE J. Sel. Areas Commun., vol. 44, pp. 2479–2493,
+2026.
+[21] J. Lei, X. Li, C. Wu, Q. Fu, J. Liu, and N. Kato, ‘‘LLM-MM: End-to-end
+robust multimodal beam prediction for 6G V2X networks via MoE-LoRA
+adaptation,’’ IEEE J. Sel. Areas Commun., vol. 44, pp. 2964–2977, 2026.
+[22] F. Jiang, S. Tu, L. Dong, C. Pan, J. Wang, and X. You, ‘‘Large generative
+model-assisted talking-face semantic communication system,’’ IEEE J.
+Sel. Areas Commun., vol. 43, no. 12, pp. 4152–4165, Dec. 2025.
+3328 VOLUME 7, 2026
+[23] Q. Fu, M. Yu, Y. Shi, J. Liu, and N. Kato, ‘‘Tradeoff between covertness
+and transmission in NR V2X: Traditional and LLM-assisted cases,’’ IEEE
+J. Sel. Areas Commun., vol. 44, pp. 1561–1576, 2026.
+[24] A. Maatouk, F. Ayed, N. Piovesan, A. D. Domenico, M. Debbah, and Z.
+Luo, ‘‘TeleQnA: A benchmark dataset to assess large language models
+telecommunications knowledge,’’ IEEE Netw., vol. 40, no. 2, pp. 253–
+260, Mar. 2026.
+[25] A. Ezzakri, N. Piovesan, M. Sana, A. De Domenico, F. Ayed, and H. Zhang,
+‘‘TeleTables: A benchmark for large language models in telecom table
+interpretation,’’ 2025, arXiv:2601.04202.
+[26] S. Lee et al., ‘‘TelAgentBench: A multi-faceted benchmark for evaluat-
+ing LLM-based agents in telecommunications,’’ in Proc. Conf. Empirical
+Methods Natural Lang. Processing: Ind. Track, 2025, pp. 1173–1211.
+[27] Y. Lin, Z. Ding, R. Zhang, and D. K. C. So, ‘‘Go gentle into the final
+dance: A benchmark for evaluating LLMs in telecom,’’ IEEE J. Sel. Areas
+Commun., vol. 44, pp. 2365–2377, 2026.
+[28] Z. Liu et al., ‘‘CovertComBench: A first domain-specific testbed for LLMs
+in wireless covert communication,’’ 2026, arXiv:2601.18315.
+[29] M. Amine Ferrag, A. Lakas, and M. Debbah, ‘‘α3-bench: A unified bench-
+mark of safety, robustness, and efficiency for LLM-based UAV agents over
+6G networks,’’ 2026, arXiv:2601.03281.
+[30] M. Amine Ferrag, A. Lakas, and M. Debbah, ‘‘UAVBench: An open
+benchmark dataset for autonomous and agentic AI UAV systems via LLM-
+generated flight scenarios,’’ 2025, arXiv:2511.11252.
+[31] ETSI, Multi-Access Edge Computing (MEC); Framework and Reference
+Architecture, document MEC 003 V3.1.1, Mar. 2022.
+[32] LTE; 5G; Management and Orchestration; Intent Driven Management
+Services for Mobile Networks (3GPP TS 28.312 Version 17.0.1 Release
+17), document TS 128 312, Jul. 2022.
+[33] 5G; Management and Orchestration; Artificial Intelligence / Machine
+Learning (AI/ML) Management (3GPP TS 28.105 Version 17.3.0 Release
+17), document TS 128 105, Apr. 2023.
+[34] Z. Xiao et al., ‘‘Towards native intelligence: 6G-LLM trained with rein-
+forcement learning from NDT feedback,’’ 2026, arXiv:2601.09992.
+[35] ETSI, 5G; Management and Orchestration; Management Data Analytics
+(MDA) (3GPP TS 28.104 Version 17.0.1 Release 17), document TS 128
+104, Jul. 2022.
+[36] 5G; Self-Organizing Networks (SON) for 5G Networks (3GPP TS 28.313
+Version 16.0.0 Release 16), document TS 128 313, Oct. 2020.
+[37] G. Jiang, K. Wang, X. Chen, and Y. Huang, ‘‘Agentic AI empowered intent-
+based networking for 6G,’’ 2026, arXiv:2601.06640.
+[38] H. Zou et al., ‘‘Large language models in 6G from standard to on-device
+networks,’’ Nature Rev. Electr. Eng., vol. 3, pp. 123–134, Jan. 2026.
+[39] M. Roy Chowdhury, E. Hammad, L. Loven, S. Pirttikangas, A. P. da Silva,
+and W. Saad, ‘‘A framework for AI-native semantic-based dynamic slicing
+for 6G networks,’’ 2025, arXiv:2510.10756.
+[40] S. Mahmood, M. Gohar, O. A. Khashan, N. Alzahrani, A. Ghani, and F. Al-
+Turjman, ‘‘Securing edge devices in IoT and 6G: A trust-based approach
+for resource-constrained environments,’’ IEEE Open J. Commun. Soc.,
+vol. 6, pp. 6568–6610, 2025.
+[41] K. Zhang, B. Zheng, J. Xue, and Y. Zhou, ‘‘Explainable and trust-aware AI-
+driven network slicing framework for 6G IoT using deep learning,’’ IEEE
+Internet Things J., vol. 13, no. 5, pp. 8212–8219, Mar. 2026.
+[42] X. Chen et al., ‘‘Toward 6G native-AI network: Foundation model-based
+cloud-edge-end collaboration framework,’’ IEEE Commun. Mag., vol. 63,
+no. 8, pp. 23–30, Aug. 2025.
+[43] O. Salan, B. Çırağ, O. Sever, İ. Hökelek, A. Görçin, and H. A. Çırpan,
+‘‘RAG-empowered LLM-driven dynamic radio resource management in
+open 6G RAN,’’ 2025, arXiv:2511.22933.
+[44] (2026). Agent2agent (a2a) Protocol. Accessed: 31, Jan. 2026. [Online].
+Available: https://a2a-protocol.org/latest/
+[45] W. Hong et al., ‘‘Integrated sensing and communication (ISAC) channel
+model toward 3GPP 6G standardization: Modeling, validation, and appli-
+cation,’’ IEEE J. Sel. Areas Commun., vol. 44, pp. 3459–3472, 2026.
+[46] F. Naeem et al., ‘‘A survey on GenAI-driven digital twins: Toward intelli-
+gent 6G networks and metaverse systems,’’ IEEE Open J. Commun. Soc.,
+vol. 6, pp. 10365–10402, 2025.
+[47] V. Jain, A. Gupta, P. Verma, and S. S. Gill, ‘‘TinyFed6G: Feder-
+ated learning with TinyML for resource-constrained intelligence in 6G
+edge networks,’’ IEEE Wireless Commun., vol. 33, no. 2, pp. 25–31,
+Apr. 2026.
+[48] M. A. Ferrag, B. Kantarci, L. C. Cordeiro, M. Debbah, and K.-K.-R.
+Choo, ‘‘Poisoning attacks in federated edge learning for digital twin 6G-
+enabled IoTs: An anticipatory study,’’ in Proc. IEEE Int. Conf. Commun.
+Workshops (ICC Workshops), May 2023, pp. 1253–1258.
+[49] X. Zhu et al., ‘‘Enabling intelligent connectivity: A survey of secure ISAC
+in 6G networks,’’ IEEE Commun. Surveys Tuts., vol. 27, no. 2, pp. 748–
+781, Apr. 2025.
+[50] Y. Su et al., ‘‘Resource aggregation and intelligent scheduling for AR
+remote assistance,’’ IEEE Wireless Commun., early access, Jan. 15, 2026,
+doi: 10.1109/MWC.2025.3650560.
+MOHAMED AMINE FERRAG (Senior Member,
+IEEE) received the bachelor’s, master’s, Ph.D.,
+and Habilitation degrees in computer science from
+Badji Mokhtar—Annaba University, Annaba,
+Algeria, in 2008, 2010, 2014, and 2019, respec-
+tively. He was an Associate Professor at the
+Department of Computer Science, Guelma Uni-
+versity, Algeria, from 2014 to 2022, and a Senior
+Researcher at the NAU-Lincoln Joint Research
+Center for Intelligent Engineering, Nanjing Agri-
+cultural University, China, from 2019 to 2022. From 2022 to 2024, he was a
+Lead Researcher at the Technology Innovation Institute (TII), Abu Dhabi,
+United Arab Emirates, leading AI-driven cybersecurity projects, before
+joining the United Arab Emirates University (UAEU) in 2025 as an Associate
+Professor at the Department of Computer and Network Engineering. His
+research focuses on cybersecurity, including wireless network security,
+network coding security, applied cryptography, blockchain, generative AI,
+large language models (LLMs), software security, and AI applications in
+cybersecurity. He has authored over 200 research papers in international
+journals and conferences, with more than 16 700 citations and an H-index
+of 61. He has led several collaborative projects with institutions in U.K.,
+Australia, USA, Canada, and China, and has created four widely used
+cybersecurity datasets—Edge-IIoT, FormAI, CyberMetric, and DIA—now
+key resources for AI researchers. His work has been recognized with multiple
+awards, including the 2021 IEEE TEM Best Paper Award, the 2022 Scopus
+Algeria Award, the 2024 ICT Express Best Paper Award, and the 2024 IEEE
+ComSoc CSIM TC Best Journal Paper Award. He has been listed among
+Stanford University’s Top 2% of Scientists six times (2020–2025) and was
+named in the 2025 Clarivate Highly Cited Researchers List. He also serves
+as an Associate Editor for IEEE INTERNET OF THINGS JOURNAL and ICT Express
+(Elsevier).
+ABDERRAHMANE LAKAS (Senior Member,
+IEEE) received the M.S. and Ph.D. degrees in
+computer systems from the University Pierre et
+Marie Curie, Paris, France. He is currently a
+Professor of computer and network engineering
+with the College of Information Technology (CIT),
+UAE University. He is also the Head of the Con-
+nected Autonomous Intelligent Systems (CAST)
+Research Group. He has several years of experi-
+ence in both academia and the industry. Prior to
+joining UAE University in 2003, he worked in the telecommunications indus-
+try in various technical positions, including at Netrake, USA, in 2000; Nortel
+Networks, Canada, in 1998; and Newbridge, Canada, in 1996. He authored
+more than 100 journals and conference papers, such as IEEE TRANSACTIONS
+ON VEHICULAR TECHNOLOGY, IEEE INTERNET OF THINGS JOURNAL, and IEEE
+TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING. His research
+interests include mobile and wireless networks, quality of service (QoS),
+peer-to-peer (P2P) networks, vehicular ad hoc networks (VANET), intelli-
+gent transportation systems (ITS), the Internet of Things (IoT), unmanned
+aerial vehicles (UAV), intelligent autonomous systems, cybersecurity, and
+pervasive systems. He is ranked among the World’s Top 2% Scientists by
+Stanford University. He is actively participating in conferences, such as
+IEEE VTC, IEEE CC, IEEE GlobeCom, and IEEE WCNC. He serves as
+an Associate Editor of IEEE ACCESS, IET Networks, and IET Smart Cities.
+VOLUME 7, 2026 3329
+FERRAG et al.: 6G-BENCH: AN OPEN BENCHMARK FOR SEMANTIC COMMUNICATION
+MÉROUANE DEBBAH (Fellow, IEEE) received the
+M.Sc. and Ph.D. degrees from the École Nor-
+male Supérieure Paris-Saclay, France. He was with
+Motorola Labs, Saclay, France, from 1999 to 2002,
+and then with the Vienna Research Center for
+Telecommunications, Vienna, Austria, until 2003.
+From 2003 to 2007, he was an Assistant Profes-
+sor at the Mobile Communications Department,
+Institut Eurecom, Sophia Antipolis, France. Since
+2007, he has been a Full Professor at CentraleSup-
+elec, Gif-sur-Yvette, France. From 2007 to 2014, he was the Director of the
+Alcatel-Lucent Chair on Flexible Radio. From 2014 to 2021, he was the Vice
+President of the Huawei France Research Center. He was jointly the Director
+of the Mathematical and Algorithmic Sciences Laboratory and the Lagrange
+Mathematical and Computing Research Center. From 2021 to 2023, he was
+the Chief Researcher of the Technology Innovation Institute and led the
+AI & Digital Science Research Centers, Technology Innovation Institute.
+He was also an Adjunct Professor with the Department of Machine Learn-
+ing, Mohamed Bin Zayed University of Artificial Intelligence, Abu Dhabi.
+Since 2023, he has been a Professor at the Khalifa University of Sci-
+ence and Technology, Abu Dhabi, and the Founding Director of the 6G
+Center. He is currently a Professor with the Khalifa University of Sci-
+ence and Technology. He has managed eight EU projects and more than
+24 national and international projects. He holds more than 50 patents. His
+research interests lie in fundamental mathematics, algorithms, statistics,
+and research in information and communication sciences. He is a WWRF
+Fellow, an Eurasip Fellow, an AAIA Fellow, an Institut Louis Bachelier
+Fellow, an AIIA Fellow, and a Membre Émérite SEE. He is a member
+of the Marconi Prize Selection Advisory Committee. He was a recipient
+of the ERC Grant MORE (Advanced Mathematical Tools for Complex
+Network Engineering) from 2012 to 2017. He was a recipient of the
+Mario Boella Award in 2005, the IEEE Glavieux Prize Award in 2011, the
+Qualcomm Innovation Prize Award in 2012, the 2019 IEEE Radio Com-
+munications Committee Technical Recognition Award, and the 2020 SEE
+Blondel Medal. He received more than 40 best paper awards, among which
+the 2007 IEEE GLOBECOM Best Paper Award, the Wi-Opt 2009 Best
+Paper Award, the 2010 Newcom++ Best Paper Award, the WUN CogCom
+Best Paper 2012 and 2013 Award, the 2014 WCNC Best Paper Award,
+the 2015 ICC Best Paper Award, the 2015 IEEE Communications Society
+Leonard G. Abraham Prize, the 2015 IEEE Communications Society Fred W.
+Ellersick Prize, the 2016 IEEE Communications Society Best Tutorial Paper
+Award, the 2016 European Wireless Best Paper Award, the 2017 Eurasip Best
+Paper Award, the 2018 IEEE Marconi Prize Paper Award, the 2019 IEEE
+Communications Society Young Author Best Paper Award, the 2021 Eurasip
+Best Paper Award, the 2021 IEEE Marconi Prize Paper Award, the 2022 IEEE
+Communications Society Outstanding Paper Award, the 2022 ICC Best paper
+Award, the 2022 IEEE GLOBECOM Best Paper Award, the 2022 IEEE
+TAOS TC Best GCSN Paper Award, the 2022 IEEE International Conference
+on Metaverse Best Paper Award, the 2023 IEEE Communications Society
+Fred W. Ellersick Prize, the 2023 ICC Best Paper Award, the 2023 Best
+ICEAA-IEEE APWC Paper Award, the 2023 IEEE ICCT Best Paper
+Award, the 2023 IEEE Communications Society Award for Advances in
+Communication, the 2024 IEEE ICC Best Paper Award, the 2024 IEEE
+Communications Society Leonard G. Abraham Prize, and the 2024 IEEE
+Communications Society Best Tutorial Paper Award, as well as the Val-
+uetools 2007, Valuetools 2008, CrownCom 2009, Valuetools 2012, SAM
+2014, and the 2017 IEEE Sweden VT-COM-IT Joint Chapter Best Student
+Paper Awards. He is the Associate Editor-in-Chief of the journal Ran-
+dom Matrix: Theory and Applications. He was an Associate Area Editor
+and a Senior Area Editor of IEEE TRANSACTIONS ON SIGNAL PROCESSING
+from 2011 to 2013 and from 2013 to 2014, respectively. From 2021 to 2022,
+he served as an IEEE Signal Processing Society Distinguished Industry
+Speaker.
+3330 VOLUME 7, 2026
+

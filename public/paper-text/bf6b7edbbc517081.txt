@@ -1,0 +1,962 @@
+LLaSA: A Sensor-Aware LLM for Natural Language Reasoning of
+Human Activity from IMU Data
+Sheikh Asif Imran Shouborno
+Worcester Polytechnic Institute
+Electrical and Computer Engineering
+Worcester, Massachusetts, United States
+simran@wpi.edu
+Mohammad Nur Hossain Khan
+Worcester Polytechnic Institute
+Electrical and Computer Engineering
+Worcester, Massachusetts, United States
+mkhan@wpi.edu
+Subrata Biswas
+Worcester Polytechnic Institute
+Electrical and Computer Engineering
+Worcester, Massachusetts, United States
+sbiswas@wpi.edu
+Bashima Islam
+Worcester Polytechnic Institute
+Electrical and Computer Engineering
+Worcester, Massachusetts, United States
+bislam@wpi.edu
+Abstract
+Wearable systems can recognize activities from IMU data but of-
+ten fail to explain their underlying causes or contextual signif-
+icance. To address this limitation, we introduce two large-scale
+resources: SensorCap, comprising 35,960 IMU–caption pairs, and
+OpenSQA, with 199,701 question–answer pairs designed for causal
+and explanatory reasoning. OpenSQA includes a curated tuning
+split (Tune-OpenSQA) optimized for scientific accuracy, narrative
+clarity, and diagnostic insight. Leveraging these datasets, we de-
+velop LLaSA (Large Language and Sensor Assistant), a family of
+compact sensor-aware language models (7B and 13B) that gener-
+ate interpretable, context-rich responses to open-ended questions
+grounded in raw IMU data. LLaSA outperforms commercial LLMs,
+including GPT-3.5 and GPT-4o-mini, on benchmark and real-world
+tasks, demonstrating the effectiveness of domain supervision and
+model alignment for sensor reasoning.
+CCS Concepts
+• Human-centered computing → Ubiquitous and mobile com-
+puting systems and tools; • Computing methodologies →
+Multimodal and cross-modal learning; Machine learning; Question
+answering.
+Keywords
+Multi-Modal Large Language Model; Sensor to Query Alignment;
+Contextual Question-Answering; Sensor-Language Model; Human
+Activity Reasoning; Hyper-parameter Tuning; IMU
+ACM Reference Format:
+Sheikh Asif Imran Shouborno, Mohammad Nur Hossain Khan, Subrata
+Biswas, and Bashima Islam. 2025. LLaSA: A Sensor-Aware LLM for Natural
+Language Reasoning of Human Activity from IMU Data. In Companion of
+the 2025 ACM International Joint Conference on Pervasive and Ubiquitous
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+UbiComp Companion ’25, Espoo, Finland
+© 2025 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-1477-1/2025/10
+https://doi.org/10.1145/3714394.3756187
+How was my walking
+pattern? Did you see
+any abnormalities?
+IMU Data
+ChatGPT
+LLaSA
+Anomalies in the gyroscope and
+accelerometer data indicating a misstep or
+abnormal gait while ascending stairs might
+include sudden spikes in certain values,
+inconsistent patterns or abrupt changes in
+direction. Identifying irregularities can help
+flag potential issues.
+The accelerometer readings show
+consistent upward acceleration, with peaks
+reaching around 10.5 m/s² during the as
+the individual steps are taken, indicating a
+steady upward motion. The gyroscope data
+reflects minimal rotational adjustments,
+suggesting balance maintenance of
+posture. The combination of these readings
+indicates a stable ascent with controlled
+movements, suggesting the individual is
+effectively managing their body weight
+while navigating the stairs.
+Figure 1: A real example comparing GPT-3.5 and LLaSA on
+an open-ended walking-pattern query. GPT-3.5 responds
+generically, while LLaSA grounds its explanation in IMU
+data—referencing upward acceleration and gyroscope stabil-
+ity to infer balanced movement.
+Computing (UbiComp Companion ’25), October 12–16, 2025, Espoo, Finland.
+ACM, New York, NY, USA, 8 pages. https://doi.org/10.1145/3714394.3756187
+1 Introduction
+Imagine asking: “Did I show signs of abnormal gait while climbing
+stairs? If so, why?” A meaningful response grounded in motion
+data could provide real-time insights without technical expertise.
+Despite over 19 billion IoT devices [30], 73% of wearable IMU data
+remains underused due to its complexity [1]. Enabling access to
+this underutilized sensor data can enhance decision-making across
+health, fitness, and rehabilitation domains.
+While large language models (LLMs) have advanced multimodal
+understanding in vision and video [3, 32], sensor-based question
+answering (SQA) remains underexplored. IMU signals are dense,
+noisy, and lack inherent semantic structure, making alignment
+with language challenging. Prior models [6, 19] focus on activity
+classification and label prediction, limiting their ability to explain
+behavior or reason over time.
+arXiv:2406.14498v4
+[cs.CL]
+22
+Sep
+2025
+UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland Sheikh Asif Imran Shouborno, Mohammad Nur Hossain Khan, Subrata Biswas, and Bashima Islam
+We address this gap by introducing two large-scale datasets for
+open-ended reasoning over IMU data. SensorCap provides 35,960
+IMU–caption pairs describing motion, while OpenSQA includes
+199,701 question–answer pairs focused on causal and explanatory
+reasoning. A curated tuning fold of 19,440 examples promotes sci-
+entific accuracy, coherence, and diagnostic relevance.
+Using these resources, we train LLaSA-7B and LLaSA-13B, mul-
+timodal LLMs for open-ended, context-aware QA grounded in IMU
+data. LLaSA employs a sensor-aware encoder and projection mod-
+ule to compress high-frequency signals into a shared representation
+that fits within a 2048-token limit.
+Figure 1 shows LLaSA’s advantage: Unlike GPT-3.5, LLaSA grounds
+its response in specific IMU signals, referencing upward acceler-
+ation and gyroscopic stability to explain a controlled stair ascent,
+demonstrating causal, sensor-grounded reasoning.
+Our key contributions are:
+• Datasets: We release SensorCap and OpenSQA, establishing
+a benchmark for sensor–language reasoning. The tuning
+fold supports optimization for explanation quality.
+• Method: We propose a GPT-based tuning strategy that pro-
+motes scientific accuracy, narrative coherence, and response
+reliability, without relying solely on classification labels.
+• Model: We introduce LLaSA, the first open-source LLM de-
+signed for open-ended reasoning over raw IMU data, capable
+of zero-shot classification and explanatory QA in real-world
+scenarios.
+LLaSA is evaluated against GPT-3.5, Vicuna-13B, and GPT-4o-mini
+on scientific depth, narrative quality, and contextual grounding. It
+outperforms GPT-3.5 and Vicuna-13B and surpasses GPT-4o-mini
+in sensor-aware QA. Human evaluations (n=22) show strong prefer-
+ence for LLaSA. Real-world trials with 10 users demonstrate gener-
+alization to unseen activities and zero-shot classification. Ablations
+reveal that lower LoRA ranks improve alignment, and GPT-based
+scoring outperforms loss-based tuning for quality estimation.
+2 Sensor-Language Datasets
+Understanding motion from IMU data requires more than activity
+classification. It involves contextual reasoning, narrative interpre-
+tation, and causal explanation. Existing datasets are largely limited
+to discrete labels, offering little support for natural language inter-
+action or open-ended tasks. We introduce two large-scale datasets,
+SensorCap and OpenSQA, that enable training and evaluation
+of language models for sensor-based reasoning. All datasets are
+publicly available.1
+2.1 Source HAR Datasets
+Both SensorCap and OpenSQA are derived from six publicly avail-
+able human activity recognition (HAR) datasets and one dataset
+we collected in the wild, as summarized in Table 1. The in-the-wild
+dataset introduces natural noise and variability, allowing us to as-
+sess model robustness, reliability, and real-world applicability in
+the test set. We recruited 10 adults through campus bulletin boards
+and social media. Each participant used their personal smartphone
+1https://github.com/BASHLab/LLaSA
+to record sensor data with the Sensor Logger app [8] while perform-
+ing nine predefined activities, each lasting two minutes (activity
+list shown in Table 1). Recordings took place in diverse environ-
+ments—approximately 70% on campus and 30% at home. Devices
+varied across iPhone, Samsung, and Google Pixel models, capturing
+a wide range of hardware and sensor characteristics.
+2.2 SensorCap: Sensor Data Captioning
+SensorCap consists of 35,960 IMU–caption pairs. Each sample in-
+cludes raw accelerometer and gyroscope signals, sensor location,
+derived features (e.g., FFT, min, max, median, and variance) and
+the activity label. The numerical data are downsampled to 10 Hz
+and truncated to 6 digits after the decimal point. For each instance,
+we generate two types of natural language outputs: (1) a summary
+caption of at most 25 words describing dominant motion patterns,
+and (2) a step-by-step narration of up to 500 tokens explaining sensor
+dynamics over time.
+To generate SensorCap, we prompted GPT-4o-mini with charac-
+teristic IMU features (e.g., FFT, maxima, variance), raw gyroscope
+and accelerometer data, and a brief activity summary. To input sen-
+sor data into GPT-4o-mini, we converted time-series IMU readings
+(accelerometer and gyroscope) into structured JSON-like arrays
+with up to 100 time steps. Additional features such as FFT, statis-
+tical summaries (mean, max, min, variance), and sensor locations
+were appended as human-readable feature descriptors. This struc-
+tured input was paired with an activity label and passed as the
+context to GPT-4o-mini. The model generated multi-paragraph ex-
+planations grounded in both temporal signal patterns and derived
+statistical features. For example, the input:
+Summary: biking; Gyroscope: [[...]]; Accelerometer:
+[[...]]; Features: FFT, max, min, median, moving avg,
+variance
+produces a multi-paragraph response narrating rotational and
+linear acceleration patterns consistent with biking. The model iden-
+tified z-axis gravitational force, lateral motion for turns, and gyro-
+scopic peaks suggesting leaning behavior and terrain adaptation.
+The narration also referenced oscillations, balance corrections, and
+exertion cues tied to real-world biking dynamics.
+These structured narrations form the input for our prompt suite,
+which supports OpenSQA question-answer generation. Each prompt
+conditions GPT-4o-mini with SensorCap-derived descriptions and
+guides it to produce QA pairs grounded in sensor reasoning across
+dimensions such as biomechanics, reliability, and contextual inter-
+pretation.
+2.3 OpenSQA: Sensor-Aware QA Dataset
+OpenSQA extends SensorCap to support open-ended question an-
+swering grounded in IMU data. It contains 199,701 question–answer
+pairs, each generated using gyroscope and accelerometer signals,
+activity labels, sensor locations, and SensorCap-provided motion
+features and narrations. Each QA pair is a natural language re-
+sponse to a user-style question grounded in this multimodal sensor
+context. For each instance, we prompt GPT-4o-mini to generate
+five QA pairs spanning factual (e.g., “What activity is being per-
+formed?”), descriptive (e.g., “What trends are visible?”), causal (e.g.,
+“Why is this motion occurring?”), diagnostic (e.g., “Is this motion
+LLaSA: A Sensor-Aware LLM for Natural Language Reasoning of Human Activity from IMU Data UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland
+Table 1: Datasets are used to generate SensorCap and Open-
+SQA. Bolded activities are unseen during training & tuning.
+Total 188,429 activities from 95 users.
+Dataset Classes Train Test
+HHAR [31] bike, sit, stand, walk, ascend stairs, de-
+scend stairs
+✓ ✗
+Motion [22] sit, stand, ascend stairs, descend stairs,
+walk, jog
+✓ ✗
+Shoaib [29] sit, stand, jog, bike, ascend stairs, de-
+scend stairs, walk
+✓ ✗
+UCI [26] stand, sit, lay, walk, ascend stairs, de-
+scend stairs
+✓ ✗
+PAMAP2 [9] lay, sit, stand, walk, run, cycle, Nordic
+walk, watch TV, computer work, etc.
+✓ ✓
+In-the-Wild sit, stand, pick object, jump, swirl,
+stretch, use stair, elevator, walk
+✗ ✓
+stable or noisy?”), and inferential (e.g., “What might happen next?”)
+reasoning. A subset of generations is refined with human feedback
+to improve clarity and contextual alignment.
+To support structured evaluation beyond label prediction, we par-
+tition OpenSQA into two folds: A training fold includes 179,727
+QA pairs constructed from five datasets: HHAR, MotionSense,
+Shoaib, UCI HAR, and the training portion of PAMAP2 [9], and a
+tuning fold, Tune-OpenSQA, contains 19,440 QA pairs gener-
+ated from a held-out PAMAP2 subset with GPT-4o. It serves as a
+benchmark for evaluating sensor-aware reasoning across scientific
+consistency, narrative clarity, and signal reliability.
+For further real-world assessment, we include an in-the-wild
+dataset of 534 QA pairs. This subset evaluates model generalization
+under diverse environmental conditions and device variation.
+2.4 Data Quality Assessment
+We assess dataset quality using three LLMs as automatic judges:
+Deepseek-V3 (accessed via API), LLaMA-3.1-8B, and Gemma-12B
+(run locally). Each model scores question–answer pairs on a 1-5
+scale based on alignment with IMU data, activity label, and narra-
+tion. Deepseek-V3 rates 87% of samples above 4.5 and 96% above
+4.0. Gemma-12B scores 73% above 4.5 and 93% above 4.0. LLaMA-
+3.1-8B gives 97% above 4.5 and 100% above 4.0. The consistency
+across models confirms the high quality of the generated data and
+its suitability for sensor-grounded reasoning tasks.
+3 Large Language and Sensor Assistant
+Large Language and Sensor Assistant (LLaSA), available in 7B and
+13B variants, processes raw IMU data and user queries to generate
+grounded responses for versatile wearable sensing applications.
+3.1 LLaSA Architecture
+Figure 2 illustrates the LLaSA architecture, which includes a sensor
+encoder for feature extraction, a query encoder, a projection module
+for multimodal alignment, and a language model conditioned on
+both inputs.
+Sensor Encoder 𝑓𝜃 . Given IMU signals 𝑥(𝑡) ∈ R𝐶×𝑇 , the frozen
+encoder 𝑓𝜃 produces: Z𝑠 = 𝑓𝜃 (𝑥(𝑡)) ∈ R¯
+𝑐× ¯
+𝑘 . We adopt LIMU-
+BERT [34], which uses self-attention to encode temporal and channel-
+wise patterns in Z𝑠.
+Language
+Model
+Projection
+Layer
+Sensor
+Encoder
+Text
+Encoder
+What do you think
+about my workout session?
+Finetuned with LoRA Frozen Weights
+Sensor Embedding,
+Query Embedding,
+Language Response,
+Your
+last
+running
+session
+had
+perfect
+gait
+reflected
+by
+the
+periodic
+nature
+of
+accelerometer
+readings.
+Figure 2: LLaSA Overview: Raw IMU data is encoded by 𝑓𝜃 ,
+projected into a shared space H𝑠, and fused with query em-
+beddings H𝑞 before being processed by 𝑓Φ to generate a re-
+sponse X𝑎.
+Query Encoder 𝑓𝑡 (·). User queries 𝑄 are tokenized using Sentence-
+Piece [16] (LLaMA-compatible), producing embeddings H𝑞 ∈ R¯
+𝑐×𝑘 .
+Projection and Alignment Layer. Following previous works
+[21], you leverage 2 layers of fully connected layers, along side
+GELU-activation to project the encoded sensor vector Z𝑠 to sensor
+embedding H𝑠 = 𝜎(W𝑝Z𝑠), where W𝑝 ∈ R
+¯
+𝑘×𝑘 is the learnable
+parameters of projection and alignment layer.
+Then we concatenate sensor and text embeddings to form the
+fused input Hinput = [H𝑠; H𝑞] This projection acts as a sensor-
+aware tokenizer, enabling cross-modal consistency.
+Language Model 𝑓Φ. The LLM generates output X𝑎 through au-
+toregressive decoding by modeling the conditional probability as
+𝑃(X𝑎 |Hinput) =
+Î𝑇
+𝑡=1 𝑃(𝑥𝑎,𝑡 |Hinput,𝑥𝑎,<𝑡 ;𝜙) where 𝜙 represents the
+model parameters. Conditioning on the sensor history H𝑠 allows
+for grounded, context-aware reasoning over IMU inputs.
+3.2 LLaSA Hyperparameter Tuning
+Integrating sensor data into LLMs presents challenges beyond stan-
+dard text-based tuning. Sensor-aware models must process noisy,
+continuous signals, preserve temporal dependencies, and gener-
+ate responses grounded in physical context. Prior work often re-
+lies on classification labels, limiting a model’s ability to generate
+explanatory outputs.We propose a tuning strategy that improves
+interpretability and reliability without modifying model architec-
+ture. It combines targeted hyperparameter search with a structured
+evaluation protocol to support causal reasoning and multimodal
+alignment.
+Hyperparameter Search Strategy. We tune five key parameters
+to balance convergence and expressivity: learning rate (𝜂), batch
+size (𝐵), weight decay (𝜆), LoRA rank (𝑟), and dropout rate (𝑝drop).
+Following prior work [28], we select configurations using the evalu-
+ation metric below to ensure fidelity in sensor-grounded responses.
+Structured LLM-Based Evaluation Metric. Lexical metrics like
+BLEU [25] and ROUGE [20] often fail to reflect semantic or causal
+relevance, especially in sensor-grounded QA where phrasing varies [11,
+UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland Sheikh Asif Imran Shouborno, Mohammad Nur Hossain Khan, Subrata Biswas, and Bashima Islam
+Table 2: BLEU/ROUGE reward generic overlap. GPT scoring
+reflects reasoning and relevance in sensor-grounded QA.
+Query Generic Response Informed Response
+What is the
+person doing?
+"The person is moving."
+BLEU/ROUGE: High
+GPT: Low
+"Smooth gait suggests walking."
+BLEU/ROUGE: Medium
+GPT: High
+Is the activity
+classification
+correct?
+"Yes, it matches the label."
+BLEU/ROUGE: High
+GPT: Low
+"Patterns match walking signature."
+BLEU/ROUGE: Medium
+GPT: High
+12]. As shown in Table 2, vague answers like “The person is moving”
+can receive high BLEU scores despite lacking depth.
+To address this, we score answers using GPT-4o along four axes:
+correctness, alignment with sensor dynamics; completeness, coverage
+of key observations; consistency, logical flow; and helpfulness, clarity
+and informativeness. Each is rated on a 0–100 scale, and the average
+yields a final score:
+𝑄final =
+𝑄correctness + 𝑄completeness + 𝑄consistency + 𝑄helpfulness
+4
+This scoring captures coherence, context, and reasoning better
+than lexical overlap. For instance, “Smooth gait suggests walking”
+scores higher than generic responses. We validate the approach
+with Deepseek-V3, observing strong inter-rater agreement (ICC =
+0.92, p = 0.0001), confirming its reliability.
+3.3 Implementation Details
+LIMU-BERT Training. We pretrain LIMU-BERT on unlabeled
+sensor data from HHAR [31], UCI-HAR [26], MotionSense [22],
+and Shoaib [29], covering 8 activities with 3-axis accelerometer and
+gyroscope signals downsampled to 20 Hz. The best checkpoint is
+selected after 8 hours of training (up to 1000 epochs) with Adam
+and early stopping on an RTX 3090 Ti. Additional PAMAP2 activi-
+ties [27] yielded negligible gains, indicating sufficient diversity in
+the core datasets.
+Multimodal Projector Training. We train a GELU-activated MLP
+(𝑊𝑃 ) on OpenSQA to align LIMU-BERT sensor features with token
+embeddings. Training uses 16-bit precision, Adam optimizer, learn-
+ing rate 1e−4, and batch size 32 on A100 GPUs. One epoch suffices
+for convergence.
+LLaSA Fine-Tuning. We fine-tune Vicuna-7B and 13B with LoRA [14],
+using the pretrained projector and LLaVA-style [21] instruction tun-
+ing. Sensor embeddings fit within a 2048-token context window.
+The 7B model is trained on one A100 GPU; 13B uses two.
+Fine-tuning runs for one epoch (batch size 16) with LoRA ranks
+𝑟 ∈ {4, 8, 16, 64, 128} and scaling 𝛼 = 𝑟 [17]. We sweep learning
+rates of 1e−4, 3e−5, 1e−6 for LoRA, and 2e−5, 1e−4, 1e−3 for the
+projector.
+4 Evaluation for Open-Ended Reasoning
+Question Answering
+We evaluate LLaSA’s ability to generate interpretable, context-rich
+answers from raw IMU data. Unlike standard classification, this
+task involves open-ended questions that require causal reasoning
+and contextual understanding. Our evaluation framework includes
+three components: (1) a structured LLM-based evaluation metric
+Table 3: LLaSA leads in science score and overall quality,
+outperforming stronger-context LLMs.
+Model Context Len. Science Narration Reliability Overall
+LLaSA 2k 75.0 71.0 70.5 72.17
+GPT-3.5-Turbo 16k 64.5 65.0 60.0 63.17
+GPT-4o-mini 128k 72.0 77.0 78.0 75.67
+Vicuna-13b 16k 63.4 67.0 65.4 65.27
+]
+10 10
+40 40
+60
+30
+10
+0
+20
+0
+40 40
+10
+60
+10
+20
+0
+10
+20
+30
+40
+50
+60
+70
+1 2 3 4
+Aggregated
+average
+vote
+over
+all
+questions
+(%)
+Satisfaction score
+LLASA GPT 3.5T GPT-4o-mini Vicuna-13b
+Figure 3: LLaSA yields more consistent high human satisfac-
+tion scores than baselines.
+(Section 3.2), (2) human satisfaction ratings, and (3) generalization to
+in-the-wild settings with unseen activities that test LLaSA’s ability
+to reason about novel motion patterns. We also assess LLaSA’s per-
+formance on zero-shot human activity classification. While LLaSA
+uses normalized 20 Hz samples to generate sensor tokens, others
+receive them as texts downsampled to 10 Hz and truncated up to 6
+digits after the decimal point to minimize the number of tokens.
+4.1 Comparison with General LLMs
+We compare LLaSA-13B to GPT-3.5, GPT-4o-mini, and Vicuna-13B
+using a structured evaluation of scientific reasoning, narrative clar-
+ity, and reliability (Table 3). All models are scored on 30 QA pairs
+from the OpenSQA tuning fold (PAMAP2 data).
+LLaSA outperforms GPT-3.5 and Vicuna-13B across all metrics,
+producing more sensor-aware and causally grounded answers. It
+leads in scientific reasoning, highlighting the value of domain-
+specific tuning. GPT-4o-mini performs well but lacks depth in
+physics reasoning, showing general models benefit from domain
+adaptation.
+Despite a 2K context limit, LLaSA matches or exceeds models
+with up to 64× larger context windows. Its strong performance—without
+architectural changes—demonstrates that careful tuning can enable
+compact models to reason accurately over sensor data.
+4.2 Human Evaluation of QA Quality
+We conducted a user study with 21 participants to evaluate the per-
+ceived quality of sensor-based answers. Each participant reviewed
+10 QA examples covering scientific reasoning, narrative clarity, and
+reliability. Questions were paired with anonymized outputs from
+LLaSA-13B, GPT-3.5, GPT-4o-mini, and Vicuna-13B. Visual plots
+and brief IMU descriptions aided interpretation.
+Participants ranked answers from 1 (worst) to 4 (best) based on
+clarity, relevance, and grounding. LLaSA scored highest in 40% of
+LLaSA: A Sensor-Aware LLM for Natural Language Reasoning of Human Activity from IMU Data UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland
+How can we determine if the user is encountering obstacles or performing strenuous tasks while vacuum
+cleaning based on the given IMU data?
+To determine if the user is encountering obstacles or performing strenuous tasks while vacuum cleaning based
+on the IMU data, we can look at the magnitude of the accelerometer values. If the magnitude is consistently
+high and fluctuating rapidly, it may indicate that the user is encountering obstacles or performing strenuous
+tasks, such as pushing or pulling the vacuum cleaner. If the magnitude is consistently low and fluctuates slowly,
+it may indicate that the user is moving the vacuum cleaner more slowly or smoothly, such as when cleaning a
+large area with minimal obstacles. However, it is important to note that the IMU data alone may not provide a
+complete picture of the user's activity, and other sensors or contextual information may be needed to make a
+more accurate assessment.
+Vicuna-13b
+The IMU data shows significant fluctuations in both gyroscope and accelerometer readings, particularly
+with high peaks in the z-axis acceleration reaching up to 10.5555 m/s² and rapid changes in the x-axis
+gyroscope readings, suggesting the user is navigating around obstacles or performing strenuous tasks
+such as turning or lifting the vacuum cleaner over furniture. The consistent high variance in readings
+indicates active engagement with the environment, suggesting the user is likely encountering obstacles
+that require quick adjustments in movement and directional changes, which are typical in vacuum
+cleaning scenarios.
+LLaSA
+Figure 4: Example showing LLaSA provides enriched, contextual answers (highlighted in red) based on IMU input.
+Table 4: LLaSA-7B delivers more coherent and reliable re-
+sponses than Vicuna-13B on in-the-wild data.
+Model Model Size Context Length Narrative Reliability Overall
+Vicuna 13B 16K 72.0 78.0 75.0
+LLaSA 7B 2K 78.2 81.7 79.95
+cases, matching GPT-4o-mini, but with fewer low scores, show-
+ing greater consistency. Figure 3 highlights LLaSA’s precision in
+interpreting subtle sensor cues.
+Figure 4 shows an example: while Vicuna-13B offers a generic
+explanation, LLaSA cites specific signal fluctuations—e.g., z-axis ac-
+celeration and gyroscope variance—to infer obstacles and strenuous
+activity during vacuum cleaning.
+Participants noted that LLaSA improved their understanding
+by linking low-level signals to high-level explanations. Even non-
+experts found its answers more informative and accessible, rein-
+forcing the value of domain-specific tuning for real-world use.
+4.3 Generalization to In-the-Wild Data
+We evaluate LLaSA-7B on an OpenSQA test fold that includes only
+in-the-wild samples collected using smartphones in real-world envi-
+ronments. This evaluation assesses narrative quality and reliability
+under noise and device variations.
+We compare LLaSA-7B with Vicuna-13B-1.5-16K, a significantly
+larger general-purpose model. To ensure fairness, GPT-4o scores
+the outputs using prompts designed to account for variability in
+real-world sensor signals. As shown in Table 4, LLaSA delivers
+more coherent and reliable answers across a wide range of activ-
+ities, despite its smaller model size and limited context window.
+These results highlight LLaSA’s ability to generalize beyond cu-
+rated datasets and maintain performance in practical deployment
+scenarios.
+4.4 Zero-Shot Activity Classification
+We evaluate LLaSA’s ability to perform zero-shot activity recogni-
+tion, where the model classifies IMU signals without task-specific
+fine-tuning by selecting the most plausible activity label.
+We use five datasets: HHAR, Motion, Shoaib, UCI, and SHL [13].
+Each sample includes derived IMU features and candidate activity
+labels (Table 1). The model is prompted to choose the correct label;
+if none is returned, the output is marked “Unclear.” Performance is
+measured using precision, recall, and F1-score.
+Compared to Vicuna-7B, GPT-3.5, GPT-4o-mini, and a fine-tuned
+GPT-3.5 (GPT-3.5-T-F), LLaSA achieves 2.6–12× higher F1 across all
+datasets (Table 5). It generalizes well even to SHL, unseen during
+training. Despite a 2K token limit, LLaSA outperforms models with
+up to 128K context length, demonstrating strong efficiency and
+domain grounding.
+5 Tuning Strategy Evaluation and Insights
+We study how LoRA rank, model size, and dataset scale influence
+performance. LLaSA is fine-tuned on 30 QA examples spanning di-
+verse reasoning types, varying LoRA rank, learning rate, and model
+size (Table 6). Rank 8 consistently performs best across science,
+narration, and reliability, supporting prior findings that low-rank
+adaptation improves alignment and reduces overfitting on noisy
+IMU data. The 13B model outperforms 7B across all metrics, though
+both benefit from tuning. Expanding to the full PAMAP2 QA dataset
+(179k examples) offers marginal improvement, suggesting satura-
+tion beyond a certain scale.
+Notably, the lowest-loss model (1.474) performs worse than the
+best one (1.526), confirming that training loss is an unreliable proxy
+for QA quality. Our structured quality scores better reflect inter-
+pretability, grounding, and reasoning, and are more suitable for
+tuning sensor-aware language models.
+6 Related Work
+Recent research has explored leveraging large language models for
+sensor-grounded reasoning tasks. Penetrative AI [33] demonstrated
+that models like ChatGPT can interpret textualized IoT sensor data
+UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland Sheikh Asif Imran Shouborno, Mohammad Nur Hossain Khan, Subrata Biswas, and Bashima Islam
+Table 5: Zero-shot classification performance on human activity recognition. LLaSA outperforms GPT models and Vicuna-7B
+with 2.6–12× higher F1-scores, despite using 8–64× smaller context windows.
+LMA
+Context
+length
+HHAR MotionSense Shoaib UCI SHL
+F-1 Precision Recall F-1 Precision Recall F-1 Precision Recall F-1 Precision Recall F-1 Precision Recall
+Vicuna-7b-16K 16k 0.05 0.12 0.03 0.09 0.15 0.12 0.08 0.11 0.11 0.04 0.25 0.03 0.08 0.38 0.07
+GPT-3.5-T 16k 0.07 0.16 0.1 0.08 0.07 0.13 0.09 0.1 0.12 0.07 0.35 0.12 0.15 0.22 0.15
+GPT-4o-mini 128k 0.16 0.24 0.18 0.12 0.25 0.15 0.1 0.19 0.13 0.15 0.17 0.13 0.25 0.36 0.23
+GPT-4o 128k 0.07 0.14 0.08 0.08 0.26 0.06 0.14 0.35 0.15 0.04 0.16 0.03 0.22 0.27 0.23
+GPT-3.5-T-F 16k 0.52 0.54 0.7 0.21 0.27 0.21 0.27 0.45 0.31 0.24 0.28 0.31 0.23 0.25 0.32
+LLaSA 2k 0.84 0.88 0.86 0.83 0.85 0.83 0.81 0.84 0.81 0.72 0.82 0.75 0.65 0.76 0.71
+Table 6: Hyperparameter tuning and model scaling help find
+the best-performing model through scientific, narrative, and
+reliability assessment QA Tasks.
+Model
+size
+#QA LR
+Projector
+LR
+LORA
+Rank
+Science
+QA Quality
+Narration
+QA Quality
+Reliability
+QA Quality
+Overall
+Score
+7b
+131,407
+1e-4
+1e-4
+8 41.0 52.5 45.0 46.1
+16 32.5 54.0 44.5 43.7
+128 35.5 49.0 44.0 42.8
+2e-5
+8 32.0 57.0 42.0 43.7
+16 36.0 55.0 42.0 44.3
+128 35.0 34.0 48.0 39.0
+3e-5
+1e-4
+8 56.0 56.5 51.5 54.7
+16 49.5 53.5 52.0 51.7
+128 44.0 49.0 44.5 45.8
+2e-5
+8 50.0 54.0 52.5 52.2
+16 29.0 42.0 49.5 40.2
+128 42.0 50.0 49.5 47.2
+179,727
+1e-4 1e-4
+8 34.5 43.0 46.0 41.2
+16 27.5 40.5 58.5 42.2
+128 32.0 38.0 53.5 41.2
+1e-6
+1e-3
+4 36.5 45.5 34.5 38.8
+8 32.5 39.5 32.5 34.8
+1e-4
+4 35.0 45.0 47.0 42.3
+8 30.0 43.0 32.5 35.2
+3e-5
+1e-3
+4 28.0 40.5 50.0 39.5
+8 31.0 38.5 48.5 38.2
+1e-4 4 34.0 44.0 49.0 42.3
+13b 179,727 3e-5 1e-4 8 75.0 71.0 70.5 72.17
+to perform perception and activity inference tasks in physical do-
+mains. RAVEN [4] introduces a cross-modal gating mechanism over
+audio, video, and sensor streams, showing significant improvement
+in multimodal QA accuracy by weighting relevant modalities.
+In the sensor-Language alignment space, LLMSense [24] incor-
+porates long-term spatiotemporal sensor traces through selective
+history inclusion and summarization before reasoning on the cloud,
+achieving over 80% accuracy in tasks like dementia diagnosis and
+occupancy tracking. SensorLLM [38] aligns sensor channel data
+with LLMs using special tokens and trend-descriptive text, enabling
+robust activity recognition without manual annotations.
+Other systems—such as IMUGPT2.0 [18], Sensor2Text [7], and
+MentalLLM [35]—focus on generating summaries or labels from
+sensor data, but lack the open-ended reasoning and QA functional-
+ity that LLaSA supports.
+A unique approach called By My Eyes [36] converts IMU and
+ECG signals to visual prompts for multimodal LLMs, whereas LLaSA
+directly models raw sequences without modality conversion
+In healthcare, models like Health-LLM [15], MedTSLLM [5],
+PH-LLM [10], and PHIA [23] fine-tune LLMs on wearable sensor
+data for structured clinical prediction. Surveys such as Zhang et
+al. [37] review LLM applications to time series, but highlight that
+most existing methods focus on task-level prediction or forecasting
+rather than temporally grounded explanations or QA.
+7 Limitations
+One limitation of our approach is the reliance on a single LLM, GPT-
+4o-mini, for both SensorCap generation and OpenSQA QA synthe-
+sis. While GPT-4o offers high-quality reasoning, its performance
+and tokenization biases inherently influence the quality of the
+datasets. While inter-rater reliability between GPT and Deepseek
+was good (0.92), evaluation using GPT-based automatic metrics also
+inherits this dependency, which may affect reproducibility as mod-
+els evolve over time. Another limitation is the scale of human evalu-
+ation and benchmark QA comparison. The current evaluation spans
+30 QA pairs for benchmarking and 10 examples per human rater,
+which may limit statistical robustness. Expanding this in future
+work will help validate the generalization of LLaSA. We also observe
+that LLaSA occasionally fails in ambiguous or under-informative
+input scenarios, such as stationary readings misclassified as “stand-
+ing” vs. “sitting.” It may also hallucinate motion patterns when
+the signal lacks clear transitions, or overfit to statistically com-
+mon movement descriptors even when context differs. Addressing
+such failure modes is an avenue for future improvement, especially
+with fine-grained signal conditioning or counterfactual prompts. Fi-
+nally, the current model sizes (7B and 13B with 16-bit precision) are
+unsuitable for real-time inference on mobile or edge devices. Sup-
+porting deployment on smartphones or wearables would require
+model compression strategies such as quantization, distillation, or
+architecture pruning. Exploring efficient sensor-language reason-
+ing under these constraints is an important direction for future
+work, particularly for privacy-preserving, on-device applications.
+8 Conclusion
+We present SensorCaps and OpenSQA, two new resources that en-
+able sensor-grounded question answering with open-ended, causal
+reasoning over IMU data. Built on these datasets, LLaSA shows
+how lightweight adaptation and structured evaluation can produce
+interpretable, context-rich answers from raw sensor signals. LLaSA
+outperforms general-purpose LLMs up to 64× larger while remain-
+ing efficient and real-time capable. These results highlight the value
+of domain-specific supervision for aligning language models with
+low-level sensor data. Future work will extend this foundation to
+support multimodal fusion, interactive dialogue, and longer con-
+texts for deployment in health, HCI, and wearable systems.
+Acknowledgment
+This research was supported by funding from the NSF CNS-2347692.
+We gratefully acknowledge their support in enabling this work.
+LLaSA: A Sensor-Aware LLM for Natural Language Reasoning of Human Activity from IMU Data UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland
+References
+[1] 2022. The IoT data deluge in industry and manufacturing. https:
+//www.newelectronics.co.uk/content/features/the-iot-data-deluge-in-
+industry-and-manufacturing. Accessed: 2025-2-1.
+[2] Berk Atil, Sarp Aykent, Alexa Chittams, Lisheng Fu, Rebecca J Passonneau,
+Evan Radcliffe, Guru Rajan Rajagopal, Adam Sloan, Tomasz Tudrej, Ferhan Ture,
+et al. 2024. Non-determinism of" deterministic" llm settings. arXiv preprint
+arXiv:2408.04667 (2024).
+[3] Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang, Sinan Tan, Peng Wang, Junyang
+Lin, Chang Zhou, and Jingren Zhou. 2023. Qwen-vl: A frontier large vision-
+language model with versatile abilities. arXiv preprint arXiv:2308.12966 (2023).
+[4] Subrata Biswas, Mohammad Nur Hossain Khan, and Bashima Islam. 2025. RAVEN:
+Representational Alignment of Audio, Video, Embedded Sensors and Natural
+Language. arXiv preprint (2025).
+[5] Nimeesha Chan, Felix Parker, William Bennett, Tianyi Wu, Mung Yao Jia, James
+Fackler, and Kimia Ghobadi. 2024. Medtsllm: Leveraging llms for multimodal
+medical time series analysis. arXiv preprint arXiv:2408.07773 (2024).
+[6] Kaixuan Chen, Dalin Zhang, Lina Yao, Bin Guo, Zhiwen Yu, and Yunhao Liu.
+2021. Deep learning for sensor-based human activity recognition: Overview,
+challenges, and opportunities. ACM Computing Surveys (CSUR) 54, 4 (2021), 1–40.
+[7] Wenqiang Chen, Jiaxuan Cheng, Leyao Wang, Wei Zhao, and Wojciech Matusik.
+2024. Sensor2Text: Enabling Natural Language Interactions for Daily Activity
+Tracking Using Wearable Sensors. Proceedings of the ACM on Interactive, Mobile,
+Wearable and Ubiquitous Technologies 8, 4 (2024), 1–26.
+[8] Kelvin Choi. 2022. Sensor Logger. https://www.tszheichoi.com/sensorlogger.
+[Accessed 12-11-2024].
+[9] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav
+Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Se-
+bastian Gehrmann, et al. 2023. Palm: Scaling language modeling with pathways.
+Journal of Machine Learning Research 24, 240 (2023), 1–113.
+[10] Justin Cosentino, Anastasiya Belyaeva, Xin Liu, Nicholas A Furlotte, Zhun
+Yang, Chace Lee, Erik Schenck, Yojan Patel, Jian Cui, Logan Douglas Schnei-
+der, et al. 2024. Towards a Personal Health Large Language Model. arXiv preprint
+arXiv:2406.06474 (2024).
+[11] Michael Desmond, Zahra Ashktorab, Qian Pan, Casey Dugan, and James M
+Johnson. 2024. EvaluLLM: LLM assisted evaluation of generative outputs. In
+Companion Proceedings of the 29th International Conference on Intelligent User
+Interfaces. 30–32.
+[12] Mingqi Gao, Xinyu Hu, Jie Ruan, Xiao Pu, and Xiaojun Wan. 2024. Llm-based
+nlg evaluation: Current status and challenges. arXiv preprint arXiv:2402.01383
+(2024).
+[13] Hristijan Gjoreski, Mathias Ciliberto, Lin Wang, Francisco Javier Ordonez
+Morales, Sami Mekki, Stefan Valentin, and Daniel Roggen. 2018. The university
+of sussex-huawei locomotion and transportation dataset for multimodal analytics
+with mobile devices. IEEE Access 6 (2018), 42592–42604.
+[14] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean
+Wang, Lu Wang, and Weizhu Chen. 2021. Lora: Low-rank adaptation of large
+language models. arXiv preprint arXiv:2106.09685 (2021).
+[15] Yubin Kim, Xuhai Xu, Daniel McDuff, Cynthia Breazeal, and Hae Won Park. 2024.
+Health-llm: Large language models for health prediction via wearable sensor
+data. arXiv preprint arXiv:2401.06866 (2024).
+[16] Taku Kudo and John Richardson. 1808. Sentencepiece: A simple and language
+independent subword tokenizer and detokenizer for neural text processing. arXiv
+2018. arXiv preprint arXiv:1808.06226 (1808).
+[17] Ariel N Lee, Cole J Hunter, and Nataniel Ruiz. 2023. Platypus: Quick, cheap, and
+powerful refinement of llms. arXiv preprint arXiv:2308.07317 (2023).
+[18] Zikang Leng, Amitrajit Bhattacharjee, Hrudhai Rajasekhar, Lizhe Zhang, Eliza-
+beth Bruda, Hyeokhyen Kwon, and Thomas Plötz. 2024. Imugpt 2.0: Language-
+based cross modality transfer for sensor-based human activity recognition. Pro-
+ceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies
+8, 3 (2024), 1–32.
+[19] Zechen Li, Shohreh Deldari, Linyao Chen, Hao Xue, and Flora D Salim. 2024.
+Sensorllm: Aligning large language models with motion sensors for human
+activity recognition. arXiv preprint arXiv:2410.10624 (2024).
+[20] Chin-Yew Lin. 2004. ROUGE: A Package for Automatic Evaluation of Summaries.
+In Text Summarization Branches Out. Association for Computational Linguistics,
+Barcelona, Spain, 74–81. https://aclanthology.org/W04-1013/
+[21] Shilong Liu, Hao Cheng, Haotian Liu, Hao Zhang, Feng Li, Tianhe Ren, Xueyan
+Zou, Jianwei Yang, Hang Su, Jun Zhu, et al. 2023. Llava-plus: Learning to use
+tools for creating multimodal agents. arXiv preprint arXiv:2311.05437 (2023).
+[22] Mohammad Malekzadeh, Richard G Clegg, Andrea Cavallaro, and Hamed Had-
+dadi. 2019. Mobile sensor data anonymization. In Proceedings of the international
+conference on internet of things design and implementation. 49–58.
+[23] Mike A Merrill, Akshay Paruchuri, Naghmeh Rezaei, Geza Kovacs, Javier Perez,
+Yun Liu, Erik Schenck, Nova Hammerquist, Jake Sunshine, Shyam Tailor, et al.
+2024. Transforming wearable data into health insights using large language
+model agents. arXiv preprint arXiv:2406.06464 (2024).
+[24] Xiaomin Ouyang and Mani Srivastava. 2024. LLMSense: Harnessing LLMs
+for High-level Reasoning Over Spatiotemporal Sensor Traces. arXiv preprint
+arXiv:2403.19857 (2024).
+[25] Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. 2002. Bleu: a
+method for automatic evaluation of machine translation. In Proceedings of the
+40th annual meeting of the Association for Computational Linguistics. 311–318.
+[26] Jorge-L Reyes-Ortiz, Luca Oneto, Albert Samà, Xavier Parra, and Davide An-
+guita. 2016. Transition-aware human activity recognition using smartphones.
+Neurocomputing 171 (2016), 754–767.
+[27] Daniel Roggen, Alberto Calatroni, Mirco Rossi, Thomas Holleczek, Kilian Förster,
+Gerhard Tröster, Paul Lukowicz, David Bannach, Gerald Pirkl, Alois Ferscha,
+et al. 2010. Collecting complex activity datasets in highly rich networked sensor
+environments. In 2010 Seventh international conference on networked sensing
+systems (INSS). IEEE, 233–240.
+[28] Thibault Sellam, Dipanjan Das, and Ankur P Parikh. 2020. BLEURT: Learning
+robust metrics for text generation. arXiv preprint arXiv:2004.04696 (2020).
+[29] Muhammad Shoaib, Stephan Bosch, Ozlem Durmaz Incel, Hans Scholten, and
+Paul JM Havinga. 2014. Fusion of smartphone motion sensors for physical activity
+recognition. Sensors 14, 6 (2014), 10146–10176.
+[30] Satyajit Sinha. 2024. State of IoT 2024: Number of connected IoT devices growing
+13% to 18.8 billion globally. https://iot-analytics.com/number-connected-iot-
+devices/. Accessed: 2025-2-1.
+[31] Allan Stisen, Henrik Blunck, Sourav Bhattacharya, Thor Siiger Prentow,
+Mikkel Baun Kjærgaard, Anind Dey, Tobias Sonne, and Mads Møller Jensen.
+2015. Smart devices are different: Assessing and mitigatingmobile sensing het-
+erogeneities for activity recognition. In Proceedings of the 13th ACM conference
+on embedded networked sensor systems. 127–140.
+[32] Junke Wang, Dongdong Chen, Chong Luo, Xiyang Dai, Lu Yuan, Zuxuan Wu,
+and Yu-Gang Jiang. 2023. Chatvideo: A tracklet-centric multimodal and versatile
+video understanding system. arXiv preprint arXiv:2304.14407 (2023).
+[33] Huatao Xu, Liying Han, Qirui Yang, Mo Li, and Mani Srivastava. 2024. Penetra-
+tive ai: Making llms comprehend the physical world. In Proceedings of the 25th
+International Workshop on Mobile Computing Systems and Applications. 1–7.
+[34] Huatao Xu, Pengfei Zhou, Rui Tan, Mo Li, and Guobin Shen. 2021. Limu-bert:
+Unleashing the potential of unlabeled data for imu sensing applications. In
+Proceedings of the 19th ACM Conference on Embedded Networked Sensor Systems.
+220–233.
+[35] Xuhai Xu, Bingsheng Yao, Yuanzhe Dong, Saadia Gabriel, Hong Yu, James Hendler,
+Marzyeh Ghassemi, Anind K Dey, and Dakuo Wang. 2024. Mental-llm: Leveraging
+large language models for mental health prediction via online text data. Proceed-
+ings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies 8, 1
+(2024), 1–32.
+[36] Hyungjun Yoon, Biniyam Aschalew Tolera, Taesik Gong, Kimin Lee, and Sung-
+Ju Lee. 2024. By My Eyes: Grounding Multimodal Large Language Models
+with Sensor Data via Visual Prompting. In Proceedings of the 2024 Conference
+on Empirical Methods in Natural Language Processing, Yaser Al-Onaizan, Mohit
+Bansal, and Yun-Nung Chen (Eds.). Association for Computational Linguistics,
+Miami, Florida, USA, 2219–2241. doi:10.18653/v1/2024.emnlp-main.133
+[37] Xiyuan Zhang, Ranak Roy Chowdhury, Rajesh K Gupta, and Jingbo Shang. 2024.
+Large language models for time series: A survey. arXiv preprint arXiv:2402.01801
+(2024).
+[38] Yuwei Zhang, Kumar Ayush, Siyuan Qiao, A Ali Heydari, Girish Narayanswamy,
+Maxwell A Xu, Ahmed A Metwally, Shawn Xu, Jake Garrison, Xuhai Xu, et al.
+2025. SensorLM: Learning the Language of Wearable Sensors. arXiv preprint
+arXiv:2506.09108 (2025).
+UbiComp Companion ’25, October 12–16, 2025, Espoo, Finland Sheikh Asif Imran Shouborno, Mohammad Nur Hossain Khan, Subrata Biswas, and Bashima Islam
+Appendix A: Prompts and examples
+Table A1: Example from SensorCap: GPT-4o-mini generates
+a detailed explanation based on summary, sensor data, and
+statistical features.
+Inputs:
+Summary: biking
+Gyroscope: [[-0.54474, -0.060323, 0.27657], [-0.437375, -0.952935,
+0.26466], [-0.16661, -1.15345, -0.057116], ...]
+Accelerometer: [[6.97365, -1.498255, -7.5116], [8.0292, -3.24845,
+-7.8113], [7.647799, -2.5606, -7.27325], ...]
+Features: FFT, maximum, minimum, median, moving average, variance
+Outputs:
+Features: High rotation rates, significant accelerations, consistent z-axis downward
+force, noticeable side-to-side motion indicating turns during biking.
+Narration: The dataset provided showcases IMU sensor readings that detail the
+nuances of biking. The gyroscope data reveals rotation around the x, y, and z axes,
+indicating the rider’s orientation and turning movements, while the accelerometer
+readings offer insights into linear accelerations experienced during the biking
+activity.
+Step 1: Analyzing Gyroscope Data. The values exhibit frequent negative readings
+along the y-axis, peaking around -1.15, suggesting clockwise turning. Fluctuations
+in the z-axis indicate tilt variations; x-axis movement is milder.
+Step 2: Investigating Accelerometer Data. A significant downward force averaging
+around -7.5 reflects steady contact with the ground. Fluctuations suggest moments
+of acceleration, deceleration, and terrain interaction.
+Step 3: Transition Analysis. Transient gyroscope shifts reflect balance adjustments
+and terrain response. Peaks in the x-axis correspond to pedaling bursts.
+Step 4: Peak and Average Movement. Oscillatory patterns reflect sharp turns and
+quick stops. Minimum values align with moments of stabilization before pivoting.
+Conclusion. These signals capture the biker’s physical dynamics and balance strat-
+egy. The interplay between gyroscopic orientation and linear acceleration builds a
+detailed profile of biking behavior.
+Table A2: Prompt design for generating OpenSQA. GPT-4o-
+mini is instructed with contextual IMU features to generate
+reasoning-rich question–answer pairs.
+Instruction to GPT-4o-mini
+You are an expert in interpreting gyroscope and accelerometer data. Based on provided
+context (including a summary, raw sensor data, statistical features, and a temporal
+narration), generate five logical question–answer pairs requiring deductive reasoning
+grounded in the data. Format the output as: 1. Q: ... A: ...
+Prompt Input Structure Output Structure
+1. Activity label
+2. Gyroscope data
+3. Accelerometer data
+4. Sensor location
+5. Extracted IMU features
+6. Temporal narration (SensorCap)
+Five contextual question–answer pairs
+Table A3: Prompt categories for generating the tuning sec-
+tion of OpenSQA. Each category guides GPT-4o to focus on a
+specific reasoning skill.
+Reasoning Category Prompt Instruction
+Scientific Reasoning Generate questions relating to physics or biomechanics
+explaining how IMU sensor dynamics align with activity
+type.
+Narrative Interpreta-
+tion
+Describe activity based on temporal signal patterns, motion
+consistency, and event flow.
+Reliability Assessment Assess IMU data quality, consistency, and presence of noise
+or anomalies that might distort interpretation.
+Prompt Input Activity label, IMU sensor data, sensor location, derived
+features
+Output Five contextual question–answer pairs per reasoning type
+Table A4: Prompt design for zero-shot activity classification
+from IMU signals.
+Instruction to LLM
+Given IMU data, identify the activity class from the following options: standing,
+sitting, walking, run, bike, or Unclear. Return: "The identified class is:
+<class_name>".
+Input Modality Output Format
+LLaSA: 194-token sensor embedding
+Other LLMs: Raw sensor sequences
+( 2175 tokens)
+"The identified class is: <class_name>"
+Table A5: Prompt for evaluating QA answer quality. GPT-4o
+scores LLM outputs using structured rubric.
+Instruction to GPT-4o
+Use the standard answer, activity label, sensor location, and predicted answer to
+evaluate correctness, completeness, consistency, and helpfulness. Provide a numeric
+score and brief assessment.
+Prompt Input Output Format
+1. Standard answer
+2. Activity label
+3. Sensor location
+4. Predicted answer
+Quality score: <0–100>
+Assessment: <1–2 sentence summary>
+Appendix B: On the Non-Determinism of LLM
+Inference
+Our classification results are obtained with LLaSA-7B using the
+LIMUBERT adapter trained on four public IMU datasets (details
+in subsection 3.3) on 131,407 QAs derived from the four datasets,
+which can be repeated through our code and data available at
+https://github.com/BASHLab/LLaSA. Although we run inference
+with apparently deterministic settings (temperature = 0, fixed prompt,
+fixed random seed, single-GPU inference), recent systematic mea-
+surements show that outputs can still vary across repeated runs.
+Atil et al. [2] report accuracy variation up to 15% across runs and
+gaps up to 70% between best and worst runs for certain tasks under
+"deterministic" settings.
+Such nondeterminism arises from subtle floating-point differ-
+ences in GPU kernels (non-associativity, rounding), software back-
+end changes (e.g., cuDNN/CUDA version differences), and runtime
+effects that perturb logits. While these effects are often very small
+numerically, they can flip the predicted class when logits are close,
+causing measurable changes in classification accuracy.
+Implication for Future Work. For reproducible and fair com-
+parisons, we encourage the community to adopt variance-aware
+evaluation: run inference multiple times (e.g., 𝑁 = 10 runs), report
+mean or median accuracy, and include statistical dispersion metrics
+such as variance, best/worst range, and agreement scores. This
+would make reported results more robust and facilitate meaningful
+model comparisons.
+Our own results are based on a single run per configuration,
+so we expect some variation if repeated. Incorporating multi-run
+statistics is an important direction for future work and would help
+characterize the stability of similar LLMs more systematically.
+

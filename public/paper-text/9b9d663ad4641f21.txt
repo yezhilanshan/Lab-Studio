@@ -1,0 +1,613 @@
+LatentWave: JEPA Pretraining for
+Wireless Foundation Models
+Ahmed Mohamed, Ahmed Aboulfotouh, and Hatem Abou-Zeid
+Department of Electrical and Software Engineering, University of Calgary, Canada
+Abstract—Wireless foundation models have emerged as a
+promising alternative to building separate models for each wire-
+less task. However, existing approaches rely on masked input
+reconstruction, which can bias representations toward low-level
+signal details. In this paper, we propose LatentWave, a wireless
+foundation model pretrained using a Joint-Embedding Predic-
+tive Architecture (JEPA) on diverse wireless spectrograms and
+channel state information (CSI). By predicting masked regions in
+latent space, LatentWave learns representations that are more
+transferable out of the box across diverse downstream tasks.
+The proposed architecture employs per-channel patch embeddings
+with stochastic channel sampling during pretraining, allowing it to
+process variable antenna counts and improving usability across
+heterogeneous wireless configurations. We evaluate LatentWave
+on four downstream tasks: RF signal classification, 5G NR posi-
+tioning, beam prediction, and LoS/NLoS classification, comparing
+against a masked-modeling baseline (WavesFM) pretrained on
+the same data. Additionally, we show that the masking geometry
+introduces a task-dependent inductive bias: frequency masking
+strongly favors channel-related tasks such as positioning and
+beam prediction, while region masking better preserves discrim-
+inability for signal classification.
+I. INTRODUCTION
+Conventional wireless AI systems require building a separate
+model for each task and environment, creating a growing
+collection of specialized pipelines [1] that are expensive to
+develop, deploy, and maintain. Foundation models and self-
+supervised learning [2] offer a compelling alternative: by
+learning general patterns from diverse, unlabeled data, a single
+pretrained model can be rapidly adapted to new downstream
+tasks, replacing many specialized systems with one general
+and adaptable architecture. In the context of network soft-
+warization, such an architecture can be viewed as a reusable
+software intelligence layer that maps heterogeneous wireless
+measurements into task-agnostic representations. Rather than
+deploying separate AI models for each wireless service, the
+Wireless Foundation Model (WFM) provides a shared substrate
+that can support multiple downstream functions such as sens-
+ing, localization, and beam management.
+Recent advances have been made toward this paradigm in the
+wireless domain, including the works in [3]–[7]. The dominant
+pretraining strategy for WFMs has been masked modeling
+with pixel-space reconstruction. However, this approach has an
+important limitation - by requiring the model to reconstruct raw
+input values, the model is forced to dedicate representational
+capacity to low-level spectral details, noise textures, and fine-
+grained amplitude variations that may carry little discrimina-
+tive value for downstream tasks. Results indicate that WFMs
+pretrained with pixel-space masking and reconstruction require
+either fine-tuning of several last layers or parameter-efficient
+adaptation to achieve competitive performance on tasks that
+differ substantially from the pretraining distributions. This
+suggests that the frozen representations alone do not fully
+capture the high-level semantic structure needed for diverse
+wireless tasks.
+The Joint-Embedding Predictive Architecture (JEPA) frame-
+work [8] offers an alternative - instead of reconstructing miss-
+ing pixels, JEPA trains a model to predict the representations
+of masked regions in a learned latent space. Because the
+prediction target is itself a learned abstraction, the model is
+encouraged to capture higher-level semantic features while
+discarding irrelevant low-level variation. However, the effec-
+tiveness of such an approach has not been explored for wireless
+modalities and tasks that leverage CSI and spectrograms.
+In this paper, we present LatentWave, a WFM pretrained
+with JEPA on a diverse dataset of wireless spectrograms
+and CSI. We evaluate the learned representations on four
+downstream tasks spanning communication, sensing, and posi-
+tioning. Our main contributions are as follows:
+• We propose LatentWave, the first JEPA-based WFM
+designed to support diverse downstream wireless tasks
+involving both spectrogram and CSI inputs. The architec-
+ture employs a per-channel patch embedding that allows
+processing of variable antenna counts, and a stochastic
+channel sampling strategy during pretraining that exposes
+the model to varying antenna configurations, enabling
+generalization across heterogeneous wireless setups.
+• We conduct a systematic comparison of four masking
+strategies: region, frequency, time, and random with vary-
+ing numbers of masks. We show that the masking geome-
+try introduces a task-dependent inductive bias: frequency
+masking favors channel-related tasks such as positioning
+and beam prediction, while region and time masking
+better preserve temporal discriminability needed for signal
+classification. No single strategy dominates all tasks.
+II. RELATED WORK
+Several recent works have explored the development of
+wireless foundation models. WavesFM [3] demonstrated that
+masked modeling can learn broadly transferable representations
+from image-like wireless modalities, including spectrograms
+and CSI, jointly supporting sensing, localization, and com-
+munication tasks. Other notable efforts have proposed foun-
+arXiv:2606.06373v1
+[eess.SP]
+4
+Jun
+2026
+Fig. 1: Latent-WFM architecture. Pretraining (top): a JEPA-based self-supervised approach predicts latent representations of
+masked spectrogram patches. Fine-tuning (bottom): the pretrained encoder is adapted to downstream wireless tasks.
+dation models for CSI feature extraction, using masked mod-
+eling as the pretraining objective with evaluation on line-of-
+sight/non-line-of-sight classification, and beam prediction [4].
+Contrastive learning has also been explored as an alternative
+self-supervised strategy: CSI2Vec [7] employs a triplet-based
+contrastive objective and validates its representations on posi-
+tioning and channel charting, while IQFM [5] learns general-
+purpose features from raw in-phase and quadrature (IQ) sig-
+nals for modulation classification, RF device fingerprinting,
+and angle-of-arrival estimation, demonstrating strong sample
+efficiency in few-shot settings. Multi-modal approaches [6] that
+jointly handle spectrograms, CSI, and IQ signals have also been
+investigated.
+More recently, WirelessJEPA [9] applied CNNs within a la-
+tent prediction framework to learn representations of IQ signals
+outperforming contrastive approaches on multiple downstream
+tasks. However, this work is limited to I/Q signals in both
+pretraining and downstream. More recently, the work in [10]
+proposed a JEPA-based approach to model the temporal evolu-
+tion of CSI. Their results show strong long-horizon prediction,
+suggesting that JEPA-based learning can capture meaningful
+temporal wireless dynamics in the form of CSI embeddings.
+While this work is valuable for temporal CSI representation
+learning and prediction, it does not focus on learning general-
+purpose features for wireless foundation models that would
+enable a broad and diverse set of downstream wireless tasks.
+III. LATENTWAVE METHODOLOGY
+This section presents the LatentWave methodology, includ-
+ing the architecture and masking strategies, training algorithms,
+and datasets for pretraining and downstream tasks.
+A. Proposed Pretraining Framework and Architecture
+Our foundation model is pretrained on a diverse, unlabeled
+dataset of wireless signal spectrograms and CSI using the JEPA
+framework [8]. The core principle is to learn representations by
+predicting in a learned latent space rather than reconstructing
+raw input data, as shown in Fig. 1. JEPA is a self-supervised
+framework that operates on masked inputs through three inter-
+acting components: a context encoder, a target encoder, and a
+predictor. Given an input, a subset of its content is masked. The
+context encoder processes only the visible (unmasked) portions
+and maps them to latent representations. The target encoder,
+which shares the same architecture, processes the complete
+input and produces latent targets. The predictor then forecasts
+the target encoder’s representations of the masked regions using
+only the context encoder’s output. Predictions occur in the
+latent space rather than in the raw input space. This process is
+illustrated in detail in [8].
+We now describe our instantiation of this framework for
+wireless data. Let 𝑥 ∈ R𝐶×𝐻×𝑊 denote input signals with 𝐶
+antennas, 𝐻 frequency bins and 𝑊 time steps. Each antenna
+channel 𝑥(𝑐) ∈ R𝐻×𝑊 , 𝑐 = 1, . . . , 𝐶, is independently divided
+into a grid of 𝐻
+𝑝ℎ
+× 𝑊
+𝑝𝑤
+non-overlapping patches of size
+𝑝ℎ × 𝑝𝑤. A shared linear projection maps each single-channel
+patch to a 𝐷-dimensional embedding. This yields a total of
+𝑁 = 𝐶 × 𝐻
+𝑝ℎ
+× 𝑊
+𝑝𝑤
+patch tokens z = [𝑧1, 𝑧2, . . . , 𝑧𝑁 ] ∈ R𝑁 ×𝐷.
+Because the projection operates on individual channels rather
+than across all 𝐶 channels simultaneously, the patch embedding
+layer is decoupled from the number of input antennas, allowing
+the same model to ingest inputs with an arbitrary number of
+channels without architectural modification. Sinusoidal posi-
+tional embeddings are added to each token to encode its spatial
+position within the signal grid.
+To improve robustness against varying channel configura-
+tions, we employ a stochastic channel sampling strategy during
+pretraining. For each training sample with 𝐶 available channels,
+we uniformly draw a random integer 𝐶′ ∼ U{1, 𝐶} and
+retain a randomly selected subset of 𝐶′ channels, discarding
+the rest. The effective token sequence length thus varies as
+𝑁 = 𝐶′ × 𝐻
+𝑝ℎ
+× 𝑊
+𝑝𝑤
+across iterations, exposing the model to
+diverse antenna configurations.
+During pretraining, we adopt a multi-block masking strat-
+egy in which several contiguous blocks spanning meaning-
+ful time–frequency-antenna regions are masked (rather than
+random individual patches). This encourages the model to
+learn high-level semantic structure in order to predict the
+missing regions, as local interpolation alone is insufficient. The
+masked patch indices form the set M ⊂ {1, . . . , 𝑁}, and the
+complementary visible set is defined as V = {1, . . . , 𝑁} \ M.
+Full details of the masking strategy and its hyperparameters
+are provided in Section III-B.
+Context Encoder. The context encoder 𝐸cxt( · ; 𝜃) is a stan-
+dard Vision Transformer (ViT) [11]. It receives only the visible
+patch tokens {𝑧𝑖}𝑖∈V and produces their latent representations:
+ℎ = 𝐸cxt {𝑧𝑖}𝑖∈V; 𝜃
+
+∈ R|V|×𝐷
+. (1)
+By processing only the unmasked subset, the context encoder is
+encouraged to build contextual representations from incomplete
+observations.
+Target Encoder. The target encoder 𝐸tgt( · ; ¯
+𝜃) shares the
+same ViT architecture as the context encoder but processes
+the complete sequence of patch tokens (over the 𝐶′ sampled
+channels) to produce the latent targets:
+𝑦 = 𝐸tgt {𝑧𝑖}𝑁
+𝑖=1; ¯
+𝜃
+
+∈ R𝑁 ×𝐷
+. (2)
+No gradients flow through the target encoder. Instead, its
+parameters are updated as an Exponential Moving Average
+(EMA) of the context encoder weights:
+¯
+𝜃𝑡 = 𝜏 ¯
+𝜃𝑡−1 + (1 − 𝜏) 𝜃𝑡 , (3)
+where 𝜏 ∈ (0, 1) is the momentum coefficient. This asymmetric
+update rule ensures the target encoder evolves smoothly to pro-
+vide stable training targets, preventing representation collapse.
+Predictor. The predictor 𝑃( · ; 𝜙) is a smaller, narrower ViT.
+It takes the context encoder output ℎ and forecasts the latent
+representations corresponding to the masked positions:
+ˆ
+𝑦 = 𝑃 ℎ; 𝜙
+
+∈ R|M|×𝐷
+. (4)
+Fig. 2: JEPA mask geometries to create different wireless
+inductive biases.
+The predictor’s limited capacity is deliberate: it forces the con-
+text encoder to produce maximally informative representations
+rather than offloading the prediction task to the predictor.
+The model is trained end-to-end to minimize the mean
+squared error between the predicted and target representations
+over the masked positions:
+L =
+1
+|M|
+∑︁
+𝑖∈M
+ˆ
+𝑦𝑖 − 𝑦𝑖
+2
+2
+, (5)
+with gradients flowing only through the context encoder pa-
+rameters 𝜃 and the predictor parameters 𝜙. The complete
+pretraining procedure is summarized in Algorithm 1.
+LatentWave Foundation Model. After pretraining, the tar-
+get encoder is extracted as the foundation model for down-
+stream tasks. Because it processed complete spectrograms
+throughout pretraining without any masking, its representations
+are directly aligned with the full inputs encountered during
+fine-tuning, unlike the context encoder, which was trained
+exclusively on partial observations.
+The context and target encoders are ViT models with 8
+transformer layers, 8 attention heads, embedding dimension
+𝐷=256, and patch size 16×16, totaling approximately 6.4M
+parameters. The predictor is a smaller ViT with 4 layers, 4
+attention heads, embedding dimension 128, and approximately
+880K parameters. Pretraining runs for 240 epochs with batch
+size 256, using a cosine learning rate schedule from 10−6 to a
+peak of 10−3 with 12 warmup epochs, weight decay of 0.04,
+and EMA momentum annealed from 0.996 to 1.0. For masking,
+the target scale is sampled from [0.15, 0.2] with aspect ratio
+in [0.75, 1.5], and the context scale from [0.85, 1.0].
+B. Masking Strategy
+The masking strategy defines the prediction problem faced
+during pretraining: what information is hidden, what context
+remains, and which structures the model must infer. We inves-
+tigate four strategies, each imposing a distinct inductive bias
+on the learned representation. In all variants, the context visible
+to the encoder is obtained by removing the target masks and
+sampling a context block of scale 𝑠𝑐 ∈ [𝑠𝑐,min, 𝑠𝑐,max] from
+the remaining patches. In all cases, masking a patch at a given
+time–frequency position removes the corresponding tokens
+across all sampled channels, ensuring a consistent prediction
+target in the spatial domain.
+Algorithm 1: LatentWave JEPA Pretraining
+Require: Dataset D, epochs 𝐸, total steps 𝑇, EMA
+bounds [𝜏min, 𝜏max]
+1: ⊲ Initialization
+2: Initialize context encoder 𝐸𝑐𝑥𝑡 (𝜃) and predictor 𝑃(𝜙)
+3: 𝐸𝑡𝑔𝑡 ( ¯
+𝜃) ← copy(𝐸𝑐𝑥𝑡 (𝜃)) {Initialize target encoder}
+4: Disable gradient tracking for 𝐸𝑡𝑔𝑡 {EMA updated.}
+5: 𝑡 ← 0 {Global step counter}
+6: for 𝑒 = 1 to 𝐸 do
+7: for each mini-batch 𝑥 ∈ D do
+8: 𝑡 ← 𝑡 + 1
+9: ⊲ Multi-block masking
+10: Sample 𝑁𝑚 target masks {𝑀(𝑖)
+𝑡 }𝑁𝑚
+𝑖=1
+11: 𝑀𝑐 ← SampleContext(𝑥, {𝑀(𝑖)
+𝑡 }) {Context
+mask excluding target regions}
+12: 𝑥𝑣𝑖𝑠 ← Apply(𝑥, 𝑀𝑐) {Extract visible patches
+via context mask}
+13: ⊲ Context encoding and prediction
+14: ℎ ← 𝐸𝑐𝑥𝑡 (𝑥𝑣𝑖𝑠; 𝜃) {Encode visible patches}
+15: ˆ
+𝑦 ← 𝑃(ℎ, pos({𝑀(𝑖)
+𝑡 }); 𝜙) {Predict targets
+with positional info}
+16: ⊲ Target representation
+17: 𝑦full ← 𝐸𝑡𝑔𝑡 (𝑥; ¯
+𝜃) {Target encoder on full input}
+18: 𝑦𝑛𝑜𝑟𝑚 ← LayerNorm(𝑦full) {Normalize}
+19: 𝑦(𝑖) ← Extract(𝑦𝑛𝑜𝑟𝑚, 𝑀(𝑖)
+𝑡 ) for 𝑖 = 1, . . . , 𝑁𝑚
+{Extract target representations}
+20: ⊲ Loss computation and optimization
+21: L ← 1
+𝑁𝑚
+Í𝑁𝑚
+𝑖=1 MSE ˆ
+𝑦(𝑖), 𝑦(𝑖)
+
+{Average loss
+over masks}
+22: Update 𝜃, 𝜙 via gradient descent on L
+23: ⊲ EMA and schedule updates
+24: 𝜏 ← 𝜏min + 𝑡
+𝑇 (𝜏max − 𝜏min) {Linear EMA
+schedule}
+25: ¯
+𝜃 ← 𝜏 ¯
+𝜃 + (1 − 𝜏) 𝜃 {EMA update of target
+encoder}
+26: Update learning rate and weight decay {Cosine
+schedules}
+27: end for
+28: end for
+Region masking. Following I-JEPA [8], 𝑁𝑚 two-
+dimensional masks are generated by sampling a target scale
+𝑠 ∈ [𝑠min, 𝑠max] and an aspect ratio 𝑎 ∈ [𝑎min, 𝑎max], which
+together determine the mask dimensions along the frequency
+and time axes. Each mask is placed at a uniformly random
+position within the spectrogram. Masks may overlap with
+one another but not with the context region. This encourages
+the model to capture joint spectro-temporal structure, such as
+modulation patterns and bandwidth occupancy.
+Frequency masking. Each of the 𝑁𝑚 masks spans the entire
+time axis while covering a contiguous subset of frequency bins.
+TABLE I: Pretraining Hyperparameters
+Hyperparameter Value
+Encoder Architecture
+Input size (𝐻 × 𝑊) 224 × 224
+Patch size (𝑝ℎ × 𝑝𝑤) 16 × 16
+Embedding dimension (𝐷) 256
+Transformer layers 8
+Attention heads 8
+Parameters ≈ 6.4M
+Predictor Architecture
+Embedding dimension 128
+Transformer layers 2
+Attention heads 4
+Parameters ≈ 490K
+Masking Strategy
+Number of target masks (𝑁𝑚) 2
+Target mask scale ([𝑠min, 𝑠max ]) [0.15, 0.2]
+Aspect ratio ([𝑎min, 𝑎max ]) [0.75, 1.5]
+Context mask scale ([𝑠𝑐,min, 𝑠𝑐,max ]) [0.85, 1.0]
+Minimum visible patches 10
+Optimization
+Epochs 3000
+Warmup epochs 150
+Batch size 128
+Initial learning rate 1 × 10−6
+Reference learning rate 1 × 10−3
+Final learning rate 1 × 10−6
+Initial weight decay 0.04
+Final weight decay 0.4
+EMA momentum ([𝜏min, 𝜏max ]) [0.996, 1.0]
+The model must reconstruct complete spectral bands from the
+remaining frequency content, imposing a bias toward learning
+inter-frequency dependencies and spectral envelope structure.
+Time masking. Each of the 𝑁𝑚 masks spans the entire
+frequency axis while covering a contiguous subset of time
+steps. The model must predict full spectral snapshots at hidden
+time instants, encouraging the capture of temporal dynamics
+such as burst timing and temporal correlations across frames.
+Random masking. As in WavesFM [3], individual patches
+are sampled uniformly at random without any spatial contiguity
+constraint. This provides maximal spatial diversity but allows
+local interpolation from neighboring patches to partially solve
+the prediction task.
+For the region, frequency, and time strategies, we vary 𝑁𝑚 ∈
+{2, 3, 4, 5, 6} to control the total masked area. A systematic
+comparison of all strategies and mask counts is presented in
+Section IV-C.
+C. Pretraining Data
+We pretrain on four unlabeled datasets spanning spectro-
+grams and CSI. The first is a privately collected spectro-
+gram dataset that contains 3200 WiFi, LTE, Bluetooth, 5G-
+NR, and ISM signals captured over the air using Software-
+Defined Radios (SDRs) at various sub-6GHz center frequencies
+with sampling rates of 10–60 MHz. The second is an RF
+fingerprinting spectrogram dataset comprising approximately
+6000 single-channel samples [12]. The third is a 5G NR
+indoor CSI dataset with approximately 15 000 five-channel
+TABLE II: Downstream performance under linear probing. Classification tasks report mean per-class accuracy (%, ↑); positioning
+reports mean positioning error (m, ↓). Results are mean ± std over three seeds. Best self-supervised result in bold.
+Task
+LatentWave
+(Region)
+LatentWave
+(Freq.) WavesFM Supervised
+RF Signal Classification 80.9 ± 2.94 66.1 ± 3.10 80.3 ± 0.73 86.5 ± 1.69
+5G NR Positioning (m) 2.54 ± 0.009 2.32 ± 0.023 2.77 ± 0.037 0.71 ± 0.001
+Beam Prediction 51.6 ± 0.35 63.1 ± 0.45 51.2 ± 0.36 88.9 ± 0.50
+LoS/NLoS Classification 92.9 ± 0.57 93.4 ± 0.26 93.4 ± 0.54 95.9 ± 0.27
+samples [13]. The fourth is a WiFi CSI dataset with 840 three-
+channel samples [14]. Together, the pretraining corpus totals
+roughly 25 000 samples with varying numbers of channels.
+All spectrogram samples are converted to decibel scale as
+20 log10(·). Every sample, whether spectrogram or CSI, is then
+resized to 224 × 224 and normalized using per-channel mean
+and standard deviation computed over each pretraining dataset.
+D. Baseline and Downstream Evaluation
+We use WavesFM [3] as the primary baseline, since it was
+pretrained with masked modeling. We reproduced it on the
+same pretraining datasets and evaluated on the same down-
+stream tasks. This controlled comparison isolates the effect of
+the JEPA pretraining objective on representation quality.
+We evaluate on four downstream tasks: RF signal classi-
+fication using CommRad RF [15], 5G NR positioning using
+5G CSI (the outdoor scenario, distinct from the indoor scenario
+used during pretraining), beam prediction, and LoS/NLoS
+classification both using DeepMIMO [16]. These tasks span
+communication, sensing, and positioning domains, with several
+distributions and modalities that differ from the pretraining
+data. For each task, we evaluate using linear probing where
+the encoder is frozen, and a single linear head is trained on
+the mean-pooled patch representations for LatentWave and the
+CLS token for WavesFM.
+IV. RESULTS
+We now present and discuss the results. Section IV-A
+details the evaluation metrics and implementation specifics.
+Section IV-B compares LatentWave against supervised and
+self-supervised baselines under linear probing. Section IV-C
+ablates the masking strategies to justify the design choices.
+A. Experimental Setup
+For all downstream tasks, we split the data into 80% training
+and 20% test sets. We report mean per-class accuracy for
+all classification tasks, namely RF signal classification, beam
+prediction, and LOS/NLOS classification, as it accounts for
+class imbalance more faithfully than overall accuracy. Given
+𝐶 classes, the mean per-class accuracy is defined as
+Accmpc =
+1
+𝐾
+𝐾
+∑︁
+𝑘=1
+𝑛correct
+𝑘
+𝑛𝑘
+, (6)
+where 𝑛𝑘 is the total number of test samples belonging to class
+𝑘 and 𝑛correct
+𝑘 is the number of correctly classified samples
+in that class. For the positioning task, we report the mean
+positioning error, defined as the average Euclidean distance
+between the predicted and ground-truth coordinates:
+MPE =
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+p̂𝑖 − p𝑖 2
+, (7)
+where 𝑁 is the number of test samples, p̂𝑖 ∈ R3 is the predicted
+position, and p𝑖 ∈ R3 is the ground-truth position of the 𝑖-th
+sample.
+For all tasks, the frozen encoder embeddings are first
+standardized to zero mean and unit variance using statistics
+computed on the training split. A logistic regression classifier
+is used for classification tasks, and linear regression for po-
+sitioning. Main results are reported as the mean and standard
+deviation over three random seeds, controlling the train/test
+split.
+B. Main Results
+Table II compares the downstream performance of all meth-
+ods under linear probing. LatentWave with region masking
+performs on par with WavesFM across all tasks, with marginal
+gains on RF signal classification and positioning, indicating
+that predicting in latent space matches pixel-level reconstruc-
+tion in representation quality.
+Switching to frequency masking yields a markedly different
+profile: beam prediction improves by over 11 percentage points
+and positioning error decreases from 2.54 m to 2.32 m, but RF
+signal classification drops substantially from 80.9% to 66.1%.
+This suggests that frequency masking encourages representa-
+tions that capture spatial and spectral structure beneficial for
+channel-related tasks, at the cost of temporal patterns needed
+to discriminate signal types. LoS/NLoS classification remains
+largely unaffected across all strategies.
+Despite using only a frozen encoder with a linear head, the
+self-supervised methods closely approach the supervised upper
+bound on RF classification and LoS/NLoS classification, with
+the remaining gap on beam prediction and positioning sug-
+gesting clear benefit from scaling pretraining data or exploring
+lightweight fine-tuning.
+TABLE III: Masking strategy ablation. The effective masking ratio for each configuration is shown in the second header row.
+Evaluation metrics are identical to table II. Best result per task in bold.
+Region Frequency Time Rand.
+𝑁𝑚 2 3 4 5 6 2 3 4 5 6 2 3 4 5 6 –
+Mask ratio 29% 43% 57% 71% 80% 29% 43% 57% 71% 80% 29% 43% 57% 71% 80% 75%
+RF Signal Classif. 73.3 73.1 74.4 79.7 83.5 74.6 73.9 68.9 68.0 68.3 76.0 78.2 77.7 80.2 81.5 71.2
+5G NR Positioning (m) 3.19 2.71 2.30 2.45 2.55 3.20 2.95 2.42 2.36 2.32 3.43 3.54 3.43 3.18 2.84 2.90
+Beam Prediction 37.2 40.7 46.5 48.6 51.6 44.6 45.6 49.8 59.5 63.5 33.6 38.5 37.4 38.7 44.6 39.2
+C. Masking Ablations
+Table III ablates the masking strategy and the number
+of masks 𝑁𝑚 across three downstream tasks. The effective
+masking ratio, i.e., the average proportion of patches hidden
+from the context encoder, increases with 𝑁𝑚 from 29% at
+𝑁𝑚=2 to 80% at 𝑁𝑚=6.
+Increasing 𝑁𝑚 consistently improves beam prediction across
+all structured strategies. RF signal classification follows the
+opposite trend under frequency masking, degrading as more
+spectral bands are hidden, whereas region and time masking
+both improve with more masks. This confirms that frequency
+masking biases representations toward inter-frequency structure
+at the expense of temporal discriminability needed for signal
+type recognition. Positioning error generally decreases with
+more masks for frequency and time strategies, while region
+masking achieves its best positioning result at 𝑁𝑚=4 before
+slightly degrading.
+Random masking at a 75% ratio performs competitively
+with low-mask-count structured strategies but is consistently
+outperformed by higher mask counts, confirming that con-
+tiguous masking with sufficient coverage yields stronger rep-
+resentations. Overall, no single strategy dominates all tasks,
+motivating the fusion approach in Table II and the task-specific
+strategy selection discussed in Section IV-B.
+V. CONCLUSION
+This paper presented LatentWave, a JEPA-based wireless
+foundation model that learns by predicting masked regions
+in latent space. The architecture decouples the encoder from
+a fixed antenna count through per-channel patch embedding
+and stochastic channel sampling, enabling a single pretrained
+model to handle both spectrogram and CSI inputs with varying
+numbers of channels. We also showed that the masking ge-
+ometry introduces a task-dependent inductive bias: frequency
+masking favors channel-related tasks such as positioning and
+beam prediction, while region masking better preserves dis-
+criminability for signal classification. These findings position
+masking strategy design as a promising direction for building
+more transferable wireless foundation models.
+REFERENCES
+[1] A. Alhammadi, I. Shayea, A. A. El-Saleh, M. H. Azmi, Z. H. Ismail,
+L. Kouhalvandi, S. A. Saad, and S. El Kafhali, “Artificial intelligence in
+6G wireless networks: Opportunities, Applications, and Challenges,” Int.
+J. Intell. Syst., 2024.
+[2] Z. Yang, H. Du, D. Niyato, X. Wang, Y. Zhou, L. Feng, F. Zhou, W. Li,
+and X. Qiu, “Revolutionizing wireless networks with self-supervised
+learning: A Pathway to Intelligent Communications,” arXiv preprint
+arXiv:2406.06872, 2024.
+[3] A. Aboulfotouh, E. Mohammed, and H. Abou-Zeid, “6G WavesFM: A
+foundation model for sensing, communication, and localization,” IEEE
+Open J. Commun. Soc., vol. 6, 2025.
+[4] T. Yang, P. Zhang, M. Zheng, Y. Shi, L. Jing, J. Huang, and N. Li,
+“WirelessGPT: A generative pre-trained multi-task learning framework
+for wireless communication,” IEEE Network, vol. 39, no. 5, pp. 58–65,
+2025.
+[5] O. Mashaal and H. Abou-Zeid, “IQFM—A wireless foundation model
+for I/Q streams in AI-Native 6G,” IEEE Open J. Commun. Soc., vol. 7,
+pp. 1426–1441, 2026.
+[6] A. Aboulfotouh and H. Abou-Zeid, “Multimodal wireless foundation
+models,” arXiv preprint arXiv:2511.15162, 2025.
+[7] V. Palhares, S. Taner, and C. Studer, “CSI2Vec: Towards a universal
+CSI feature representation for positioning and channel charting,” arXiv
+preprint arXiv:2506.05237, 2025.
+[8] M. Assran, Q. Duval, I. Misra, P. Bojanowski, P. Vincent, M. Rabbat,
+Y. LeCun, and N. Ballas, “Self-supervised learning from images with a
+joint-embedding predictive architecture,” in Proc. IEEE Conf. Comput.
+Vis. Pattern Recognit. (CVPR), pp. 15619–15629, June 2023.
+[9] V. Chu, O. Mashaal, and H. Abou-Zeid, “WirelessJEPA: A multi-antenna
+foundation model using spatio-temporal wireless latent predictions,”
+arXiv preprint arXiv:2601.20190, 2026.
+[10] S. Naoumi, M. Bennis, and M. Chafii, “Structured latent dynam-
+ics in wireless CSI via homomorphic world models,” arXiv preprint
+arXiv:2603.20048, 2026.
+[11] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Un-
+terthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, J. Uszkoreit,
+and N. Houlsby, “An image is worth 16x16 words: Transformers for
+image recognition at scale,” in Proc. Int. Conf. Learn. Represent. (ICLR),
+2021.
+[12] G. Reus-Muns, D. Jaisinghani, K. Sankhe, and K. Chowdhury, “Trust
+in 5G open RANs through machine learning: RF fingerprinting on
+the POWDER PAWR platform,” in Proc. IEEE Glob. Commun. Conf.
+(GLOBECOM), 2020.
+[13] J. Yang, X. Chen, H. Zou, D. Wang, Q. Xu, and L. Xie, “EfficientFi:
+Toward large-scale lightweight WiFi sensing via CSI compression,” IEEE
+Internet Things J., vol. 9, no. 13, pp. 13086–13095, 2022.
+[14] D. Wang, J. Yang, W. Cui, L. Xie, and S. Sun, “Multimodal CSI-
+based human activity recognition using GANs,” IEEE Internet of Things
+Journal, vol. 8, no. 24, pp. 17345–17355, 2021.
+[15] M. Zahid, “CommRad RF: A dataset of communication radio signals for
+detection, identification and classification,” Zenodo, 2024.
+[16] A. Alkhateeb, “DeepMIMO: A generic deep learning dataset for millime-
+ter wave and massive MIMO applications,” in Proc. Inf. Theory Appl.
+Workshop (ITA), (San Diego, CA), pp. 1–8, Feb 2019.
+

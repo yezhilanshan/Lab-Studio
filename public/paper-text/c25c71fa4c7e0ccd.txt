@@ -1,0 +1,663 @@
+LLM4XCE: Large Language Models for Extremely
+Large-Scale Massive MIMO Channel Estimation
+Renbin Li, Shuangshuang Li, Peihao Dong
+College of Electronic and Information Engineering, Nanjing University of Aeronautics and Astronautics, Nanjing 211106, China
+Email: {renbinli, lishsh, phdong}@nuaa.edu.cn
+Abstract—Extremely large-scale massive multiple-input
+multiple-output (XL-MIMO) is a key enabler for sixth-
+generation (6G) networks, offering massive spatial degrees of
+freedom. Despite these advantages, the coexistence of near-field
+and far-field effects in hybrid-field channels presents significant
+challenges for accurate estimation, where traditional methods
+often struggle to generalize effectively. In recent years, large
+language models (LLMs) have achieved impressive performance
+on downstream tasks via fine-tuning, aligning with the semantic
+communication shift toward task-oriented understanding over
+bit-level accuracy. Motivated by this, we propose Large Language
+Models for XL-MIMO Channel Estimation (LLM4XCE), a
+novel channel estimation framework that leverages the semantic
+modeling capabilities of large language models to recover
+essential spatial-channel representations for downstream tasks.
+The model integrates a carefully designed embedding module
+with Parallel Feature-Spatial Attention, enabling deep fusion of
+pilot features and spatial structures to construct a semantically
+rich representation for LLM input. By fine-tuning only the top
+two Transformer layers, our method effectively captures latent
+dependencies in the pilot data while ensuring high training
+efficiency. Extensive simulations demonstrate that LLM4XCE
+significantly outperforms existing state-of-the-art methods under
+hybrid-field conditions, achieving superior estimation accuracy
+and generalization performance.
+Index Terms—XL-MIMO, LLMs, semantic communication,
+channel estimation, attention
+I. INTRODUCTION
+With the advancement of sixth-generation mobile commu-
+nication (6G), extremely large-scale massive multiple-input
+multiple-output (XL-MIMO) systems have emerged as a key
+enabling technology for high-capacity and highly reliable
+communications, owing to their massive antenna arrays, ultra-
+high spectral efficiency, and spatial resolution [1], [2]. How-
+ever, the accurate acquisition of channel state information
+(CSI) remains a major performance bottleneck, especially in
+hybrid-field environments involving near-field and far-field
+coexistence, rich multipath propagation and fine-grained beam
+control. In such cases, traditional channel estimation methods
+often fail to deliver satisfactory performance.
+In recent years, deep learning-based methods have been
+introduced to channel estimation tasks [3]. In [4], a lightweight
+This work was supported in part by the National Science Foundation of
+China under Grants 62471226, 62101253, the Fundamental Research Funds
+for the Central Universities (NO. NS2024023), and the Natural Science
+Foundation of Jiangsu Province under Grants BK20210283. (Corresponding
+author: Peihao Dong.)
+deep convolutional network was designed specifically for
+XL-MIMO systems to improve estimation efficiency while
+reducing computational overhead. In [5], an attention-aided
+deep learning framework was proposed by integrating attention
+mechanisms into conventional deep networks, which signif-
+icantly improved estimation accuracy. Furthermore, in [6],
+a hybrid attention-enhanced Transformer was developed to
+model the complex channel structure in XL-MIMO, effectively
+integrating multi-dimensional feature attention. However, these
+methods still suffer from degraded estimation accuracy in
+complex scenarios, limited adaptability to environmental vari-
+ations, and poor generalization capability.
+Meanwhile, large language models (LLMs) [7] have started
+to be applied to wireless communication tasks, such as time
+series forecasting, channel prediction, and beam prediction,
+showing great potential in data-driven modeling and cross-task
+generalization. For example, in [8], the Time-LLM method
+reprogrammed input sequences to apply pre-trained language
+models to time series forecasting, achieving promising results
+on benchmark datasets. In [9], the channel prediction frame-
+work discretized CSI sequences into communication language
+and modeled them using LLMs to capture context-aware
+temporal dependencies. In [10], beamforming indices were
+encoded as text tokens and classified using an LLM, leading
+to improved beam selection performance in millimeter-wave
+systems. On the other hand, semantic communication shifts
+the focus from bit-level accuracy to conveying task-relevant
+meaning [11]. Semantic features have been demonstrated to
+be robust against channel impairments and beneficial for
+downstream tasks, as evidenced by recent studies [12], [13].
+Motivated by these advances, this paper proposes a novel
+LLM-based channel estimation framework that leverages se-
+mantic representations to improve robustness and general-
+ization under hybrid-field channel conditions in XL-MIMO
+systems. The semantic representations in the proposed frame-
+work include target-related information such as angles and
+distances, as well as spatial structural features of the channel
+matrix, which help enhance the task relevance and interference
+robustness of channel modeling. The main contributions of this
+paper can be summarized as follows
+1) This work is the first to adapt LLMs for hybrid-field
+channel estimation, and proposes a Parallel Feature-Spatial
+Attention module to effectively fuse the feature and spatial
+dimensions of pilot signals. This addresses the input mismatch
+arXiv:2512.08955v1
+[cs.LG]
+28
+Nov
+2025
+between pilot matrices and LLMs. It also establishes a general
+input mapping framework that promotes efficient fusion and
+processing of multimodal data in semantic communication.
+2) To significantly reduce training costs, a lightweight LLM
+fine-tuning strategy is designed that updates only the top two
+Transformer layers, effectively lowering the computational
+resources required for training. Simulation results show that
+the proposed method outperforms various advanced baselines
+in both estimation accuracy and generalization under complex
+hybrid-field scenarios.
+II. SYSTEM MODEL
+A. Signal Transmission Model
+As shown in Fig. 1, we consider a time-division duplexing
+(TDD) XL-MIMO system, in which a base station (BS)
+equipped with M antennas communicates with a single-
+antenna mobile user. The wireless channel between the BS
+and the user consists of L propagation paths, capturing the
+multipath characteristics of the environment.
+The pilot signal transmitted by the user within a time slot
+is denoted by x ∈ C, the uplink received signals at the BS y
+can be formulated by
+y = hx + n, (1)
+where h ∈ CM×1
+as the channel vector between the base
+station and the user, and n ∼ CN (0, 1) ∈ CM×1
+represents
+the additive Gaussian noise.
+Fig. 1. A hybrid-field XL-MIMO system.
+B. Channel Model
+In XL-MIMO systems, far-field propagation can typically
+be approximated as planar waves. However, in the near-field
+region, wave propagation exhibits spherical characteristics
+and thus cannot be simplified using the far-field assumption.
+Therefore, near-field effects must be explicitly considered.
+According to [14], the boundary between the near-field and
+far-field regions is generally defined by the Rayleigh distance
+DR =
+2D2
+a
+λ , where Da and λ represent the array aperture
+and the carrier wavelength, respectively. When the propagation
+distance between the array and the scatterer exceeds DR ,
+the wavefront can be approximated as planar and the signal
+is considered to be in the far-field region. Otherwise, the
+wavefront is spherical and the signal lies in the near-field
+region. Assuming a uniform linear array (ULA) equipped with
+M antennas, the spacing between adjacent antennas is set to
+d = λ
+2 , the Rayleigh distance is given by
+DR =
+2 M λ
+2
+2
+λ
+=
+M2
+λ
+2
+. (2)
+For instance, when an XL-MIMO BS is equipped with 256
+antennas and operates at the frequency band of 30 GHz, DR
+can reach 327 meters. Such a considerable range may cover
+a portion of users, placing them in the near-field region and
+consequently subjecting them to near-field propagation effects.
+When the scattering distance is larger than DR, the channel
+is modeled using the far-field formula expressed as
+hf =
+r
+M
+L
+L
+X
+l=1
+glaf (θl), (3)
+where, af (θl) ∈ CM×1
+denotes the array response vector of
+the base station for the l-th path, given by
+af (θl) = 1
+√
+M
+[1, e−j2π d
+λ sin θl
+, . . . , e−j2π d
+λ (M−1) sin θl
+]T
+, (4)
+where θl ∈ [−π
+2 , π
+2 ] and gl denote the azimuth angle and the
+gain of the l-th path, respectively.
+When the scattering distance is smaller than DR, the chan-
+nel is modeled using the near-field formula expressed as
+hn =
+r
+M
+L
+L
+X
+l=1
+glan(θl, rl), (5)
+where an(θl, rl) = 1
+√
+M
+[e−j 2π
+λ (rl,1−rl)
+, . . . , e−j 2π
+λ (rl,M −rl)
+]T
+is the antenna array response vector with the azimuth angle
+θl ∈
+
+−π
+2 , π
+2
+
+and the distance rl for the l-th path. The gl is
+the path gain and the distance rl represents the distance from
+the l-th scatterer to the center of the base station antenna array.
+The distance between the l-th scatterer and the m-th antenna
+element is given by rl,m =
+p
+r2
+l + δ2
+md2 − 2rlδmd sin θl,
+where δm = 2m−M−1
+2 , m = 1, . . . , M.
+However, in certain practical scenarios, the scattering envi-
+ronment may include both near-field and far-field components.
+In such cases, the signal propagation and reception are si-
+multaneously influenced by spherical wavefronts generated by
+near-field scatterers and planar wavefronts arising from far-
+field scatterers. This results in a hybrid-field channel model
+that deviates from traditional assumptions and introduces new
+challenges for both system design and signal processing. The
+hybrid-field channel model can be expressed as
+h = hf + hn
+=
+r
+M
+L
+" L0
+X
+l=1
+glaf (θl) +
+L
+X
+l=L0+1
+glan(θl, rl)
+#
+.
+(6)
+The above equation shows that the hybrid-field contains L0
+far-field paths and L − L0 near-field paths.
+Fig. 2. Overview of the proposed LLM4XCE network architecture.
+III. LLM FOR CHANNEL ESTIMATION
+In this section, we propose a Large Language Model-based
+channel estimation method for extremely large-scale MIMO
+systems, named LLM4XCE, which aims to recover the true
+high-dimensional channel matrix from its noisy observation.
+To enable the text-pretrained LLM to effectively handle the
+complex-valued matrix format of the noisy channel, we de-
+sign a dedicated format conversion and feature extraction
+framework, which includes High-dimensional Preprocessing
+module, Dual-Attention Embedding module, Partially Train-
+ing LLM module, Residual structure, and Postprocessing &
+Output module. The architecture of the proposed network
+components is illustrated in Fig. 2, and the following sections
+provide a detailed description of each network module.
+A. High-dimensional Preprocessing
+Since the channels of multiple users exhibit the same
+general structure as in equation (1), our design is readily
+extendable to the multi-user scenario. For simplicity, we
+concentrate on the single-user case in the subsequent analysis.
+Given that x in (1) is a pilot signal with a known power, and
+assuming its power is P, we can express x as x =
+√
+Px̄,
+where x̄ is a pilot signal with unit power. Thus, without loss
+of generality, we can simplify (1) to
+y =
+√
+Ph + n, (7)
+based on this, the least squares (LS) estimate of h ∈ CM×1
+is given by
+ĥLS =
+y
+√
+P
+= h +
+n
+√
+P
+. (8)
+The coarse estimate ĥLS will be refined by LLM4XCE to
+yield a more accurate version. The complex vector h is split
+into its real and imaginary components of equal dimensions,
+where are then concatenated and reshaped into a tensor with
+dimensions H ∈ R
+√
+M×
+√
+M×2
+, where M is assumed to be a
+perfect square. Similarly, the complex vector ĥLS is reshaped
+into a matrix ĤLS ∈ R
+√
+M×
+√
+M×2
+, which is fed into a 2D
+convolutional layer with F filters and a kernel size of 3 × 3.
+This convolutional layer serves for shallow feature extraction
+and dimensionality enhancement H1 ∈ R
+√
+M×
+√
+M×F
+. The
+resulting feature maps are subsequently reshaped into a matrix
+of size H2 ∈ RM×F
+, which is used as the input to the Dual-
+Attention Embedding module.
+B. Dual-Attention Embedding
+The Dual-Attention Embedding module is specifically de-
+signed for preliminary feature extraction prior to the LLM.
+As illustrated in Fig. 2, it consists of two Parallel Feature-
+Spatial Attention branches, a fully connected (FC) layer, and
+a positional encoding module.
+As illustrated in Fig. 3, the input feature HIN is first
+processed in parallel by a Feature-Wise Attention module
+and a Spatial-Aware Attention module. The outputs of these
+two branches are concatenated along the last dimension to
+form HCO, effectively integrating spatial and feature repre-
+sentations. This fusion facilitates the ability of the subsequent
+LLM to learn the spatial configuration of antenna elements.
+The fused representation HCO is then passed through a fully
+connected layer to restore the original feature dimensionality,
+denoted as HFC. A residual connection with the initial input
+HIN is applied, followed by layer normalization to obtain
+HLN, which helps mitigate gradient vanishing or explosion and
+improves model stability. The output HLN is further refined
+by a feed-forward network (FFN), along with another residual
+connection and layer normalization, yielding the final output
+HOUT.
+The representation obtained after the second Parallel
+Feature-Spatial Attention layer is denoted as H3 ∈ RM×F
+.
+The communication feature matrix H3 passes through a fully
+connected layer to project its last dimension to d, the em-
+bedding size required by the GPT2 [15] model. The resulting
+tensor, denoted as H4 ∈ RM×d
+, is enhanced with a learnable
+positional embedding following the GPT-2 design, resulting in
+H5 ∈ RM×d
+, which serves as the input to the LLM.
+The Feature-Wise Attention module employs a multi-head
+attention mechanism, where multiple heads capture diverse
+feature representations that are subsequently fused into a
+Fig. 3. Illustration of Parallel Feature-Spatial Attention module.
+unified output. For each head i = {1, · · · , I}, we define
+query matrices Qi = HINWQ
+i , key matrices Ki = HINWK
+i ,
+and value matrices Vi = HINWV
+i , where Qi, Ki, and
+Vi ∈ RM×dk
+. Specifically, dk = F
+I represents the hidden di-
+mension of each head, however, in this work, we intentionally
+set dk = F to facilitate deeper feature extraction from long
+sequences. The output of the multi-head attention mechanism
+is obtained by computing the attention for each head as
+Zi = Attention(Qi, Ki, Vi), (9)
+by aggregating each Zi ∈ RM×dk
+in every head, the outputs
+of all heads are then concatenated, and a linear transformation
+is applied to obtain the final result
+Z = Concat(Z1, Z2, . . . , ZI)WO
+, (10)
+where Z ∈ RM×F
+, Concat(Z1, Z2, . . . , ZI) ∈ RM×I·dk
+and WO
+∈ RI·dk×F
+. The out Z represents the aggregated
+representation that integrates the feature dimensions from all
+attention heads, which is used for subsequent fusion with
+Spatial-Aware Attention.
+For the Spatial-Aware Attention module, the input is trans-
+posed to align spatial dimensions, followed by multi-head
+attention to extract spatial features. The outputs are then fused
+into a unified spatial representation.
+Unlike conventional methods that rely solely on feature
+attention, this work introduces a Parallel Feature-Spatial Atten-
+tion module, motivated by the structured physical arrangement
+of antennas in a uniform linear array. While feature attention is
+effective at modeling semantic representations of the channel,
+it is limited in capturing the spatial dependencies among an-
+tenna elements. In contrast, spatial attention explicitly models
+the spatial correlations inherent in the array structure, thereby
+providing the LLM with physical priors. By integrating spatial
+attention with feature attention, the model’s awareness of array
+geometry is enhanced, leading to improved channel estimation
+accuracy.
+To incorporate positional information of the input signals,
+this work adopts the learnable positional encoding mechanism
+from GPT-2. Specifically, for each input patch vector Hj, a
+trainable positional encoding Pj corresponding to its position
+is added, resulting in the final input representation
+H̃j = Hj + Pj, (11)
+where, Hj ∈ Rd
+denotes the embedding of the j-th input token
+H4, and Pj ∈ Rd
+is the learnable positional encoding vector
+corresponding to position j. The dimension d the feature
+dimension of the GPT-2 model, corresponding to its hidden
+size.
+C. Partially Training LLM
+Recent studies [9], [10] show that LLMs, pretrained on
+large text corpora, can be fine-tuned for cross-modal tasks
+like channel prediction and beam selection. Inspired by their
+strong generalization ability, we explore applying LLMs to
+channel estimation. However, due to the significant difference
+between text data and the channel matrix, pretrained LLMs
+cannot directly process non-linguistic data. To address this, we
+design a preprocessor and embedding module to convert the
+channel matrix into an embedded representation. The resulting
+embedded “tokens” H5 are then fed into the backbone of the
+LLM for modeling,
+HLLM
+= LLM(H5) ∈ RM×d
+, (12)
+where LLM(·) denotes backbone networks of the LLM. With-
+out loss of generality, this study adopts GPT-2 as the backbone
+architecture of the LLM. The backbone of GPT-2 consists
+of a learnable positional embedding layer and a stack of
+Transformer decoder blocks, where the number of layers and
+the feature dimensions can be flexibly adjusted based on
+specific requirements.
+During training, layers 1 through 10 of GPT-2 are fully
+frozen, including the multi-head attention mechanisms, feed-
+forward networks, and layer normalization layers, in order to
+retain general pre-trained knowledge. Fine-tuning is restricted
+to the multi-head attention, feed-forward, and layer normal-
+ization components in layers 11 and 12, as well as the final
+output layer normalization and the positional embedding, to
+better adapt the model to the channel estimation task.
+It is worth noting that the GPT-2 backbone in this frame-
+work can be readily replaced with other LLMs. The selection
+of the LLM type and model size should balance training cost
+and performance requirements.
+D. Postprocessing & Output
+The output of the LLM, denoted as H6 ∈ RM×d
+, is first
+passed through a fully connected layer to reduce the last
+dimension to F,
+H7 = FC(H6). (13)
+Where, H7 ∈ RM×F
+, is processed sequentially by two 2D
+convolutional layers with 64 filters each, followed by a third
+2D convolutional layer with 2 filters, progressively refining
+and stabilizing the feature representation. The final output
+H8 ∈ R
+√
+M×
+√
+M×2
+is interpreted as the estimated noise com-
+ponent in the channel. To obtain the final estimated channel
+Ĥ ∈ R
+√
+M×
+√
+M×2
+, the predicted noise H8 is subtracted from
+the noisy input channel ĤLS,
+Ĥ = ĤLS − H8. (14)
+The final estimated channel vector ĥ ∈ CM
+is obtained
+by reshaping the estimated matrix Ĥ. This subtraction-based
+residual modeling helps suppress noise and recover a cleaner
+channel representation.
+E. Training Settings
+In XL-MIMO systems, user channels may shift between
+near-field and far-field due to mobility. To avoid performance
+loss from model mismatch, a unified channel estimation frame-
+work is needed that adapts to varying propagation conditions
+without requiring dynamic state information. To this end,
+LLM4XCE is trained on data from a hybrid-field channel
+model [16]. According to equation (6), the channel vector h
+is power-normalized to enhance the stability and convergence
+of neural network training. Selecting appropriate values for
+L0 and L further improves the training efficiency and gen-
+eralization ability of LLM4XCE under varying propagation
+conditions and path counts. Given L0 and L, the training
+dataset Dtr is generated using the channel vector h as defined
+in equation (6), and LLM4XCE is trained on this dataset by
+minimizing the mean squared error (MSE) loss,
+L =
+1
+Ntr
+Ntr
+X
+j=1
+H(j)
+− Ĥ(j)
+2
+F
+, (15)
+where, Ntr denotes the number of training samples, and the
+superscript (j) indicates the j-th sample.
+IV. EXPERIMENTS
+In this section, we first present the preparations and data
+processing conducted for the simulation. The second part
+provides the simulation results, comparing and analyzing
+LLM4XCE with other approaches.
+A. Simulation Setup
+The simulation parameters are configured as follows the
+number of BS antennas M = 256, the wavelength λ =
+0.01m, the mean path gain σ2
+= 1, θl ∼ U −π
+2 , π
+2
+
+,
+and rl ∼ U(10, 80) meters. The normalized MSE (NMSE),
+E{∥H−Ĥ∥2
+F /∥H∥2
+F }, is used to measure the channel estima-
+tion performance. In the simulation, the training and validation
+datasets, generated based on the hybrid-field channel model in
+(6) with L = 6 and L0 = 1, consist of 45,000 and 5,000 sam-
+ples, respectively. The test set, also based on the hybrid-field
+channel model in (6), consists of 2,000 samples. In this work,
+the smallest version of GPT-2 with a feature dimension of
+d = 768 is employed. For downstream processing, only the top
+TABLE I
+HYPER-PARAMETERS FOR NETWORK TRAINING
+Parameter Value
+Batch size 64
+Epochs 200
+Optimizer Adam (betas = (0.9,0.999))
+Starting learning rate 0.001
+Adaptive LR decay 0.1 per 50 epochs
+Fig. 4. NMSE versus SNR for the far-field user.
+two Transformer layers are activated. The LLM4XCE network
+comprises 17M trainable parameters, with an additional 109M
+parameters kept frozen during training. The hyperparameters
+used for model training are summarized in Table I. Finally, we
+compare the proposed method with traditional LS estimation,
+linear minimum mean square error (LMMSE) estimation,
+hybrid field orthogonal matching pursuit (HY-OMP) [16], XL-
+MIMO channel network (XLCENet) [4], and mixed attention
+transformer based channel estimation neural network (MAT-
+CENet) [6].
+B. Simulation Results
+The following discusses the channel estimation performance
+of LLM4XCE versus other schemes under various signal-to-
+noise ratio (SNR) conditions. The horizontal axis shows SNR
+values from -5 dB to 20 dB, “LLM4XCE”, “MAT-CENet”,
+and “XLCNet” are trained on the same dataset with 1 far-field
+and 5 near-field paths.
+Fig. 4 illustrates the normalized mean squared error (NMSE)
+performance of far-field user under different SNR values,
+corresponding to scenarios with 3 and 6 far-field paths. As
+shown in Fig. 4, LLM4XCE demonstrates significant advan-
+tages in far-field environments, consistently outperforming all
+baseline methods. Notably, it achieves higher sensitivity and
+accuracy when the number of paths is 3. Even in more complex
+scenarios with 6 paths, the model maintains stable and superior
+estimation performance.
+Fig. 5 illustrates the NMSE performance trends of near-
+field user with varying SNR values under two different path
+settings: 3 and 6 near-field paths. The results show that
+Fig. 5. NMSE versus SNR for the near-field user.
+Fig. 6. NMSE versus the number of far-field paths L0 for the hybrid-field
+with L = 6.
+LLM4XCE consistently outperforms existing baseline meth-
+ods across all SNR levels, demonstrating its strong capabil-
+ity in extracting features under complex near-field channel
+conditions. Although the increase in the number of paths
+leads to a slight rise in estimation error, LLM4XCE still
+maintains a significant performance advantage in high-SNR
+scenarios, further highlighting its robustness in high-quality
+communication environments.
+Fig. 6 compares the NMSE performance of different meth-
+ods in a hybrid-field scenario with a fixed SNR of 15dB and
+a total of 6 propagation paths, as the number of far-field
+paths increases. As shown in Fig. 6, LLM4XCE consistently
+outperforms all baseline methods regardless of the far-field
+path ratio, demonstrating strong robustness and adaptability
+in hybrid-field environments. Compared with MAT-CENet,
+the estimation error is reduced by a factor of 2. Notably,
+since the training data were generated using a configuration
+of 1 far-field path and 5 near-field paths, the model achieves
+optimal performance under this setting, indicating its effective
+learning of the training distribution. Moreover, thanks to
+the powerful representation learning of LLMs, LLM4XCE
+maintains high estimation accuracy even when test conditions
+differ from training. This demonstrates strong generalization
+and effectiveness in modeling complex channels for large-scale
+MIMO estimation tasks.
+V. CONCLUSION
+In this article, we proposed LLM4XCE, a novel channel
+estimation framework for hybrid-field XL-MIMO systems
+leveraging LLMs. A Parallel Feature-Spatial Attention module
+fuses pilot features from spatial and semantic views, adapting
+them for LLM input. To reduce computation and enhance
+performance, only the top two Transformer layers are fine-
+tuned. Simulation results show that our method outperforms
+existing advanced approaches in estimation accuracy and
+generalization ability, fully demonstrating the effectiveness of
+LLM-based solutions in enhancing channel estimation perfor-
+mance and integrating semantic communication advantages in
+complex wireless environments.
+REFERENCES
+[1] Z. Wang et al., “A tutorial on extremely large-scale MIMO for 6G: Fun-
+damentals signal processing and applications,” IEEE Commun. Surveys
+Tuts., vol. 26, no. 3, pp. 1560-1605, 2024.
+[2] H. Lu et al., “A tutorial on near-field XL-MIMO communications toward
+6G,” IEEE Commun. Surveys Tuts., vol. 26, no. 4, pp. 2213-2257, 2024.
+[3] P. Dong, H. Zhang, G. Y. Li, I. S. Gaspar and N. NaderiAlizadeh, “Deep
+CNN-based channel estimation for mmWave massive MIMO systems,”
+IEEE J. Sel. Topics Signal Process., vol. 13, no. 5, pp. 989-1000, Sept.
+2019.
+[4] S. Gao, P. Dong, Z. Pan and X. You, “Lightweight deep learning based
+channel estimation for extremely large-scale massive MIMO systems,”
+IEEE Trans. Veh. Technol., vol. 73, no. 7, pp. 10750-10754, July 2024.
+[5] J. Gao, M. Hu, C. Zhong, G. Y. Li and Z. Zhang, “An attention-aided
+deep learning framework for massive MIMO channel estimation,” IEEE
+Trans. Wireless Commun., vol. 21, no. 3, pp. 1823-1835, March 2022.
+[6] S. Li and P. Dong, “Mixed attention transformer enhanced channel
+estimation for extremely large-scale MIMO systems,” in Proc. 16th Int.
+Conf. Wireless Commun. Signal Process., Hefei, China, Oct. 2024.
+[7] OpenAI, J. Achiam, S. Adler, S. Agarwal, et al., “Gpt-4 technical
+report,” arXiv preprint arXiv:2303.08774, 2024. [Online]. Available:
+https://arxiv.org/abs/2303.08774
+[8] M. Jin, et al., “Time-LLM: Time series forecasting by reprogramming
+large language models,” arXiv preprint arXiv:2310.01728, 2023.
+[9] B. Liu, X. Liu, S. Gao, X. Cheng and L. Yang, “LLM4CP: Adapting
+large language models for channel prediction,” J. Commun. Inf. Netw.,
+vol. 9, no. 2, pp. 113-125, June 2024.
+[10] Y. Sheng, K. Huang, L. Liang, P. Liu, S. Jin and G. Ye Li, “Beam
+prediction based on large language models,” IEEE Wireless Commun
+Lett., vol. 14, no. 5, pp. 1406-1410, May 2025.
+[11] H. Xie, Z. Qin, G. Y. Li and B. -H. Juang, “Deep learning enabled
+semantic communication systems,” IEEE Trans. Signal Process., vol.
+69, pp. 2663-2675, 2021.
+[12] X. Peng, Z. Qin, X. Tao, J. Lu and L. Hanzo, “A robust semantic text
+communication system,” IEEE Trans. Wireless Commun., vol. 23, no. 9,
+pp. 11372-11385, Sept. 2024.
+[13] G. Zhang, Q. Hu, Y. Cai and G. Yu, “SCAN: Semantic communication
+with adaptive channel feedback,” IEEE Trans. Cogn. Commun. Netw.,
+vol. 10, no. 5, pp. 1759-1773, Oct. 2024.
+[14] K. T. Selvan and R. Janaswamy, “Fraunhofer and fresnel distances:
+Unified derivation for aperture antennas,” IEEE Antennas Propag. Mag.,
+vol. 59, no. 4, pp. 12–15, Aug. 2017.
+[15] A. Radford, et al., “Language models are unsupervised multitask learn-
+ers,” OpenAI Blog., vol. 1, no. 8, pp. 1–9, 2019.
+[16] X. Wei and L. Dai, “Channel estimation for extremely large-scale
+massive MIMO: Far-field, near-field, or hybrid-field,” IEEE Commun.
+Lett., vol. 26, no. 1, pp. 177–181, Jan. 2022.
+

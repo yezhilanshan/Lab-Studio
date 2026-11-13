@@ -1,0 +1,1964 @@
+RageSense: Leveraging Acoustic Sensing and LLM-Based
+Intervention for Emotion Regulation in Mobile Gaming
+Cong Liu∗
+South China University of Technology
+Guangzhou, China
+202420163862@mail.scut.edu.cn
+Ruihao Zheng∗
+East China Normal University
+Shanghai, China
+894945409@qq.com
+Junbin Ren
+East China Normal University
+Shanghai, China
+51265901135@stu.ecnu.edu.cn
+Kaiyi Guo
+School of Software
+Shanghai Jiao Tong University
+Shanghai, China
+gky2023@sjtu.edu.cn
+Qian Zhang
+RFID and IOT lab
+Shanghai Jiao Tong University
+Shanghai, China
+qwert3472@sjtu.edu.cn
+Dong She
+South China University of Technology
+Guangzhou, China
+ftdshe@mail.scut.edu.cn
+Yuting Bai
+Design
+South China University of Technology
+GuangZhou, GuangDong, China
+202321055492@mail.scut.edu.cn
+Zhanpeng Jin
+School of Future Technology
+South China University of Technology
+Guangzhou, Guangdong, China
+zjin@scut.edu.cn
+Yang Gao†
+School of Future Technology
+South China University of Technology
+Guangzhou, China
+gaoyang@cs.ecnu.edu.cn
+Figure 1: By emitting inaudible soundwaves alongside game audio, RageSense captures facial reactions through reflected
+echoes, providing a non-invasive way to estimate player emotions. This data, combined with game context, drives personalized
+interventions powered by a large language model (LLM), effectively reducing player rage and enhancing gameplay experience.
+Abstract
+RageSense introduces a novel system for detecting and regulat-
+ing player frustration during mobile gaming. Instead of relying
+on coarse emotion labels, RageSense estimates users’ valence and
+∗Both authors contributed equally to this research.
+†Yang Gao is the corresponding author
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+CHI ’26, Barcelona, Spain
+© 2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2278-3/26/04
+https://doi.org/10.1145/3772318.3791076
+arousal levels in real time using near-ultrasonic acoustic sensing.
+By analyzing facial muscle movements via built-in smartphone
+speakers and microphones, our approach enables emotion sensing
+without requiring cameras or wearables, constituting a more unob-
+trusive, environment-resilient, and privacy-friendly approach than
+traditional emotion recognition. To transform detection into action,
+we integrate a large language model (LLM) that generates empa-
+thetic, context-aware interventions based on gameplay screenshots,
+behavioral signals, and emotional trajectories. These interventions
+are delivered in real time, tailored to the user’s emotional state,
+and designed to mitigate rage while enhancing player well-being.
+In a 53-participant field study, our system improved emotional
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+state immediately after triggers and was preferred over random
+or template-based messages. To our knowledge, this is the first
+demonstration of near-ultrasonic, on-phone valence-arousal re-
+gression during mobile gameplay that directly drives real-time,
+context-aware interventions.
+CCS Concepts
+• Human-centered computing → Interaction techniques.
+Keywords
+Affective Computing, Acoustic Sensing, Mobile Gaming, Emotion
+Regulation
+ACM Reference Format:
+Cong Liu, Ruihao Zheng, Junbin Ren, Kaiyi Guo, Qian Zhang, Dong She,
+Yuting Bai, Zhanpeng Jin, and Yang Gao. 2026. RageSense: Leveraging
+Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in
+Mobile Gaming. In Proceedings of the 2026 CHI Conference on Human Factors
+in Computing Systems (CHI ’26), April 13–17, 2026, Barcelona, Spain. ACM,
+New York, NY, USA, 20 pages. https://doi.org/10.1145/3772318.3791076
+1 Introduction
+Mobile gaming has become a dominant form of digital entertain-
+ment, accounting for nearly 57% of the global video game revenue[1].
+Players engage in mobile games for various reasons, including re-
+laxation, social interaction, and competition. However, along with
+the rapid growth of mobile gaming, concerns have emerged regard-
+ing its impact on players’ emotions and behaviors. Many players
+experience negative emotions such as frustration, disappointment,
+and anger due to in-game failures, network issues, or competitive
+pressure. If left unregulated, these emotions may lead to problem-
+atic behaviors such as excessive gaming, cyberbullying, and even
+real-world emotional distress. Existing research has demonstrated
+that players who enter a "rage loop" often struggle to disengage
+from the game [4]. For instance, after consecutive failures, some
+players refuse to quit and instead prolong their play sessions in
+an attempt to "take revenge," thereby exacerbating negative emo-
+tional cycles. This compulsive engagement not only affects mental
+well-being but also contributes to gaming addiction.
+Current interventions for in-game toxicity primarily rely on re-
+active measures such as chat filters, along with block, mute, and
+report functions.[69, 78] While these tools can shield the commu-
+nity from overt hostility, they have critical limitations. First, they
+are reactive, addressing toxic behavior only after an angry outburst
+has already occurred, rather than preventing the underlying emo-
+tional escalation. Second, these methods are designed to protect
+others, but they do not help calm the frustrated player; in fact, being
+blocked or reported may even aggravate their negative feelings.
+Other approaches, like generic, time-based reminders to “take a
+break,”[57]are often emotion-agnostic, failing to engage with the
+player’s actual mental state and the specific in-game events that
+trigger their frustration.
+Our work introduces a proactive and non-disruptive interven-
+tion framework tailored for fast-paced games where pausing is
+not a viable option. We address the core challenge of designing
+an intervention that is perceived as supportive rather than intru-
+sive. To achieve this, we propose a system that leverages a Large
+Language Model (LLM) to provide timely, personalized support
+upon detecting the onset of player frustration. Unlike previous sys-
+tems, our LLM utilizes real-time game events to generate concise,
+customized messages delivered via an unobtrusive on-screen over-
+lay. This context-aware approach ensures the feedback is directly
+relevant to the player’s situation, offering empathetic guidance
+over generic advice to help players regulate their emotions more
+effectively.
+Real-time emotion detection is essential for proactive interven-
+tions. Traditional methods, such as camera-based facial analysis
+[22, 27] and speech analysis [34, 63], face challenges in mobile envi-
+ronments due to lighting variability, occlusion, and face significant
+privacy risks. Recent studies have explored ultrasonic sensing to
+address these issues. Wearable acoustic systems such as EarIO [38]
+and EyeEcho [37] demonstrate that ultrasonic signals can track
+fine-grained facial movements in real time. However, these systems
+require earable or glasses-mounted hardware and assume stable
+head–sensor geometry, making them unsuitable for mobile gaming,
+where users frequently change posture and do not wear additional
+devices. Moreover, these systems focus on expression classification
+or geometric motion tracking, rather than modeling continuous
+valence–arousal dynamics. Recent mobile-based acoustic systems
+like ExpresSense [24], UFace [68], and EARFace [79] recognize dis-
+crete facial expressions but are less suited for tracking rapid, subtle
+emotional transitions that characterize gameplay. They also do
+not address practical challenges unique to mobile gaming—such
+as two-handed screen interactions, which generate severe acoustic
+artifacts and corrupt the facial echo signal.
+We present RageSense, which bridges these gaps by enabling
+continuous valence–arousal estimation directly from a standard
+smartphone, requiring no additional hardware, and by introduc-
+ing an IMU-informed filtering mechanism to suppress acoustic
+corruption caused by intense touch interactions. This system inte-
+grates near-ultrasonic emotion detection with large language model
+(LLM)-generated interventions to support emotion regulation in
+mobile gaming. The key contributions of this work include:
+• Continuous Valence-Arousal Estimation for Game Environ-
+ments: We introduce a novel approach to emotion recogni-
+tion in mobile gaming by being the first (to our best knowl-
+edge) to map acoustic spectrograms to continuous valence-
+arousal space. This approach is enhanced by custom ultra-
+sonic signals that reduce interference from smartphone arti-
+facts, as well as the integration of IMU data to detect exces-
+sive finger movements, ensuring better spectrogram quality
+and more accurate valence-arousal estimation.
+• Personalized, Context-Aware Interventions Based on Large
+Language Models: Our system integrates emotion detection
+with large language model (LLM)-powered interventions,
+providing context-sensitive, personalized feedback based
+on real-time game content and the player’s emotional state.
+This tailored approach fosters more empathetic and effective
+emotional regulation during gameplay.
+• Comprehensive In-Field Study Evaluation: We conducted
+an in-field study with 53 participants over three weeks to
+evaluate the effectiveness of our emotion regulation system.
+Compared to baseline methods, our system demonstrated
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+significant improvements in emotional regulation, provid-
+ing clear evidence of its effectiveness in real-world gaming
+scenarios.
+The remainder of this paper is structured as follows. We first
+review related work and present a formative study on player needs
+(Sec. 2-3). We then detail the design and implementation of Rage-
+Sense, our system for emotion recognition and intervention, cov-
+ering its sensing, prediction, and intervention modules (Sec. 4-6).
+Subsequently, we report on an in-field study evaluating the effec-
+tiveness of its real-time interventions (Sec. 7). Finally, we discuss
+the implications and limitations of our work and conclude the paper
+(Sec. 8-9).
+2 Background and Related Work
+We first summarize related work about facial emotion recogni-
+tion methods, as well as smartphone-based emotion recognition
+techniques. Then, we summarize existing research about user en-
+gagement and emotions in the context of video games.
+2.1 Negative Emotion in Games
+Emotion recognition in gaming has become an increasingly impor-
+tant area of research as it holds the potential to create more adaptive,
+personalized gaming experiences[12, 28, 39, 62, 71]. The goal is to
+detect players’ emotional states in real-time, allowing games to
+respond dynamically and maintain engagement by adjusting diffi-
+culty, providing feedback, or offering interventions[31, 33, 67, 83].
+Traditional emotion recognition methods have predominantly re-
+lied on either physiological signals or behavioral cues, such as facial
+expressions and voice analysis. These methods, however, have their
+own set of challenges, particularly when applied to interactive
+gaming contexts[10, 15, 66].
+Early research focused primarily on physiological sensing, such
+as heart rate, skin conductance, and EEG, to monitor emotions.
+These physiological signals provide valuable insights into arousal
+levels and emotional states, as they are directly tied to the auto-
+nomic nervous system. Studies have demonstrated the ability to
+predict player emotions, such as frustration, excitement, or stress,
+using these signals. For instance, Yannakakis et al[39]. developed
+a system that integrated physiological data from sensors to detect
+discrete emotional states like frustration and enjoyment during
+gameplay. Similarly, Mishra et al[43]. used facial emotion recog-
+nition techniques to detect the emotional states of players during
+video game interactions.
+2.2 Emotion Regulation and In-Game
+Interventions
+Given the increasing emotional nature of video games, recently,
+more and more research efforts have shown that video games would
+affect the emotional experience of players [7, 19]. Video games
+offer players diverse emotional experiences, ranging from positive
+emotions, such as happiness and satisfaction, to intense negative
+emotions, like sadness and anger.
+Many studies also proposed to understand the types of sensa-
+tions elicited by these game products[13, 14, 17, 40, 50, 53]. These
+explorations are based mainly on two approaches: model-based and
+model-free. The first group uses a top-down approach, building
+the model on a theoretical framework that maps the players’ affect.
+For example, a model can be based on the game emotion theory
+[32, 64], or a general emotion theory [48], such as the definition
+of a set of parameters that describes the players’ behavior. In [54],
+the researchers studied the players’ satisfaction with the game re-
+wards (Looting System) in Massive Multiplayer Online (MMO) and
+Multiplayer Online Battle Arena (MOBA) games through a set of
+simulations. The second approach (bottom-up) infers the players’
+emotions mapping them without the use of any particular theoreti-
+cal framework. This type of players’ analysis can be performed in
+two ways: studying the players’ behaviors in video games, or using
+physiological information to infer players’ emotions.
+Many techniques are developed to analyze and detect the emo-
+tions of players. Mishra et al. [43] proposed a Hidden Markov Model
+(HMM) based real-time player emotional recognition system using
+recorded videos to capture player’s facial emotions. Granato et al.
+[18] proposed a hardware and software setup to collect users’ phys-
+iological data (e.g., EMG, EDA) and then asses players’ emotions
+during video games. Another study [41] explored emotion recogni-
+tion and inhibitory control for adolescent players during violent
+games.
+2.3 Ubiquitious Sensing for Emotion Detection
+It is widely accepted that emotional changes are accompanied by
+both behavioral reactions (e.g., facial expressions, speech) and phys-
+iological responses (e.g., heart rates) [21, 23, 29, 52, 60, 65, 72, 77, 81].
+However, directly measuring physiological signals with dedicated
+sensors such as EEG is often impractical for everyday contexts like
+gaming [6, 16, 25, 49]. Consequently, with smartphones becoming
+central to social interaction and entertainment, researchers have
+turned to their built-in sensors, observing that smartphone usage
+is closely associated with user affective experiences. For instance,
+prior work has inferred user’s mood from social media interaction
+patterns [76] or predicted emotions using data from motion, touch,
+and eye-tracking sensors during social network use [55]. Among
+these, motion sensors are particularly effective due to their ubiq-
+uity, low cost, and the richness of the movement data they capture,
+making them a widely used vehicle for detecting emotions.
+Facial expressions are a primary indicator of emotion, but tradi-
+tional camera-based methods face challenges like lighting changes
+and occlusion. To overcome these, acoustic sensing offers a promis-
+ing alternative. Systems such as EarIO [38] and EyeEcho [37] intro-
+duce wearable acoustic sensing that can continuously track facial
+expressions. EarIO, deployed in earables, and EyeEcho, mounted
+on glasses, emit acoustic signals towards the face to capture subtle
+skin deformations, providing continuous real-time tracking. Kar et
+al. [24] introduced ExpresSense, a system that uses near-ultrasound
+signals from smartphones to detect facial expressions without a
+camera. Similarly, Wang et al. [68] developed UFace, an acoustic
+system recognizing seven typical facial expressions. These systems
+show the feasibility of acoustic sensing for facial expression recog-
+nition, focusing on discrete emotion classification.
+In contrast, our work focuses on modeling emotion in the con-
+tinuous dimensions of valence and arousal, better capturing the
+dynamic nature of emotions in gaming. Discrete labels oversimplify
+evolving emotional states, while continuous modeling reflects how
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+emotions change over time. The valence-arousal model offers a fine-
+grained representation of emotional experiences, enabling richer
+descriptions beyond static categories. Russell [56] introduced this
+framework, forming the foundation for affective modeling. Previ-
+ous work [11, 45, 47, 70, 82] shows the value of continuous emotion
+prediction across modalities. Our work extends this by applying the
+valence-arousal model to mobile gaming and integrating acoustic
+sensing for real-time emotion tracking and adaptive interventions.
+3 Formative Study
+To deeply understand players’ negative emotional experiences dur-
+ing mobile gameplay and to identify challenges in implementing
+an effective intervention system, we conducted focus group dis-
+cussions and semi-structured interviews with typical mobile game
+players. The goal of this qualitative study was to: 1) identify com-
+mon triggers and manifestations of negative emotions, especially
+frustration and rage, during gameplay; 2) explore players’ percep-
+tions of their own emotional reactions and existing coping mecha-
+nisms; and 3) understand practical challenges players perceive in
+adopting technology-driven emotion-regulation interventions.
+3.1 Participants and Methodology
+We recruited 24 active mobile gamers (M=24.2, SD=2) from a local
+university community. Participants played for at least one hour
+daily for entertainment. Crucially, eligibility was determined through
+a screening survey in which participants indicated the frequency of
+intense negative emotions experienced during gaming over the past
+month and provided valence–arousal (1–5) ratings and brief descrip-
+tions of their most recent episode. Only individuals who reported
+experiencing intense frustration or rage at least once per week were
+enrolled, ensuring alignment with our target demographic.
+Our methodology employed a two-stage qualitative approach.
+We first conducted two 60-minute focus groups to uncover shared
+experiences and common themes surrounding frustrating game-
+play. These were followed by individual semi-structured interviews
+to probe deeper into personal emotional responses and to gather
+specific perceptions regarding the acceptance, usability, and privacy
+concerns of potential technology-based interventions. All sessions
+were moderated by two experienced researchers and audio-recorded
+for subsequent thematic analysis.
+3.2 Understanding Negative Emotions
+Intervention in Mobile Gaming
+DQ1: How to design an emotion recognition system that players
+would actually trust and adopt?
+Our formative study revealed a key tension: while the vast major-
+ity of players (95.8%) were open to receiving in-game emotional
+support, their acceptance hinged on addressing three key concerns:
+data privacy(20/24), with users opposing the storage of personally
+identifiable data like facial or audio recordings ; emotional trajec-
+tory(18/24): Participants questioned whether the system could cap-
+ture the dynamic nature of their in-game emotions in real-time; and
+performance overhead(15/24), fearing that sensing would consume
+critical system resources and introduce lag .
+Elaborating on these concerns, players were skeptical of systems
+that reduce complex emotions to static labels. They argued that the
+timing of an intervention is critical. For instance, one participant
+vividly expressed this concern: "What if the system tries to ’help’ me
+based on my anger from the last lost team fight, right when we’ve just
+won a new one? That would be incredibly annoying." Similarly, the
+concern about performance overhead was a deal-breaker. Another
+participant stated unequivocally, "If this system makes my phone hot
+or the game lag, I’ll turn it off immediately. Smooth gameplay comes
+first." These insights established two core design requirements: the
+system must not only track the temporal dynamics of emotion
+but also operate with negligible performance impact. This directly
+motivated our choice to combine lightweight acoustic sensing with
+a continuous valence-arousal model, as this approach is well-suited
+for tracking real-time emotional shifts without compromising game
+performance.
+DQ2: How to deliver an intervention that feels genuinely helpful,
+not just another distraction?
+Our second design principle guides the intervention’s content and
+delivery. A significant 87.5% of participants stressed the need for
+personalization, a need driven by specific concerns about how a
+generic system could fail. Their concerns centered on three potential
+failures: improper timing (17/24), contextual mismatch (14/24), and
+a patronizing tone (10/24).
+These concerns were vividly illustrated by participants. On im-
+proper timing, one player said, "If I’m concentrating on a gacha
+pull and the system distracts me, I would get really angry." The issue
+of contextual mismatch was equally critical, as another explained,
+"When we lost a team fight because a teammate didn’t show up, the
+system telling me to ’watch the minimap’ would just amplify my
+frustration." Finally, a patronizing tone could undermine an expert
+player’s experience: "I have over a thousand hours on this cham-
+pion. For the system to tell me ’Don’t forget to use your ultimate’
+after a complex tactical mistake feels like it’s treating me like a com-
+plete novice." These examples highlight a critical requirement: an
+effective system must understand the cause of an emotion, not just
+its presence. This principle led us to explore solutions capable of
+deep contextual understanding, making Large Language Models
+(LLMs) a compelling choice. By interpreting emotional data along-
+side in-game events, LLMs empower our system to handle these
+subtleties—delivering feedback that is timely, relevant, and respect-
+ful—thereby transforming a potential annoyance into meaningful
+support.
+3.3 Design Considerations for Mobile Game
+Interventions
+Two primary design considerations guide the development of Rage-
+Sense’s emotion detection and intervention. system.
+Emotion Estimation. Traditional approaches, like visual-based
+emotion recognition or behavior analysis through touch interac-
+tions, are often hindered by significant limitations. Visual-based
+methods, while powerful, face privacy concerns and may require
+cumbersome equipment. Touchscreen behavior models, though in-
+tuitive, can be heavily influenced by the game type or the player’s
+hand interactions, making it difficult to consistently map to emotion-
+related signals like valence and arousal. To address these challenges,
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+Figure 2: System pipeline of RageSense, showing hand motion detection, acoustic feature extraction, valence-arousal estimation,
+and adaptive intervention trigger for personalized emotion regulation in mobile gaming.
+we adopted an acoustic sensing approach to predict emotions by an-
+alyzing reflected echo spectra to estimate valence and arousal. Our
+approach offers a privacy-friendlier alternative by reducing sensi-
+tive data capture: it avoids recording facial images and background
+scenes; instead, it relies on non-semantic micro-reflection signals
+tied to subtle facial dynamics and hand movements. This makes
+it a discreet and minimally intrusive modality. Additionally, it is
+less affected by external factors like game type or player behavior,
+ensuring consistent emotion detection.
+Intervention delivery. As discussed in Design Consideration 2,
+personalized interventions are essential to making emotional sup-
+port in games more effective. To address this, the intervention
+design in RageSense leverages both emotion detection and the
+understanding capabilities of large language models (LLMs) to de-
+liver tailored, context-sensitive feedback. By analyzing the player’s
+emotional state in real time alongside game-specific context (such
+as a screenshot of the current game state), RageSense generates
+personalized intervention content.
+As shown in Figure 2, we implemented RageSense, which con-
+sists of two integrated modules: the Acoustic-based Emotion Es-
+timation Module, and the LLM-based Personalized Intervention
+Module. These modules enable precise and context-aware emotion
+detection and effective real-time interventions, thereby providing a
+robust and user-friendly experience. Figure 2 illustrates the archi-
+tecture and the workflow of the RageSense system. We detail each
+module in the following sections.
+4 RageSense Design
+4.1 Acoustic Sensing-based Emotion Estimation
+In this section, we propose an emotion recognition system using
+acoustic sensing with the built-in speakers and microphones of
+smartphones. The main technical challenges are recognizing facial
+expressions in gaming environments, minimizing the interference
+of acoustic sensing on the gameplay, and mapping acoustic fea-
+tures to continuous valence and arousal values. To address these
+challenges, we have designed three key modules: finger motion
+removal, an acoustic sensing pipeline, and a neural network for
+valence-arousal value estimation, shown in Figure 4.
+Figure 3: Emotion-aware acoustic sensing during mobile gam-
+ing. (1) spectrogram from acoustic signals; (2) valence-arousal
+dynamics; (3) IMU signal variations; and (4) gameplay scenes
+for combat, failure, and emotion-driven intervention. Acous-
+tic sensing is enabled only when IMU data indicates device
+stability, ensuring reliable features for on-device emotion
+recognition.
+4.1.1 IMU-Gated Motion Removal. In highly engaging or emo-
+tionally charged gaming scenarios, players often exhibit intense
+hand and finger movements, such as rapid screen tapping or swip-
+ing, which can introduce significant motion-induced noise in the
+acoustic sensing signals. These movements can interfere with the
+accuracy of emotion detection based solely on acoustic features.
+To address this challenge, we integrate a motion-aware approach
+that leverages data from the Inertial Measurement Unit (IMU) sen-
+sors, including accelerometers and gyroscopes, to identify the echo
+frames corrupted by aggressive taps/swipes.
+Large-scale hand gestures, such as aggressive swiping or tapping,
+produce distinct patterns in the IMU data, which can be used to
+differentiate between minor and significant hand operations. To en-
+sure accurate emotion detection, our system distinguishes between
+two scenarios based on IMU data:
+• Significant Hand Operations: where the IMU amplitude ex-
+ceeds a predefined threshold, the system temporarily sus-
+pends acoustic sensing to avoid distortion from motion noise.
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+Figure 4: VA-based emotion estimation pipeline.
+• Minor Hand Operations: when the IMU amplitude remains
+low, indicating minimal interference with the acoustic sig-
+nals, the system continues to rely on the acoustic features
+for emotion detection.
+To detect and isolate significant hand movements, we employ an
+energy-based approach to analyze the vibrations generated by hand
+operations. Specifically, we combine accelerometer and gyroscope
+magnitudes to produce a unified vibration magnitude. Next, the
+short-time energy is calculated by accumulating the squared values
+of the combined signal within a sliding window. A threshold, set to
+the mean plus 0.25 times the standard deviation of the energy, is
+used to identify the onset of high-energy segments. As illustrated
+in Figure 3, this approach effectively isolates segments of intense
+hand movement during mobile gameplay, thereby preventing their
+interference with the subsequent acoustic feature extraction
+For passive sensing applications, such as finger tapping, we set
+the window length to 0.1 seconds, which covers the duration of
+typical passive vibration signals. After segmenting the vibration
+signals, they are normalized relative to their maximum amplitude
+to account for variations in the intensity of taps. This ensures that
+the system can effectively differentiate between noise generated by
+minor operations and genuine signals associated with significant
+emotional responses.
+4.1.2 Acoustic Signal Processing.
+Frequency Modulation Artifacts Denoising. In near-ultrasonic Fre-
+quency Modulated Continuous Wave (FMCW) systems, particularly
+in mobile gaming contexts, the modulation process can introduce
+low-frequency variations or gaps due to non-linearities in the fre-
+quency sweep. These can result in audible low-frequency noise,
+impacting the user experience, especially during gaming sessions.
+To address these, we applied a frequency modulation artifact denois-
+ing technique that smooths the FMCW signal. This involves using
+a raised cosine window to smooth the beginning and end of the
+signal, reducing abrupt changes. The method works by multiplying
+the original signal with the raised cosine function at both ends,
+ensuring smoother transitions and minimizing audible noise.
+Interference Cancellation. In the dynamic setting of mobile gam-
+ing, we leverage the smartphone’s own speaker to emit ultrasonic
+signals, transforming it into an active sensor for capturing facial
+expressions. The received signal, however, contains both the de-
+sired expression-related features and strong reflections from static
+objects, such as tables and chairs. To suppress these static reflec-
+tions, we compute the difference between consecutive spectrograms,
+which cancels out the stationary background and isolates subtle
+facial signals. In addition, since both the speaker and microphone
+are integrated within the same device, part of the emitted signal can
+directly couple into the microphone, introducing interference with
+a fixed delay. Inspired by the interference cancellation technique in
+works [36–38], we estimate this constant delay using Time Align-
+ment and subtract the known artifact during signal processing,
+effectively eliminating the direct-path interference and focusing on
+reflective signals from the user’s face.
+4.1.3 Feature Extraction. Our feature extraction pipeline, illus-
+trated in Figure 5, transforms subtle physical deformations of the
+user’s face into a digital representation. The process begins when
+the smartphone speaker emits an inaudible ultrasonic chirp signal
+(TX). As the signal reflects off the user’s face, its echo patterns
+are modulated by facial muscle movements, and these echoes are
+captured by the phone’s dual microphones (RX ch1, RX ch2), cre-
+ating a continuous two-channel data stream encoding the user’s
+expression.
+To decode this information, we compute the cross-correlation
+between the transmitted (TX) and received (RX) signals. This step
+reveals the time-varying signature of the facial echoes, converting
+raw audio into structured correlation sequences. However, body
+movements or hand gestures can introduce transient noise, re-
+ducing signal stability. We apply a Gaussian filter to smooth the
+correlation data, suppressing fluctuations while preserving facial
+motion patterns.
+Finally, we segment and stack these cleaned correlation sequences
+frame-by-frame, creating a 2D matrix, termed a spectrogram. Each
+row represents the acoustic response from a single chirp, forming
+a spectrogram of the facial expression over time. This spectrogram
+serves as the final input for our deep learning model.
+For our implementation, the transmitted ultrasonic signal has a
+sampling rate of 𝐹𝑠 = 48 kHz. Each chirp spans 𝑇𝑤 = 10 ms with a
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+RX ch1
+TX
+RX ch2
+Correlation 1
+Correlation 2
+Filtered Correlation 1
+Filtered Correlation 2
+Spectrogram
+VA Estimation Network
+Frequency
+(kHz)
+Time (ms)
+Correlation
+Time (ms)
+Correlation
+Gaussian
+Smoothing
+Amplitude
+Autocorrelation
+Mapping to V-A
+Time (ms)
+Figure 5: Signal processing pipeline for extracting facial features from ultrasonic reflections.
+bandwidth of 𝐵 = 4 kHz (18–22 kHz), ensuring the signal is inaudi-
+ble and smartphone-compatible. We followed prior acoustic-sensing
+studies [36–38] and adopted a cross-correlation-based approach
+to extract features produced by subtle facial motions. The cross-
+correlation is formally defined as:
+𝐶(𝑛) = 𝑇𝑥(𝑛) ∗ 𝑅𝑥(𝑛) =
+𝑁 −1
+∑︁
+𝑚=0
+𝑇𝑥(𝑚) · 𝑅𝑥(𝑚 + 𝑛), 𝑛 ≥ 0 (1)
+where 𝑇𝑥(𝑛) is the transmitted chirp and 𝑅𝑥(𝑛) is the filtered re-
+ceived signal for each channel.
+4.1.4 Valence and Arousal Estimation. To map the acoustic spectro-
+grams into continuous emotional states, we designed the valence-
+arousal Estimation Network, a lightweight hybrid architecture opti-
+mized for real-time mobile deployment. As illustrated in Figure 4, a
+pipeline of specialized encoders is employed to map the acoustic pat-
+terns in the spectrograms into the two-dimensional valence-arousal
+space.
+The process begins with a Spatial Feature Encoder (ResNet-18)
+that efficiently scans the spectrogram to extract foundational local
+patterns, which serve as the essential building blocks of an expres-
+sion. These features are subsequently processed by a Contextual
+Relations Encoder, a Sparse Transformer, which models long-range
+dependencies to form a holistic contextual representation with an
+efficient complexity of (𝑂(𝑁 log 𝑁)). To capture the temporal dy-
+namics of emotional expression, the contextualized features are
+then fed into a Temporal Dynamic Encoder (LSTM). The final hid-
+den state from the LSTM is mapped by a Projection Head to predict
+continuous values for valence and arousal.
+To handle the continuous data stream, the system operates on a
+sliding-window basis. We chose a 5-second window with a 2-second
+stride following prior valence-arousal-regression studies [75, 84],
+which showed that a 5-second temporal context is necessary to
+capture a complete emotional fluctuation. To further enhance the
+stability of the real-time output, we introduce a standard temporal
+smoothness loss during training. Following common practice, we
+penalize rapid frame-to-frame changes in the predicted valence and
+arousal using a Huber-style difference loss, which is less sensitive
+to outliers than a simple squared penalty.
+For a sequence of length 𝑇, the temporal smoothness loss can be
+written as:
+𝑙𝑡 = 𝜌( ˆ
+𝑉𝑡 − ˆ
+𝑉𝑡−1) + 𝜌( ˆ
+𝐴𝑡 − ˆ
+𝐴𝑡−1), (2)
+where the penalty function 𝜌(·) is defined as
+𝜌(𝑒) =
+
+
+
+
+
+
+
+1
+2
+𝑒2
+𝛽
+, if |𝑒| < 𝛽,
+|𝑒| − 1
+2 𝛽, otherwise.
+(3)
+Here, ˆ
+𝑉𝑡 and ˆ
+𝐴𝑡 denote the predicted valence and arousal at time 𝑡,
+and 𝛽 (𝛽 = 1) controls the transition between the squared and linear
+regimes. In practice, we simply aggregate𝑙𝑡 over the sequence using
+a standard reduction (mean or sum).
+Based on extensive experiments, we identified the following con-
+figuration as optimal: the ResNet-18 feature extractor; a 4-layer
+Sparse Transformer encoder with 8 attention heads; and a 2-layer
+LSTM with a hidden size of 256. This architecture, containing ap-
+proximately 25M parameters, achieved the best balance between
+predictive accuracy and on-device efficiency among the variants
+we tested. We used the AdamW optimizer with a learning rate of
+5 × 10−5 and trained the model for 50 epochs before deploying it
+using the PyTorch Mobile framework.
+4.2 LLM-powered Negative Emotion
+Intervention
+4.2.1 Adaptive Intervention Trigger Algorithm. As detailed in Ap-
+pendix C, the algorithm processes real-time ultrasound-based affec-
+tive signals to detect emotional shifts and provide context-aware
+interventions during gameplay. It runs continuously while the ses-
+sion is active. First, an ultrasound spectrogram is acquired, and the
+system estimates the instantaneous valence 𝑉 (𝑡) and arousal 𝐴(𝑡)
+using a Transformer+LSTM model. These values are appended to a
+circular buffer. To smooth fluctuations, an exponential moving av-
+erage (EMA) is applied to both valence and arousal. Once the buffer
+is filled, dynamic thresholds are computed to detect significant
+negative emotional shifts.
+The thresholds are based on initial values from "anger/frustration"
+instances in our dataset (𝑉0 = −0.453 ± 0.181, 𝐴0 = 0.480 ± 0.276).
+A 60-second sliding window continuously calculates the player’s
+current mean and standard deviation. The adaptive thresholds for
+valence 𝑇𝑉 and arousal 𝑇𝐴 are set as:
+𝑇𝑉 = min(𝑉0 − 𝑘𝜎𝑉 , 𝜇𝑉 − 𝑘𝜎𝑉 ), 𝑇𝐴 = max(𝐴0 + 𝑘𝜎𝐴, 𝜇𝐴 + 𝑘𝜎𝐴)
+(4)
+The sensitivity parameter 𝑘 linearly decays from 1.2 to 0.8 dur-
+ing the session, minimizing false alarms while adapting to recent
+emotional baselines. A six-player pilot study confirmed this range
+reduces false alarms and avoids missing true frustration events. An
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+intervention is triggered when valence falls below 𝑇𝑉 and arousal
+exceeds 𝑇𝐴.
+The algorithm uses the CUSUM change-point detection method[35],
+tracking gradual shifts in valence-arousal. If a change-point is de-
+tected, the system checks if the smoothed values exceed dynamic
+thresholds. If met, screenshots of the current game state are cap-
+tured for the intervention context.
+Next, the system constructs a prompt for the cloud-based LLM,
+combining valence-arousal history and captured images. The LLM
+generates a personalized intervention message; if not, a default
+message is provided. Finally, the intervention is displayed as a semi-
+transparent pop-up for 5 seconds, ensuring minimal disruption.
+Our intervention message is an in-app UI component displayed
+through an Android OS-level overlay window. This mechanism
+allows RageSense to present messages above the game without
+accessing or modifying any game code.
+4.2.2 LLM-based Content Generation. The intervention module of
+the RageSense system uses a Large Language Model (LLM) to gen-
+erate personalized, context-aware messages in response to detected
+negative emotions. The LLM integrates two main input sources: real-
+time gameplay screenshots and emotional data (valence-arousal
+values). Game screenshots capture key aspects of the player’s cur-
+rent situation, such as game status, challenges, and performance.
+This visual data is used to generate targeted recommendations.
+Meanwhile, valence-arousal data encodes the emotional state, offer-
+ing direct insight into the player’s emotional condition and trends,
+enhancing the intervention’s precision.
+The prompt guides the LLM to deliver personalized, context-
+aware responses by considering the player’s emotional state and
+gameplay scenario. It prioritizes empathy, tailoring responses for
+comfort in negative emotions and motivation for heightened emo-
+tions. The LLM is encouraged to use humor where appropriate,
+ensuring engaging and emotionally aligned responses. Responses
+are concise (under 25 characters) and based on real-time game
+context to enhance relevance and the player’s experience.
+5 Study 1: Evaluation of Acoustic-Based
+Emotion Estimation in Games
+To validate our ultrasonic emotion detection, we invited the 24
+participants from our formative study to a follow-up in-lab exper-
+iment. Twenty individuals (13 males, seven females; aged 18- 35)
+accepted the invitation, while four declined. Real-time interven-
+tions can alter players’ natural emotional trajectories and suppress
+the strong negative affect required for reliable ground-truth label-
+ing. To avoid such confounds and ensure unbiased valence-arousal
+measurements, Study 1 used an offline version of the system with-
+out interventions. After briefing each participant on the study’s
+procedures and obtaining their informed consent, we collected a
+total of 35 hours of audio data, including 7 hours of emotional
+expressions captured during gameplay.
+5.1 Procedure
+Game Types. To elicit a diverse range of emotional responses
+within a limited timeframe, participants played three different
+types of games: Fast-pace Game (MOBA-style): A fast-paced mul-
+tiplayer online battle arena (MOBA) game was selected due to its
+highly competitive nature, where win/loss outcomes significantly
+influence emotions. Moderate-pace Game (Strategy Simulation):
+A moderate-paced strategy simulation game was chosen to create
+a more thoughtful, planning-oriented experience. While it lacks
+the immediate intensity of action games, it still evokes emotional
+responses through the tension of managing resources, building
+strategies, and overcoming challenges. High-intensity Game (Battle
+Royale): A battle royale game was included to provide moments of
+high emotional engagement. With its unpredictable pacing, play-
+ers experience adrenaline rushes during combat and heightened
+emotional states as the match progresses towards its final stages,
+fostering a sense of anxiety and excitement.
+Experiment Procedure. Each participant completed 5 gaming ses-
+sions with a total duration of approximately 90–120 minutes, each
+lasting 15–25 minutes with breaks scheduled in between. During
+the experiments, participants’ facial expressions were recorded us-
+ing the smartphone’s front camera, and these videos served as the
+ground truth source for ultrasonic spectrogram inputs.A prelimi-
+nary version of the RageSense application ran continuously in the
+background while participants were playing the game. The app
+recorded IMU data and ultrasonic-derived features.
+Annotation Process and Reliability. Building on the established
+principle that individuals are the most reliable annotators of their
+own emotions [59, 80], we adopted a self-annotation methodol-
+ogy. We invited the same 20 participants from our study to label
+their own facial expression videos, which were recorded using the
+smartphone’s front camera during gameplay. To prepare them for
+this task, all participants completed a systematic training program
+structured in three stages: (1) theoretical instruction on the valence-
+arousal dimensional emotion model; (2) guided practice, where they
+learned to map valence-arousal scores to example video clips with
+expert reference ratings; and (3) a calibration phase, where they
+performed trial annotations with immediate feedback until their
+ratings achieved a consistent and reliable level.
+We employed a 9-point Likert scale for valence-arousal annota-
+tion, a method widely adopted in prior studies [26, 42, 51]. Videos
+were sampled at 3 fps, and each frame was rated by 10 randomly
+selected participant-annotators, with the final value determined
+through majority voting. Ratings were then linearly normalized
+from [−4, 4] to [−1, 1]. The ground truth for each ultrasonic spec-
+trogram was obtained by averaging the valence-arousal labels of
+its time-aligned video frames.
+Annotation reliability was evaluated using Krippendorff’s 𝛼,
+yielding 𝛼 = 0.689 for valence and 𝛼 = 0.661 for arousal. According
+to Krippendorff’s guidelines, valence annotations are acceptable
+for exploratory studies, while arousal shows slightly lower agree-
+ment but remains consistent with existing valence-arousal datasets
+(typically 𝛼 = 0.4–0.65). [9, 61].
+5.2 Metric
+Study 1 aims to assess the accuracy of the acoustic-based emotion
+detection algorithm. To evaluate the performance, we calculate the
+error between the estimated valence and arousal values and the
+ground truth, which is derived from the facial expression analysis of
+the recorded video. The following evaluation metrics are employed:
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+Table 1: Performance comparison of different models on
+valence-arousal regression.
+Model CCC𝑉 CCC_A PVA
+Video based[58] 0.6411 0.6356 0.6384
+MobileNet 0.4430 0.4438 0.4434
+MobileNet + LSTM 0.4675 0.4521 0.4598
+Transformer 0.4821 0.4939 0.4880
+Transformer+ LSTM 0.5771 0.5542 0.5657
+Sparse Transformer+ LSTM (Ours) 0.6115 0.6215 0.6165
+Root Mean Square Error (RMSE). This metric quantifies the dif-
+ference between the predicted and actual values. It provides an
+understanding of the magnitude of errors, where lower values indi-
+cate better accuracy.
+Concordance Correlation Coefficient (CCC𝑉 /CCC𝐴)[58]. This met-
+ric evaluates the agreement between predicted and ground truth
+values by simultaneously assessing both their precision and accu-
+racy. It is particularly valuable for emotion regression tasks, as it
+reflects how well the model captures not only the linear correla-
+tion but also the absolute closeness of the predictions to the actual
+values, thus serving as a comprehensive indicator of predictive
+reliability.
+Proportion of Variance Accounted (PVA)[58]. This metric is de-
+fined as the mean of the concordance correlation coefficients for
+valence (CCC𝑉 ) and arousal (CCC𝐴), expressed as PVA = (CCC𝑉 +
+CCC𝐴) / 2. It provides a balanced evaluation of the model’s predic-
+tive performance across both emotional dimensions, and is particu-
+larly useful for quantifying how effectively the algorithm captures
+the underlying patterns of affective dynamics.
+5.3 Valence and Arousal Estimation
+Performance
+In this section, we evaluate and present the accuracy of the user-
+independent model and impact of different model architectures.
+5.3.1 Leave-one-subject-out Cross Validation. Maintaining consis-
+tent performance across different users has been a long-standing
+challenge for most ubiquitous sensing systems. As shown in Fig-
+ure 6, we employed a leave-one-subject-out cross-validation strategy
+to evaluate the correlation coefficients (CCC) for valence (CCC𝑉 ),
+arousal (CCC𝐴), and the combined PVA (Pearson’s Variance Aver-
+age) metrics. The results show that while individual subjects exhibit
+varying performance, the system consistently achieves a high cor-
+relation across subjects, with most subjects demonstrating CCC
+values above 0.5. Notably, the average performance for CCC𝑉 and
+CCC𝐴 remained consistently strong, suggesting that the system is
+robust and adaptable to different users.
+A deeper analysis of the outlier cases, highlighted in Figure 6, re-
+veals two core challenges impacting system performance. The first
+is a physical challenge at the signal level. For P1 and P16, intense
+gameplay engagement resulted in significant head movements, in-
+troducing substantial motion artifacts. These artifacts corrupted
+the facial signal, obscuring subtle expressions and undermining the
+integrity of the feature extraction process, which in turn degraded
+prediction accuracy. In contrast to this data-level challenge, P9’s
+case exposes the problem of subjectivity in emotion annotation.
+The participant consistently maintained a serious expression with
+minimal affective cues. However, this objective "poker face" was
+subjectively misinterpreted by human annotators as a negative
+emotion (e.g., frustration), introducing a systemic bias into the
+ground-truth labels. Consequently, although our model correctly
+captured the absence of facial activity, this discrepancy with the
+flawed ground truth artificially deflated the final correlation scores.
+Together, these cases highlight a dual dilemma for models in nat-
+uralistic settings: they must achieve physical robustness against
+signal-level noise while also depending on semantic accuracy at
+the label-level for effective learning.
+These results suggest that, despite variations in individual player
+behavior, the system demonstrates robustness and adaptability
+across different users, confirming the model’s effectiveness for
+practical applications.
+5.3.2 Leave-One-Game-Out Cross-Validation. To evaluate the gen-
+eralization capability of our system across different game scenarios,
+we employed a leave-one-game-out cross-validation strategy on
+a per-participant basis. For each of the five games played by our
+20 participants, we iteratively designated one game as the test set
+while using the remaining four for training. As illustrated in Fig-
+ure 6, the results underscore the system’s high performance, with
+the CCC𝑉 , CCC𝐴, and PVA metrics generally exceeding 0.6 across
+all game scenarios.
+These findings provide strong evidence that the model main-
+tains robust and reliable predictive power across varied gaming
+contexts. This consistent and strong performance highlights the sys-
+tem’s adaptability and signals its significant potential for practical
+applications in diverse interactive environments.
+5.3.3 Impact of model architecture. To better map spectrogram
+features to valence and arousal values, we compared several net-
+work architectures, including CNN-based models like MobileNet,
+transformer-based models, and hybrid models like MobileNet +
+LSTM and Transformer + LSTM. We also implemented an Efficient-
+Net model using facial images for comparison with state-of-the-art
+visual emotion recognition methods.
+As shown in Table 1, our Sparse Transformer + LSTM model
+outperforms all other models, achieving CCC scores of 0.6115 for
+valence, 0.6215 for arousal, and a PVA of 0.6165. The Transformer +
+LSTM hybrid also showed strong performance, with CCC scores of
+0.5771 for valence, 0.5542 for arousal, and a PVA of 0.5657. These
+results emphasize the benefit of combining transformer encoders
+for feature extraction and LSTM decoders for temporal modeling.
+Overall, these results confirm that the architecture choice is
+crucial for emotion estimation, with our Sparse Transformer +
+LSTM model effectively capturing subtle emotional changes and
+performing almost as well as video-based SOTA methods[58].
+5.4 Hand Operation Segmentation Efficiency
+To validate the effectiveness of our proposed hand operation seg-
+mentation module, we collected 8 gameplay sessions (4 MOBA and
+4 Simulation Strategy), totaling 135 minutes, specifically capturing
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+(b)Leave-One-Game-Session-Out Cross-Validation Results.
+(a)Leave-one-subject-out cross validation results for 20 participants.
+Figure 6: Comparison of Leave-One-Out Cross-Validation Results Across Participants and Games
+Table 2: Segmentation and detection statistics (Mean and SD)
+across two game types.
+Metric
+MOBA Simulation Strategy
+Mean SD Mean SD
+Total gameplay duration(s) 986.36 ±128.66 1022.89 ±185.99
+Detection time ratio(%) 32.63 ±4.89 4.05 ±2.87
+Detection accuracy(%) 85.06 ±7.92 90.35 ±8.50
+high-intensity periods such as team battles and rapid gestures. To
+establish a ground truth, two annotators independently reviewed
+and manually labeled these sessions based on a clear set of criteria
+for high-intensity operations: (1) Operation Frequency, defined as
+continuous rapid clicks at a rate of 2 times per second or more; (2)
+Hand Movement Intensity, including actions like forceful taps and
+broad screen swipes; and (3) Action Duration, requiring the intense
+operation to be sustained for over 2 seconds.
+We then evaluated the module’s performance by comparing the
+IMU-based automatic detection windows against the manually an-
+notated ground truth. As detailed in Table 2, our module performed
+robustly across both game genres, achieving high detection accura-
+cies of 85.06% for MOBA and 90.35% for Simulation Strategy, which
+confirms its general applicability. The slightly higher accuracy in
+Simulation Strategy games may be attributed to their more pre-
+dictable interaction patterns, whereas the sudden, chaotic bursts of
+action in MOBA team fights present a more complex segmentation
+challenge. A more insightful finding emerged from the proportion
+of gameplay time identified as high-intensity (Detection Time Ra-
+tio): the average ratio for MOBA games was 32.63%, substantially
+higher than the 4.05% for Simulation Strategy games. This stark
+contrast provides quantitative evidence for the differing operational
+demands of the genres, confirming that MOBA gameplay requires
+far more frequent and intense hand interactions. In summary, these
+results demonstrate that our module accurately identifies and filters
+out noise from high-intensity operations, providing a crucial foun-
+dation for the accuracy and stability of the downstream emotion
+detection system by ensuring sensing occurs only when the device
+is relatively stable.
+5.5 Robustness Evaluation
+To validate the robustness of RageSense in real-world application
+scenarios, we recruited 5 participants out of 20 participants for the
+Figure 7: Left: An example of holding the smartphone with
+a specific orientation. Right: averaged similarity metrics of
+VAs over different holding angles.
+robustness study, with each completing 10 sessions. To ensure fair
+model training and evaluation, the collected data were balanced
+across different emotional states. We then conducted performance
+tests under varying holding angles and body postures.
+5.5.1 Impact of Holding Angles. Different from PC games, mobile
+games need the user to hold the smartphone all the time. Through
+a group survey, we found that 35-55° is the most common and com-
+fortable angle range to hold the smartphone horizontally, such that
+the line of sight is perpendicular to the smartphone screen. How-
+ever, different users may have various preferences for smartphone-
+holding angles during mobile gameplay, as shown in Fig. 7, which
+includes three smartphone angles (35°, 45°, and 55°) facing the user’s
+face. Therefore, we implemented the addition experiment (N=5)
+to examine how the smartphone orientation would affect the es-
+timation performance. During the registration phase for training,
+the subjects recorded the echoes with the smartphone held at a
+default angle (𝜃= 45°). We then captured the reflected echoes with
+different smartphone angles from 35° to 55° to simulate the varying
+smartphone holding behaviors in daily gameplay.
+From Fig. 7, it is observed that the accuracy is highest at a 55°
+holding angle, while the accuracy for the 35° and 45° angles is similar
+and slightly lower. This result is contrary to our initial expectations
+of a steady decline in accuracy with increasing angle. The higher
+accuracy at 55° may be due to better alignment of the face with the
+smartphone microphone’s coverage area compared to the 35° and
+45° angles, where the face region is more displaced.
+5.5.2 Impact of Body Postures. As the sound wave intensity de-
+creases in inverse proportion to the squared distance between two
+objects, as well as due to multi-path channel fading, the reflected
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+signal quality may vary depending on the specific locations. In pre-
+vious evaluations with the default experimental setting, we asked
+participants to sit and keep the smartphone 20 cm away from the
+face. To investigate the impacts of different user body postures on
+recognition performance, we implemented another robustness tests
+for different postures. In the experiment, we asked five participants
+to perform the experiments in two common postures, including
+sitting on a chair, and reclining on the bed.
+The experimental results reveal that body posture significantly
+influences system performance. Specifically, the sitting posture
+yields superior performance across all metrics, achieving a con-
+cordance correlation coefficient (CCC) of 0.611 for valence, 0.621
+for arousal, and a combined PVA score of 0.616. In contrast, the
+reclining posture leads to noticeable degradation, with CCC values
+of 0.492 (valence), 0.588 (arousal), and a PVA score of 0.540. This
+performance drop may be attributed to less stable hand-holding
+behavior and increased variability in the relative positioning be-
+tween the smartphone and the user’s face when reclining. Unlike
+the seated posture—where users often stabilize their arms against a
+table, maintaining a consistent and optimal sensing distance—the
+reclining position may introduce subtle posture shifts due to gravi-
+tational effects on the arm, leading to degraded signal quality and
+recognition accuracy. These findings suggest that user posture plays
+a non-trivial role in wireless sensing applications and must be con-
+sidered when designing robust and generalizable affect recognition
+systems.
+5.5.3 Robustness to Game Audio. A key consideration is the sys-
+tem’s robustness to the game’s own audio, as both the ultrasonic
+probe signal (18–22 kHz) and the audible game sounds (<10 kHz)
+are emitted simultaneously from the same speaker. Our design
+leverages this clear spectral separation. We empirically validated
+this by measuring the Signal-to-Noise Ratio (SNR) of the received
+echo, observing only a negligible 0.34 dB drop when game audio
+was active. This confirms that concurrent game sound has virtually
+no impact on sensing performance.
+5.5.4 Robustness to Dynamic, Noisy Environments, and User Char-
+acteristics. We expanded the robustness evaluation to include dy-
+namic and noisy environments, as well as various user characteris-
+tics.The results are summarized in Table 3. We invited 5 participants
+from Study 1 to participate in a supplementary session for environ-
+mental robustness validation.
+Noisy Environment. We evaluated RageSense in a high-noise
+indoor public environment (i.e. cateteria, 78.42 dB) characterized by
+strong non-stationary ambient noise (e.g., human chatter, utensil
+impacts, and broadcast noise). Although this noise is outside the
+ultrasonic band, its harmonic components partially overlap with
+the sidelobes of the transmitted near-ultrasonic signal, weakening
+the quality of the received echoes. As a result, the system showed
+a mild performance drop (CCC𝑉 ↓8.81%, CCC𝐴 ↓8.08%), but the
+accuracy remained within an acceptable range, indicating that the
+core ultrasonic features were still preserved despite heavy acoustic
+interference.
+Dynamic Environment. we conducted tests in an outdoor walk-
+way with frequent pedestrian movement and varying ambient noise
+levels (70.11 dB). This environment contained transient occlusions
+and secondary reflections from moving bodies, which could poten-
+tially disturb the non-line-of-sight echo path. However, because
+the primary acoustic path—between the smartphone and the user’s
+face—is substantially stronger than reflections from surrounding
+motion, performance degradation remained limited (CCC𝑉 ↓2.39%,
+CCC𝐴 ↓4.92%). These results demonstrate that RageSense maintains
+stable accuracy even under typical everyday human movement.
+Skin Tones. We included participants with medium-to-dark skin
+tones (N=3). Compared to lighter-skin participants in the controlled
+study, we observed a moderate decrease in valence-arousal estima-
+tion concordance (CCC𝑉 ↓9.03%, CCC𝐴 ↓14.35%). While we did
+not collect sufficient data to identify the underlying cause, we note
+that two of these participants had substantial facial hair, which may
+partially obscure fine-grained geometric changes captured through
+ultrasonic reflections. We note that the sample imbalance reflects
+our local demographic pool.
+Accessories and Hair Styles. We examined robustness to com-
+mon user attributes, including eyewear and hair configuration. Per-
+formance remained consistent across users with glasses (N=13) and
+without glasses (N=7), indicating that minor multipath reflections
+from eyeglass frames had limited impact. Similarly, both long-hair
+(N=9) and short-hair (N=11) participants showed negligible per-
+formance differences (PVA 0.6118–0.6221). These results suggest
+that typical variations in accessories and hair styles exert minimal
+influence on the primary smartphone-to-face echo path.
+These robustness experiments, while based on modest sample
+sizes, indicate that RageSense maintains reasonable performance
+across noisy/dynamic environments and diverse user characteris-
+tics, supporting its applicability in real-world mobile gaming sce-
+narios.
+5.6 Discussion
+The results demonstrate the significant effectiveness of acoustic-
+based emotion detection in gaming scenarios. First, the system
+performed exceptionally well in tracking emotional fluctuations
+within a single gaming session, proving the feasibility of ultrasonic-
+based emotion detection in dynamic gaming environments. We
+chose to allow the system to learn across different games to adapt to
+changes in user emotions and external disturbances. This approach
+enables the system to maintain stable performance across multiple
+sessions, and despite some fluctuations, it still effectively captures
+emotional changes.
+However, although the system excels at filtering hand move-
+ments, variations in smartphone holding angles can still lead to
+inaccurate predictions, highlighting the challenges of emotion de-
+tection in real-world environments. Despite the influence of hand
+posture on detection, the system was still able to effectively iden-
+tify intense emotional fluctuations, as both valence and arousal
+are time-varying. To further improve the system’s robustness and
+practicality, the subsequent Study 2 will explore how to enhance
+emotion detection accuracy through large models and intervention
+systems that incorporate game content.
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+Table 3: Robustness evaluation across noisy and dynamic environments and diverse user characteristics.
+Condition CCC𝑉 (Mean ± SD) CCC𝐴(Mean ± SD) PVA (Mean ± SD)
+High-Noise Environment 0.5576 ± 0.0154 0.5713 ± 0.0137 0.5644 ± 0.0141
+Dynamic Environment 0.5969 ± 0.0006 0.5909 ± 0.0041 0.5939 ± 0.0018
+Skin Tone (Medium-Dark) 0.5563 ± 0.0109 0.5323 ± 0.0000 0.5443 ± 0.0025
+Eyewear (with Glasses) 0.6232 ± 0.0296 0.6118 ± 0.0298 0.6175 ± 0.0272
+Eyewear (without Glasses) 0.5841 ± 0.0198 0.6441 ± 0.0334 0.6141 ± 0.0150
+Hair (Long Hair) 0.5974 ± 0.0259 0.6468 ± 0.0226 0.6221 ± 0.0170
+Hair (Short Hair) 0.6230 ± 0.0251 0.6007 ± 0.0375 0.6118 ± 0.0272
+6 Real-time System Implementation
+Study 1 showed the effectiveness of the proposed approach in esti-
+mating user’s emotion status, which is the foundation of emotion
+intervention.
+6.1 Prototype Application
+To assess the practicality of real-time emotion estimation and ex-
+plore the effectiveness of in-game interventions, we developed a
+prototype mobile application for the Android OS (Appendix A).
+The app operates in the background, emitting inaudible ultrasound
+waves and analyzing the characteristics of the reflected echoes to
+predict the user’s emotional state, including valence and arousal
+levels. When significant fluctuations in these emotional parameters
+are detected, the app captures a screenshot of the current game
+content and sends it, along with historical valence and arousal
+data, to a cloud server. The cloud server then uses a large language
+model (LLM) API to interpret both the game content and the user’s
+emotional state, generating a personalized intervention message
+that is sent back to the mobile app. This message is displayed as a
+brief, semi-transparent pop-up, which is strategically positioned
+away from core gameplay controls and interactive elements. It au-
+tomatically disappears after 5 seconds to avoid interfering with
+the fast-paced nature of gameplay. This ensures that users receive
+targeted emotional regulation suggestions without disrupting the
+intensity or flow of their game.
+To benchmark the performance of our emotion detection sys-
+tem, we also created two baseline applications: one that triggers
+interventions based on predefined contextual cues, and another
+that triggers interventions at random intervals. This comparison
+allows us to evaluate the relative effectiveness of context-aware
+interventions versus arbitrary ones.
+6.2 Runtime Performance
+To evaluate the computational overhead of detecting rage reactions
+using the RageSense app, we analyzed system latency, as summa-
+rized in Table 4. This step involves various signal processing tasks,
+with the Vivo X90 requiring 133 ms, the Redmi K60 requiring 175
+ms, and the OnePlus Ace3 requiring 162 ms for feature generation.
+Following optimization, the feature generation step involves vari-
+ous signal processing tasks, requiring only 133 ms on the Vivo X90,
+175 ms on the Redmi K60, and 162 ms on the OnePlus Ace3. The
+subsequent valence-arousal estimation step runs faster than the
+intervention generation, with latencies of 295 ms, 248 ms, and 202
+ms on the respective devices.
+Table 4: The system latency on different smartphones. The
+latency results were obtained using a 5-second audio sample
+averaged over 10 runs. The intervention generation latency
+depends on the connection speed to the LLM in the cloud
+server.
+Latency (ms) Vivo X90 Redmi K60 Oneplus Ace3
+Feature Gen. 133 175 162
+VA Estimation 295 248 202
+Intervention Gen. 500 500 500
+Total 928 923 864
+The system enables continuous emotion detection during game-
+play. Despite network latency and LLM processing delays, these
+factors remain manageable and do not lead to significant accumula-
+tion. The total system latency, ranging from 864 ms on the OnePlus
+Ace3 to 928 ms on the Vivo X90, is well within the 2-second striding
+window, ensuring real-time feedback. This enhanced performance
+demonstrates the system’s ability for real-time emotion detection,
+making it suitable for interactive gaming applications.
+To quantify the power overhead introduced by RageSense, we
+measured battery drain on a Vivo X90 (4810 mAh) under two con-
+ditions: Game Only and Game + RageSense. Each session lasted 30
+minutes and repeated 5 times with fixed screen brightness (50%)
+and network conditions. Battery Historian was used to obtain per-
+component power share. Game Only: total drain = 6.08%, Game
++ RageSense: total drain = 7.68%. RageSense therefore introduces
+an additional 1.60% absolute battery consumption. This overhead
+is small relative to the dominant contributors—the game engine
+(58%) and the screen (18%)—with RageSense accounting for only
+24% of the total consumption during the combined condition. Mem-
+ory profiling shows that RageSense occupies approximately 330
+MB total PSS (Proportional Set Size), which is well below the 1.8
+GB used by the MOBA game and remained stable without leakage
+across all runs.
+6.3 Impact of Smartphone Models
+Theoretically, most high-end smartphone speakers are designed to
+produce sound within the frequency range of 100 Hz to 20 kHz,
+which is capable of reproducing near-ultrasound frequencies up
+to 19 kHz. However, given the variation in hardware specifica-
+tions across models, it is important to investigate the quality of the
+near-ultrasound signal used in the RageSense system on different
+smartphone devices. In this section, we assess the signal quality
+loss of the spectrogram generated from near-ultrasound signals.
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+We measured the Signal-to-Noise Ratio (SNR) as the metric across
+four Android smartphones: Redmi K60, Huawei Mate 30, Vivo X90,
+and Samsung S9. Our results show that the near-ultrasound signal
+quality across these models is relatively consistent, with SNR values
+ranging from 15.87 dB to 16.41 dB.
+7 Study 2: In-field Study with real-time
+Intervention In Mobile Gaming
+To evaluate the effectiveness of RageSense’s emotion-aware, LLM-
+based intervention system, we conducted a field study with 53 new
+participants. Given the relatively small sample size, we utilized a
+Latin Square design to ensure each participant experienced all three
+intervention models. The order of conditions was counterbalanced
+across participants to mitigate potential sequence effects.
+7.1 Intervention Conditions
+Throughout the gameplay, RageSense’s emotion detection module
+continuously monitored participants’ emotional states. The key
+distinction between the intervention models was the nature of the
+intervention triggered when a participant’s negative emotional
+indicators exceeded a predefined threshold:
+Control condition (Pre-defined Text-Based Intervention). : In this
+condition, intervention requests were triggered based on predicted
+valence-arousal values derived from the emotion detection model.
+The system selected intervention messages randomly from a prede-
+fined text library, offering non-adaptive guidance. The messages
+were delivered in the participant’s preferred format (either text or
+voice).
+Proposed condition (LLM-based Personalized Intervention). : This
+condition also used predicted valence-arousal values from the emo-
+tion detection model to trigger interventions. However, unlike the
+Control Condition, the intervention messages were generated dy-
+namically by a large language model (LLM). The system processed
+real-time game screenshots and emotional data to generate per-
+sonalized, contextually relevant suggestions or supportive mes-
+sages. The intervention was adjusted dynamically based on the
+participant’s emotional state, aiming to provide more tailored and
+context-aware interventions.
+Baseline condition (Random Timing-based Intervention). : In this
+condition, interventions were triggered at random intervals, ir-
+respective of the participant’s emotional state. The intervention
+messages were randomly selected from the predefined text library,
+offering non-adaptive and uncontextualized guidance. This condi-
+tion served as the baseline for comparison.
+7.2 Metric
+The field study spanned over three weeks, with each participant
+completing multiple sessions of gameplay. As the study took place
+in the field, the duration of each session varied depending on the
+participant’s schedule, but it was required that each session lasted
+at least one hour. To evaluate the effectiveness of the interventions,
+two primary types of data were collected:
+Emotional Change Metrics: The primary measure was the imme-
+diate impact of interventions on players’ emotional states. With
+user consent, we accessed users’ valence-arousal values during
+their interaction with the app, along with in-game recording data,
+to assess the effectiveness of the intervention. Emotion data from
+one minute before and one minute after each intervention was ex-
+tracted and changes in valence (pleasantness) and arousal (tension
+level) were computed. The effectiveness of the intervention was
+assessed by comparing the average post-intervention emotional
+improvement (increase in valence and decrease in arousal) for each
+participant across all intervention instances.
+Subjective Questionnaire Responses: Participants completed a post-
+experiment survey assessing their perceptions of the intervention.
+The survey included satisfaction ratings (on a five-point Likert
+scale), the perceived helpfulness and contextual relevance of the
+intervention, and general acceptability (e.g., whether they found
+the interventions intrusive). The experimental group provided ad-
+ditional feedback on the LLM-generated messages, including their
+perceived naturalness and empathetic quality, while the control
+group was asked about their impressions of the pre-defined mes-
+sages.
+7.3 Procedure and Participants
+The study was conducted over a three-week period, with partici-
+pants completing one session per week. A call for new participants
+who had not been involved in Study 1 was posted in the university
+community, where participants were selected based on the follow-
+ing criteria: they must own an Android smartphone and have prior
+experience with mobile gaming. Consistent with the demographic
+distribution of MOBA players—where young adults (18–30 years
+old) constitute the dominant player segment according to prior
+market reports[2, 3] and game analytics[20]. Our recruitment fo-
+cused on university students. A total of 85 participants responded
+to the call, from which 15 participants discontinued their partici-
+pation, 10 encountered software compatibility issues, and 7 raised
+privacy concerns. In the end, 53 participants completed the study
+and provided feedback.
+To ensure the robustness of the results, we employed a Latin
+Square design to mitigate order effects. Each participant was ran-
+domly assigned to a specific order of intervention conditions (Con-
+trol, Baseline, or Proposed), with each intervention being experi-
+enced in a different week. The order of interventions was coun-
+terbalanced across participants, ensuring that each intervention
+model was tested evenly throughout the study period. Participants
+were free to schedule their gameplay sessions at their convenience,
+ensuring a more naturalistic and flexible in-field testing environ-
+ment. The study has been approved by the Internal Review Board
+of [the institute name is hidden for double-blinded review].
+7.4 Quantitative Analysis
+7.4.1 Effectiveness of Intervention Time. The effectiveness of the
+intervention was evaluated based on changes in Valence Increase
+and Arousal Drop across different intervention conditions: Control
+(valence-arousal triggered), Personalized (valence-arousal-triggered),
+and Baseline (randomly). As shown in the Figure 8, the Personalized
+intervention (proposed) resulted in a significant increase in valence
+and a greater arousal drop compared to both the Control and Base-
+line conditions in Simulation Strategy games. Specifically, a marked
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+* *
+Figure 8: Calculated valence-arousal changes across three intervention methods and Recovery condition shown as a reference
+for naturally occurring recovery. The Recovery data are derived from the 50% trigger-probability study.
+valence increase was observed in the Personalized condition, high-
+lighting the positive emotional impact of in-game interventions.
+These results suggest that during-game interventions (Personalized)
+have a more significant effect in games like Simulation Strategy,
+where emotional states are more stable and decisions can greatly
+influence the outcome of the game.
+To contextualize these findings, we further included a Recovery
+reference condition derived from a subset of participants in the
+in-field study (N=10 out of 53), based on the 50% trigger-probability
+design, where interventions were randomly omitted in half of the
+eligible moments[5, 8]. This provides an estimate of naturally oc-
+curring affective recovery within the same session and subject. As
+shown in Fig. 8, the magnitude of valence and arousal increase in
+the Recovery moments was substantially smaller than in any inter-
+vention method, confirming that the observed improvements are
+attributable to the interventions rather than spontaneous emotional
+recovery.
+7.4.2 Effectiveness of Content Understanding. The effectiveness
+of Content Understanding was assessed by analyzing changes in
+valence and arousal as a result of intervention content. As shown
+in the Figure 8, Personalized interventions significantly improved
+valence in both game types, with stronger effects observed in Simu-
+lation Strategy games compared to MOBA games. In particular, the
+Personalized intervention resulted in a clear valence increase com-
+pared to the Control condition, which remained relatively stable
+across both game types.
+These findings suggest that content-specific interventions are
+most effective in games like Simulation Strategy, where emotional
+responses are stronger due to slower-paced decision-making and
+more significant gameplay outcomes. In MOBA games, the rapid
+pace of the game and team dynamics may limit the emotional impact
+of interventions.
+7.4.3 Behavioral Measures. We used normalized playtime as a be-
+havioral measure to evaluate the intervention effects. Playtime is a
+key indicator of player engagement and emotional regulation. We
+hypothesize that the intervention would affect playtime by improv-
+ing emotional management, particularly in games where individual
+performance plays a larger role.
+The figure 9 shows normalized playtime for the Simulation Strat-
+egy and MOBA strategies across three conditions: Control, Per-
+sonalized, and Baseline. In Simulation Strategy, the personalized
+intervention had the highest playtime, with the control condition
+Figure 9: Playtime changes comparison across three inter-
+vention methods.
+showing a slight decrease, and the baseline showing the lowest. For
+MOBA, there was little difference between the control and person-
+alized conditions, while both were higher than the baseline. These
+results suggest that the intervention is more effective in Simulation
+Strategy games. For MOBA games, which are team-based, players
+are less likely to quit mid-game even under negative emotions,
+leading to little impact on average playtime. In contrast, Simulation
+Strategy games are more individually driven, making players more
+susceptible to emotional influences, and thus, more likely to be
+affected by the intervention.
+7.5 Subjective User Feedback
+In addition to the quantitative analysis of intervention effective-
+ness, participants’ post-survey responses and comments provided
+valueable insights.
+7.5.1 Comparative Effectiveness of Intervention Strategies. Over-
+all, participants had a clear preference for the personalized (ours)
+intervention method over the control and baseline methods. As
+shown in Figure 10, across all evaluated aspects, the personalized
+intervention consistently outperformed the baseline with statistical
+significance.
+For Experience Enhancement, the personalized approach achieved
+an average score of 4.5 (SD = 0.58), significantly higher than both
+the control (M = 3.1, SD = 0.36, 𝑝 < .0001) and baseline methods (M
+= 2.9, SD = 0.48, 𝑝 < .0001). Similarly, in Regulation Effectiveness,
+our method reached 4.2 (SD=0.48) , exceeding the control (M = 3.5,
+SD=0.78, 𝑝 < .05) and baseline (M = 3.0, SD=1.3, 𝑝 < .01).
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+Figure 10: Survey feedback across four aspects of the inter-
+vention.
+The advantage of personalization was also evident in Contextual
+Relevance, where our system scored 4.0 (SD = 0.68), outperforming
+both control (M = 3.2, SD = 0.94, 𝑝 < .05) and baseline (M = 2.0, SD =
+0.67, 𝑝 < .0001). Lastly, for Timing Appropriateness, our intervention
+(M = 3.7, SD=0.83) outpaced the baseline (M = 2.9, SD= 1.48, 𝑝 < .05),
+though its advantage over the control condition (M = 3.5, SD=1.28)
+did not reach statistical significance.
+Furthermore, to directly evaluate the potential for gameplay
+interruption—a key usability concern—the survey included spe-
+cific questions on the intervention’s disruption and intrusiveness.
+Participants rated the personalized intervention highly for its non-
+disruptive nature (M=4.23, SD=0.42) and non-intrusiveness (M =
+4.46, SD = 0.50). These scores were not only high in absolute terms,
+with 87% of participants providing a rating of 4 or higher on a
+5-point scale, but also significantly outperformed the control and
+baseline conditions. This feedback confirms that our design ap-
+proach successfully delivered timely emotional support without
+negatively impacting the core user experience.
+7.5.2 Light and Heavy Gamers Report Higher Satisfaction Across
+Dimensions. We further analyzed participants by their self-reported
+daily game playtime, categorized into light, moderate, and heavy
+gamers. As illustrated in Figure 11 (left), light gamers consistently
+reported higher satisfaction across all evaluated dimensions. In
+particular, they gave the highest ratings for Experience Enhancement
+(M = 4.6, SD = 0.7), compared to moderate gamers (M = 4.2, SD = 0.8)
+and heavy gamers (M = 4.3, SD = 0.9). Similarly, light gamers rated
+Regulation Effectiveness notably higher (M = 4.5, SD = 0.8), with a
+significant difference observed between light and heavy gamers
+(𝑝 < .05).
+Although no other dimensions reached statistical significance,
+light gamers consistently rated higher in Contextual Relevance and
+Timing Appropriateness as well, suggesting that less frequent gamers
+may perceive greater value in personalized emotional interven-
+tions. This trend indicates that light gamers, who might be less
+accustomed to intense gaming sessions, particularly appreciate the
+supportive feedback provided by our system.
+7.5.3 Emotionally Sensitive Users Benefit More from Interventions.
+We also analyzed user responses based on emotional sensitivity,
+categorizing participants into two groups: Emotionally Sensitive
+and Emotionally Stable. This classification was based on our custom
+Emotion Sensitivity Index (ESI), derived from a pre-study question-
+naire. The ESI is the sum of scores from three items: 1) the number
+of negative in-game scenarios experienced in the past (0–7), 2) the
+frequency of negative emotions in the last month (a 4-point scale),
+and 3) the typical time it takes to feel frustrated during gameplay
+(a 4-point scale). We applied a median split to the total ESI scores
+(Mdn = 8, range: 2–15), classifying participants with scores at or
+above the median as Emotionally Sensitive, and the remainder as
+Emotionally Stable.
+As shown in Figure 11 (right), emotionally sensitive users con-
+sistently rated the system more favorably across all metrics. The
+difference was statistically significant for Emotional Understand-
+ing, where sensitive users gave higher scores (M = 4.6, SD = 0.8)
+compared to stable users (M = 4.1, SD = 0.9), with 𝑝 < .05.
+Although differences in Regulation Effectiveness and Experience
+Enhancement did not reach significance, the sensitive group con-
+sistently rated higher across these aspects as well. These findings
+suggest that emotionally sensitive users, who are more likely to
+experience fluctuating emotional states during gameplay, benefit
+more from the system’s personalized interventions.
+7.6 Case Study: Regulating Emotion in a Losing
+Game
+To provide a compelling qualitative demonstration of RageSense’s
+in-the-wild effectiveness, we present an in-depth case study. The
+participant, recruited from our study 1, is a high-frequency player
+who games 3-5 hours daily and reported experiencing daily neg-
+ative emotions from gameplay. This profile makes them an ideal
+representative of our target demographic: players whose well-being
+is significantly impacted by emotional dysregulation. We analyze
+this player’s emotional trajectory during a challenging competi-
+tive match, illustrating how our system’s targeted interventions
+helped them regulate their emotions despite a significant in-game
+disadvantage (visualized in Figure 12).
+7.6.1 Initial Setbacks and Emotional Distress. The match began
+unfavorably. As shown in the Gold Difference Timeline (top panel),
+frequent deaths and early-game ganks placed the player’s team at
+a significant economic disadvantage. This adverse situation mani-
+fested directly in their emotional state (bottom panel). Their Valence
+(blue line) plummeted into the negative spectrum, indicating sus-
+tained feelings of displeasure and frustration. Concurrently, their
+Arousal (red line) exhibited sharp, erratic spikes corresponding to
+in-game setbacks, painting a clear picture of a player entering a
+negative emotional spiral.
+7.6.2 Targeted Interventions and Emotional Trajectory. RageSense
+delivered three interventions at moments of detected acute dis-
+tress, marked by yellow stars. Each intervention had a distinct and
+observable impact on the player’s emotional trajectory.
+First Intervention (approx. 1:00): Stabilizing an Early-Game Slump.
+Following an initial setback, the player’s Valence hit a low point.
+The intervention at 1:00 appears to have curtailed this downward
+trend. We observe an immediate, albeit modest, rise in Valence
+towards a more neutral state, while the preceding Arousal spike
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+Figure 11: Left: Survey feedback of Experience Enhancement, Regulation Effectiveness, Contextual Relevance and Timing
+Appropriateness across three gamer levels. Right: Survey feedback across two emotional sensitivity groups.
+subsides. This suggests the intervention successfully provided a
+moment of emotional stabilization, preventing further decline.
+Second Intervention (approx. 4:00): Fostering Resilience in the Mid-
+Game. As the gold disadvantage deepened around the 4:00 mark,
+the player experienced another significant emotional dip. The sec-
+ond intervention was triggered in response. Post-intervention, the
+Valence curve shows a more pronounced and sustained upward
+trend, demonstrating an improved emotional state despite the on-
+going in-game challenge. The intervention seemingly helped the
+player build emotional resilience.
+Third Intervention (approx. 8:30): Maintaining Composure Under
+Pressure. During a late-game event, the player’s Arousal spiked
+sharply, indicating a moment of high stress. The third intervention
+was deployed, and we can observe its effect in how rapidly this
+Arousal peak was reduced. Crucially, the player’s Valence remained
+relatively stable instead of crashing. This suggests the intervention
+was effective in helping the player maintain composure during a
+critical, high-pressure situation.
+7.6.3 The Cumulative Effect: A Player’s Journey from Frustration to
+Focus. The cumulative impact of these interventions is best illus-
+trated by the player’s own post-game reflection:
+“I was frustrated with my performance after dying during the
+early laning phase(approx. 4:00). The system’s intervention soothed
+my frustration and, crucially, reduced the weight of my self-blame by
+reminding me that one mistake wouldn’t decide the entire match’s
+outcome. Later, in an important team fight where I was the initiator,
+my key abilities failed to connect, leading directly to our team’s defeat
+and a significant gold gap(approx. 8:00). I felt the loss was entirely my
+fault. The system then prompted me to recognize that, ultimately, it
+is just a game. This allowed me to consciously calm down and refocus
+my emotions. This internal process of self-regulation was absolutely
+critical. With a renewed focus, we won a decisive late-game team fight,
+started to reclaim the economic advantage, and ultimately, secured
+the victory.”
+This player’s Statement Illustrates our quantitative data in a
+personal experience, illustrating how the interventions facilitated
+a crucial shift from frustration to resilient focus, ultimately con-
+tributing to their success.
+Figure 12: A case study of game progression and emotional
+response with interventions.
+8 Discussion and Limitation
+8.1 Beyond the Individual:The Social Context of
+Emotion
+A key limitation of RageSense is its current focus on individual
+emotion, which may not fully capture the rich social context of
+multiplayer gaming[44]. This can occasionally lead to interventions
+that are contextually inappropriate. A promising direction for fu-
+ture work is to extend the system to foster interpersonal emotion
+regulation (iER) skills, which are vital for teamwork. We envision
+evolving RageSense from a reactive "regulator" to a proactive social-
+emotional learning (SEL) "partner". Such a system would analyze
+team-level emotional data to facilitate supportive interactions, for
+instance, by suggesting an encouraging message when a teammate
+is struggling. This is particularly valuable in common scenarios like
+friends playing together, shifting the goal from merely mitigating
+individual rage to actively fostering more cohesive and positive
+team dynamics, ultimately enhancing the shared social experience
+8.2 Not All Game Contexts Are Equal: Matching
+Interventions to Gameplay
+While personalized interventions were highly effective in reduc-
+ing emotional distress in Simulation Strategy games, their impact
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+was less pronounced in fast-paced, team-based games like MOBA
+(Multiplayer Online Battle Arena), where emotional fluctuations
+were less noticeable. This suggests that the effectiveness of emo-
+tional interventions may vary significantly depending on the pacing
+and structure of the game. In fast-paced team games, emotional
+changes might be subtler or harder to mitigate through interven-
+tions. As seen in figure 9, there was little change in playtime after
+personalized interventions in such games. For these types of games,
+exploring alternative intervention modalities, such as subtle tactile
+or audio cues instead of intrusive text, may be more effective. Fur-
+ther testing across a broader range of game genres is necessary to
+refine the intervention system for greater applicability.
+8.3 Short-Term Emotional Effects and
+Long-Term Observations
+While RageSense reliably reduces negative affect within a game-
+play session, our three-week field deployment did not reveal clear
+evidence of cumulative longer-term reductions in rage levels. To
+assess whether rage incidents decreased as participants continued
+using the system, we examined the intervention trigger frequency
+as a proxy for rage events and computed the Pearson correlation be-
+tween chronological session order and the number of interventions.
+The correlation was negligible (Pearson 𝑟 = −0.13), suggesting
+that intervention frequency did not exhibit any meaningful linear
+decline throughout the study period. These findings indicate that
+RageSense provides acute, moment-to-moment emotional stabiliza-
+tion, but such short-term benefits did not aggregate into measurable
+long-term behavioral change within three weeks. These observa-
+tions highlight an important area for future investigation: whether
+longer-term use could cultivate more durable emotional regulation
+skills beyond immediate gameplay. Longer-term, context-controlled
+studies will be needed to evaluate these broader effects.
+8.4 Privacy Risks and Implications
+Although RageSense avoids visual capture, the handling of affective
+and privacy information warrants careful consideration. Below, we
+reflect on the privacy risk and implications of our design choices.
+8.4.1 Minimization of Affective Data Exposure. Although valence
+-arousal traces are low-dimensional, they represent sensitive affec-
+tive information that may implicitly reflect a user’s stress level,
+frustration, or emotional stability. To reduce the exposure of such
+data, RageSense performs all valence–arousal inference locally on
+the smartphone, thereby preventing raw ultrasonic reflections or
+intermediate spectrogram features from leaving the device. Only
+when a notable emotional fluctuation is detected, a short 5-second
+valence-arousal history and five obfuscated gameplay screenshots
+(which are anonymized through the app’s built-in Optical Character
+Recognition (OCR) function that locates text regions and pixelates
+potentially sensitive strings—e.g., player usernames/IDs, teammate
+names, and chat messages—thereby reducing identifiability and
+cross-session linkage) are transmitted for intervention generation.
+While this design substantially limits the amount of affective data
+shared, we acknowledge that even minimal emotional traces can
+carry inference risks, and further reductions remain an important
+direction for future work.
+8.4.2 Identifiability and Characteristics of Ultrasonic Reflections.
+Prior work [46] has shown that rich skeletal trajectories or fine-
+grained motion patterns can serve as signatures for user re- identi-
+fication. Ragesense does capture fine-grained variations in facial
+micro-movements and device interaction behaviors. However, these
+reflections encode only non-semantic perturbations in facial ge-
+ometry and do not contain reconstructible facial appearance or
+body skeletal trajectories. Nevertheless, we acknowledge that any
+physiological or behavioral signal may carry residual identifiability
+risk, and a fuller investigation remains a direction for future work.
+8.4.3 Cloud-Assisted Interventions and Practical Trade-Offs. Our
+current design relies on a cloud-based LLM to generate personalized
+interventions. While this requires network connectivity, the mech-
+anism is strictly non-blocking: if the connectivity or cloud server
+is unavailable, gameplay proceeds uninterrupted. As lightweight
+multimodal on-device models [30, 73, 74] continue to mature, fully
+local intervention generation may become feasible, further reduc-
+ing data transmission latency and tightening the system’s privacy
+boundary.
+9 Conclusion
+This paper presents RageSense, a system for detecting and regu-
+lating negative emotions in mobile gaming using near-ultrasonic
+acoustic sensing. Unlike traditional methods, RageSense avoids vi-
+sual and audio-based surveillance, offering a non-intrusive, accurate
+solution for real-time emotion estimation. Paired with personal-
+ized, context-aware interventions powered by a large language
+model (LLM), it effectively reduces negative emotion such as rage,
+frustration and enhances the gaming experience, particularly in
+Simulation Strategy games.
+Acknowledgments
+This work was supported by the National Natural Science Founda-
+tion of China (NSFC) under Grant 62302168. This work was also
+supported in part by the National Key R&D Program of China
+(No. 2022YFB4500603), Guangdong Provincial Key Laboratory of
+Human Digital Twin (No. 2022B1212010004); Guangzhou Basic Re-
+search Program (No. SL2023A04J00930); and Shenzhen Holdfound
+Foundation Endowed Professorship.
+References
+[1] 2024. https://finleyusa.com/report-mobile-gaming-surging-continues-to-pull-
+away-from-console-gaming/. [Online; accessed 23-March-2025].
+[2] 2025. https://maf.ad/en/blog/mobile-gaming-statistics/. [Online; accessed 23-
+November-2025].
+[3] 2025. https://mi.talkingdata.com/report-detail.html?id=529. [Online; accessed
+23-November-2025].
+[4] Ebru Akbaş and Eda Kilinç Işleyen. 2024. The effect of digital game addiction on
+aggression and anger levels in adolescents: A cross-sectional study. Archives of
+Psychiatric Nursing 52 (2024), 106–112.
+[5] Marvyn R Arévalo Avalos, Jing Xu, Caroline Astrid Figueroa, Alein Y Haro-
+Ramos, Bibhas Chakraborty, and Adrian Aguilera. 2024. The effect of cognitive
+behavioral therapy text messages on mood: A micro-randomized trial. PLOS
+Digital Health 3, 2 (2024), e0000449.
+[6] Sinem Aslan, Nese Alyuz, Eda Okur, Sinem Emine Mete, Ece Oktay, and Asli Ar-
+slan Esme. 2018. Effect of emotion-aware interventions on students’ behavioral
+and emotional states. Educational Technology Research and Development 66 (2018),
+1399–1413.
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+[7] Maciej Behnke, Patrycja Chwiłkowska, and Lukasz D Kaczmarek. 2021. What
+makes male gamers angry, sad, amused, and enthusiastic while playing violent
+video games? Entertainment Computing 37 (2021), 100397.
+[8] N Bidargaddi, G Schrader, P Klasnja, J Licinio, and S Murphy. 2020. Designing m-
+Health interventions for precision mental health support. Translational psychiatry
+10, 1 (2020), 222.
+[9] Dmitry Bogdanov, Xavier Lizarraga-Seijas, Pablo Alonso-Jiménez, and Xavier
+Serra. 2022. MusAV: A Dataset of Relative Arousal-Valence Annotations for
+Validation of Audio Models. http://hdl.handle.net/10230/54181. In Proceedings of
+the 23rd International Society for Music Information Retrieval Conference (ISMIR).
+Bengaluru, India.
+[10] Tiago Carvalhais and Luís Magalhães. 2018. Recognition and use of emotions in
+games. In 2018 International conference on graphics and interaction (ICGI). IEEE,
+1–8.
+[11] Yu chu Yeh, Ssu Chi Lai, and Chung-Wei Lin. 2016. The dynamic influence of
+emotions on game-based creativity: An integrated analysis of emotional valence,
+activation strength, and regulation focus. Computers in Human Behavior 55
+(2016), 817–825. https://doi.org/10.1016/j.chb.2015.10.037
+[12] Maximilian Croissant, Guy Schofield, and Cade McCall. 2023. Emotion Design
+for Video Games: A Framework for Affective Interactivity. ACM Games: Research
+and Practice 1, 3 (2023), 1–24.
+[13] Oana A David, Cristina Tomoiagă, and Liviu A Fodor. 2024. Gamified Assessment
+of the Emotion Regulation Abilities in Youth: Validation of the REThink Online
+System. Games for Health Journal 13, 3 (2024), 184–191.
+[14] Peter Ducharme, Jason Kahn, Carrie Vaudreuil, Michaela Gusman, Deborah
+Waber, Abigail Ross, Alexander Rotenberg, Ashley Rober, Kara Kimball, Alyssa L
+Peechatka, et al. 2021. A “proof of concept” randomized controlled trial of a
+video game requiring emotional regulation to augment anger control training.
+Frontiers in Psychiatry 12 (2021), 591906.
+[15] Kexin Feng and Theodora Chaspari. 2020. A review of generalizable transfer
+learning in automatic emotion recognition. Frontiers in Computer Science 2 (2020),
+9.
+[16] Asma Ghandeharioun, Daniel McDuff, Mary Czerwinski, and Kael Rowan. 2019.
+EMMA: an emotion-aware wellbeing chatbot. In 2019 8th international conference
+on affective computing and intelligent interaction (ACII). IEEE, 1–7.
+[17] María Isabel Gómez-León. 2025. Serious games to support emotional regulation
+strategies in educational intervention programs with children and adolescents.
+Systematic review and meta-analysis. Heliyon (2025).
+[18] Marco Granato, Davide Gadia, Dario Maggiorini, and Laura A Ripamonti. 2018.
+Software and hardware setup for emotion recognition during video game fruition.
+In Proceedings of the 4th EAI International Conference on Smart Objects and Tech-
+nologies for Social Good. 19–24.
+[19] Scott H Hemenover and Nicholas D Bowman. 2018. Video games, emotion, and
+emotion regulation: Expanding the scope. Annals of the International Communi-
+cation Association 42, 2 (2018), 125–143.
+[20] Enwu Huang, Yalong Xing, and Xiaozhou Song. 2024. Emotional analysis of
+multiplayer online battle arena games addiction. Frontiers in Psychology 15 (2024),
+1347949.
+[21] Rahul Islam and Sang Won Bae. 2024. FacePsy: An Open-Source Affective Mobile
+Sensing System-Analyzing Facial Behavior and Head Gesture for Depression
+Detection in Naturalistic Settings. Proceedings of the ACM on Human-Computer
+Interaction 8, MHCI (2024), 1–32.
+[22] M. Jagadeesh and B. Baranidharan. 2022. Facial expression recognition of online
+learners from real-time videos using a novel deep learning model. Multimedia
+Syst. 28, 6 (Dec. 2022), 2285–2305. https://doi.org/10.1007/s00530-022-00957-z
+[23] Eiman Kanjo, Eman MG Younis, and Chee Siang Ang. 2019. Deep learning
+analysis of mobile physiological, environmental and location sensor data for
+emotion detection. Information Fusion 49 (2019), 46–56.
+[24] Pragma Kar, Shyamvanshikumar Singh, Avijit Mandal, Samiran Chattopadhyay,
+and Sandip Chakraborty. 2023. ExpresSense: Exploring a Standalone Smartphone
+to Sense Engagement of Users from Facial Expressions Using Acoustic Sensing.
+In Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems
+(Hamburg, Germany) (CHI ’23). Association for Computing Machinery, New York,
+NY, USA, Article 265, 18 pages. https://doi.org/10.1145/3544548.3581235
+[25] Zahra Karamimehr, Mohammad Mehdi Sepehri, Soheil Sibdari, Toktam Khatibi,
+and Hassan Aghajani. 2023. Personalised emotion-aware e-learning systems
+with interventions. International Journal of Smart Technology and Learning 3, 3-4
+(2023), 187–211.
+[26] Sander Koelstra, Christian Mühl, Mohammad Soleymani, Jong-Seok Lee, Ashkan
+Yazdani, Touradj Ebrahimi, Thierry Pun, Anton Nijholt, and Ioannis Patras. 2012.
+DEAP: A Database for Emotion Analysis Using Physiological Signals. IEEE
+Transactions on Affective Computing 3, 1 (2012), 18–31. https://doi.org/10.1109/T-
+AFFC.2011.15
+[27] Thomas Kosch, Mariam Hassib, Robin Reutter, and Florian Alt. 2020. Emotions
+on the Go: Mobile Emotion Assessment in Real-Time using Facial Expressions.
+In Proceedings of the 2020 International Conference on Advanced Visual Interfaces
+(Salerno, Italy) (AVI ’20). Association for Computing Machinery, New York, NY,
+USA, Article 18, 9 pages. https://doi.org/10.1145/3399715.3399928
+[28] Pavel Kozlov, Alisher Akram, and Pakizar Shamoi. 2024. Fuzzy approach for
+audio-video emotion recognition in computer games for children. Procedia
+Computer Science 231 (2024), 771–778.
+[29] Michal Krumnikl and Vojtěch Maiwald. 2024. Facial emotion recognition for
+mobile devices: A practical review. IEEE Access 12 (2024), 15735–15747.
+[30] Stefanos Laskaridis, Kleomenis Katevas, Lorenzo Minto, and Hamed Haddadi.
+2024. MELTing Point: Mobile Evaluation of Language Transformers. In Pro-
+ceedings of the 30th Annual International Conference on Mobile Computing and
+Networking (Washington D.C., DC, USA) (ACM MobiCom ’24). Association for
+Computing Machinery, New York, NY, USA, 890–907. https://doi.org/10.1145/
+3636534.3690668
+[31] Raymond Lavoie, Kelley Main, Corey King, and Danielle King. 2021. Virtual
+experience, real consequences: the potential negative emotional consequences of
+virtual reality gameplay. Virtual Reality 25, 1 (2021), 69–81.
+[32] Nicole Lazzaro. 2009. Why we play: affect and the fun of games. Human-computer
+interaction: Designing for diverse users and domains 155 (2009), 679–700.
+[33] Hao Lei, Chenxin Wang, Ming Ming Chiu, and Shuangye Chen. 2022. Do edu-
+cational games affect students’ achievement emotions? Evidence from a meta-
+analysis. Journal of Computer Assisted Learning 38, 4 (2022), 946–959.
+[34] Zikang Leng, Myeongul Jung, Sungjin Hwang, Seungwoo Oh, Lizhe Zhang,
+Thomas Plötz, and Kwanguk Kim. 2024. Emotion Recognition on the Go: Utilizing
+Wearable IMUs for Personalized Emotion Recognition. In Companion of the
+2024 ACM International Joint Conference on Pervasive and Ubiquitous Computing
+(Melbourne, VIC, Australia) (UbiComp ’24). Association for Computing Machinery,
+New York, NY, USA, 537–544. https://doi.org/10.1145/3675094.3678452
+[35] Enrique Leon, Iraitz Montalban, Sarah Schlatter, and Iñigo Dorronsoro. 2010.
+Computer-mediated emotional regulation: Detection of emotional changes using
+non-parametric cumulative sum. In 2010 Annual International Conference of the
+IEEE Engineering in Medicine and Biology. IEEE, 1109–1112.
+[36] Ke Li, Devansh Agarwal, Ruidong Zhang, Vipin Gunda, Tianjun Mo, Saif Mahmud,
+Boao Chen, François Guimbretiěre, and Cheng Zhang. 2024. SonicID: User
+Identification on Smart Glasses with Acoustic Sensing. Proceedings of the ACM
+on Interactive, Mobile, Wearable and Ubiquitous Technologies 8, 4 (2024), 1–27.
+[37] Ke Li, Ruidong Zhang, Siyuan Chen, Boao Chen, Mose Sakashita, François Guim-
+bretière, and Cheng Zhang. 2024. EyeEcho: Continuous and Low-power Facial
+Expression Tracking on Glasses. In Proceedings of the 2024 CHI Conference on
+Human Factors in Computing Systems. 1–24.
+[38] Ke Li, Ruidong Zhang, Bo Liang, François Guimbretière, and Cheng Zhang. 2022.
+Eario: A low-power acoustic sensing earable for continuously tracking detailed
+facial movements. Proceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies 6, 2 (2022), 1–24.
+[39] Hector P Martinez, Yoshua Bengio, and Georgios N Yannakakis. 2013. Learning
+deep physiological models of affect. IEEE Computational intelligence magazine 8,
+2 (2013), 20–33.
+[40] Carlos Merino-Campos. 2025. Emotions in motion: A literature review of emo-
+tional experiences in physical education through video game practices. Social
+Sciences & Humanities Open 11 (2025), 101415.
+[41] Ewa Miedzobrodzka, Elly A Konijn, and Lydia Krabbendam. 2021. Emotion
+recognition and inhibitory control in adolescent players of violent video games.
+Journal of research on adolescence (2021).
+[42] J. A. Miranda Calero, L. Gutiérrez-Martín, E. Rituerto-González, E. Romero-
+Perales, J. M. Lanza-Gutiírrez, C. Peláez-Moreno, and C. López-Ongil. 2024.
+WEMAC: Women and Emotion Multi-modal Affective Computing Dataset. Sci-
+entific Data 11, 1 (oct 2024), 1182. https://doi.org/10.1038/s41597-024-04002-8
+[43] Prerna Mishra and Saurabh Ratnaparkhi. 2018. HMM based emotion detection in
+games. In 2018 3rd International Conference for Convergence in Technology (I2CT).
+IEEE, 1–4.
+[44] Gloria Mittmann, Adam Barnard, Sonja Zehetmayer, Simon Wimmer, Vanessa
+Zehetner, Sylvia Doerfler, Kate Woodcock, and Beate Schrank. 2024. A Serious
+Game for Emotion Regulation in Adolescents:. International Journal of Game-
+Based Learning 14, 1 (2024). https://doi.org/10.4018/IJGBL.358940
+[45] JaeYoung Moon, EunHye Cho, Yeabon Jo, KyungJoong Kim, and Eunsung Song.
+2025. Investigating the Effect of Emotional Matching Between Game and Back-
+ground Music on Game Experience in a Valence–Arousal Space. IEEE Transactions
+on Games 17, 2 (2025), 282–295. https://doi.org/10.1109/TG.2024.3424459
+[46] Vivek Nair, Wenbo Guo, Justus Mattern, Rui Wang, James F. O’Brien, Louis
+Rosenberg, and Dawn Song. 2023. Unique Identification of 50,000+ Virtual Reality
+Users from Head & Hand Motion Data. In 32nd USENIX Security Symposium
+(USENIX Security 23). USENIX Association, Anaheim, CA, 895–910. https://www.
+usenix.org/conference/usenixsecurity23/presentation/nair-identification
+[47] Mihalis A. Nicolaou, Hatice Gunes, and Maja Pantic. 2011. Continuous Prediction
+of Spontaneous Affect from Multiple Cues and Modalities in Valence-Arousal
+Space. IEEE Transactions on Affective Computing 2, 2 (2011), 92–105. https:
+//doi.org/10.1109/T-AFFC.2011.9
+[48] Andrew Ortony, Gerald L Clore, and Allan Collins. 2022. The cognitive structure
+of emotions. Cambridge university press.
+[49] Yukta Pareek. 2024. Real Time, Emotion-Aware Mental Health Assessment: System
+Prototype. Master’s thesis. State University of New York at Buffalo.
+RageSense: Leveraging Acoustic Sensing and LLM-Based Intervention for Emotion Regulation in Mobile Gaming CHI ’26, April 13–17, 2026, Barcelona, Spain
+[50] Mónica Pereira, Simão Reis, Luís Paulo Reis, and Eliana Silva. 2024. Co-Design
+of a Serious Game to Promote Emotion Regulation Strategies in Parents. In 2024
+IEEE Conference on Games (CoG). IEEE, 1–4.
+[51] Daniel Preoţiuc-Pietro, H. Andrew Schwartz, Gregory Park, Johannes Eich-
+staedt, Margaret Kern, Lyle Ungar, and Elisabeth Shulman. 2016. Modelling
+Valence and Arousal in Facebook posts. In Proceedings of the 7th Workshop on
+Computational Approaches to Subjectivity, Sentiment and Social Media Analy-
+sis, Alexandra Balahur, Erik van der Goot, Piek Vossen, and Andres Montoyo
+(Eds.). Association for Computational Linguistics, San Diego, California, 9–15.
+https://doi.org/10.18653/v1/W16-0404
+[52] D Roja Ramani, Naveen Chandra Gowda, S Sreejith, and Shrikant Tangade. 2025.
+Deep Bidirectional LSTM for Emotion Detection through Mobile Sensor Analysis.
+Environmental Monitoring Using Artificial Intelligence (2025), 201–223.
+[53] Sally Reynard, Joao Dias, Marija Mitic, Beate Schrank, and Kate Anne Woodcock.
+2022. Digital interventions for emotion regulation in children and early adoles-
+cents: systematic review and meta-analysis. JMIR Serious Games 10, 3 (2022),
+e31456.
+[54] Laura A Ripamonti, Marco Granato, Marco Trubian, Antti Knutas, Davide Gadia,
+and Dario Maggiorini. 2018. Multi-agent simulations for the evaluation of Looting
+Systems design in MMOG and MOBA games. Simulation Modelling Practice and
+Theory 83 (2018), 124–148.
+[55] Mintra Ruensuk, Eunyong Cheon, Hwajung Hong, and Ian Oakley. 2020. How Do
+You Feel Online: Exploiting Smartphone Sensors to Detect Transitory Emotions
+during Social Media Use. Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies 4, 4 (2020), 1–32.
+[56] James A. Russell. 1980. A Circumplex Model of Affect. Journal of Personality
+and Social Psychology 39, 6 (1980), 1161–1178. https://doi.org/10.1037/0022-
+3514.39.6.1161
+[57] Eden Saig and Nir Rosenfeld. 2023. Learning to Suggest Breaks: Sustainable
+Optimization of Long-Term User Engagement. In Proceedings of the 40th Interna-
+tional Conference on Machine Learning (ICML) (Honolulu, Hawaii, USA) (ICML’23).
+JMLR.org, Article 1232, 26 pages.
+[58] Andrey V Savchenko. 2023. EmotiEffNets for facial processing in video-based
+valence-arousal prediction, expression classification and action unit detection. In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition.
+5716–5724.
+[59] Karan Sharma, Claudio Castellini, Egon L. van den Broek, Alin Albu-Schaeffer,
+and Friedhelm Schwenker. 2019. A Dataset of Continuous Affect Annotations and
+Physiological Signals for Emotion Analysis. https://doi.org/10.6084/m9.figshare.
+9891446.v2. https://doi.org/10.6084/m9.figshare.9891446.v2 Dataset.
+[60] Jiayu Shu, Mangtik Chiu, and Pan Hui. 2019. Emotion sensing for mobile com-
+puting. IEEE Communications Magazine 57, 11 (2019), 84–90.
+[61] Mohammad Soleymani, Anna Aljanaki, Yi-Hsuan Yang, Michael N. Caro, Florian
+Eyben, Konstantin Markov, Björn W. Schuller, Remco Veltkamp, Felix Weninger,
+and Frans Wiering. 2014. Emotional Analysis of Music: A Comparison of Methods.
+https://doi.org/10.1145/2647868.2655019. (2014), 1161–1164. https://doi.org/10.
+1145/2647868.2655019
+[62] Mariusz Szwoch and Wioleta Szwoch. 2015. Emotion recognition for affect aware
+video games. In Image Processing & Communications Challenges 6. Springer, 227–
+236.
+[63] Plabon Talukder, Md. Faysal Ahamed, and Md. Rabiul Islam. 2025. Bangla
+Speech Emotion Recognition Based on Audio Features Using CNN and LSTM.
+In Proceedings of the 3rd International Conference on Computing Advancements
+(ICCA ’24). Association for Computing Machinery, New York, NY, USA, 637–644.
+https://doi.org/10.1145/3723178.3723262
+[64] Katie Salen Tekinbas and Eric Zimmerman. 2003. Rules of play: Game design
+fundamentals. MIT press.
+[65] Katerina Tzafilkou, Anastasios A Economides, and Nikolaos Protogeros. 2022.
+Mobile sensing for emotion recognition in smartphones: a literature review
+on non-intrusive methodologies. International Journal of Human–Computer
+Interaction 38, 11 (2022), 1037–1051.
+[66] Gustave Udahemuka, Karim Djouani, and Anish M Kurien. 2024. Multimodal
+Emotion Recognition using visual, vocal and Physiological Signals: a review.
+Applied Sciences 14, 17 (2024), 8071.
+[67] Mateus AM Umbelino and Rosilane Ribeiro da Mota. 2021. Negativity in Play-
+How Negative Emotions create Meaningful Games. In Simpósio Brasileiro de Jogos
+e Entretenimento Digital (SBGames). SBC, 152–161.
+[68] Shuning Wang, Linghui Zhong, Yongjian Fu, Lili Chen, Ju Ren, and Yaoxue Zhang.
+2024. UFace: Your Smartphone Can "Hear" Your Facial Expression! Proc. ACM
+Interact. Mob. Wearable Ubiquitous Technol. 8, 1, Article 22 (March 2024), 27 pages.
+https://doi.org/10.1145/3643546
+[69] Michel Wijkstra, Katja Rogers, Regan L. Mandryk, Remco C. Veltkamp, and
+Julian Frommel. 2024. How To Tame a Toxic Player? A Systematic Literature
+Review on Intervention Systems for Toxic Behaviors in Online Video Games.
+Proc. ACM Hum.-Comput. Interact. 8, CHI PLAY, Article 315 (2024), 32 pages.
+https://doi.org/10.1145/3677080
+[70] Tianhua Xie, Mingliang Cao, and Zhigeng Pan. 2020. Applying Self-Assessment
+Manikin (SAM) to Evaluate the Affective Arousal Effects of VR Games. In Pro-
+ceedings of the 2020 3rd International Conference on Image and Graphics Processing
+(Singapore, Singapore) (ICIGP ’20). Association for Computing Machinery, New
+York, NY, USA, 134–138. https://doi.org/10.1145/3383812.3383844
+[71] Junxiao Xue, Jie Wang, Xiaozhen Liu, Qian Zhang, and Xuecheng Wu. 2024.
+Affective Video Content Analysis: Decade Review and New Perspectives. Big
+Data Mining and Analytics 8, 1 (2024), 118–144.
+[72] Kangning Yang, Benjamin Tag, Chaofan Wang, Yue Gu, Zhanna Sarsenbayeva,
+Tilman Dingler, Greg Wadley, and Jorge Goncalves. 2022. Survey on emotion
+sensing using mobile devices. IEEE Transactions on Affective Computing 14, 4
+(2022), 2678–2696.
+[73] Yuan Yao, Tianyu Yu, Ao Zhang, Chongyi Wang, Junbo Cui, Hongji Zhu, Tianchi
+Cai, Chi Chen, Haoyu Li, Weilin Zhao, Zhihui He, Qianyu Chen, Ronghua Zhou,
+Zhensheng Zou, Haoye Zhang, Shengding Hu, Zhi Zheng, Jie Zhou, Jie Cai, Xu
+Han, Guoyang Zeng, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2025. Efficient
+GPT-4V level multimodal large language model for deployment on edge devices.
+Nature Communications 16, 1 (2025), 5509. https://doi.org/10.1038/s41467-025-
+61040-5
+[74] Wangsong Yin, Rongjie Yi, Daliang Xu, Gang Huang, Mengwei Xu, and Xuanzhe
+Liu. 2025. Elastic On-Device LLM Service. In Proceedings of the 31st Annual Inter-
+national Conference on Mobile Computing and Networking (Kerry Hotel, Hong
+Kong, Hong Kong, China) (ACM MOBICOM ’25). Association for Computing Ma-
+chinery, New York, NY, USA, 984–999. https://doi.org/10.1145/3680207.3765259
+[75] Xiangkun Yu, Zhengjie Li, Zhibang Zang, and Yinhua Liu. 2023. Real-Time EEG-
+Based Emotion Recognition. Sensors 23, 18 (2023), 7853. https://doi.org/10.3390/
+s23187853
+[76] Heng Zhang, Shkurta Gashi, Hanke Kimm, Elcin Hanci, and Oludamilare
+Matthews. 2018. Moodbook: An application for continuous monitoring of social
+media usage and mood. In Proceedings of the 2018 ACM International Joint Con-
+ference and 2018 International Symposium on Pervasive and Ubiquitous Computing
+and Wearable Computers. 1150–1155.
+[77] Panyu Zhang, Gyuwon Jung, Jumabek Alikhanov, Uzair Ahmed, and Uichin
+Lee. 2024. A Reproducible Stress Prediction Pipeline with Mobile Sensor Data.
+Proceedings of the ACM on interactive, mobile, wearable and ubiquitous technologies
+8, 3 (2024), 1–35.
+[78] Ruidong Zhang, Ke Li, Yihong Hao, Yufan Wang, Zhengnan Lai, François Guim-
+bretière, and Cheng Zhang. 2023. EchoSpeech: Continuous Silent Speech Recog-
+nition on Minimally-obtrusive Eyewear Powered by Acoustic Sensing. In Pro-
+ceedings of the 2023 CHI Conference on Human Factors in Computing Systems
+(Hamburg, Germany) (CHI ’23). Association for Computing Machinery, New
+York, NY, USA, Article 852, 18 pages. https://doi.org/10.1145/3544548.3580801
+[79] Shijia Zhang, Taiting Lu, Hao Zhou, Yilin Liu, Runze Liu, and Mahanth Gowda.
+2023. I Am an Earphone and I Can Hear My User’s Face: Facial Landmark
+Tracking Using Smart Earphones. ACM Trans. Internet Things 5, 1, Article 1 (Dec
+2023), 29 pages. https://doi.org/10.1145/3614438
+[80] Tianyu Zhang, Abdallah El Ali, Chen Wang, Alan Hanjalic, and Pablo Cesar. 2020.
+CorrNet: Fine-Grained Emotion Recognition for Video Watching Using Wearable
+Physiological Sensors. Sensors 21, 1 (2020), 52. https://doi.org/10.3390/s21010052
+[81] Xiao Zhang, Wenzhong Li, Xu Chen, and Sanglu Lu. 2018. Moodexplorer: Towards
+compound emotion detection via smartphone sensing. Proceedings of the ACM
+on Interactive, Mobile, Wearable and Ubiquitous Technologies 1, 4 (2018), 1–30.
+[82] Ziqi Zheng, Chenjie Cao, Xingwei Chen, and Guoqiang Xu. 2018. Multimodal
+Emotion Recognition for One-Minute-Gradual Emotion Challenge. arXiv preprint
+arXiv:1805.01060 (2018). https://doi.org/10.48550/arXiv.1805.01060
+[83] Yuhong Zhou, Xin Lv, Ling Wang, Jiayu Li, and Xuemei Gao. 2023. What increases
+the risk of gamers being addicted? An integrated network model of personality–
+emotion–motivation of gaming disorder. Computers in Human Behavior 141
+(2023), 107647.
+[84] M. Sami Zitouni, Cheul Young Park, Uichin Lee, Leontios J. Hadjileontiadis,
+and Ahsan Khandoker. 2023. LSTM-Modeling of Emotion Recognition Using
+Peripheral Physiological Signals in Naturalistic Conversations. IEEE Journal of
+Biomedical and Health Informatics 27, 2 (2023), 912–923. https://doi.org/10.1109/
+JBHI.2022.3225330
+CHI ’26, April 13–17, 2026, Barcelona, Spain Liu et al.
+A Application User Interface
+Figure 13: App UI Design. Left: Application UI. Right: Inter-
+vention pop-up in mobile gaming.
+B Spectrogram Mapping Examples
+Neutral Expression,V 0.15,A 0.12 Neutral Expression,V 0.02,A 0.01 Neutral Expression,V 0.10,A 0.09
+Furrowed Brow,V -0.67,A 0.81
+Sighing Expression,V -0.17,A 0.21
+Pursed Lips,V -0.18,A 0.62
+Bitter Smile,V -0.5,A 0.76
+Furrowed Brow,V -0.77,A 0.86
+Pursed Lips,V -0.36,A 0.43
+Sighing Expression,V -0.25,A 0.51
+Bitter Smile,V -0.42,A 0.6
+Furrowed Brow,V -0.73,A 0.62
+Sighing Expression,V -0.34,A 0.53
+Pursed Lips,V -0.30,A 0.45
+Bitter Smile,V -0.21,A 0.23
+Neutral Expression,V 0.15,A 0.12 Neutral Expression,V 0.02,A 0.01 Neutral Expression,V 0.10,A 0.09
+Furrowed Brow,V -0.67,A 0.81
+Sighing Expression,V -0.17,A 0.21
+Pursed Lips,V -0.18,A 0.62
+Bitter Smile,V -0.5,A 0.76
+Furrowed Brow,V -0.77,A 0.86
+Pursed Lips,V -0.36,A 0.43
+Sighing Expression,V -0.25,A 0.51
+Bitter Smile,V -0.42,A 0.6
+Furrowed Brow,V -0.73,A 0.62
+Sighing Expression,V -0.34,A 0.53
+Pursed Lips,V -0.30,A 0.45
+Bitter Smile,V -0.21,A 0.23
+Figure 14: Examples of mapping spectrograms to the Valence
+- Arousal space.
+C JITA Algorithm Pseudocode
+Algorithm 1 JITA: EMA + CUSUM + Adaptive Thresholds
+Require: Window size 𝑁, valence-arousal estimator M, EMA fac-
+tor 𝛼,change-point detector C, dynamic-threshold strategy D
+Ensure: Real-time in-app intervention pop-up
+1: Initialize circular buffer 𝐵 ← CircularBuffer(𝑁)
+2: Initialize smoothed VA: 𝑉ema ← 0, 𝐴ema ← 0
+3: while gaming session is active do
+4: 𝑆 ← AcquireUltrasoundSpectrogram()
+5: (𝑉,𝐴) ← M(𝑆)
+6: 𝐵.append((𝑉,𝐴))
+7: 𝑉ema ← 𝛼 𝑉 + (1 − 𝛼) 𝑉ema
+8: 𝐴ema ← 𝛼 𝐴 + (1 − 𝛼) 𝐴ema
+9: if |𝐵| < 𝑁 then
+10: continue {wait until buffer is full}
+11: end if
+12: (𝑉th, 𝐴th) ← D(𝐵) {Compute dynamic thresholds}
+13: 𝑐𝑝 ← C(𝑉ema, 𝐴ema) {Online CUSUM change-point detec-
+tion}
+14: if 𝑐𝑝 and (𝑉ema < 𝑉th ∧ 𝐴ema > 𝐴th) then
+15: 𝑖𝑚𝑔𝑠 ← CaptureScreenshots()
+16: 𝑝𝑟𝑜𝑚𝑝𝑡 ← BuildLLMPrompt(𝐵, 𝑖𝑚𝑔𝑠)
+17: 𝑖𝑛𝑡𝑒𝑟𝑣𝑒𝑛𝑡𝑖𝑜𝑛 ← QueryCloudLLM(𝑝𝑟𝑜𝑚𝑝𝑡)
+18: if intervention failed then
+19: 𝑖𝑛𝑡𝑒𝑟𝑣𝑒𝑛𝑡𝑖𝑜𝑛 ← DefaultInterventionMessage()
+20: end if
+21: DisplayPopup(𝑖𝑛𝑡𝑒𝑟𝑣𝑒𝑛𝑡𝑖𝑜𝑛, 4 s)
+22: end if
+23: end while
+

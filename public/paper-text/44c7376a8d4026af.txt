@@ -1,0 +1,1032 @@
+RadarLLM: Empowering Large Language Models to Understand Human Motion
+from Millimeter-Wave Point Cloud Sequence
+Zengyuan Lai1*, Jiarui Yang1*, Songpengcheng Xia1*, Lizhou Lin1
+, Lan Sun1
+, Renwen Wang2
+,
+Jianran Liu2
+, Qi Wu2
+, Ling Pei1†
+1
+Shanghai Jiao Tong University
+2
+Bytedance Research
+{zy.lai, jr.yang, songpengchengxia, ling.pei}@sjtu.edu.cn, {wangrenwen, liujianran}@bytedance.com
+Abstract
+Millimeter-wave radar offers a privacy-preserving and
+environment-robust alternative to vision-based sensing, en-
+abling human motion analysis in challenging conditions such
+as low light, occlusions, rain, or smoke. However, its sparse
+point clouds pose significant challenges for semantic under-
+standing. We present RadarLLM, the first framework that
+leverages large language models (LLMs) for human mo-
+tion understanding from radar signals. RadarLLM introduces
+two key innovations: (1) a motion-guided radar tokenizer
+based on our Aggregate VQ-VAE architecture, integrating
+deformable body templates and masked trajectory model-
+ing to convert spatial-temporal radar sequences into com-
+pact semantic tokens; and (2) a radar-aware language model
+that establishes cross-modal alignment between radar and
+text in a shared embedding space. To overcome the scarcity
+of paired radar-text data, we generate a realistic radar-text
+dataset from motion-text datasets with a physics-aware syn-
+thesis pipeline. Extensive experiments on both synthetic and
+real-world benchmarks show that RadarLLM achieves state-
+of-the-art performance, enabling robust and interpretable mo-
+tion understanding under privacy and visibility constraints,
+even in adverse environments.
+Code — https://inowlzy.github.io/RadarLLM/
+Extended version — https://arxiv.org/abs/2504.09862
+1 Introduction
+Human motion understanding is critical in applications such
+as elderly care, smart home automation, and health moni-
+toring (Lai et al. 2024; Zhang et al. 2024; Xia et al. 2025;
+Shan et al. 2025). These scenarios require robust and non-
+intrusive sensing technologies capable of analyzing human
+activities while preserving privacy (Xia et al. 2024; Song
+et al. 2025; Xu 2025). However, traditional vision-based sys-
+tems face significant limitations due to lighting variations,
+occlusions, and privacy concerns, making them unsuitable
+for real-world, long-term deployment.
+Millimeter-wave (mmWave) radar offers a promising al-
+ternative, providing privacy-preserving motion sensing that
+*These authors contributed equally.
+†
+Corresponding Author
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+is robust to poor lighting, occlusions, rain, and smoke, and
+does not capture visual identity (Ding et al. 2024; Gu et al.
+2025). Despite recent advancements in radar-based methods
+for activity recognition (Meng et al. 2020; Cao et al. 2024)
+and pose estimation (Yang et al. 2025a), these methods pri-
+marily focus on classification or regression tasks, limiting
+their ability to generate fine-grained motion descriptions.
+Meanwhile, large language models (LLMs) show strong
+capabilities in semantic reasoning across modalities like vi-
+sion, audio, and motion (Cho et al. 2025; Huang et al. 2024b;
+Jiang et al. 2023). Inspired by this, we propose RadarLLM,
+the first framework bridging mmWave radar sensing and lan-
+guage understanding for semantic-rich motion analysis (Fig-
+ure 1). However, applying LLMs to radar data poses two
+challenges: (1) sparse, noisy point clouds hinder spatiotem-
+poral modeling; (2) the semantic gap between radar signals
+and language requires sophisticated cross-modal alignment.
+To address these challenges, we introduce two key com-
+ponents: (1) a Motion-guided Radar Tokenizer, based on
+an Aggregate VQ-VAE, that encodes radar point cloud se-
+quences into discrete semantic tokens via deformable body
+templates and masked trajectory modeling; (2) a Radar-
+aware Language Model, which aligns radar tokens with tex-
+tual representations in a shared embedding space to gen-
+erate motion descriptions. Moreover, to overcome the lack
+of paired radar-text data, we propose a physics-aware syn-
+thesis pipeline that simulates realistic radar reflections from
+motion-text datasets, enabling effective training at scale. In
+summary, our main contributions of this work are as follows:
+• We propose RadarLLM, the first LLM-based framework
+that translates low-level radar point clouds into high-
+level semantic motion descriptions, pioneering a new
+paradigm for privacy-preserving motion understanding.
+• We introduce a novel Aggregate VQ-VAE-based Motion-
+Guided Radar Tokenizer. It encodes sparse radar se-
+quences into LLM-compatible semantic tokens, leverag-
+ing deformable body templates for structural priors and
+masked trajectory modeling for dependency learning.
+• We develop a physics-aware virtual radar simulator that
+synthesizes realistic radar-text data from motion-text
+datasets, effectively bypassing the bottleneck of paired
+real-world data scarcity for large-scale training.
+The Fortieth AAAI Conference on Artificial Intelligence (AAAI-26)
+5791
+Smoke
+Motion Understanding Can you tell me what is happening with text?
+RadarHAR
+RadarLLM
+① Ability to provide motion descriptive natural language insights
+“a person walks in a s
+shaped pattern back and
+forth across the square area”
+Action Labels
+“ Walk”
+② Ability to recognize motion other than predefined ones
+RadarHAR
+RadarLLM
+“a person is scrubbing his
+body and hair in the shower.”
+Action Labels
+“ Jacks”
+He is holding his arms and looking around like a chicken
+He moved unpredictably, forward, backward, left, right
+Rain
+Poor Light
+Occlusion
+Adverse Conditions ③ Ability to operate in adverse conditions Vision-based Model
+Visualization of Inference Inputs, Results and Ground Truth
+Figure 1: We propose RadarLLM, a LLM-based radar-text human motion understanding framework over traditional action
+label-based motion recognition in providing descriptive natural language insights, recognizing unconventional motions beyond
+predefined categories, and operating robustly in adverse conditions (e.g., poor lighting, occlusion, rain, and smoke).
+2 Related Works
+2.1 Radar-Based Human Motion Understanding
+Millimeter-wave radar is robust, privacy-preserving, and ef-
+fective under adverse conditions (Kong et al. 2024; Saadat
+and Sur 2024; Yang et al. 2025a). Early methods extracted
+handcrafted Micro-Doppler features and utilized classifiers
+such as SVM (Suykens 2001) and RF (Pal 2005), achiev-
+ing around 91% accuracy on basic actions (Javier and Kim
+2014; Smith et al. 2018). Deep-learning architectures, in-
+cluding LSTMs (Shrestha et al. 2020) and dual-stream
+CNNs (Ding et al. 2022), automated feature learning to
+reach 94–99% accuracy in controlled conditions (Ding et al.
+2022; Kang et al. 2023). Spatial-temporal transformers (ST-
+PCT (Kang et al. 2023)) and point-based paradigms like mil-
+liFlow (Ding et al. 2024) further enhanced generalization.
+However, these approaches remain limited to low-level ges-
+ture classification, lacking semantic interpretation of com-
+posite activities (Cao et al. 2024; Yang et al. 2024) — a
+challenge that remains largely unaddressed.
+2.2 Human Motion Understanding with
+Multimodal LLMs
+Despite advances in sensor-based classification using RGB,
+IMU, and skeleton sequences (Xia et al. 2024; Haresamu-
+dram et al. 2025; Lu et al. 2025), such methods are con-
+strained by fixed action sets and limited semantic depth. To
+overcome these challenges, motion-to-text frameworks have
+emerged, encoding discrete motion tokens for LLM trans-
+lation (e.g., MotionGPT (Jiang et al. 2023), PointLLM (Xu
+et al. 2024), AvatarGPT (Zhou, Wan, and Wang 2024)) and
+aligning motion with natural language semantics. Building
+on this paradigm, Mojito extended tokenization to IMU sig-
+nals (Shan et al. 2025), while vision-language models have
+integrated visual motion cues and textual descriptions for
+richer interpretation (Li et al. 2024). However, radar-based
+LLM reasoning remains largely unexplored, a critical gap
+our work addresses to provide a privacy-preserving, contact-
+less solution that eliminates the need for wearable sensors
+while ensuring robust perception, even in adverse scenes.
+2.3 mmWave Radar Signal Generation
+Large-scale radar–text datasets are essential for training
+LLM-based motion understanding models. However, ex-
+isting collections (<9h duration, <40 participants, <27
+classes) (Liu et al. 2020; Wang et al. 2021; Yang et al. 2023;
+Wang et al. 2024) also lack paired textual annotations (Chen
+et al. 2022; An, Li, and Ogras 2022). To bridge this gap, re-
+searchers have turned to synthetic data generation—but ef-
+ficiency and realism remain at odds: Vid2Dopplerr (Ahuja
+et al. 2021) delivers speed at the expense of spatial detail,
+while RF-Genesis (Chen and Zhang 2023) achieves physical
+fidelity only with prohibitive compute demands. These lim-
+itations have driven the emergence of our physics-informed
+synthesis, which embeds motion-capture priors to strike a
+balance between kinematic authenticity and scalability. At
+the same time, vision–language studies (Deng et al. 2023a,b)
+and lidar-based works (An et al. 2025) demonstrate that such
+physically grounded synthetic data can closely approximate
+real-world annotations. Building on these insights, we adopt
+SMPL-X-text pairs from HumanML3D (Guo et al. 2022) to
+produce a richly annotated Radar–Text corpus via physics-
+aware signal synthesis for training RadarLLM.
+3 Radar-Text Dataset Preparation
+Building an end-to-end mmWave-based motion understand-
+ing LLM is fundamentally hindered by the absence of paired
+radar point clouds and natural language annotations. Ex-
+isting datasets with language labels focus on RGB and
+motion sequences, unsuitable for radar-based training. In-
+spired by virtual radar data generation methods (Deng et al.
+2023b; Chen and Zhang 2023), we construct a large-scale
+virtual radar–text dataset from HumanML3D (Guo et al.
+2022), comprising 13,308 SMPL-X motion sequences from
+AMASS (Mahmood et al. 2019) paired with text annota-
+tions. To assess performance in real scenes, we collect a
+real-world test set covering one normal and four adverse en-
+vironments.
+5792
+AMASS Motion-Text Dataset
+A person is doing motion.
+SMPL Motion:
+Text Description:
+Path
+Information
+IF Signal
+Generator
+Ray
+Tracing
+Virtual Radar
+P(t)
+time
+Range FFT
+Doppler FFT
+CFAR
+Pair
+Figure 2: Virtual radar-text data generation pipeline. The
+Radar-Text dataset is constructed by simulating radar reflec-
+tions from SMPL-X sequences using ray tracing and signal
+processing, based on existing motion-text datasets.
+3.1 Virtual Data Preparation
+To synthesize mmWave radar signals from human motions,
+we employ a physics-aware synthesis. As illustrated in Fig-
+ure 2, the resulting point cloud sequences are paired with
+text descriptions to form our virtual radar–text dataset.
+IF Signal Simulation The first step is to simulate the ray
+paths between the rendered human meshes and the virtual
+radar antennas. Traditional ray tracing relies on Monte Carlo
+sampling, which causes a trade-off between accuracy and
+computational cost. So we adopt the RF adaptive sampling
+technique (Chen and Zhang 2023) to focus on the human
+body by edge detection. Then the path information for each
+ray is accumulated using the Physical Optics Integral (POI)
+method to obtain the simulated IF signal.
+Point Cloud Generation After sampling on the simulated
+IF signal, we first compute the Range-FFT and Doppler-
+FFT, followed by applying a static clutter removal algorithm
+to eliminate background noise by subtracting the average
+Doppler-FFT heatmap values across all receiving antennas.
+Instead of using the traditional CFAR algorithm with fixed
+thresholds, we directly select the 128 points per frame based
+on intensity from the Doppler-FFT heatmap (Xue et al.
+2021), and it ensures a consistent number of point clouds.
+3.2 Real Data Preparation
+To further evaluate our method in real scenes, we collect
+a real-world test set of 125 distinct motions from the Hu-
+manML3D test split, each repeated three times (375 se-
+quences, 6–9s), recorded with a TI AWR1843BOOST radar
+and DCA1000EVM board under normal conditions. An-
+other test set of four adverse conditions—rain, smoke, poor
+lighting, and occlusions—is created by downsampling the
+public mmwave dataset MMBody’s (Chen et al. 2022) point
+clouds to the 128 highest-intensity points per frame. Point
+cloud synthesis follows our virtual data pipeline, and text an-
+notations are first generated by MotionGPT conditioned on
+paired SMPL-X ground truth and manually checked (Wang
+et al. 2025).
+4 Method
+4.1 Problem Statement
+Our goal is to enable a semantic-rich understanding of hu-
+man motion from radar point clouds, moving beyond con-
+ventional activity classification to natural language interpre-
+tation. Given a millimeter-wave radar point cloud sequence
+P1:T = [p1, . . . , pT ], where each frame pt ∈ RNt×4
+con-
+tains the spatiotemporal coordinates (x, y, z, t) of body re-
+flections, we aim to generate a descriptive text sequence
+Y = [y1, . . . , yL], yl ∈ Vtext (predefined WordPieces vo-
+cabulary (Song et al. 2020)). Unlike prior methods that pre-
+dict discrete action labels ŶR, our approach translates radar
+observations directly into structured textual descriptions.
+To achieve this, we propose RadarLLM with three
+core modules: (1) constructing a virtual radar–text dataset
+{(Psyn
+1:T , Y)} by simulating radar reflections from human
+motions M1:T via ray tracing; (2) encoding noisy sequences
+Psyn
+1:T into semantic tokens z1:L = {zi}L
+i=1 through an Ag-
+gregate VQ-VAE, where zi ∈ {1, . . . , K} denotes a dis-
+cretized motion code, K is the total numbers of codes form-
+ing a codebook, L = T/r, and r is the temporal downsam-
+pling rate; (3) training a conditional radar-aware language
+model to generate textual motion descriptions.
+4.2 RadarLLM Model Architecture
+To bridge radar point clouds and natural language, we in-
+troduce RadarLLM, a unified framework that integrates
+mmWave radar with large language models. As shown in
+Figure 3, RadarLLM comprises (1) a motion-guided radar
+tokenizer that converts point cloud sequences into discrete
+semantic tokens, and (2) a radar-aware language model
+trained via multi-modal pre-training and task-specific fine-
+tuning to align these tokens with textual semantics.
+Motion-Guided Radar Tokenizer To extract quantized
+semantic features from sparse, noisy radar point clouds for
+the injection into the language model, we compress spa-
+tial–temporal patterns into discrete codes via our designed
+Aggregate VQ-VAE, leveraging human template priors and
+mask-enhanced spatio–temporal dependency learning, as
+well as motion semantics guidance. This comprises three
+stages: template-prior grouping, masked context aggrega-
+tion, and aggregated quantization, shown in Fig 4.
+(1) Template-Prior Grouping. To overcome the inconsis-
+tency of point location and counts among frames, we initial-
+ize Ng anchors on a deterministic Nx ×Ny ×Nz grid within
+a bounding-box template to construct temporal associations
+for each body region around anchors, then aggregate neigh-
+borhood points with the SOTA P4Conv encoder E in (Fan,
+Yang, and Kankanhalli 2021; Jing et al. 2024; Yang et al.
+2025a), yielding Fgroup ∈ RL×Ng×C
+.
+(2) Masked Context Aggregation. To enhance the learn-
+ing of the dependencies among body parts, 50% of an-
+chor trajectories are masked to form visible features Fvis ∈
+RL×Nvis
+g ×C
+; a transformer decoder reconstructs Fmsk =
+D(Fvis) via cross-attention, and merging with Fvis pro-
+duces Fall = [Fvis, Fmsk], expected to approach motion
+5793
+Inference Pipeline
+Pre-Training Pipeline
+Mask
+Tokens
+GT Motion Description
+Radar Tokens
+Radar Tokens
+Ɛ Ɖ
+Kencdec Vencdec
+What is the motion? Text
+Tokenizer
+Text Tokens
+… …
+Pred Motion
+Description:
+“ The person
+is doing …”
+Text Tokenizer GT Text Tokens
+Ɛ Ɖ
+Text Tokens Pred Radar Tokens
+Ɛ Ɖ
+GT Text Tokens
+GT Text Tokens
+𝑳𝒓𝟐𝒕
+GT Radar Tokens
+𝑳𝒕𝟐𝒓
+Masked Radar Tokens
+Ɛ Ɖ
+GT Masked Tokens
+𝑳𝒑𝒓𝒆𝒅
+(1) Training on Radar-to-Text (2) Training on Text-to-Radar (3) Training on Radar Prediction
+Instruction-tuning Pipeline
+Pred Motion Description: “ The person is doing …” GT Motion Description
+𝑳𝒕𝒖𝒏𝒆
+Motion-Guided
+Radar
+Tokenizer
+Radar-Aware
+Language Model
+Figure 3: The overview of RadarLLM. We first encode radar point clouds into discrete tokens via a Motion-guided Radar
+Tokenizer. The Radar-aware Language Model then aligns these tokens with textual representations in a shared embedding
+space through joint optimization of unsupervised token reconstruction and supervised bidirectional radar-text translation.
+… …
+Template-prior Grouping
+Time
+Encoder
+𝑷𝒈𝒔𝒓𝒄 𝑭𝒈𝒓𝒐𝒖𝒑
+Point Tube Masked Point Tube Feature
+𝒑𝒐𝒔𝒎𝒔𝒌
+𝑭𝒗𝒊𝒔
+0
+3
+4
+Decoder
+Recovered Masked Point Tube Feature
+𝑷𝒓𝒎𝒔𝒌 𝑷𝒎𝒔𝒌
+𝑭𝒎𝒔𝒌 𝑭𝒂𝒍𝒍
+𝑳𝒓𝒆𝒄
+Recovered Masked Point Tube
+Aggregated
+VQ
+𝑳𝒆𝒎𝒃
+Paired Motion Data
+Visible Point Tube Feature
+Radar Codebook
+…
+…
+…
+…
+Motion
+Encoder
+𝑭𝒎𝒐𝒕
+Radar
+Tokens:
+Figure 4: Architecture and training pipeline of motion-guided radar tokenizer. The Motion-guided Radar Tokenizer, built upon
+our Aggregate VQ-VAE architecture, compresses radar point cloud sequences into discrete semantic tokens through point cloud
+sequence reconstruction and motion embedding learning.
+semantic features extracted from the paired motion by a mo-
+tion encoder, enriching semantics learned efficiently.
+(3) Aggregated Quantization. Aggregated quantization
+then maps each Ft
+all to its nearest code in the trainable code-
+book Z = {zk}K
+k=1 ⊂ R512×512
+to construct a discrete to-
+ken sequence aligned with the language model’s embedding
+space, enabling direct cross-modal translation, where
+zt = arg min
+zk∈Z
+∥Ft
+all − zk∥2, t = 1, . . . , L. (1)
+An ablation study for the effectiveness of vector quantiza-
+tion can be found in the supplementary file.
+(4) Train and Inference Paradigm. In training, we opti-
+mize
+LVQ = Lrec + Lemb + Lcommit, (2)
+where
+Lrec =
+1
+|Pmsk|
+X
+x∈Pmsk
+min
+y∈Prmsk
+∥x − y∥2
+, (3)
+forming the Chamfer Distance in (Shen et al. 2023a,b) to
+promote learning the spatial-temporal features of point cloud
+sequence via the sequence reconstruction,
+Lemb = ∥Fall − Fmot∥2
+2 (4)
+forming the motion guidance via aligning radar features with
+motion semantics, which is expected to accelerate feature
+learning. Fmot is the corresponding motion features.
+Lcommit = ∥sg[Fall] − z∥2
+2 + ∥Fall − sg[z]∥2
+2. (5)
+forming the commitment loss to stabilize codebook learning
+and enforce encoder–codebook consistency.
+In inference, no masking is applied, allowing robust en-
+coding via learned dependencies.
+Radar-Aware Language Model To establish semantic
+equivalence between continuous radar patterns and discrete
+5794
+text and enable cross-modal reasoning, we tokenize radar
+clouds into discrete tokens z1:L, map them to indices s1:L ∈
+{1, . . . , K}L
+, and merge with word tokens in a unified vo-
+cabulary V = Vtext ∪ Vradar (32,768 WordPieces+K radar
+tokens+/som, /eom). The combined input
+X = [w1, . . . , wLt
+, s1, . . . , sL] (6)
+is fed into a modified T5 (Jiang et al. 2023): shared
+embeddings project all tokens to 512 dimensions, cross-
+modal attention learns joint context, and the decoder auto-
+regressively predicts text Y = [y1, . . . , yL].
+To effectively align radar tokens with textual semantics
+while ensuring adaptability to diverse motion-to-text in-
+structions, we employ a two-stage training process: a pre-
+training stage for robust cross-modal representation learning
+and an instruction-tuning stage for task-specific refinement.
+(1) Pre-Training Stage. To learn robust cross-modal repre-
+sentations, we adopt a multi-task training paradigm (Jiang
+et al. 2023; Zhou, Wan, and Wang 2024).
+• Radar Prediction: Following the span corruption strat-
+egy of T5 (Jiang et al. 2023), we randomly mask 15% of
+radar tokens and replace them with sentinel tokens. The
+model predicts original tokens through:
+Lpred = −
+X
+i∈M
+log p(si|sM), (7)
+where M denotes masked positions.
+• Radar→Text: Encode radar tokens z1:L, decode text
+w1:L:
+Lr2t = −
+L
+X
+t=1
+log p(wt|z1:L, w<t). (8)
+• Text→Radar: Encode text w1:L, autoregressively gener-
+ate radar tokens:
+Lt2r = −
+L
+X
+t=1
+log p(zt|w1:L, z<t). (9)
+The total pretraining loss combines these objectives:
+Lpretrain = λ1Lpred + λ2Lr2t + λ3Lt2r, (10)
+where λ1, λ2, λ3 are the hyperparameters for balancing each
+loss’s contribution.
+The ablations on language model selection and multi-task
+training strategy are detailed in the Experiments section.
+(2) Instruction-Tuning Stage. To enhance task adaptabil-
+ity, we adopt instruction-aware prompts (e.g. “Describe
+the motion <Motion Placeholder>. .. ”) concatenated
+with z (Xu et al. 2024), and refine alignment via a similarity-
+based tuning loss Ltune against ground-truth descriptions.
+5 Experiments
+This section first introduces competing methods and metrics
+in our experiment (Sec. 5.1). We then present comprehensive
+comparisons on the radar-to-text task across both virtual and
+real datasets (Sec. 5.2). Finally, we conduct ablation studies
+to validate the effectiveness of each module (Sec. 5.3) and
+evaluate robustness in adverse environments (Sec. 5.4). Ad-
+ditional experiment results and discussions are provided in
+the supplementary material.
+5.1 Experimental Setup
+Baselines To our knowledge, RadarLLM is the first end-
+to-end radar-to-text framework for human motion under-
+standing using mmWave point clouds, with no directly
+comparable baselines. Following the two-stage evalua-
+tion protocol of PointLLM (Xu et al. 2024) and Li-
+darLLM (Yang et al. 2025b), we retrain the real-time
+3D human pose estimator mmMesh (Xue et al. 2021)
+on our radar dataset to convert sparse point clouds into
+SMPL-X meshes. These SMPL-X meshes are then ren-
+dered as videos or converted into skeleton sequences,
+which serve as inputs to state-of-the-art video- and motion-
+based text generation models, respectively, including Mo-
+tionGPT (Jiang et al. 2023), AvatarGPT (Zhou, Wan, and
+Wang 2024), Video-LLaMA2 (Cheng et al. 2024), Video-
+ChatGPT (Maaz et al. 2023), Video-LLaVa (Lin et al.
+2023), and VTimeLLM (Huang et al. 2024a). Although
+these general-purpose models are originally trained on sub-
+stantially larger vision and motion corpora, this unified two-
+stage setup ensures a fair comparison using identical inputs
+and underscores the strengths of our end-to-end design.
+Datasets As mentioned in Sec. 3, using HumanML3D
+splits (Sec. 3), we train on virtual train-set and evaluate on
+virtual/real test-set. Adverse condition evaluation is tested
+on the mentioned down-sampled MMBody subsets.
+Evaluation Metrics Following previous multi-modal text
+generation works (Jiang et al. 2023; Xu et al. 2024),
+we use Rouge (Lin 2004), BLEU (Zhang et al. 2019),
+METEOR (Banerjee and Lavie 2005), Cider (Vedantam,
+Lawrence Zitnick, and Parikh 2015), BertScore (Zhang et al.
+2019) and SimCSE (Gao, Yao, and Chen 2021) to evaluate
+the quality of generated captions.
+5.2 Comparisons on Radar-to-Text
+To demonstrate superior cross-modal understanding perfor-
+mance, we conduct the radar-to-text experiments on both
+virtual and real data. The aforementioned radar-based HPE
+mmMesh and our proposed RadarLLM are trained fully on
+the virtual dataset, and the pre-trained motion- and video-
+based models are adopted to generate the text descriptions.
+The quantitative results on virtual and real test datasets are
+shown in Table 1. Our method achieves state-of-the-art per-
+formance across all metrics on the virtual test dataset, out-
+performing the strongest baseline (AvatarGPT) by +20.0%
+ROUGE-L, +22.1% CIDE, and +128% BLEU-4 improve-
+ment, indicating better preservation of motion semantics in
+textual descriptions. To further evaluate the performance in
+real scenes, we conduct experiments on collected test data;
+our method remains best on almost all metrics, demonstrat-
+ing the superior generalization ability to real data.
+Table 2 presents qualitative comparisons of textual de-
+scriptions generated from our method and two best base-
+lines. Our method outperforms AvatarGPT and Video-
+LLaMA2 by capturing fine-grained motion details and con-
+textual semantics more accurately, while baseline methods
+produce generic or simple descriptions.
+5795
+Model Data Domain ROUGE-1 ROUGE-L BLEU-1 BLEU-4 METEOR CIDEr BERTScore SimCSE
+MotionGPT*
+(Jiang et al. 2023)
+Virtual 31.2 29.4 37.6 5.0 26.1 6.5 82.6 88.9
+Real 28.0 25.6 36.1 2.9 21.9 3.2 80.5 87.2
+AvatarGPT*
+(Zhou, Wan, and Wang 2024)
+Virtual 32.2 30.0 36.3 5.0 28.3 6.8 82.4 88.7
+Real 31.0 28.8 38.1 4.2 25.6 5.6 81.4 88.1
+Video-LLaMA2*
+(Cheng et al. 2024)
+Virtual 30.2 26.7 35.2 3.6 30.4 4.2 81.0 88.4
+Real 31.4 28.8 38.3 4.3 28.6 7.0 80.1 88.0
+VideoChatGPT*
+(Maaz et al. 2023)
+Virtual 18.6 16.1 19.5 0.8 15.3 1.0 78.5 85.7
+Real 17.8 15.6 19.4 0.1 13.0 1.2 77.6 85.0
+Video-LLaVA*
+(Lin et al. 2023)
+Virtual 22.8 19.2 26.7 1.3 19.2 2.1 80.3 87.6
+Real 22.6 19.3 27.2 1.4 17.4 3.5 79.7 87.2
+VTimeLLM*
+(Huang et al. 2024a)
+Virtual 19.1 15.8 19.0 0.9 17.7 1.4 79.8 87.4
+Real 21.3 16.9 24.1 0.8 18.0 2.1 79.6 87.3
+RadarLLM (Ours)
+Virtual 38.4 36.0 48.0 11.4 33.7 8.3 83.3 89.6
+Real 31.7 28.8 44.2 5.0 25.7 4.0 81.4 88.1
+Table 1: Comparison with state-of-the-art methods on virtual and real datasets
+Ground
+Truth
+Motions
+Input Radar
+Point Cloud
+Sequences
+Real
+He moved unpredictably,
+forward, backward,
+left, right.
+He sat, extended both
+arms to the sides, then
+brought them down.
+The person is holding
+his arms and looking
+around like a chick.
+A person walks in a
+counter clockwise
+circle.
+He is pushed by an
+unseen force, and then
+recovers to standing.
+AvatarGPT
+He stands hands in front,
+uses his left hand to
+twist/turn something.
+He arms out, looks
+down, raising/lowering
+right then left arm.
+A person stands, brings
+arms to chest, twists both
+counterclockwise.
+A person raises their
+arms and turns their
+torso to the right.
+A person takes a step
+forward with their right
+foot.
+Video-
+LLaMA2
+A person is walking
+slowly and then turns
+around.
+A person is walking
+towards the right side of
+the screen.
+A person is walking
+forward in a straight line.
+A person is shown
+walking toward the
+camera, then turns away.
+A mannequin is shown
+from different angles as
+it moves up and down.
+Ours
+A person walks in an
+S-shape back and forth
+across a square area.
+A person waves both
+arms and hands as if to
+signal to someone.
+A person is scrubbing
+his body and hair in the
+shower.
+A person walks in a
+counter clockwise
+circle.
+A person is pushed by
+an unseen force, before
+they recover.
+Table 2: Visualization of predicted text descriptions with corresponding motion and radar point cloud sequences. Left three
+columns: real-world normal environment results; right two columns: synthetic virtual data predictions.
+5.3 Ablation Study
+Effectiveness of Aggregate VQ-VAE To thoroughly eval-
+uate the architectural contributions of our radar tokenizer,
+we conduct ablation studies on three key components at the
+AMASS test dataset. We first replace the template-based an-
+chor grouping mechanism with the vanilla Farthest Point
+Sampling (FPS), the results in Table 3 show severe perfor-
+mance degradation of 27.3% in ROUGE-1, highlighting the
+importance of consistent spatial-semantic correspondence.
+We alter the training objective by reconstructing the full
+point cloud sequence instead of recovering the masked point
+tube, following the traditional self-supervised learning strat-
+egy in VAE. This change leads to a 23.7% drop in BLEU-4
+scores, demonstrating the effectiveness of our masked point
+tube recovery approach. Finally, by removing the embed-
+ding loss, it proves crucial for cross-modal alignment, with
+its absence leading to 54.2% lower CIDEr scores.
+Effectiveness of LLM Selection To assess LLM selec-
+tion effectiveness and scalability across model sizes, Table 4
+demonstrates that T5-Small achieves the fastest inference
+5796
+Model ROUGE-1 ROUGE-L BLEU-1 BLEU-4 METEOR CIDEr BERTScore SimCSE
+w/o template-based anchor 27.9 25.7 34.8 3.8 22.5 3.2 81.1 87.8
+w/o mask for training 35.0 32.4 43.1 8.7 31.0 11.3 83.2 89.5
+w/o embedding loss 28.6 26.5 35.4 4.2 23.5 3.8 81.5 88.1
+RadarLLM 38.4 36.0 48.0 11.4 33.7 8.3 83.3 89.6
+Table 3: Ablation study on the Aggregate VQ-VAE components.
+LLM Model Params FPS↑ Self-BLEU↓ ROUGE-L↑ SimCSE↑
+T5-small 60M 97.0 92.2 36.0 89.6
+GPT2-M 355M 72.7 96.2 35.4 89.5
+Deepseek-R1 1.8B 53.6 98.4 37.4 89.9
+Table 4: Ablation study on different LLM architectures.
+Task ROUGE-L BLEU-1 METEOR BERTScore
+R→T 33.0 42.8 31.2 82.5
+R→T & T→R 33.0 43.1 31.2 82.5
+R→T & R–Pred 33.9 43.2 32.4 82.9
+All Tasks 36.0 48.0 33.7 83.3
+Table 5: Ablation of multi-task training strategy
+and highest diversity, with only minor semantic degradation.
+GPT2-Medium strikes a middle ground in speed (FPS) and
+diversity (Self-BLEU), albeit with somewhat lower semantic
+precision, while DeepSeek-R1 delivers the best lexical and
+semantic scores at the expense of throughput and increased
+repetition. Under limited resources, LoRA tuning on GPT2
+and DeepSeek may reinforce frequent token patterns, sug-
+gesting that full fine-tuning under sufficient resources can be
+explored; Thus, T5-Small remains the most balanced choice.
+Effectiveness of Multi-Task Training Strategy To eval-
+uate multi-task objectives, we compare four schemes in Ta-
+ble 5: Radar→Text (R→T), R→T + Text→Radar (T→R),
+R→T + radar-prediction (R–Pred), and all three tasks.
+Adding T→R yields the arising of BLEU-1 (+0.7%). Incor-
+porating R–Pred improves ROUGE-L by 2.7%, BLEU-1 by
+0.9%, METEOR by 3.8%, and BERTScore by 0.5%. Jointly
+optimizing all objectives boosts ROUGE-L by 9.1%, BLEU-
+1 by 12.2%, METEOR by 8.0%, and BERTScore by 1.0%,
+confirming that multi-task learning substantially enhances
+motion-to-text performance.
+5.4 Robustness Under Adverse Environments
+To assess the robustness of RadarLLM under adverse en-
+vironmental conditions, we evaluated it on four corrupted
+subsets of the MMBody dataset—rain, smoke, poor light-
+ing, and occlusions. ROUGE-L declines by only 14.2%
+(28.8→24.7) and SimCSE by just 1.4% (88.1→86.9), re-
+vealing the robustness in multi-word precision and over-
+all semantics, whereas BLEU-1 and METEOR drop by
+46.8% (44.2→23.5) and 22.2% (25.7→20.0), respectively,
+but mainly influence the single word similarity and fluency
+Adverse
+Scenes
+Poor Light Rain
+Real
+A person brushes
+something in the front.
+A person swings his arm
+and leg in place.
+Ours
+A person is scrubbing a
+window.
+A person is jogging on
+the spot.
+Adverse
+Scenes
+Smoke Occlusion
+Real
+A person shakes his hips
+and arms while dancing.
+A person steps slightly
+towards left and front.
+Ours
+A person is scrubbing his
+body&hair in the shower.
+A person walks forward
+slowly.
+Table 6: Visualization of predictions in adverse conditions.
+slightly. These results confirm that our model preserves se-
+mantic coherence to some extent under realistic adverse con-
+ditions. Table 6 visualizes example outputs across the four
+scenarios to show our robustness.
+6 Conclusion
+In this work, we introduce RadarLLM, the first end-to-end
+LLM-based framework for semantic motion understanding
+from mmWave point clouds, using physics-aware signal syn-
+thesis to create realistic radar–text pairs for addressing the
+data scarcity challenge. Experiments on synthetic and real
+data in various conditions claim state-of-the-art results.
+Limitations and Future Work While RadarLLM demon-
+strates strong performance, several avenues remain for fu-
+ture exploration. First, although we calibrate simulation
+parameters to our TI AWR1843BOOST setup, evaluat-
+ing and adapting RadarLLM across diverse radar hard-
+ware—with varying point-cloud densities and range/angle
+resolutions—could further validate its generality. Second,
+extending our dataset to include environmental context and
+human–object interactions would enrich scene understand-
+ing and broaden applicability to complex real-world scenes.
+5797
+Acknowledgements
+This work was supported by the National Natural Science
+Foundation of China (NSFC) under Grant 62273229.
+References
+Ahuja, K.; Jiang, Y.; Goel, M.; and Harrison, C. 2021.
+Vid2doppler: Synthesizing doppler radar data from videos for
+training privacy-preserving activity recognition. In Proceedings
+of the 2021 CHI Conference on Human Factors in Computing Sys-
+tems, 1–10.
+An, S.; Li, Y.; and Ogras, U. 2022. mri: Multi-modal 3d human
+pose estimation dataset using mmwave, rgb-d, and inertial sensors.
+Advances in Neural Information Processing Systems (NeurIPS),
+35: 27414–27426.
+An, X.; Zhao, L.; Gong, C.; Li, J.; and Yang, J. 2025. Pre-training
+a Density-Aware Pose Transformer for Robust LiDAR-based 3D
+Human Pose Estimation. In Proceedings of the AAAI Conference
+on Artificial Intelligence, volume 39, 1755–1763.
+Banerjee, S.; and Lavie, A. 2005. METEOR: An automatic met-
+ric for MT evaluation with improved correlation with human judg-
+ments. In Proceedings of the acl workshop on intrinsic and ex-
+trinsic evaluation measures for machine translation and/or sum-
+marization, 65–72.
+Cao, Q.; Xue, H.; Liu, T.; Wang, X.; Wang, H.; Zhang, X.; and Su,
+L. 2024. mmCLIP: Boosting mmWave-based Zero-shot HAR via
+Signal-Text Alignment. In Proceedings of the 22nd ACM Confer-
+ence on Embedded Networked Sensor Systems, 184–197.
+Chen, A.; Wang, X.; Zhu, S.; Li, Y.; Chen, J.; and Ye, Q. 2022.
+mmbody benchmark: 3d body reconstruction dataset and analysis
+for millimeter wave radar. In Proceedings of the 30th ACM Inter-
+national Conference on Multimedia, 3501–3510.
+Chen, X.; and Zhang, X. 2023. Rf genesis: Zero-shot generaliza-
+tion of mmwave sensing through simulation-based data synthesis
+and generative diffusion models. In Proceedings of the 21st ACM
+Conference on Embedded Networked Sensor Systems, 28–42.
+Cheng, Z.; Leng, S.; Zhang, H.; Xin, Y.; Li, X.; Chen, G.; Zhu, Y.;
+Zhang, W.; Luo, Z.; Zhao, D.; et al. 2024. Videollama 2: Advancing
+spatial-temporal modeling and audio understanding in video-llms.
+arXiv preprint arXiv:2406.07476.
+Cho, C.-H.; Moon, W.; Jun, W.; Jung, M.; and Heo, J.-P. 2025.
+Ambiguity-Restrained Text-Video Representation Learning for
+Partially Relevant Video Retrieval. In Proceedings of the AAAI
+Conference on Artificial Intelligence, volume 39, 2500–2508.
+Deng, K.; Zhao, D.; Han, Q.; Zhang, Z.; Wang, S.; Zhou, A.; and
+Ma, H. 2023a. Midas: Generating mmWave radar data from videos
+for training pervasive and privacy-preserving human sensing tasks.
+Proceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies (IMWUT), 7(1): 1–26.
+Deng, K.; Zhao, D.; Zhang, Z.; Wang, S.; Zheng, W.; and Ma, H.
+2023b. Midas++: generating training data of mmWave radars from
+videos for privacy-preserving human sensing with mobility. IEEE
+Transactions on Mobile Computing (TMC), 23(6): 6650–6666.
+Ding, C.; Zhang, L.; Chen, H.; Hong, H.; Zhu, X.; and Li, C. 2022.
+Human motion recognition with spatial-temporal-convLSTM net-
+work using dynamic range-doppler frames based on portable
+FMCW radar. IEEE Transactions on Microwave Theory and Tech-
+niques, 70(11): 5029–5038.
+Ding, F.; Luo, Z.; Zhao, P.; and Lu, C. X. 2024. milliflow: Scene
+flow estimation on mmwave radar point cloud for human motion
+sensing. In European Conference on Computer Vision (ECCV),
+202–221. Springer.
+Fan, H.; Yang, Y.; and Kankanhalli, M. 2021. Point 4d transformer
+networks for spatio-temporal modeling in point cloud videos. In
+Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition (CVPR), 14204–14213.
+Gao, T.; Yao, X.; and Chen, D. 2021. Simcse: Simple
+contrastive learning of sentence embeddings. arXiv preprint
+arXiv:2104.08821.
+Gu, Z.; Ma, J.; Huang, Y.; Wei, H.; Chen, Z.; Zhang, H.; and Hong,
+W. 2025. HGSFusion: Radar-camera fusion with hybrid generation
+and synchronization for 3d object detection. In Proceedings of the
+AAAI Conference on Artificial Intelligence, volume 39, 3185–3193.
+Guo, C.; Zou, S.; Zuo, X.; Wang, S.; Ji, W.; Li, X.; and Cheng, L.
+2022. Generating diverse and natural 3d human motions from text.
+In Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), 5152–5161.
+Haresamudram, H.; Beedu, A.; Rabbi, M.; Saha, S.; Essa, I.; and
+Ploetz, T. 2025. Limitations in Employing Natural Language
+Supervision for Sensor-Based Human Activity Recognition-And
+Ways to Overcome Them. In Proceedings of the AAAI Conference
+on Artificial Intelligence, volume 39, 273–281.
+Huang, B.; Wang, X.; Chen, H.; Song, Z.; and Zhu, W. 2024a.
+Vtimellm: Empower llm to grasp video moments. In Proceed-
+ings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 14271–14280.
+Huang, R.; Li, M.; Yang, D.; Shi, J.; Chang, X.; Ye, Z.; Wu, Y.;
+Hong, Z.; Huang, J.; Liu, J.; et al. 2024b. Audiogpt: Understanding
+and generating speech, music, sound, and talking head. In Proceed-
+ings of the AAAI Conference on Artificial Intelligence, volume 38,
+23802–23804.
+Javier, R. J.; and Kim, Y. 2014. Application of linear predictive
+coding for human activity classification based on micro-Doppler
+signatures. IEEE Geoscience and Remote Sensing Letters, 11(10):
+1831–1834.
+Jiang, B.; Chen, X.; Liu, W.; Yu, J.; Yu, G.; and Chen, T. 2023. Mo-
+tiongpt: Human motion as a foreign language. Advances in Neural
+Information Processing Systems (NeurIPS), 36: 20067–20079.
+Jing, L.; Xue, Y.; Yan, X.; Zheng, C.; Wang, D.; Zhang, R.; Wang,
+Z.; Fang, H.; Zhao, B.; and Li, Z. 2024. X4d-sceneformer: En-
+hanced scene understanding on 4d point cloud videos through
+cross-modal knowledge transfer. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, volume 38, 2670–2678.
+Kang, L.; Li, Z.; Zhao, X.; Zhao, Z.; and Braun, T. 2023. ST-
+PCT: Spatial–temporal point cloud transformer for sensing activ-
+ity based on mmWave. IEEE Internet of Things Journal, 11(6):
+10979–10991.
+Kong, H.; Huang, C.; Yu, J.; and Shen, X. 2024. A survey
+of mmwave radar-based sensing in autonomous vehicles, smart
+homes and industry. IEEE Communications Surveys & Tutorials.
+Lai, Z.; Yang, J.; Xia, S.; Wu, Q.; Sun, Z.; Yu, W.; and Pei, L.
+2024. SMART: Scene-motion-aware human action recognition
+framework for mental disorder group. IEEE Internet of Things
+Journal.
+Li, K.; Wang, Y.; He, Y.; Li, Y.; Wang, Y.; Liu, Y.; Wang, Z.; Xu,
+J.; Chen, G.; Luo, P.; et al. 2024. Mvbench: A comprehensive
+multi-modal video understanding benchmark. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recog-
+nition (CVPR), 22195–22206.
+Lin, B.; Ye, Y.; Zhu, B.; Cui, J.; Ning, M.; Jin, P.; and Yuan, L.
+2023. Video-llava: Learning united visual representation by align-
+ment before projection. arXiv preprint arXiv:2311.10122.
+Lin, C.-Y. 2004. Rouge: A package for automatic evaluation of
+summaries. In Text summarization branches out, 74–81.
+5798
+Liu, H.; Wang, Y.; Zhou, A.; He, H.; Wang, W.; Wang, K.; Pan, P.;
+Lu, Y.; Liu, L.; and Ma, H. 2020. Real-time arm gesture recognition
+in smart home scenarios via millimeter wave sensing. Proceedings
+of the ACM on interactive, mobile, wearable and ubiquitous tech-
+nologies, 4(4): 1–28.
+Lu, H.; Chen, J.; Liang, F.; Tan, M.; Zeng, R.; and Hu, X. 2025. Un-
+derstanding emotional body expressions via large language models.
+In Proceedings of the AAAI Conference on Artificial Intelligence,
+volume 39, 1447–1455.
+Maaz, M.; Rasheed, H.; Khan, S.; and Khan, F. S. 2023. Video-
+chatgpt: Towards detailed video understanding via large vision and
+language models. arXiv preprint arXiv:2306.05424.
+Mahmood, N.; Ghorbani, N.; Troje, N. F.; Pons-Moll, G.; and
+Black, M. J. 2019. AMASS: Archive of motion capture as surface
+shapes. In Proceedings of the IEEE/CVF International Conference
+on Computer Vision (ICCV), 5442–5451.
+Meng, Z.; Fu, S.; Yan, J.; Liang, H.; Zhou, A.; Zhu, S.; Ma, H.; Liu,
+J.; and Yang, N. 2020. Gait recognition for co-existing multiple
+people using millimeter wave sensing. In Proceedings of the AAAI
+conference on artificial intelligence, volume 34, 849–856.
+Pal, M. 2005. Random forest classifier for remote sensing classifi-
+cation. International Journal of Remote Rensing, 26(1): 217–222.
+Saadat, M. S.; and Sur, S. 2024. Enabling Coexistence of Indoor
+Millimeter-Wave Networking and Human Activity Sensing. In
+2024 IEEE/ACM Conference on Connected Health: Applications,
+Systems and Engineering Technologies (CHASE), 37–48. IEEE.
+Shan, Z.; He, Y.; Zhao, C.; Du, J.; Zhang, J.; Zhang, Q.; Yu, J.; and
+Xu, L. 2025. Mojito: LLM-Aided Motion Instructor with Jitter-
+Reduced Inertial Tokens. arXiv preprint arXiv:2502.16175.
+Shen, Z.; Sheng, X.; Fan, H.; Wang, L.; Guo, Y.; Liu, Q.; Wen,
+H.; and Zhou, X. 2023a. Masked spatio-temporal structure pre-
+diction for self-supervised learning on point cloud videos. In Pro-
+ceedings of the IEEE/CVF International Conference on Computer
+Vision (ICCV), 16580–16589.
+Shen, Z.; Sheng, X.; Wang, L.; Guo, Y.; Liu, Q.; and Zhou, X.
+2023b. Pointcmp: Contrastive mask prediction for self-supervised
+learning on point cloud videos. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR),
+1212–1222.
+Shrestha, A.; Li, H.; Le Kernec, J.; and Fioranelli, F. 2020. Con-
+tinuous human activity classification from FMCW radar with Bi-
+LSTM networks. IEEE Sensors Journal, 20(22): 13607–13619.
+Smith, K. A.; Csech, C.; Murdoch, D.; and Shaker, G. 2018. Ges-
+ture recognition using mm-wave sensor for human-car interface.
+IEEE Sensors Letters, 2(2): 1–4.
+Song, X.; Salcianu, A.; Song, Y.; Dopson, D.; and Zhou, D. 2020.
+Fast wordpiece tokenization. arXiv preprint arXiv:2012.15524.
+Song, Y.; Li, J.; Bian, Y.; and Cai, Z. 2025. Predicting User Behav-
+ior in Smart Spaces with LLM-Enhanced Logs and Personalized
+Prompts. In Proceedings of the AAAI Conference on Artificial In-
+telligence, volume 39, 764–772.
+Suykens, J. A. 2001. Support vector machines: a nonlinear mod-
+elling and control perspective. European Journal of Control, 7(2-
+3): 311–327.
+Vedantam, R.; Lawrence Zitnick, C.; and Parikh, D. 2015. Cider:
+Consensus-based image description evaluation. In Proceedings of
+the IEEE Conference on Computer Vision and Pattern Recognition
+(CVPR), 4566–4575.
+Wang, F.; Lv, Y.; Zhu, M.; Ding, H.; and Han, J. 2024. Xrf55: A
+radio frequency dataset for human indoor action analysis. Proceed-
+ings of the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies (IMWUT), 8(1): 1–34.
+Wang, Y.; Guo, J.; Bai, J.; Yu, R.; He, T.; Tan, X.; Sun, X.; and
+Bian, J. 2025. Instructavatar: Text-guided emotion and motion con-
+trol for avatar generation. In Proceedings of the AAAI Conference
+on Artificial Intelligence, volume 39, 8132–8140.
+Wang, Y.; Liu, H.; Cui, K.; Zhou, A.; Li, W.; and Ma, H. 2021.
+m-activity: Accurate and real-time human activity recognition via
+millimeter wave radar. In ICASSP 2021-2021 IEEE International
+Conference on Acoustics, Speech and Signal Processing (ICASSP),
+8298–8302. IEEE.
+Xia, S.; Chu, L.; Pei, L.; Yang, J.; Yu, W.; and Qiu, R. C. 2024.
+Timestamp-supervised wearable-based activity segmentation and
+recognition with contrastive learning and order-preserving optimal
+transport. IEEE Transactions on Mobile Computing (TMC).
+Xia, S.; Zhang, Y.; Su, Z.; Zheng, X.; Lv, Z.; Wang, G.; Zhang,
+Y.; Wu, Q.; Chu, L.; and Pei, L. 2025. EnvPoser: Environment-
+aware Realistic Human Motion Estimation from Sparse Observa-
+tions with Uncertainty Modeling. Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR).
+Xu, K. 2025. AI-Driven Personalized Fall Prevention for Older
+Adults. In Proceedings of the AAAI Conference on Artificial Intel-
+ligence, volume 39, 29610–29612.
+Xu, R.; Wang, X.; Wang, T.; Chen, Y.; Pang, J.; and Lin, D. 2024.
+Pointllm: Empowering large language models to understand point
+clouds. In European Conference on Computer Vision (ECCV),
+131–147. Springer.
+Xue, H.; Ju, Y.; Miao, C.; Wang, Y.; Wang, S.; Zhang, A.; and Su,
+L. 2021. mmMesh: Towards 3D real-time dynamic human mesh
+construction using millimeter-wave. In Proceedings of the 19th
+Annual International Conference on Mobile Systems, Applications,
+and Services (MobiSys), 269–282.
+Yang, J.; Huang, H.; Zhou, Y.; Chen, X.; Xu, Y.; Yuan, S.; Zou, H.;
+Lu, C. X.; and Xie, L. 2023. Mm-fi: Multi-modal non-intrusive 4d
+human dataset for versatile wireless sensing. Advances in Neural
+Information Processing Systems (NeurIPS), 36: 18756–18768.
+Yang, J.; Xia, S.; Lai, Z.; Sun, L.; Wu, Q.; Yu, W.; and Pei, L.
+2025a. mmDEAR: mmWave Point Cloud Density Enhancement
+for Accurate Human Body Reconstruction. IEEE International
+Conference on Robotics and Automation (ICRA2025).
+Yang, J.; Xia, S.; Song, Y.; Wu, Q.; and Pei, L. 2024. mmBaT: A
+Multi-Task Framework for Mmwave-Based Human Body Recon-
+struction and Translation Prediction. In ICASSP 2024-2024 IEEE
+International Conference on Acoustics, Speech and Signal Process-
+ing (ICASSP), 8446–8450. IEEE.
+Yang, S.; Liu, J.; Zhang, R.; Pan, M.; Guo, Z.; Li, X.; Chen, Z.;
+Gao, P.; Li, H.; Guo, Y.; et al. 2025b. Lidar-llm: Exploring the
+potential of large language models for 3d lidar understanding. In
+Proceedings of the AAAI Conference on Artificial Intelligence, vol-
+ume 39, 9247–9255.
+Zhang, T.; Kishore, V.; Wu, F.; Weinberger, K. Q.; and Artzi, Y.
+2019. Bertscore: Evaluating text generation with bert. arXiv
+preprint arXiv:1904.09675.
+Zhang, Y.; Xia, S.; Chu, L.; Yang, J.; Wu, Q.; and Pei, L. 2024. Dy-
+namic inertial poser (dynaip): Part-based motion dynamics learning
+for enhanced human pose estimation with sparse inertial sensors. In
+Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition (CVPR), 1889–1899.
+Zhou, Z.; Wan, Y.; and Wang, B. 2024. Avatargpt: All-in-one
+framework for motion understanding planning generation and be-
+yond. In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR), 1357–1366.
+5799
+

@@ -1,0 +1,1503 @@
+Fully Spiking Neural Networks with Target Awareness for
+Energy-Efficient UAV Tracking
+Pengzhi Zhonga
+, Jiwei Moa
+, Dan Zengb
+, Feixiang Hec
+and Shuiwang Lia,∗
+aCollege of Computer Science and Engineering, Guilin University of Technology, Guilin 541004, China
+bSchool of Artificial Intelligence, Sun Yat-sen University, Zhuhai 510275, China
+cSchool of Electronic Information, Central South University, Changsha, Hunan, 410083, China
+A R T I C L E I N F O
+Keywords:
+Spiking Neural Network
+Mutual Information
+UAV Tracking
+Energy-Efficient Vision
+A B S T R A C T
+Spiking Neural Networks (SNNs), characterized by their event-driven computation and low power
+consumption, have shown great potential for energy-efficient visual tracking on unmanned aerial
+vehicles (UAVs). However, existing SNN-based trackers often rely on costly event cameras, which
+limits their deployment on standard RGB-camera UAV platforms. To address this limitation, we
+propose STATrack, a fully spiking neural network framework for UAV visual tracking using only RGB
+inputs. To the best of our knowledge, this is the first study to explore fully spiking neural networks
+for RGB-based UAV visual tracking. To alleviate target semantic degradation caused by spike
+discretization and reduce background interference in UAV scenes, we introduce an Adaptive Mutual
+Information Maximization (AMIM) mechanism. AMIM maximizes the mutual information between
+template inputs and their deep target-aware features, encouraging the spiking backbone to preserve
+discriminative target semantics. In addition, a sample-difficulty-aware dynamic weighting strategy is
+designed to adaptively adjust the mutual information constraint during training. Extensive experiments
+on four widely used UAV tracking benchmarks demonstrate that STATrack achieves state-of-the-art
+tracking performance with low theoretical energy consumption, highlighting its potential for energy-
+constrained UAV applications. Code is released at: https://anonymous.4open.science/r/STATrack.
+1. Introduction
+Unmanned aerial vehicle (UAV) visual tracking is a crit-
+ical task in computer vision, with broad applications in in-
+telligent surveillance, emergency rescue, smart agriculture,
+and aerial photography [22, 3, 33, 28]. Compared to generic
+object tracking, UAV tracking faces more severe challenges,
+including extreme viewpoint variations, significant motion
+blur, and complex background clutter [32, 27, 45]. Moreover,
+UAV platforms are strictly constrained by battery capacity
+and onboard computational resources, which impose strin-
+gent requirements on both efficiency and energy consump-
+tion. Although recent tracking approaches based on deep
+convolutional neural networks (CNNs) and vision Trans-
+formers (ViTs) have achieved remarkable improvements in
+accuracy, their high computational complexity and power
+consumption still hinder long-term real-time deployment on
+embedded UAV systems [28, 45]. Therefore, achieving high
+tracking accuracy while minimizing computational energy
+cost remains a fundamental challenge in UAV visual track-
+ing.
+To address the energy-efficiency bottleneck, spiking
+neural networks (SNNs) have recently attracted increasing
+attention due to their event-driven computation paradigm
+and sparse spike-based communication [53, 58]. By trans-
+mitting information through discrete spikes, SNNs can
+theoretically convert high-energy multiply–accumulate op-
+erations into low-energy accumulation operations, offering
+significant potential for energy-efficient inference [50, 41].
+Existing SNN-based tracking methods, such as SDTrack
+∗Corresponding author.
+lishuiwang0721@163.com (S. Li)
+[41] and SNNTrack [58], primarily rely on event cameras
+to exploit the high temporal resolution of event streams
+and compensate for the limited representational capacity
+of SNNs. More recently, SpikeFET [50] proposed a fully
+spiking frame–event fusion tracking framework to further
+leverage the energy efficiency of SNNs. However, com-
+pared to standard RGB cameras that are widely equipped
+on UAV platforms, event sensors are considerably more
+expensive, and UAV-specific event-based tracking datasets
+remain scarce. These factors substantially limit the practical
+applicability of event-camera-dependent SNN trackers in
+real-world UAV scenarios. On the other hand, when using
+standard RGB images as input, SNN trackers suffer from
+severe information degradation due to the discretization
+process of spike encoding, leading to the loss of fine-grained
+spatial textures and semantic details [53]. This typically
+results in inferior performance compared to ANN-based
+models of comparable scale in RGB tracking tasks. To
+overcome these limitations, we propose STATrack, a spiking
+neural network (SNN) framework for UAV visual tracking
+using only RGB inputs. The framework incorporates an
+Adaptive Mutual Information Maximization (AMIM) mod-
+ule, which improves tracking accuracy without increasing
+inference computation. Specifically, AMIM maximizes the
+mutual information between template features and target-
+aware features, guiding the Spiking Transformer to preserve
+discriminative target semantics and effectively enhancing
+target-aware representation learning. Furthermore, consid-
+ering the dynamic differences in the learning difficulty of
+different training samples, we design an adaptive dynamic
+weighting strategy based on sample difficulty. This strategy
+adaptively adjusts the strength of the mutual information
+Zhong et al. Page 1 of 13
+arXiv:2603.27493v2
+[cs.CV]
+6
+Jun
+2026
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+constraint during training, achieving more stable and effi-
+cient mutual information-enhanced learning.
+Extensive experiments on four mainstream UAV track-
+ing benchmarks demonstrate that STATrack achieves a fa-
+vorable balance between tracking accuracy and energy ef-
+ficiency. Specifically, STATrack obtains the best average
+success rate of 67.2% and requires only 5.6 mJ theoretical
+energy consumption, achieving about 1.96× better energy
+efficiency than ORTrack-DeiT. Moreover, STATrack-s fur-
+ther improves the energy efficiency to about 3.44× while
+maintaining a competitive average success rate of 65.5%.
+Moreover, as shown in Fig. 1, STATrack achieves the highest
+tracking accuracy on VisDrone2018 with the lowest theo-
+retical energy consumption among the compared methods.
+It not only outperforms most lightweight trackers, but also
+surpasses representative deep trackers. These results demon-
+strate the potential of fully spiking architectures for energy-
+efficient UAV visual tracking. The main contributions of this
+work are summarized as follows:
+• We present the first RGB-only fully spiking neural
+network framework for UAV visual tracking, demon-
+strating the feasibility of applying SNNs to standard
+RGB-based UAV tracking while significantly reduc-
+ing theoretical energy consumption.
+• We introduce mutual information-based target-aware
+feature learning into SNN tracking and propose a
+sample-difficulty-aware adaptive weighting strategy.
+This design mitigates target semantic degradation
+caused by spike discretization and enables more ef-
+fective target-aware representation learning in Spiking
+trackers.
+• Extensive experiments on four public UAV track-
+ing benchmarks demonstrate that STATrack achieves
+state-of-the-art tracking performance with low theo-
+retical energy consumption, highlighting its practical
+potential for energy-constrained UAV applications.
+2. Related Work
+2.1. Efficient Visual Object Tracking
+In recent years, significant progress has been made in vi-
+sual object tracking. The mainstream methods can be mainly
+divided into two categories: Discriminative Correlation Fil-
+ter (DCF)-based methods and deep learning-based methods
+[18, 9]. Early DCF trackers utilized fast Fourier transforms
+for efficient computation in the frequency domain, and due
+to their extremely high processing speed, they were favored
+in UAV tracking [26]. However, DCF methods, relying
+on handcrafted features, often lack robustness when facing
+complex backgrounds, deformations, and occlusions. With
+the development of deep learning, CNN-based Siamese net-
+works [48, 46] and Transformer-based single-stream trackers
+[54, 6] have gradually become dominant. With their power-
+ful self-attention mechanism, Vits are capable of capturing
+long-range dependencies and unifying feature extraction and
+Figure 1: Accuracy–energy comparison on the VisDrone2018
+dataset. STATrack achieves 69.4% AUC with only 5.6 mJ the-
+oretical inference energy, demonstrating a favorable accuracy–
+energy trade-off.
+interaction processes, significantly improving tracking ac-
+curacy. However, these Transformer-based models typically
+come with large numbers of parameters and high computa-
+tional overhead, making it difficult to achieve long-duration
+real-time deployment on UAV platforms with limited battery
+capacity and computing power [28]. To achieve real-time
+tracking on UAVs, recent studies have proposed various
+lightweight strategies: Aba-ViTrack [28] combines adaptive
+background-aware token computation with a lightweight
+ViT to achieve an excellent balance between accuracy and
+speed. AVTrack [33] designs a hierarchical activation mod-
+ule that dynamically skips certain Transformer layers based
+on the input sample’s complexity to accelerate inference.
+ORTrack [45] introduces a mask-based occlusion simulation
+framework to learn robust representations and further im-
+proves tracking efficiency by incorporating adaptive feature-
+based knowledge distillation. Despite these methods allevi-
+ating computational pressure to some extent, achieving high-
+precision tracking under extreme low-power constraints re-
+mains challenging, prompting us to explore tracking meth-
+ods with even lower energy consumption potential.
+2.2. Object Tracking Based on Spiking Neural
+Networks
+To break through the energy-efficiency bottleneck of
+traditional ANNS, Spiking Neural Networks (SNNs), as
+third-generation neural networks, have gained widespread
+attention [36, 53]. SNNs communicate using discrete spike
+signals, transforming the high-energy multiply-accumulate
+operations (MACs) of ANNs into low-energy add-and-count
+operations (ACs), offering significant advantages on compu-
+tationally constrained edge devices. In single-object tracking
+tasks, early frame-based SNN tracking methods [36, 46] typ-
+ically employed Siamese network architectures with multi-
+step temporal encoding mechanisms to enhance temporal
+information modeling. However, these methods still lag be-
+hind ANNs in tracking accuracy and fail to fully exploit the
+Zhong et al. Page 2 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Figure 2: Overview of the proposed framework. The architecture consists of an efficient SNN-based Transformer backbone for
+joint template–search feature learning, followed by a spiking head. (Bottom-left) Illustration of the proposed Adaptive Mutual
+Information Maximization (AMIM) module. (Bottom-right) Detailed structure of the adaptive dynamic weighting strategy used
+in AMIM. Note that {𝑍} denotes a batch of input samples, while {𝑍′
+} represents a randomly shuffled batch of 𝑍.
+energy efficiency potential of SNNs. With the development
+of event cameras, researchers have further explored event-
+driven SNN tracking schemes [57, 23, 58]. For example,
+STNet [57] utilizes SNNs to process high temporal reso-
+lution event streams, enhancing spatiotemporal feature ex-
+traction capability; SDTrack [41] introduces a Transformer-
+based spiking-driven framework, achieving more efficient
+spatiotemporal modeling; while SpikeFET [50] proposes a
+fully spiking “frame-event” fusion architecture, leveraging
+multimodal complementarity to further improve tracking
+performance. Although these methods demonstrate superior
+spatiotemporal modeling capabilities in event-driven scenar-
+ios, their reliance on expensive event sensors limits their
+application in mainstream UAVs and embedded systems that
+are equipped only with RGB cameras. Currently, there is still
+a lack of an efficient SNN-based tracking framework that can
+achieve a favorable balance between tracking accuracy and
+energy efficiency using only RGB inputs, which is essential
+for practical deployment in UAV scenarios.
+2.3. Target-Aware Feature Learning via Mutual
+Information
+In recent years, mutual information (MI), as a funda-
+mental measure of statistical dependency between random
+variables, has been widely adopted in deep representation
+learning [19]. Studies based on the InfoMax principle [35]
+have shown that maximizing the mutual information be-
+tween an input and its latent representation helps preserve
+discriminative semantic information and improves the ro-
+bustness of learned features. In visual tasks, MI maximiza-
+tion has been successfully applied to self-supervised learn-
+ing, cross-modal representation learning, and target-aware
+feature modeling [30, 17]. In the context of visual object
+tracking, recent works have begun to investigate the issue
+that target information can be overwhelmed by background
+features in Transformer-based architectures [35, 27]. Rep-
+resentative methods such as TATrack [27] point out that
+during template–search joint modeling, the search region
+is typically much larger than the template, leading to a
+severe imbalance between background tokens and target
+tokens. As features propagate through multiple Transformer
+layers, this imbalance may dilute target-related information
+and weaken target-aware representation learning. To address
+this problem, TATrack maximizes the mutual information
+between the template image and its corresponding feature
+representation during training, encouraging the model to
+preserve target-related cues.
+However, existing mutual information-driven target-
+aware methods are mainly designed for ANN or ViT trackers
+with continuous feature representations. They do not explic-
+itly consider the additional semantic degradation caused by
+spike quantization and discrete spike encoding in SNNs.
+This issue becomes more challenging in RGB-based UAV
+tracking, where small targets are often surrounded by com-
+plex aerial backgrounds and target semantics can be further
+weakened after spike discretization. Motivated by this,
+we introduce mutual information maximization into SNN-
+based UAV visual tracking as an information compensation
+mechanism, encouraging deep spiking features to preserve
+discriminative target semantics. Furthermore, we incorpo-
+rate a sample-difficulty-aware adaptive dynamic weighting
+strategy to adjust the strength of the MI constraint during
+training, enabling more effective target-aware representation
+learning.
+Zhong et al. Page 3 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+3. Proposed Approach
+This section presents the proposed STATrack framework
+for energy-efficient UAV visual tracking. We first provide
+an overview of the overall RGB-only fully spiking tracking
+architecture in Section 3.1. Then, the spiking neuron model
+used for efficient training and spike-driven inference is in-
+troduced in Section 3.2. Section 3.3 describes the network.
+.architecture, including the Conv-Based SNN Block, the
+Transformer-Based SNN Block and prediction head. Section
+3.4 details the proposed Adaptive Mutual Information Max-
+imization (AMIM) mechanism and its adaptive dynamic
+weighting strategy. Finally, Section 3.5 introduces training
+objective and inference procedure.
+3.1. Overview
+As illustrated in Fig. 2, STATrack is a fully spiking
+neural network framework designed for RGB-only UAV
+visual tracking. Given two template images 𝑍1, 𝑍2 and one
+search image 𝑋, the Random Patch Module (RPM) first
+combines them into a compact joint input:
+𝐅0 = (𝑍1, 𝑍2, 𝑋), (1)
+where (⋅) denotes the random patch operation. By ran-
+domly performing horizontal or vertical concatenation, RPM
+constructs a unified template-search input while alleviating
+the degradation of translation invariance caused by convolu-
+tional padding.
+The joint RGB input 𝐅0 is then fed into an E-SpikeFormer
+backbone for spiking feature extraction. The backbone con-
+sists of Conv-Based SNN Blocks and Transformer-Based
+SNN Blocks. The former extracts local spatial structures and
+multi-scale representations, while the latter models long-
+range dependencies between template and search tokens.
+Before entering the Transformer-Based SNN Blocks, posi-
+tion encodings 𝐸𝑝 and type encodings 𝐸𝑡 are added to the
+feature representation. The overall feature extraction process
+is formulated as:
+𝐅𝑐 = conv(𝐅0), (2)
+𝐅𝑒 = 𝐅𝑐 + 𝐄𝑝 + 𝐄𝑡, (3)
+𝐅𝑡 = trans(𝐅𝑒). (4)
+where conv(⋅) and trans(⋅) denote the stacked Conv-Based
+SNN Blocks and Transformer-Based SNN Blocks, respec-
+tively. 𝐅𝑐 is the local spiking feature, 𝐅𝑒 is the encoded
+feature after adding positional and type information, and 𝐅𝑡
+denotes the final deep spiking feature.
+The generated search-region features are fed into a
+lightweight spiking prediction head to estimate the target
+location. In addition, to mitigate target semantic degradation
+caused by spike discretization and reduce the dominance of
+background tokens in UAV scenes, we introduce an Adaptive
+Mutual Information Maximization (AMIM) mechanism dur-
+ing training. AMIM enhances target-aware representation
+learning by maximizing the mutual information between
+template inputs and their deep target-aware features. Since
+AMIM is only used as a training constraint, it improves
+tracking accuracy without introducing additional inference
+computation.
+3.2. Spiking Neuron
+We employ the Spiking Firing Approximation (SFA)
+method [53, 50]. This approach aims to resolve the dilemma
+in SNN training where enforcing strict binary spikes causes
+severe gradient quantization errors, while employing multi-
+bit or continuous approximations compromises event-driven
+efficiency. Specifically, we postulate that spiking neurons
+adhere to a rate coding mechanism. Given a spike sequence
+at the 𝑙-th layer over 𝑇 discrete time steps, the average firing
+rate is defined as:
+𝑎𝑙
+=
+1
+𝑇
+𝑇
+∑
+𝑡=1
+𝑆𝑙
+[𝑡], (5)
+where 𝑆𝑙[𝑡] ∈ {0, 1} denotes the binary spike event at time
+step 𝑡. During the training phase, to mitigate the gradient
+quantization problem, we utilize integer activation to ap-
+proximate the accumulated spike firing over the temporal
+dimension. The total number of spikes within 𝑇 time steps
+is approximated as a single-step integer activation value 𝑆𝑙
+𝑇
+:
+𝑆𝑙
+𝑇 = ⌊clip(𝑥𝑙
+, 0, 𝑇 )⌉, (6)
+where 𝑥𝑙 represents the membrane potential input, and 𝑇
+serves as both the time window length and the maximum
+firing threshold. This integer approximation maintains con-
+sistency with spiking behavior while enabling effective op-
+timization via standard backpropagation.
+During the inference phase, the model reverts to the
+spike-driven mode, recovering the activation value by accu-
+mulating binary spikes over 𝑇 time steps:
+𝑆𝑙
+𝑇 =
+𝑇
+∑
+𝑡=1
+̂
+𝑆𝑙
+[𝑡], (7)
+where ̂
+𝑆𝑙[𝑡] is the actually generated spike sequence. Ac-
+cordingly, the input for the subsequent layer is computed as:
+𝑋𝑙+1
+= 𝑊 𝑙+1
+𝑎𝑙
+=
+1
+𝑇
+𝑊 𝑙+1
+𝑆𝑙
+𝑇 . (8)
+Since the spike sequence ̂
+𝑆𝑙[𝑡] consists solely of binary
+events, all Multiply-Accumulate (MAC) operations are con-
+verted into sparse Accumulate (AC) operations, thereby
+supporting fully event-driven and energy-efficient inference.
+3.3. Network Architecture
+STATrack adopts E-SpikeFormer [53] as the spiking
+backbone, which consists of Conv-Based SNN Blocks and
+Transformer-Based SNN Blocks. The Conv-Based SNN
+Blocks are placed in the early stages to extract local spatial
+structures and multi-scale spiking representations, while the
+Zhong et al. Page 4 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Transformer-Based SNN Blocks are used in deeper stages
+to model long-range dependencies between template and
+search tokens.
+Conv-Based SNN Block. Given an input feature 𝐔, the
+Conv-Based SNN Block sequentially performs spatial token
+mixing and channel-wise feature interaction through resid-
+ual spiking convolution operations:
+𝐔′
+= 𝐔 + SSConv(𝐔), (9)
+𝐔′′
+= 𝐔′
++ ChConv(𝐔′
+). (10)
+where SSConv(⋅) denotes the spike separable convolution
+module for spatial token mixing, and ChConv(⋅) denotes the
+channel convolution module for channel-wise interaction.
+Specifically, they are formulated as:
+SSConv(𝐔) = Convpw
+(
+ (Convdw(
+ (Convpw( (𝐔)))))
+)
+, (11)
+ChConv(𝐔′
+) = Conv
+(
+ (Conv( (𝐔′
+)))
+)
+. (12)
+Here,  (⋅) denotes the spiking neuron layer, Convpw(⋅)
+and Convdw(⋅) denote point-wise and depth-wise convolu-
+tion, respectively. This block preserves local spatial details
+while maintaining sparse spike-driven computation.
+Transformer-Based SNN Block. To capture global template-
+search dependencies, the Transformer-Based SNN Block
+introduces spike-driven self-attention after local spiking
+convolution. Its computation is summarized as:
+𝐔′
+= 𝐔 + SpikeSepConv(𝐔),
+𝐔′′
+= 𝐔′
++ SDSA(𝐔′
+),
+𝐔′′′
+= 𝐔′′
++ ChannelMLP(𝐔′′
+),
+(13)
+where SDSA(⋅) denotes the efficient spike-driven self-attention
+module, and ChannelMLP(⋅) denotes the channel feed-
+forward module. Different from conventional Transformer
+blocks that rely on dense continuous-valued attention, this
+block performs relation modeling in the spiking feature
+space, enabling STATrack to capture global dependencies
+while preserving event-driven computation.
+Spiking Prediction Head We adopt a lightweight spiking
+prediction head [50] composed of several Spiking Conv-
+BN-ReLU layers to directly regress the target bounding
+box while preserving the fully spiking and energy-efficient
+property of the network. Specifically, the output tokens
+corresponding to the search region are first reshaped into a
+2D spatial feature map, which is then fed into the prediction
+head. The head produces three prediction branches: a classi-
+fication score map 𝑃 ∈ [0, 1]
+𝐻𝑥
+𝑠
+×
+𝑊𝑥
+𝑠 , a normalized bounding
+box size map 𝑆 ∈ [0, 1]2×
+𝐻𝑥
+𝑠
+×
+𝑊𝑥
+𝑠 , and a local offset map 𝑂 ∈
+[0, 1]2×
+𝐻𝑥
+𝑠
+×
+𝑊𝑥
+𝑠 , where 𝑠 denotes the downsampling stride
+of the backbone. The preliminary estimation of the target
+position relies on identifying the location with the highest
+classification score, i.e., (𝑥𝑐, 𝑦𝑐) = argmax(𝑥,𝑦)𝑃(𝑥, 𝑦). Sub-
+sequently, the final target bounding box is estimated by
+{(𝑥𝑡, 𝑦𝑡); (𝑤, ℎ)} = {(𝑥𝑐, 𝑦𝑐)+𝑂(𝑥𝑐, 𝑦𝑐); 𝑆(𝑥𝑐, 𝑦𝑐)}. (14)
+3.4. Adaptive Mutual Information Maximization
+(AMIM)
+To alleviate the issue that target-related information in
+deep spiking Transformers can be suppressed by dominant
+background tokens, we propose an Adaptive Mutual Infor-
+mation Maximization (AMIM) mechanism. As shown in
+Fig. 2, AMIM employs a global statistics network to estimate
+the dependency between the template input 𝑍 and its deep
+spiking feature representation 𝐭𝑍. By maximizing this de-
+pendency during training, AMIM encourages the backbone
+to preserve fine-grained and discriminative target semantics,
+thereby enhancing target-aware representation learning in
+cluttered UAV scenes.
+Target-aware Mutual Information Maximization. Mu-
+tual information (MI) quantifies the statistical dependency
+between two variables, making it suitable for preserving
+semantic consistency between an input image and its deep
+representation. However, directly computing MI is challeng-
+ing due to the unknown underlying distributions in high-
+dimensional feature spaces. We adopt a Jensen–Shannon
+divergence (JSD)-based MI estimator to maximize the de-
+pendency between the template input and its deep spiking
+features. Specifically, the JSD-based MI estimate ̂
+𝐼(JSD) is
+defined as:
+̂
+𝐼(JSD)
+(𝑍, 𝐭𝑍; 𝜃) = 𝔼ℙ(𝑍,𝐭𝑍 )
+[
+−sp
+(
+−𝑇𝜃(𝑍, 𝐭𝑍)
+)]
+− 𝔼ℙ(𝑍)ℙ(𝐭𝑍 )
+[
+sp
+(
+𝑇𝜃(𝑍′
+, 𝐭𝑍)
+)]
+,
+(15)
+where 𝑇𝜃 denotes a global statistics network parameterized
+by 𝜃, and sp(𝑧) = log(1 + 𝑒𝑧) is the SoftPlus function. Here,
+𝑍 denotes a batch of template inputs, while 𝑍′ represents
+a randomly shuffled version of 𝑍. The shuffling operation
+makes 𝑍′ statistically independent of 𝐭𝑍, thereby approxi-
+mating samples from the product of marginal distributions.
+The detailed architecture of 𝑇𝜃 is provided in the supplemen-
+tary material.
+The objective of AMIM is to maximize the above MI
+estimate. Therefore, the MI loss is formulated as:
+MI = −𝜆MI ⋅ ̂
+𝐼(JSD)
+(𝑍, 𝐭𝑍; 𝜃), (16)
+where 𝜆MI controls the strength of the MI constraint and
+is dynamically adjusted by the adaptive weighting strategy
+described below.
+Adaptive Dynamic Weighting (ADW). A fixed MI weight
+may not be optimal for all training samples, since UAV
+tracking sequences contain samples with varying degrees of
+difficulty, such as background clutter, occlusion, and motion
+blur. To stabilize MI-enhanced learning, we introduce an
+Adaptive Dynamic Weighting (ADW) strategy that adjusts
+𝜆MI according to the relative difficulty of the current batch.
+Specifically, we use the exponential moving average (EMA)
+of the GIoU loss as a historical reference and compute the
+difficulty-aware adjustment term as:
+Δ = tanh
+(
+𝜂 ⋅
+(
+̄
+giou − giou
+))
+, (17)
+where ̄
+giou denotes the historical EMA of the GIoU loss,
+giou represents the GIoU loss of the current batch, and 𝜂
+Zhong et al. Page 5 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+controls the sensitivity of the adjustment. The adaptive MI
+weight is then defined as:
+𝜆MI = Clamp
+(
+𝜆base − 𝛽 ⋅ Δ, 0, 𝜆max
+)
+, (18)
+where 𝜆base is the base MI weight, 𝛽 controls the adjustment
+amplitude, and 𝜆max prevents excessively large MI regular-
+ization. When the current batch is more difficult than the
+historical average, i.e., giou > ̄
+giou, we have Δ < 0,
+which increases 𝜆MI and strengthens target-aware semantic
+learning. Conversely, for easier samples, ADW reduces the
+MI constraint to avoid unnecessary regularization.
+3.5. Training and Inference
+Training. We adopt a standard composite loss formulation.
+Specifically, a weighted focal loss cls [25] is used for clas-
+sification, while bounding box regression is supervised by a
+combination of 𝐿1 loss and GIoU loss [40]. In addition, a
+similarity loss sim is employed to maintain spatio-temporal
+consistency [50]. The overall training objective is defined as:
+total = cls + 𝜆giougiou + 𝜆𝐿1𝐿1
++ 𝜆simsim + 𝜆MIMI.
+(19)
+where 𝜆cls, 𝜆giou, 𝜆1, and 𝜆sim denote the weights of the focal
+loss, GIoU loss, 𝐿1 loss, and similarity loss, respectively.
+They are set to 1, 2, 5, and 0.5, respectively. The mutual
+information loss is adaptively weighted by 𝜆MI through the
+proposed ADW strategy.
+Inference. Since the Random Patch Module (RPM) takes
+two template images and one search region as input, STA-
+Track maintains a two-slot template list during inference.
+The first slot stores the initial template and remains fixed
+throughout tracking, serving as a reliable identity anchor.
+The second slot is dynamically updated to capture recent
+target appearance variations. Specifically, every 𝑇𝑢 frames,
+if the confidence score of the current prediction is higher
+than a threshold 𝜏, a new template patch is cropped from the
+current frame according to the predicted target location and
+used to replace the second template slot. The two templates
+are then jointly fed into RPM together with the current search
+region. This design enables STATrack to preserve long-
+term target identity while adapting to short-term appearance
+changes, which is particularly useful for UAV tracking under
+viewpoint variation, scale change, and motion blur. In our
+implementation, we set 𝑇𝑢 = 25 and 𝜏 = 0.7.
+4. Experiments
+In this section, we conduct a comprehensive evaluation
+of the proposed STATrack on four widely used UAV tracking
+benchmarks, including UAV123 [38], VisDrone2018 [44],
+UAVDT [11], and DTB70 [29]. All experiments were con-
+ducted on a PC equipped with an Intel i9-10850K CPU (3.6
+GHz), 16 GB RAM, and an NVIDIA Titan X GPU. To
+validate the effectiveness of STATrack in achieving com-
+petitive tracking performance with low energy consumption,
+we compare it with 16 state-of-the-art (SOTA) lightweight
+trackers under the same evaluation protocol. We separate
+them into three groups for a clearer comparison: 1) DCF-
+based trackers [18, 9, 7, 26, 32], 2) CNN-based trackers [3, 4,
+51, 56, 13], and 3) ViT-based trackers [28, 16, 27, 33, 45, 49].
+4.1. Implementation Details
+Model Configuration. The proposed STATrack adopts an
+efficient spike-driven Transformer backbone based on E-
+SpikeFormer [53]. Specifically, we adopt E-SpikeFormer-
+10M as the backbone for STATrack and E-SpikeFormer-
+5.1M as the backbone for STATrack-s. The prediction mod-
+ule is implemented as a lightweight spike-driven center pre-
+diction head, consisting entirely of spiking operations. For
+each of the three output branches, i.e., classification, bound-
+ing box size regression, and center offset regression, we use
+four stacked Multi-Spike convolutional layers, forming an
+end-to-end fully spiking processing pipeline. Following the
+standard settings of Transformer-based trackers [54, 6], the
+input resolutions of the template and search region are set
+to 128 × 128 and 256 × 256, respectively. The time step of
+spiking neurons is set to 𝑇 = 4 in all experiments. Integer
+activations within [0, 𝑇 ] are used during training, while the
+network is unfolded into 𝑇 binary spiking timesteps during
+inference to preserve spike-driven computation.
+Training Strategy. STATrack is trained on a combination
+of large-scale tracking datasets, including GOT-10k [21],
+LaSOT [12], COCO [34], and TrackingNet [39]. To ensure
+fair comparisons, the training pipeline follows the same
+protocol as the baseline methods. The batch size is set to 32,
+and the network is optimized using the AdamW optimizer
+with a weight decay of 1×10−4. The initial learning rate is set
+to 6×10−5. The model is trained for 300 epochs with 60,000
+image pairs per epoch, and the learning rate is decayed by a
+factor of 10 after the 240th epoch. For the proposed Adaptive
+Mutual Information Maximization (AMIM) loss, the base
+weight 𝜆base, dynamic range 𝛽, and sensitivity coefficient 𝜂
+are empirically set to 0.1, 0.05, and 10.0, respectively.
+Inference Procedure. During inference, we follow the
+standard tracking practice by applying a Hanning window
+penalty to introduce motion smoothness and spatial priors.
+Specifically, the predicted center classification score map
+is multiplied element-wise by a Hanning window of the
+same resolution, and the bounding box corresponding to the
+highest response is selected as the final tracking result.
+Energy Consumption. To evaluate energy efficiency, we
+adopt the commonly used theoretical energy estimation pro-
+tocol for SNNs. Under a 45 nm CMOS technology, the
+energy costs of one MAC operation and one AC operation
+are set to 𝐸MAC = 4.6 pJ and 𝐸AC = 0.9 pJ, respectively
+[20] [20, 52]. For ANN-based trackers, energy consumption
+is estimated by the number of dense MAC operations:
+𝐸ANN = 𝐸MAC ⋅ FLANN, (20)
+where FLANN denotes the total FLOPs of the ANN model.
+For SNN-based trackers, spike-driven layers mainly rely
+on sparse AC operations. Therefore, the energy consumption
+Zhong et al. Page 6 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Table 1
+Comparison of STATrack with lightweight trackers in terms of precision (Prec.), success rate (Succ.), and power consumption
+(mJ) on DTB70, UAVDT, VisDrone2018, and UAV123. Red, blue, and green indicate the first, second, and third best results,
+respectively. Note that percentage symbols (%) are omitted for both precision and success rate values.
+Tracker Source
+DTB70 UAVDT VisDrone2018 UAV123 Average Power Param.
+Prec. Succ. Prec. Succ. Prec. Succ. Prec. Succ. Prec. Succ. (mJ) (M)
+KCF [18] TPAMI 15 46.8 28.0 57.1 29.0 68.5 41.3 52.3 33.1 56.2 32.9 - -
+fDSST [9] TPAMI 17 53.4 35.7 66.6 38.3 69.8 51.0 58.3 40.5 62.0 41.4 - -
+ECO_HC [7] CVPR 17 63.5 44.8 69.4 41.6 80.8 58.1 71.0 49.6 71.2 48.5 - -
+MCCT_H [43] CVPR 18 60.4 40.5 66.8 40.2 80.3 56.7 65.9 45.7 68.4 45.8 - -
+ARCF [22] ICCV 19 69.4 47.2 72.0 45.8 79.7 58.4 67.1 46.8 72.1 49.6 - -
+AutoTrack [32] CVPR 20 71.6 47.8 71.8 45.0 78.8 57.3 68.9 47.2 72.8 49.3 - -
+RACF [26] PR 22 72.6 50.5 77.3 49.4 83.4 60.0 70.2 47.7 75.9 51.8 - -
+HiFT [3] ICCV 21 80.2 59.4 65.2 47.5 71.9 52.6 78.7 59.0 74.0 54.6 33.1 9.9
+TCTrack [4] CVPR 22 81.2 62.2 72.5 53.0 79.9 59.4 80.0 60.5 78.0 58.8 40.5 9.7
+UDAT [55] CVPR 22 80.6 61.8 80.1 59.2 81.6 61.9 76.1 59.0 79.6 60.5 33.7 -
+SGDViT [51] ICRA 23 78.5 60.4 65.7 48.0 72.1 52.1 75.4 57.5 72.9 54.5 60.0 23.3
+DRCI [56] ICME 23 81.4 61.8 84.0 59.0 83.4 60.0 76.7 59.7 81.4 60.1 16.6 8.8
+PRL-Track [13] IROS 24 79.5 60.6 73.1 53.5 72.6 53.8 79.1 59.3 76.1 56.8 34.0 12.0
+Aba-ViTrack [28] ICCV 23 85.9 66.4 83.4 59.9 86.1 65.3 86.4 66.4 85.5 64.5 11.0 8.0
+SMAT [16] WACV 24 81.9 63.8 80.8 58.7 82.5 63.4 81.8 64.6 81.8 62.6 14.7 8.6
+TATrack-DeiT [27] TGRS 24 85.0 65.9 83.4 60.6 85.2 64.7 82.7 65.4 84.1 64.2 11.0 5.6
+AVTrack-DeiT [33] ICML 24 84.3 65.0 82.1 58.7 86.0 65.3 84.8 66.8 84.2 63.8 4.5-8.8 3.5-7.9
+ORTrack-Deit [45] CVPR 25 86.2 66.4 83.4 60.1 88.6 66.8 84.3 66.4 85.6 65.0 11.0 5.8
+SGLATrack-Deit [49] CVPR 25 84.4 65.1 81.9 59.9 80.0 61.3 84.9 66.9 82.8 63.3 7.7 7.9
+STATrack
+Ours
+82.7 66.3 84.0 65.3 89.1 69.4 86.7 67.6 85.6 67.2 5.6 12.6
+STATrack-s 80.7 64.0 84.2 65.8 86.8 66.5 84.2 65.8 84.0 65.5 3.2 7.4
+Table 2
+Comparison results of STATrack with deep learning-based trackers on the VisDrone2018 dataset.
+Method Source Prec. Succ. Method Source Prec. Succ. Method Source Prec. Succ.
+STATrack Ours 89.1 69.4 EVPTrack [42] AAAI 24 84.5 65.8 SparseTT [14] IJCAI 22 81.4 62.1
+MambaLCT [31] AAAI 25 88.1 65.5 ZoomTrack [24] NIPS 23 81.4 63.4 OSTrack [54] ECCV 22 84.2 64.8
+HIPTrack [1] AAAI 24 86.7 67.1 SeqTrack [5] CVPR 23 85.3 65.8 SAOT [61] ICCV 21 76.9 59.1
+AQATrack [47] CVPR 24 87.2 66.9 MAT[59] CVPR 23 81.6 62.2 KeepTrack [37] ICCV 21 84.0 63.5
+ODTrack [60] AAAI 24 85.6 64.8 ROMTrack [2] ICCV 23 86.4 66.7 PrDiMP50 [8] CVPR 20 79.4 59.7
+is estimated by considering the temporal length 𝑇 , layer-
+wise firing rates, and operation counts:
+𝐸SNN =𝑇 ⋅ 𝐸AC
+( 𝑀
+∑
+𝑚=1
+𝑅(𝑚)
+𝐶
+FL(𝑚)
+Conv
++
+𝑁
+∑
+𝑛=1
+𝑅(𝑛)
+𝑀
+FL(𝑛)
+MLP
+)
++ 𝑇 ⋅ 𝐸MAC ⋅ FLhead,
+(21)
+where 𝑅(𝑚)
+𝐶
+and 𝑅(𝑛)
+𝑀
+denote the firing rates of the 𝑚-th
+convolutional layer and the 𝑛-th MLP layer, respectively. The
+firing rate is defined as the ratio of non-zero elements in
+the corresponding spike tensor. FLhead denotes the FLOPs
+of non-spiking convolutional layers in the tracking head.
+The FLOPs of convolutional and MLP layers are com-
+puted as:
+FL(𝑚)
+Conv
+= 𝑘2
+𝑚 ⋅ ℎ𝑚 ⋅ 𝑤𝑚 ⋅ 𝑐𝑚−1 ⋅ 𝐶𝑚, (22)
+FL(𝑛)
+MLP
+= 𝑖𝑛 ⋅ 𝑜𝑛. (23)
+where 𝑘𝑚 is the kernel size, (ℎ𝑚, 𝑤𝑚) is the output feature
+map size, 𝑐𝑚−1 and 𝐶𝑚 are the input and output channels,
+and 𝑖𝑛 and 𝑜𝑛 are the input and output dimensions of the MLP
+layer. See the supplementary material for details.
+4.2. State-of-the-art Comparison
+Comparison with Lightweight Trackers We compare the
+proposed STATrack with 19 state-of-the-art lightweight
+UAV trackers on four challenging benchmarks, namely
+UAV123, VisDrone2018, UAVDT, and DTB70. The overall
+comparison results are reported in Table 1, covering repre-
+sentative trackers based on DCF, CNN, and ViT architec-
+tures.
+Compared with DCF-based trackers, STATrack consis-
+tently achieves substantial improvements across all evalua-
+tion metrics. Specifically, STATrack obtains an average pre-
+cision of 85.6% and an average success rate of 67.2%, outper-
+forming the best-performing DCF-based tracker RACF [26]
+Zhong et al. Page 7 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Figure 3: Attribute-based success plots on the UAVDT dataset under two representative challenging attributes: background clutter
+and large occlusion.
+Table 3
+Evaluation of CPU and GPU Speed for different methods.
+Method
+STATrack
+(Ours)
+STATrack-s
+(Ours)
+ORTrack
+-DeiT [45]
+AVTrack
+-DeiT [33]
+OSTrack
+-256 [54]
+MambaLCT
+-256 [31]
+EVPTrack
+-224 [42]
+Power (mJ) 5.6 3.2 11.0 4.5–8.8 98.9 119.1 100.3
+FPS (GPU) 118.4 156.7 226.4 260.3 65.4 57.4 74.3
+FPS (CPU) 24.2 32.1 55.4 59.8 5.9 – 6.7
+by 9.7% and 15.4%, respectively. This demonstrates that the
+proposed fully spiking framework can achieve much stronger
+representation capability than traditional hand-crafted track-
+ing methods while maintaining low energy consumption.
+When compared with CNN-based lightweight trackers,
+STATrack also shows clear advantages in both accuracy and
+efficiency. For example, STATrack improves the average pre-
+cision over DRCI [56] from 81.4% to 85.6%, and improves
+the average success rate over the strongest CNN-based result
+from 60.5% to 67.2%. Meanwhile, STATrack consumes only
+5.6 mJ, which is about 33.7% of the energy consumption of
+DRCI. These results indicate that STATrack achieves a more
+favorable accuracy–energy trade-off than CNN-based UAV
+trackers.
+Compared with recent ViT-based trackers, STATrack
+achieves highly competitive or superior tracking perfor-
+mance while maintaining lower theoretical energy consump-
+tion. In terms of average precision, STATrack reaches 85.6%,
+tying with ORTrack-DeiT [45] for the best result. More
+importantly, STATrack achieves the highest average success
+rate of 67.2%, surpassing ORTrack-DeiT, Aba-ViTrack [28],
+TATrack-DeiT [27], AVTrack-DeiT [33], and SGLATrack-
+DeiT [49]. On individual benchmarks, STATrack achieves
+the best success scores on UAV123 and VisDrone2018, with
+67.6% and 69.4%, respectively, and also performs strongly
+on UAVDT with a success rate of 65.3%. These results sug-
+gest that STATrack is robust to challenging UAV scenarios
+such as background clutter, scale variation, and complex
+motion.
+In terms of efficiency, STATrack benefits from sparse
+spike-driven computation and requires only 5.6 mJ of theo-
+retical energy consumption, which is lower than most ANN-
+based lightweight trackers. Furthermore, the compact vari-
+ant STATrack-s further reduces the energy consumption
+to 3.2 mJ while still achieving an average success rate
+of 65.5%, ranking second among all compared methods.
+Notably, STATrack-s provides an even more lightweight
+alternative, reducing the theoretical energy consumption by
+42.9% compared with STATrack and by 70.9% compared
+with ORTrack-DeiT. Despite its much lower energy cost,
+STATrack-s still achieves an average success rate of 65.5%,
+surpassing ORTrack-DeiT by 0.5%. These results verify that
+the proposed SNN-based tracking framework provides an ef-
+fective solution for energy-constrained UAV visual tracking.
+Comparison with Deep Trackers. We further compare
+STATrack with 14 recent deep learning-based trackers on the
+VisDrone2018 benchmark. As shown in Table 2, STATrack
+achieves the best precision and success rate, reaching 89.1%
+and 69.4%, respectively. Compared with MambaLCT, the
+strongest competing method in precision, STATrack im-
+proves the precision by 1.0% and the success rate by 3.9%.
+Moreover, STATrack outperforms strong Transformer-based
+trackers, including HIPTrack, AQATrack, and ROMTrack,
+in both metrics.
+Attribute-Based Evaluation. To verify the robustness of
+STATrack under typical UAV tracking challenges, we com-
+pare STATrack and STATrack-s with 20 advanced trackers
+on two representative attribute subsets, as shown in Fig. 3.
+Zhong et al. Page 8 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Table 4
+Evaluation of the proposed AMIM module applied to three state-of-the-art trackers on four UAV benchmarks. The subscript
+values denote the performance gains brought by AMIM. The best results within each tracker group are highlighted in bold.
+Tracker AMIM
+UAV123 VisDrone2018 UAVDT DTB70 Average
+Prec. Succ. Prec. Succ. Prec. Succ. Prec. Succ. Prec. Succ.
+OSTrack
+81.6 64.3 82.7 62.7 80.8 58.1 84.1 64.6 82.3 62.4
+✓ 82.7+1.1 64.9+0.6 84.1+1.4 63.8+1.1 83.2+2.4 60.0+1.9 83.6−0.5 65.0+0.4 83.4+1.1 63.4+1.0
+GRM
+82.9 65.2 85.8 64.6 79.3 57.2 81.2 62.7 82.3 62.4
+✓ 83.6+0.7 65.9+0.7 85.0−0.8 63.8−0.8 81.1+1.8 57.9+0.7 82.7+1.5 63.4+0.7 83.1+0.8 62.8+0.4
+TATrack
+83.4 65.9 82.6 62.6 83.3 60.5 83.6 65.0 83.3 63.5
+✓ 84.6+1.2 66.7+0.8 82.7+0.1 63.1+0.5 84.0+0.7 61.0+0.5 84.3+0.7 65.7+0.7 83.9+0.6 64.1+0.6
+Table 5
+Ablation results of different methods in STATrack on four UAV benchmarks. MIM refers to mutual information maximization
+with a fixed weighting scheme, while ADW denotes the proposed adaptive weighting strategy. Best results are shown in bold.
+Components UAV123 VisDrone2018 UAVDT DTB70 Average
+MIM ADW Succ. Prec. Succ. Prec. Succ. Prec. Succ. Prec. Succ. Prec.
+- - 65.7 84.0 62.4 79.1 59.1 75.5 62.3 78.4 62.4 79.3
+✓ - 65.9 85.1 63.0 80.5 60.6 78.4 63.1 80.2 63.2 81.1
+✓ ✓ 67.8 86.5 66.0 84.9 62.6 79.9 64.6 81.0 65.3 83.0
+Under background clutter, STATrack-s achieves the highest
+success rate of 60.5%, while STATrack ranks third with
+58.5%, only 0.4% lower than the deep tracker MambaLCT.
+This result verifies the effectiveness of AMIM in reducing
+background interference and enhancing target-aware repre-
+sentations. Under large occlusion, STATrack-s and STA-
+Track achieve the top two results, with success rates of
+64.7% and 61.7%, respectively, indicating that the proposed
+framework can preserve discriminative target semantics un-
+der severe occlusion.
+Speed Evaluation. For a fair speed comparison, Table 3
+reports the CPU/GPU inference speed of STATrack and
+other representative trackers measured on the same hard-
+ware platform. STATrack achieves 118.4 FPS on GPU and
+24.2 FPS on CPU, while STATrack-s reaches 156.7 FPS
+on GPU and 32.1 FPS on CPU. These results indicate that
+the proposed tracker can achieve real-time or near real-time
+performance even on conventional hardware without spe-
+cialized neuromorphic acceleration. It should be noted that
+traditional CPU/GPU platforms are mainly optimized for
+dense MAC operations rather than sparse spike-driven AC
+operations. Therefore, these FPS results should be regarded
+as conservative runtime references rather than the upper-
+bound efficiency of SNN deployment. On neuromorphic or
+spike-oriented hardware, STATrack may further benefit from
+its event-driven computation pattern.
+4.3. Application to SOTA Trackers
+Table 4 presents a comprehensive evaluation of applying
+the proposed AMIM module to three representative state-
+of-the-art trackers, namely OSTrack [54], GRM [15], and
+TATrack [27], across four challenging UAV benchmarks:
+UAV123, VisDrone2018, UAVDT, and DTB70. Note that
+we substitute their original backbones with the tiny ViT, i.e.,
+ViT-Tiny [10], to save training time. Specifically, the average
+precision gains achieved by AMIM are 1.1%, 0.8%, and 0.6%
+for OSTrack, GRM, and TATrack, respectively, while the
+corresponding average success rate improvements are 1.0%,
+0.4%, and 0.6%. These results demonstrate that the proposed
+adaptive mutual information maximization strategy general-
+izes well across different tracking architectures.
+4.4. Ablation Study
+Effect of Mutual Information Maximization and Adap-
+tive Weighting. To validate the effectiveness of the proposed
+Adaptive Mutual Information Maximization (AMIM), Table
+5 reports the ablation results on four UAV benchmarks by
+progressively incorporating mutual information maximiza-
+tion (MIM) and the adaptive dynamic weighting (ADW)
+strategy into the baseline tracker. As can be observed, in-
+troducing MIM with a fixed weight consistently improves
+tracking performance across all datasets. Compared with
+the baseline, the average Succ. and Prec. increase from
+62.4% to 63.2% and from 79.3% to 81.1%, respectively. This
+demonstrates that mutual information maximization can ef-
+fectively enhance target-aware feature learning in spiking
+Transformers.
+Further integrating ADW brings additional and consis-
+tent improvements on all benchmarks. The model achieves
+the best overall performance, reaching an average Succ.
+of 65.3% and Prec. of 83.0%. Compared with the fixed-
+weight MIM variant, ADW further improves the average
+Zhong et al. Page 9 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Table 6
+Parameter sensitivity analysis on four benchmarks. We investigate the impact of the base weight 𝜆base and the dynamic adjustment
+amplitude 𝛽. The best results in each group are highlighted in bold.
+𝜆base 𝛽
+UAV123 VisDrone2018 UAVDT DTB70 Average
+Succ Prec. Succ Prec. Succ Prec. Succ Prec. Succ Prec.
+0.01 0.0 65.7 85.3 60.4 77.8 59.1 75.1 63.5 80.8 62.2 79.8
+0.10 0.0 65.9 85.1 63.0 80.5 60.6 78.4 63.1 80.2 63.2 81.1
+1.00 0.0 63.9 82.7 59.5 76.3 57.2 75.9 62.0 79.2 60.7 78.5
+0.10 0.01 65.7 83.8 63.4 80.3 61.0 78.2 63.8 79.6 63.5 80.5
+0.10 0.05 67.8 86.5 66.0 84.9 62.6 79.9 64.6 81.0 65.3 83.0
+0.10 0.10 65.9 84.0 62.7 79.7 58.8 75.4 62.3 77.8 62.4 79.2
+0.10 0.30 66.5 85.3 64.0 81.7 59.2 75.7 63.5 80.2 63.3 80.7
+0.10 0.50 66.9 86.0 63.6 81.6 61.6 79.0 64.3 81.3 64.1 82.0
+0.10 0.70 65.8 84.1 62.8 80.5 59.9 76.8 63.3 79.3 63.0 80.2
+0.10 0.90 64.9 83.0 63.8 81.8 59.0 75.7 62.5 78.5 62.6 79.8
+Figure 4: Qualitative comparison of STATrack with six state-of-the-art UAV trackers on four video sequences from DTB70,
+UAV123, VisDrone2018, and UAVDT, namely Animal3, Car7, S1607, and uav0000088_00000_s.
+Succ. and Prec. by 2.1% and 1.9%, respectively. These results
+indicate that dynamically adjusting the strength of the MI
+constraint according to sample difficulty helps stabilize MI-
+enhanced learning and improves the robustness of target-
+aware representations.
+Impact of AMIM Weighting Parameters. We conduct a
+comprehensive performance analysis of the AMIM mecha-
+nism with respect to the base weight 𝜆base and the dynamic
+adjustment amplitude 𝛽, as shown in Table 6. To avoid the
+influence of other factors, the parameter sensitivity experi-
+ments are conducted without dynamic template update. The
+sensitivity factor 𝜂 is empirically set to 10.
+To investigate the effect of the base MI loss weight, we
+set 𝛽 = 0 and evaluate different values of 𝜆base. As shown in
+Table 6, a moderate base weight of 𝜆base = 0.10 achieves the
+best average performance, with a success rate of 63.2% and
+a precision of 81.1%. A smaller weight cannot fully exploit
+the MI constraint, while an excessively large weight may
+interfere with the primary localization objective, leading to
+performance degradation. To further evaluate the effect of
+adaptive dynamic weighting, 𝜆base is fixed at 0.10 while
+varying 𝛽. The results show that a moderate adjustment
+amplitude of 𝛽 = 0.05 achieves the best overall performance,
+with a success rate of 65.3% and a precision of 83.0%.
+In contrast, insufficient adjustment, such as 𝛽 = 0.01, or
+overly aggressive adjustment, such as 𝛽 ≥ 0.10, leads to
+performance degradation. This indicates that moderate and
+stable dynamic weighting is important for balancing target-
+aware representation learning and localization optimization.
+Zhong et al. Page 10 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Figure 5: Visualization of feature maps and attention maps. The first row shows the original search images. The second and third
+rows present the feature maps generated by the baseline without AMIM and STATrack with AMIM, respectively. The fourth and
+fifth rows show the corresponding attention maps.
+4.5. Qualitative Results
+Fig. 4 presents qualitative comparisons between STA-
+Track and six state-of-the-art UAV trackers on representative
+sequences from the DTB70, UAV123, VisDrone2018, and
+UAVDT datasets. The selected sequences involve various
+challenging scenarios, including heavy background clut-
+ter (e.g., Animal3), similar target interference (e.g., Car7),
+significant scale variations (e.g., uav0000088_00000_s and
+S1607), as well as substantial pose changes. As shown in the
+visualizations, STATrack consistently maintains accurate
+target localization across these challenging conditions, while
+several competing methods suffer from drift or tracking
+failure when encountering background interference, scale
+changes, or appearance variations. These qualitative results
+indicate that the proposed method is capable of learning
+more robust and target-aware representations, leading to
+improved tracking stability in complex UAV scenarios.
+Fig. 5 visualizes feature maps and attention maps on
+two representative tracking sequences from DTB70 and
+UAV123. The first row shows the original search images,
+while the second and third rows present feature maps gen-
+erated by the baseline without AMIM and STATrack with
+AMIM, respectively. The fourth and fifth rows show the
+corresponding attention maps.
+As can be observed, the baseline produces relatively
+weak or dispersed target responses. In some frames, strong
+activations appear around boundary regions or spread over
+large background areas, indicating insufficient discrimina-
+tion between target and background features. In contrast,
+STATrack with AMIM generates more compact and stronger
+responses around the target center, while suppressing most
+surrounding background activations. The attention maps
+also show that STATrack focuses more consistently on dis-
+criminative target regions, whereas the baseline tends to
+produce broader and less concentrated attention. These vi-
+sual results suggest that AMIM helps preserve target-related
+semantics in deep spiking features and reduces the influence
+of background tokens, leading to more stable target-aware
+representations.
+5. Limitations
+Although STATrack demonstrates a favorable balance
+between tracking performance and energy efficiency for
+RGB-based UAV visual tracking, several limitations remain.
+First, the reported energy consumption is mainly estimated
+based on theoretical MAC/AC operation costs and layer-
+wise spike firing rates. Although this method is widely
+adopted in SNN efficiency analysis, it cannot fully reflect
+the actual runtime energy consumption on specific hardware
+platforms. In particular, the runtime speed in this work is
+measured on conventional CPU/GPU platforms, which are
+primarily optimized for dense MAC operations rather than
+sparse spike-driven AC operations. Therefore, the hardware-
+level energy-efficiency advantage of STATrack still needs to
+be further validated on neuromorphic hardware or dedicated
+low-power accelerators. Second, AMIM improves target-
+aware representation learning by preserving discriminative
+Zhong et al. Page 11 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+target semantics, but it is introduced as a training constraint
+and still relies on appropriate weighting parameters. The
+parameter sensitivity analysis shows that moderate dynamic
+weighting is important for stable training and performance
+improvement. Future work will explore more adaptive and
+hardware-aware optimization strategies, as well as practical
+deployment on neuromorphic platforms, to further validate
+and enhance the applicability of SNN-based UAV trackers.
+6. Conclusion
+In this work, we present STATrack, an RGB-only fully
+spiking neural network framework for energy-efficient UAV
+visual tracking. Unlike existing SNN-based trackers that rely
+on event cameras, STATrack explores the feasibility of ap-
+plying pure SNN architectures to standard RGB-based UAV
+tracking. To alleviate target semantic degradation caused by
+spike discretization and reduce background interference in
+aerial scenes, we introduce an Adaptive Mutual Information
+Maximization (AMIM) mechanism to enhance target-aware
+representation learning. In addition, a difficulty-aware adap-
+tive weighting strategy is designed to dynamically adjust the
+mutual information constraint, improving training stability
+and optimization effectiveness. Extensive experiments on
+four UAV tracking benchmarks demonstrate that STATrack
+achieves state-of-the-art tracking performance with low the-
+oretical energy consumption. These results validate the po-
+tential of fully spiking architectures for practical energy-
+constrained UAV tracking applications.
+References
+[1] Cai, W., Liu, Q., Wang, Y., 2024. Hiptrack: Visual tracking with
+historical prompts, in: CVPR, pp. 19258–19267.
+[2] Cai, Y., Liu, J., Tang, J., Wu, G., 2023. Robust object modeling for
+visual tracking, in: ICCV, pp. 9589–9600.
+[3] Cao, Z., Fu, C., Ye, J., Li, B., Li, Y., 2021. Hift: Hierarchical feature
+transformer for aerial tracking, in: ICCV, pp. 15457–15466.
+[4] Cao, Z., Huang, Z., Pan, L., Zhang, S., Liu, Z., Fu, C., 2022. Tctrack:
+Temporal contexts for aerial tracking, in: CVPR, pp. 14798–14808.
+[5] Chen, X., Peng, H., Wang, D., Lu, H., Hu, H., 2023. Seqtrack:
+Sequence to sequence learning for visual object tracking, in: CVPR,
+pp. 14572–14581.
+[6] Cui, Y., Jiang, C., Wang, L., Wu, G., 2022. Mixformer: End-to-end
+tracking with iterative mixed attention, in: CVPR, pp. 13608–13618.
+[7] Danelljan, M., Bhat, G., Shahbaz Khan, F., Felsberg, M., 2017. Eco:
+Efficient convolution operators for tracking, in: CVPR, pp. 6638–
+6646.
+[8] Danelljan, M., Gool, L.V., Timofte, R., 2020. Probabilistic regression
+for visual tracking, in: CVPR, pp. 7183–7192.
+[9] Danelljan, M., Häger, G., Khan, F.S., Felsberg, M., 2016. Discrimi-
+native scale space tracking. IEEE TPAMI 39, 1561–1575.
+[10] Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X.,
+Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S.,
+Uszkoreit, J., Houlsby, N., 2021. An image is worth 16x16 words:
+Transformers for image recognition at scale, in: ICLR.
+[11] Du, D., Qi, Y., Yu, H., Yang, Y., Duan, K., Li, G., Zhang, W., Huang,
+Q., Tian, Q., 2018. The unmanned aerial vehicle benchmark: Object
+detection and tracking, in: ECCV, pp. 370–386.
+[12] Fan, H., Bai, H., Lin, L., Yang, F., Chu, P., Deng, G., Yu, S., Harshit,
+Huang, M., Liu, J., et al., 2021. Lasot: A high-quality large-scale
+single object tracking benchmark. IJCV 129, 439–461.
+[13] Fu, C., Lei, X., Zuo, H., Yao, L., Zheng, G., Pan, J., 2024. Progressive
+representation learning for real-time uav tracking, in: IEEE/RSJ, pp.
+5072–5079.
+[14] Fu, Z., Fu, Z., Liu, Q., Cai, W., Wang, Y., 2022. Sparsett: Visual
+tracking with sparse transformers, in: Raedt, L.D. (Ed.), IJCAI, pp.
+905–912.
+[15] Gao, S., Zhou, C., Zhang, J., 2023. Generalized relation modeling for
+transformer tracking, in: CVPR, pp. 18686–18695.
+[16] Gopal, G.Y., Amer, M.A., 2024. Separable self and mixed attention
+transformers for efficient object tracking, in: WACV, pp. 6708–6717.
+[17] Guo, M., Zhang, Z., Fan, H., Jing, L., Lyu, Y., Li, B., Hu, W.,
+2022. Learning target-aware representation for visual tracking via
+informative interactions, in: IJCAI, pp. 927–934.
+[18] Henriques, J.F., Caseiro, R., Martins, P., Batista, J., 2014. High-speed
+tracking with kernelized correlation filters. IEEE TPAMI 37, 583–
+596.
+[19] Hjelm, R.D., Fedorov, A., Lavoie-Marchildon, S., Grewal, K., Bach-
+man, P., Trischler, A., Bengio, Y., 2019. Learning deep representa-
+tions by mutual information estimation and maximization. ICLR .
+[20] Horowitz, M., 2014. 1.1 computing’s energy problem (and what we
+can do about it), in: ISSCC, pp. 10–14.
+[21] Huang, L., Zhao, X., Huang, K., 2019a. Got-10k: A large high-
+diversity benchmark for generic object tracking in the wild. IEEE
+TPAMI , 1562–1577.
+[22] Huang, Z., Fu, C., Li, Y., Lin, F., Lu, P., 2019b. Learning aberrance
+repressed correlation filters for real-time uav tracking, in: ICCV, pp.
+2891–2900.
+[23] Ji, M., Wang, Z., Yan, R., Liu, Q., Xu, S., Tang, H., 2023. Sctn: Event-
+based object tracking with energy-efficient deep convolutional spiking
+neural networks. Frontiers in Neuroscience 17, 1123698.
+[24] Kou, Y., Gao, J., Li, B., Wang, G., Hu, W., Wang, Y., Li, L., 2023.
+Zoomtrack: Target-aware non-uniform resizing for efficient visual
+tracking. NIPS 36, 50959–50977.
+[25] Law, H., Deng, J., 2018. Cornernet: Detecting objects as paired
+keypoints, in: ECCV, pp. 734–750.
+[26] Li, B., Wang, Z., Liu, H., Du, Q., Xiao, T., Zhang, C., Zhu, J., 2021.
+Learning light-weight translation models from deep transformer, in:
+AAAI, pp. 13217–13225.
+[27] Li, S., Yang, X., Wang, X., Zeng, D., Ye, H., Zhao, Q., 2024a.
+Learning target-aware vision transformers for real-time uav tracking.
+IEEE TGRS 62, 1–18.
+[28] Li, S., Yang, Y., Zeng, D., Wang, X., 2023. Adaptive and background-
+aware vision transformer for real-time uav tracking, in: ICCV, pp.
+13989–14000.
+[29] Li, S., Yeung, D.Y., 2017. Visual object tracking for unmanned aerial
+vehicles: A benchmark and new motion models, in: AAAI, pp. 4140–
+4146.
+[30] Li, X., Ma, C., Wu, B., He, Z., Yang, M.H., 2019. Target-aware deep
+tracking, in: CVPR, pp. 1369–1378.
+[31] Li, X., Zhong, B., Liang, Q., Li, G., Mo, Z., Song, S., 2025. Mambalct:
+Boosting tracking via long-term context state space model, in: AAAI,
+pp. 4986–4994.
+[32] Li, Y., Fu, C., Ding, F., Huang, Z., Lu, G., 2020. Autotrack:
+Towards high-performance visual tracking for uav with automatic
+spatio-temporal regularization, in: CVPR, pp. 11923–11932.
+[33] Li, Y., Liu, M., Wu, Y., Wang, X., Yang, X., Li, S., 2024b. Learn-
+ing adaptive and view-invariant vision transformer for real-time uav
+tracking, in: ICML, pp. 28403–28420.
+[34] Lin, T.Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D.,
+Dollár, P., Zitnick, C.L., 2014. Microsoft coco: Common objects in
+context, in: ECCV, pp. 740–755.
+[35] Linsker, R., 1988. Self-organization in a perceptual network. Com-
+puter 21, 105–117.
+[36] Liu, W., Xiang, S., Zhang, T., Han, Y., Zhang, Y., Guo, X., Yu, L.,
+Hao, Y., 2025. S4-kd: A single step spiking siamfc++ for object
+tracking with knowledge distillation. Neural Networks 188, 107478.
+[37] Mayer, C., Danelljan, M., Paudel, D.P., Van Gool, L., 2021. Learning
+target candidate association to keep track of what not to track, in:
+Zhong et al. Page 12 of 13
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+ICCV, pp. 13444–13454.
+[38] Mueller, M., Smith, N.G., Ghanem, B., 2016. A benchmark and
+simulator for uav tracking, in: ECCV, pp. 445–461.
+[39] Muller, M., Bibi, A., Giancola, S., Alsubaihi, S., Ghanem, B., 2018.
+Trackingnet: A large-scale dataset and benchmark for object tracking
+in the wild, in: ECCV, pp. 300–317.
+[40] Rezatofighi, H., Tsoi, N., Gwak, J., Sadeghian, A., Reid, I., Savarese,
+S., 2019. Generalized intersection over union: A metric and a loss for
+bounding box regression, in: CVPR, pp. 658–666.
+[41] Shan, Y., Ren, Z., Wu, H., Wei, W., Zhu, R.J., Wang, S., Zhang, D.,
+Xiao, Y., Zhang, J., Shi, K., et al., 2026. Sdtrack: A baseline for event-
+based tracking via spiking neural networks, in: CVPR.
+[42] Shi, L., Zhong, B., Liang, Q., Li, N., Zhang, S., Li, X., 2024. Explicit
+visual prompts for visual object tracking, in: AAAI, pp. 4838–4846.
+[43] Wang, N., Zhou, W., Tian, Q., Hong, R., Wang, M., Li, H., 2018.
+Multi-cue correlation filters for robust visual tracking, in: CVPR, pp.
+4844–4853.
+[44] Wen, L., Zhu, P., Du, D., Bian, X., Ling, H., Hu, Q., Liu, C., Cheng,
+H., Liu, X., Ma, W., et al., 2018. Visdrone-sot2018: The vision meets
+drone single-object tracking challenge results, in: ECCV, pp. 0–0.
+[45] Wu, Y., Wang, X., Yang, X., Liu, M., Zeng, D., Ye, H., Li, S.,
+2025. Learning occlusion-robust vision transformers for real-time uav
+tracking, in: CVPR, pp. 17103–17113.
+[46] Xiang, S., Zhang, T., Jiang, S., Han, Y., Zhang, Y., Guo, X., Yu,
+L., Shi, Y., Hao, Y., 2024. Spiking siamfc++: Deep spiking neural
+network for object tracking. Nonlinear dynamics 112, 8417–8429.
+[47] Xie, J., Zhong, B., Mo, Z., Zhang, S., Shi, L., Song, S., Ji, R., 2024.
+Autoregressive queries for adaptive tracking with spatio-temporal
+transformers, in: CVPR, pp. 19300–19309.
+[48] Xu, Y., Wang, Z., Li, Z., Yuan, Y., Yu, G., 2020. Siamfc++: Towards
+robust and accurate visual tracking with target estimation guidelines,
+in: AAAI, pp. 12549–12556.
+[49] Xue, C., Zhong, B., Liang, Q., Zheng, Y., Li, N., Xue, Y., Song, S.,
+2025. Similarity-guided layer-adaptive vision transformer for uav
+tracking, in: CVPR, pp. 6730–6740.
+[50] Yang, J., Fan, L., Zhang, J., Lian, X., Shen, H., Hu, D., 2025. Fully
+spiking neural networks for unified frame-event object tracking, in:
+NeurIPS.
+[51] Yao, L., Fu, C., Li, S., Zheng, G., Ye, J., 2023. Sgdvit: Saliency-
+guided dynamic vision transformer for uav tracking, in: ICRA, pp.
+3353–3359.
+[52] Yao, M., Hu, J., Hu, T., Xu, Y., Zhou, Z., Tian, Y., XU, B., Li, G.,
+2024. Spike-driven transformer v2: Meta spiking neural network
+architecture inspiring the design of next-generation neuromorphic
+chips, in: ICLR, pp. 52885–52907.
+[53] Yao, M., Qiu, X., Hu, T., Hu, J., Chou, Y., Tian, K., Liao, J., Leng, L.,
+Xu, B., Li, G., 2025. Scaling spike-driven transformer with efficient
+spike firing approximation training. IEEE TPAMI 47, 2973–2990.
+[54] Ye, B., Chang, H., Ma, B., Shan, S., Chen, X., 2022a. Joint feature
+learning and relation modeling for tracking: A one-stream framework,
+in: ECCV, pp. 341–357.
+[55] Ye, J., Fu, C., Zheng, G., Paudel, D.P., Chen, G., 2022b. Unsupervised
+domain adaptation for nighttime aerial tracking, in: CVPR, pp. 8896–
+8905.
+[56] Zeng, D., Zou, M., Wang, X., Li, S., 2023. Towards discriminative
+representations with contrastive instances for real-time uav tracking,
+in: ICME, pp. 1349–1354.
+[57] Zhang, J., Dong, B., Zhang, H., Ding, J., Heide, F., Yin, B., Yang, X.,
+2022. Spiking transformers for event-based single object tracking, in:
+CVPR, pp. 8801–8810.
+[58] Zhang, J., Zhang, M., Wang, Y., Liu, Q., Yin, B., Li, H., Yang, X.,
+2025. Spiking neural networks with adaptive membrane time constant
+for event-based tracking. IEEE TIP 34, 1009–1021.
+[59] Zhao, H., Wang, D., Lu, H., 2023. Representation learning for visual
+object tracking by masked appearance transfer, in: CVPR, pp. 18696–
+18705.
+[60] Zheng, Y., Zhong, B., Liang, Q., Mo, Z., Zhang, S., Li, X., 2024.
+Odtrack: Online dense temporal token learning for visual tracking, in:
+AAAI.
+[61] Zhou, Z., Pei, W., Li, X., Wang, H., Zheng, F., He, Z., 2021. Saliency-
+associated object tracking, in: ICCV, pp. 9866–9875.
+Zhong et al. Page 13 of 13
+Fully Spiking Neural Networks with Target Awareness for
+Energy-Efficient UAV Tracking
+Supplementary Material
+A R T I C L E I N F O
+Keywords:
+Spiking Neural Network
+Mutual Information
+UAV Tracking
+Energy-Efficient Vision
+A B S T R A C T
+Spiking Neural Networks (SNNs), characterized by their event-driven computation and low
+power consumption, have shown great potential for energy-efficient visual tracking on unmanned
+aerial vehicles (UAVs). However, existing SNN-based trackers often rely on costly event
+cameras, which limits their deployment on standard RGB-camera UAV platforms. To address
+this limitation, we propose STATrack, a fully spiking neural network framework for UAV visual
+tracking using only RGB inputs. To the best of our knowledge, this is the first study to explore
+fully spiking neural networks for RGB-based UAV visual tracking. To alleviate target semantic
+degradation caused by spike discretization and reduce background interference in UAV scenes,
+we introduce an Adaptive Mutual Information Maximization (AMIM) mechanism. AMIM
+maximizes the mutual information between template inputs and their deep target-aware features,
+encouraging the spiking backbone to preserve discriminative target semantics. In addition, a
+sample-difficulty-aware dynamic weighting strategy is designed to adaptively adjust the mutual
+information constraint during training. Extensive experiments on four widely used UAV tracking
+benchmarks demonstrate that STATrack achieves state-of-the-art tracking performance with
+low theoretical energy consumption, highlighting its potential for energy-constrained UAV
+applications. Code is released at: https://anonymous.4open.science/r/STATrack.
+1. Global Statistics Network
+The global statistics network 𝑇𝜃(⋅) is implemented as a lightweight multi-layer perceptron (MLP) to estimate the
+statistical dependency between the template input and its target-aware feature representation. Given a feature map
+𝐙 ∈ ℝ𝐵×𝐶×𝐻×𝑊 and its associated representation 𝐭𝑍 ∈ ℝ𝐵×𝑑rep , both extracted from the same template image, the
+network first downsamples 𝐙 to a fixed spatial resolution using adaptive average pooling:
+̃
+𝐙 = AAP16×16(𝐙) ∈ ℝ𝐵×𝐶×16×16
+, (1)
+where AAP16×16(⋅) denotes adaptive average pooling with output size 16 × 16. The pooled feature map and the target-
+aware representation are then flattened and concatenated:
+𝐡0 =
+[
+Flatten( ̃
+𝐙)
+|
+|
+|
+Flatten(𝐭𝑍)
+]
+∈ ℝ𝐵×𝑑in , (2)
+where the input dimension is defined as:
+𝑑in = 256 × 𝐶 + 𝑑rep. (3)
+The concatenated vector 𝐡0 is passed through a three-layer MLP to produce a scalar statistics score:
+𝐡1 = ReLU(𝐖1𝐡0 + 𝐛1),
+𝐡2 = ReLU(𝐖2𝐡1 + 𝐛2),
+𝑇𝜃(𝐙, 𝐭𝑍) = 𝐖3𝐡2 + 𝐛3.
+where 𝐖1 ∈ ℝ512×𝑑in , 𝐛1 ∈ ℝ512, 𝐖2 ∈ ℝ128×512, 𝐛2 ∈ ℝ128, 𝐖3 ∈ ℝ1×128, and 𝐛3 ∈ ℝ. The scalar output 𝑇𝜃(𝐙, 𝐭𝑍)
+serves as the critic score in the Jensen–Shannon divergence-based mutual information estimator.
+Zhong et al. Page 1 of 4
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+2. Layer-wise Spike Firing Rate
+This section reports the layer-wise spike firing rates of STATrack and STATrack-s.
+Table 1: Layer-wise firing rates of STATrack and STATrack-s.
+Stage Module Submodule Layer STATrack STATrack-s
+Stage 1
+Downsampling Conv 1.0000 1.0000
+Conv-Based
+SNN Block
+SSConv
+PWConv1 0.3738 0.3333
+DWConv 0.3613 0.3301
+PWConv2 0.3820 0.3584
+ChConv
+Conv1 0.3588 0.4436
+Conv2 0.0698 0.1102
+Stage 2
+Downsampling Conv 0.3008 0.3093
+Conv-Based
+SNN Block
+SSConv
+PWConv1 0.2129 0.2367
+DWConv 0.2734 0.2911
+PWConv2 0.1879 0.1990
+ChConv
+Conv1 0.3006 0.3574
+Conv2 0.0418 0.0535
+Stage 3
+Downsampling Conv 0.2831 0.3126
+Conv-Based
+SNN Block 1
+SSConv
+PWConv1 0.2307 0.2139
+DWConv 0.2526 0.2638
+PWConv2 0.1518 0.1768
+ChConv
+Conv1 0.2460 0.2666
+Conv2 0.0269 0.0325
+Conv-Based
+SNN Block 2
+SSConv
+PWConv1 0.3447 0.3848
+DWConv 0.1834 0.1872
+PWConv2 0.1251 0.1544
+ChConv
+Conv1 0.2407 0.2863
+Conv2 0.0206 0.0277
+Downsampling Conv 0.3105 0.3414
+Transformer-Based
+SNN Block 1
+SSConv
+PWConv1 0.1932 0.2222
+DWConv 0.2293 0.2674
+PWConv2 0.0864 0.1028
+E-SDSA
+𝑄𝑆 0.2280 0.2676
+𝐾𝑆 0.2280 0.2676
+𝑉𝑆 0.2280 0.2676
+𝑄𝑆𝐾𝑇
+𝑆
+0.0283 0.0282
+Context 0.1647 0.1490
+Linear 0.6407 0.5747
+Transformer-Based
+SNN Block 2
+SSConv
+PWConv1 0.3531 0.4023
+DWConv 0.1954 0.2285
+PWConv2 0.1135 0.1270
+E-SDSA
+𝑄𝑆 0.3447 0.3738
+𝐾𝑆 0.3447 0.3738
+Continued on next page
+Zhong et al. Page 2 of 4
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Table 1 – continued from previous page
+Stage Module Submodule Layer STATrack STATrack-s
+𝑉𝑆 0.3447 0.3738
+𝑄𝑆𝐾𝑇
+𝑆
+0.0113 0.0122
+Context 0.0938 0.0677
+Linear 0.5173 0.4281
+Transformer-Based
+SNN Block 3
+SSConv
+PWConv1 0.3928 0.4141
+DWConv 0.2197 0.2300
+PWConv2 0.1209 0.1191
+E-SDSA
+𝑄𝑆 0.3740 0.3773
+𝐾𝑆 0.3740 0.3773
+𝑉𝑆 0.3740 0.3773
+𝑄𝑆𝐾𝑇
+𝑆
+0.0102 0.0114
+Context 0.0780 0.0510
+Linear 0.4910 0.4093
+Transformer-Based
+SNN Block 4
+SSConv
+PWConv1 0.3541 0.4153
+DWConv 0.1851 0.2305
+PWConv2 0.1079 0.1349
+E-SDSA
+𝑄𝑆 0.3363 0.3988
+𝐾𝑆 0.3363 0.3988
+𝑉𝑆 0.3363 0.3988
+𝑄𝑆𝐾𝑇
+𝑆
+0.0069 0.0100
+Context 0.0541 0.0370
+Linear 0.2270 0.2993
+Transformer-Based
+SNN Block 5
+SSConv
+PWConv1 0.3146 0.3835
+DWConv 0.1861 0.2350
+PWConv2 0.0950 0.1153
+E-SDSA
+𝑄𝑆 0.2832 0.3577
+𝐾𝑆 0.2832 0.3577
+𝑉𝑆 0.2832 0.3577
+𝑄𝑆𝐾𝑇
+𝑆
+0.0111 0.0100
+Context 0.0780 0.0491
+Linear 0.3731 0.2999
+Transformer-Based
+SNN Block 6
+SSConv
+PWConv1 0.2650 0.3335
+DWConv 0.1820 0.2277
+PWConv2 0.0847 0.1163
+E-SDSA
+𝑄𝑆 0.2197 0.2911
+𝐾𝑆 0.2197 0.2911
+𝑉𝑆 0.2197 0.2911
+𝑄𝑆𝐾𝑇
+𝑆
+0.0096 0.0089
+Context 0.0897 0.0532
+Linear 0.3643 0.3075
+Stage 5
+Downsampling Conv 0.1703 0.2274
+Transformer-Based
+SNN Block 1
+SSConv
+PWConv1 0.1555 0.2177
+DWConv 0.0841 0.1225
+PWConv2 0.0878 0.0944
+Continued on next page
+Zhong et al. Page 3 of 4
+Fully Spiking Neural Networks with Target Awareness for Energy-Efficient UAV Tracking
+Table 1 – continued from previous page
+Stage Module Submodule Layer STATrack STATrack-s
+E-SDSA
+𝑄𝑆 0.2249 0.2816
+𝐾𝑆 0.2249 0.2816
+𝑉𝑆 0.2249 0.2816
+𝑄𝑆𝐾𝑇
+𝑆
+0.0065 0.0071
+Context 0.0138 0.0185
+Linear 0.0700 0.1064
+Transformer-Based
+SNN Block 2
+SSConv
+PWConv1 0.2920 0.2866
+DWConv 0.0397 0.0413
+PWConv2 0.0557 0.0495
+E-SDSA
+𝑄𝑆 0.2218 0.2354
+𝐾𝑆 0.2218 0.2354
+𝑉𝑆 0.2218 0.2354
+𝑄𝑆𝐾𝑇
+𝑆
+0.0100 0.0040
+Context 0.0152 0.0056
+Linear 0.2141 0.0604
+Head
+Ctr
+– Conv1 0.1244 0.1894
+– Conv2 0.0666 0.0658
+– Conv3 0.1026 0.0636
+– Conv4 0.2131 0.1114
+– Conv5 0.2131 0.1114
+Offset
+– Conv1 0.1244 0.1894
+– Conv2 0.0568 0.0566
+– Conv3 0.0802 0.0916
+– Conv4 0.0801 0.0812
+– Conv5 0.0801 0.0812
+Size
+– Conv1 0.1244 0.1894
+– Conv2 0.0701 0.0722
+– Conv3 0.1052 0.0985
+– Conv4 0.1809 0.1390
+– Conv5 0.1809 0.1390
+Zhong et al. Page 4 of 4
+

@@ -1,0 +1,730 @@
+1
+Massive MIMO CSI Feedback with Spiking Neural Networks
+Yanzhen Liu and Geoffrey Ye Li, Fellow, IEEE
+Abstract—Deep learning-based channel state information (CSI)
+feedback has achieved empirical success in massive multiple-
+input multiple-output (MIMO) systems. However, existing ap-
+proaches largely rely on dense artificial neural networks (ANNs),
+whose computational overhead limits their practical applica-
+tions. In this article, we exploit bio-inspired spiking neural
+networks (SNNs) for massive MIMO CSI feedback, referred
+to as SpikingCSINet, where both the feedback and the main
+network computations are implemented through spikes. To
+overcome the information bottleneck of binary spikes in high-
+dimensional reconstruction, we develop a progressive residual
+(PR) architecture that exploits the natural temporal dimension
+of SNNs, encoding successive residuals across time steps to en-
+hance information compactness. Experiments on the COST 2100
+benchmark show that SpikingCSINet attains a more favorable
+performance-efficiency tradeoff than lightweight convolutional
+baselines. Moreover, it achieves performance competitive with
+Transformer-based feedback while reducing energy consumption
+by over 93%.
+Index Terms—CSI feedback, massive MIMO, SNN, deep learn-
+ing.
+I. INTRODUCTION
+Massive multiple-input multiple-output (MIMO) is a critical
+technique in modern wireless communication systems. With
+downlink channel state information (CSI), the base station
+(BS) can perform precoding to suppress inter-user interference
+and enhance system throughput [1]. As a result, the perfor-
+mance of massive MIMO systems relies heavily on accurate
+CSI acquisition at the BS.
+In time-division duplex (TDD) systems, the BS can di-
+rectly estimate the downlink CSI from uplink pilots due to
+reciprocity. In contrast, in frequency-division duplex (FDD)
+systems where reciprocity does not hold, the CSI is estimated
+at the user terminal (UT) side and then fed back to the BS.
+Due to the large dimensionality of CSI in massive MIMO
+systems, directly feeding it back would consume substantial
+uplink bandwidth, making CSI compression indispensable [2].
+To this end, a number of solutions have been proposed for
+massive MIMO CSI feedback. Early works mainly exploited
+the channel structure and developed compressed sensing-
+based approaches [2]. However, these methods usually require
+heavy iterative reconstruction [3]. To overcome their limi-
+tations, deep learning-based CSI compression methods built
+on artificial neural networks (ANNs) have been developed,
+which compress the CSI more effectively by learning repre-
+sentations directly from data and have become an important
+research direction [4]–[8]. Works based on convolutional ar-
+chitectures such as CsiNet [4], CsiNet+ [5], CRNet [6], and
+CLNet [7] demonstrated the superiority of deep learning-based
+compression over compressed sensing-based methods. The
+Y. Liu and G. Y. Li are with the Department of Electrical and
+Electronic Engineering, Imperial College London, London, UK, (e-mail:
+yanzhen.liu22@ic.ac.uk, geoffrey.li@ic.ac.uk).
+Transformer-based TransNet [8] adopts a two-layer multi-head
+architecture and outperforms previous convolutional baselines.
+Despite these advances, existing CSI feedback methods
+still rely heavily on dense floating-point operations, whose
+computational costs pose a limitation under energy-constrained
+conditions. Spiking neural networks (SNNs), a class of bio-
+inspired neural networks that process information through
+discrete spikes [9], provide a promising alternative due to their
+high energy efficiency. However, for SNNs, reconstruction-
+oriented tasks are particularly challenging and underexplored
+[10] because the binary nature of spikes imposes an inher-
+ent information bottleneck. Furthermore, massive MIMO CSI
+feedback is essentially a high-dimensional continuous-valued
+reconstruction problem under stringent bandwidth budgets.
+In this article, we develop a new SNN-based architecture
+for CSI feedback, named SpikingCSINet. This framework
+differs radically from the existing ANN-based approaches
+by representing CSI as dynamic spike trains with spatio-
+temporal correlation rather than static, quantized floating-
+point codewords. To mitigate the reconstruction performance
+loss caused by spike-based representation, we develop a pro-
+gressive residual (PR) feedback scheme, which successively
+encodes the residual channel matrix across time steps and
+substantially improves the information compactness of spike-
+based feedback. Simulation results demonstrate that the pro-
+posed SNN-based solution outperforms lightweight convolu-
+tional architectures while achieving performance comparable
+to that of Transformer-based models. In terms of energy con-
+sumption, SpikingCSINet is significantly more efficient than
+Transformer-based methods and is particularly advantageous
+over lightweight ANN-based approaches under low feedback-
+bit budgets. The main contributions of this work include
+presenting the first attempt at SNN-based CSI feedback and
+developing a PR scheme to enable effective spike-based re-
+construction.
+II. SYSTEM MODEL
+We consider an FDD massive MIMO CSI feedback system,
+where the UT and the BS are equipped with a single an-
+tenna and Nt antennas, respectively. An orthogonal frequency-
+division multiplexing (OFDM) system with Nc subcarriers is
+assumed. In the downlink, the BS transmits pilot signals to
+the UT, and the UT estimates the channel matrix
+H̃c ∈ CNc×Nt
+, (1)
+which needs to be fed back from the UT to the BS. To reduce
+the uplink overhead of the high-dimensional channel matrix,
+the channel is first transformed into the angle-delay domain
+as
+Hc = FdH̃cFH
+a , (2)
+arXiv:2605.12434v1
+[eess.SP]
+12
+May
+2026
+2
+where Fd ∈ CNc×Nc
+and Fa ∈ CNt×Nt
+are discrete Fourier
+transform (DFT) matrices. Owing to the sparsity of massive
+MIMO channels in the angle-delay domain, only the first Ns
+rows are retained [4], yielding the truncated channel matrix
+H ∈ CNs×Nt
+. (3)
+The truncated channel matrix still has a relatively large di-
+mension and needs to be further compressed. In this work, we
+adopt a deep learning-based CSI compression framework. Let
+fenc(·; θE) and fdec(·; θD) denote the encoder and decoder,
+respectively, where θE and θD are the learnable parameters
+of the encoder and decoder, respectively. The UT compresses
+the channel into a low-dimensional codeword
+c = fenc(H; θE), (4)
+which is then fed back to the BS. Subsequently, the BS
+reconstructs the channel as
+Ĥ = fdec(c; θD). (5)
+The model is trained by minimizing the mean-squared error
+(MSE) between the reconstructed channel Ĥ and the ground
+truth H:
+min
+θE, θD
+∥H − fdec(fenc(H; θE); θD)∥
+2
+F . (6)
+III. SPIKINGCSINET
+In this section, we introduce the proposed SNN-based CSI
+feedback scheme, SpikingCSINet. We first present the spiking
+neuron model and then describe the base architecture and the
+PR feedback scheme. The training method and the energy
+consumption model are also presented in this section.
+A. Spiking Neuron Model
+In this work, we adopt the leaky integrate-and-fire (LIF)
+model [11]. The dynamics of an LIF neuron can be written as
+v[t−
+] =
+
+1 −
+1
+τ
+
+v[t − 1] + i[t], (7)
+s[t] = Θ v[t−
+] − vth
+
+, (8)
+v[t] = v[t−
+] (1 − s[t]) + vreset s[t]. (9)
+Equation (7) describes the charging process, where v[t−
+]
+denotes the pre-reset membrane potential at time step t, and
+v[t − 1] denotes the post-reset membrane potential at time
+step t − 1. Variable i[t] is the input current, and τ > 1 is
+the membrane time constant that controls the leakage rate.
+Equation (8) defines the spike generation process, where Θ(·)
+denotes the Heaviside step function and vth is the firing
+threshold. Equation (9) describes the reset process: when a
+neuron fires, its membrane potential is reset to vreset. By
+default, we set vth = 1 and vreset = 0.
+The input current is computed as a weighted sum of the
+spikes from the preceding layer. Specifically, consider the l-
+th fully connected layer, and let il
+[t] ∈ RNl
+denote its input
+current. It is given by
+il
+[t] = Wl
+sl−1
+[t], (10)
+where Wl
+∈ RNl×Nl−1
+denotes the synaptic weights of layer
+l, and sl−1
+[t] ∈ {0, 1}Nl−1
+denotes the spikes generated by
+the neurons in layer l − 1 at time step t. Notably, since the
+elements of sl−1
+[t] are binary, the matrix-vector multiplication
+reduces to summing the weights associated with non-zero
+spikes, which substantially lowers the energy consumption
+compared with the floating-point multiply-accumulate (MAC)
+operations in ANNs.
+B. Network Architecture
+We illustrate the architecture of the proposed SpikingCSINet
+in Fig. 1, which is described in detail below.
+1) Base Architecture: We adopt simple yet effective com-
+ponents to build the SNN for CSI feedback. The encoder
+follows the classical CsiNet structure [4] and consists of two
+convolutional layers, each with a 3 × 3 kernel, stride 1, and
+padding 1. Each convolutional layer is followed by batch
+normalization and a Leaky ReLU activation with a slope of
+0.3. Compared with the original CsiNet encoder, the main
+difference is that the first convolutional layer uses four output
+channels instead of two to improve the representation capacity
+of the encoder. The extracted features are then passed through
+a fully connected (FC) layer followed by LIF neurons, and
+the resulting output spikes are transmitted to the BS for CSI
+reconstruction.
+At the BS, the received spikes are fed into the decoder
+to reconstruct the CSI matrix. The backbone of the decoder
+consists of a single hidden FC layer followed by LIF neurons.
+The spikes produced by this hidden layer are then passed
+through an output FC layer to yield the backbone reconstruc-
+tion. With binary spike inputs, this output FC layer functions
+as a spike-indexed dictionary, where active spikes select the
+corresponding columns of the weight matrix and sum them to
+reconstruct the CSI. Motivated by this interpretation, we set the
+dimension of the decoder LIF neurons to 4,096 to enhance the
+representation capacity of the network. Despite this large di-
+mension, the event-driven nature of spiking computation keeps
+the computational cost low, as will be shown in Section IV. In
+addition, we introduce a skip residual connection that directly
+maps the received spikes to the reconstruction output, which
+helps preserve the originally fed-back information. The outputs
+of the backbone branch and the skip branch are summed to
+yield the final reconstruction.
+2) Progressive Residual Refinement: Unlike ANNs, SNNs
+naturally operate in the spatio-temporal domain. Therefore, the
+input at each time step must be carefully designed. Classical
+approaches convert the input into spikes through schemes such
+as Poisson coding or latency coding [12], [13], or directly
+feed a static analog input through an input spiking layer that
+generates spikes across time steps [14]. These methods do not
+provide new information across time steps, and thus suffer
+from the spike-induced information bottleneck and are not well
+suited to the CSI reconstruction task.
+In this work, we instead formulate CSI feedback as a
+progressive refinement process, which is fundamentally dif-
+ferent from existing ANN-based approaches that treat it as a
+single-shot reconstruction problem. Specifically, as illustrated
+in Fig. 1, we deploy a virtual decoder at the UT, which
+3
+FC
+Virtual
+Decoder
++
+Time step k
+FC
+LIF
+FC
+Reshape
++ x +
+...
+t
+k =
+t
+
+/
+1 t
+
+M 4096
+M
+]
+[t
+H
+−
+x
+]
+1
+[
+ˆ −
+t
+H
+]
+[
+ˆ t
+H
+]
+[t
+R ]
+[t
+X ]
+[t
+s ]
+[t
+y
+...
+]
+[k
+s ]
+[t
+s
+Decoder
+Encoder
+Feedback Spikes
+Conv
+3x3
+Batch
+Norm
+Leaky
+ReLU
+Conv
+3x3
+Batch
+Norm
+Leaky
+ReLU
+Conv
+3x3
+Batch
+Norm
+Leaky
+ReLU
+Conv
+3x3
+Batch
+Norm
+Leaky
+ReLU
+FC
+LIF
+Reshape
+FC
+LIF
+Reshape
+s
+t N
+N 
+
+4
+s
+t N
+N 
+
+2
+s
+t N
+N 
+
+2 s
+t N
+N
+2
+s
+t N
+N
+2
+s
+t N
+N 
+
+2
+]
+1
+[
+s
+Fig. 1. Architecture of the proposed SpikingCSINet with progressive residual (PR) feedback.
+is identical to the one at the BS. Let H̄[t − 1] denote the
+reconstructed channel matrix obtained up to time step t − 1.
+At time step t, we compute the residual between the ground-
+truth channel, H, and the current reconstruction, H̄[t − 1],
+R[t] = H − H̄[t − 1]. (11)
+Since the residual magnitude tends to decrease over time,
+we scale it to bring the encoder input back to a comparable
+numerical range:
+X[t] =
+R[t]
+λ[t]
+, (12)
+where λ[t] is a scaling factor computed as
+λ[t] =
+P
+H∈H̄ ∥R[t]∥2
+F
+P
+H∈H̄ ∥H∥2
+F
+1/2
+, (13)
+with H̄ ⊆ H being a subset of channel samples (e.g., taken
+from several mini-batches).
+The scaled input is then fed into the encoder to produce the
+transmitted spikes:
+s[t] = fenc(X[t]; θE, ωE[t]) ∈ {0, 1}M
+, (14)
+where ωE[t] denotes the encoder state variables, such as mem-
+brane potentials, and M denotes the compressed codeword
+size. Here, we use a separate set of convolutional encoder
+parameters at each time step because the residual inputs exhibit
+different characteristics across time steps. Specifically, we
+define θE ≜ {{θconv
+E [t]}T
+t=1, θfc
+E } with θconv
+E [t] denoting the
+encoder parameters of convolutional layers at time step t, and
+θfc
+E denoting the encoder parameters of the FC layer. As the
+convolutional kernels are lightweight, this design introduces
+only negligible overhead.
+Upon receiving the spikes, the decoder processes them to
+produce the step-wise reconstruction output:
+y[t] = fdec(s[t]; θD, ωD[t]) , (15)
+where ωD[t] denotes the decoder state variables. The estimated
+channel is then progressively refined by accumulating the
+rescaled outputs:
+H̄[t] =
+t
+X
+k=1
+λ[k] y[k], (16)
+with H̄[0] = 0 as the initial condition and Ĥ = H̄[T] as the
+final output.
+Remark 1: This PR architecture is intrinsically tailored
+to SNN-based feedback. The temporal unfolding of SNNs
+naturally supports progressive residual encoding. The gener-
+ated spikes serve as the minimal feedback units and avoid
+additional quantization. Moreover, the refinement is driven by
+sparse spike events rather than dense floating-point operations,
+making it energy-efficient even across multiple time steps. In
+this way, PR converts the temporal dynamics of SNNs into
+an information-refinement mechanism that mitigates the spike-
+induced bottleneck while keeping bandwidth usage and energy
+consumption low.
+C. Training Strategy
+We train SpikingCSINet using backpropagation through
+time (BPTT), where the non-differentiable spiking function
+is approximated by the surrogate gradient method [11], with
+the arctangent function as the default surrogate. Defining
+θ ≜ {θE, θD} as the collection of learnable parameters, the
+training objective is defined as
+L(θ) = ∥H̄[T] − H∥2
+F + α
+T −1
+X
+t=1
+∥H̄[t] − H∥2
+F . (17)
+The first term measures the final reconstruction error, while the
+second term penalizes the intermediate reconstruction errors,
+with α ≥ 0 being a weighting coefficient that controls their
+relative contribution.
+D. Energy Consumption
+Due to the event-driven nature of spike-based computation,
+the number of floating-point operations (FLOPs) is not a
+suitable metric for evaluating SNN models. Instead, their
+computational cost is generally measured by the total number
+of accumulation (AC) operations and MAC operations [16].
+The total energy consumption is computed as
+E = EmacNmac + EacNac, (18)
+where Emac and Eac denote the energy costs per MAC and
+per AC operation, respectively. The encoder of SpikingCSINet
+uses floating-point MAC operations in its convolutional layers
+and final FC layer. The decoder consists of spike-based FC
+layers, in which the computation reduces to AC operations.
+For each spike-based FC layer, the number of AC operations
+is given by
+Ns,fc
+ac = ρMinMout, (19)
+4
+TABLE I
+NMSE (DB) AND ENERGY CONSUMPTION UNDER DIFFERENT COMPRESSION RATIOS (CRS) AND FEEDBACK BITS (T/b) ON THE COST 2100 DATASET.
+Methods T/b
+CR = 4 CR = 8 CR = 16 CR = 32 CR = 64
+NMSE
+Energy
+NMSE
+Energy
+NMSE
+Energy
+NMSE
+Energy
+NMSE
+Energy
+Indoor Outdoor Indoor Outdoor Indoor Outdoor Indoor Outdoor Indoor Outdoor
+SpikingCSINet
+(proposed)
+2 -17.10 -8.22 8.05 µJ -13.60 -6.29 4.52 µJ -9.95 -4.50 2.76 µJ -7.11 -3.05 1.89 µJ -3.97 -1.68 1.44 µJ
+4 -24.04 -10.07 16.11 µJ -17.85 -7.77 9.02 µJ -12.34 -5.31 5.53 µJ -8.47 -3.36 3.76 µJ -5.08 -1.95 2.87 µJ
+6 -27.83 -11.56 24.20 µJ -19.75 -8.75 13.52 µJ -13.55 -5.77 8.27 µJ -9.90 -3.52 5.63 µJ -6.45 -2.08 4.30 µJ
+SpikingCSINet-L
+2 -18.17 -10.87 8.25 µJ -14.34 -8.39 4.63 µJ -10.39 -6.07 2.83 µJ -7.27 -4.15 1.95 µJ -3.96 -2.30 1.46 µJ
+4 -25.51 -12.29 16.54 µJ -18.87 -10.03 9.28 µJ -12.98 -6.64 5.71 µJ -8.61 -4.31 3.88 µJ -5.54 -2.47 2.92 µJ
+6 -29.71 -13.66 24.87 µJ -20.96 -10.96 13.92 µJ -14.30 -7.26 8.50 µJ -10.24 -4.53 5.76 µJ -6.47 -2.73 4.37 µJ
+CsiNet
+2 -12.44 -7.26 17.33 µJ -7.39 -5.85 13.97 µJ -5.94 -3.46 12.29 µJ -4.43 -2.10 11.46 µJ -4.61 -1.48 11.04 µJ
+4 -15.59 -8.55 17.33 µJ -10.60 -7.03 13.97 µJ -7.77 -4.20 12.29 µJ -5.70 -2.63 11.46 µJ -5.57 -1.82 11.04 µJ
+6 -17.33 -8.87 17.33 µJ -12.04 -7.43 13.97 µJ -8.40 -4.42 12.29 µJ -6.09 -2.77 11.46 µJ -5.80 -1.91 11.04 µJ
+∞ -17.36 -8.75 17.33 µJ -12.70 -7.61 13.97 µJ -8.65 -4.51 12.29 µJ -6.24 -2.81 11.46 µJ -5.84 -1.93 11.04 µJ
+CLNet
+2 -14.12 -9.79 12.88 µJ -10.37 -6.67 9.53 µJ -8.60 -4.46 7.85 µJ -7.20 -2.88 7.01 µJ -4.70 -1.71 6.59 µJ
+4 -19.74 -12.11 12.88 µJ -13.78 -7.96 9.53 µJ -10.46 -5.33 7.85 µJ -8.57 -3.37 7.01 µJ -6.01 -2.08 6.59 µJ
+6 -24.71 -12.77 12.88 µJ -15.19 -8.24 9.53 µJ -11.02 -5.53 7.85 µJ -8.88 -3.47 7.01 µJ -6.30 -2.18 6.59 µJ
+∞ -29.16 -12.88 12.88 µJ -15.60 -8.29 9.53 µJ -11.15 -5.56 7.85 µJ -8.95 -3.49 7.01 µJ -6.34 -2.19 6.59 µJ
+CRNet
+2 -16.82 -10.45 16.39 µJ -11.03 -6.19 13.04 µJ -8.74 -4.38 11.36 µJ -6.93 -2.71 10.52 µJ -5.03 -1.67 10.10 µJ
+4 -21.65 -12.20 16.39 µJ -14.15 -7.58 13.04 µJ -10.79 -5.22 11.36 µJ -8.42 -3.32 10.52 µJ -6.22 -2.09 10.10 µJ
+6 -25.09 -12.64 16.39 µJ -15.57 -7.96 13.04 µJ -11.27 -5.41 11.36 µJ -8.83 -3.48 10.52 µJ -6.46 -2.19 10.10 µJ
+∞ -26.99 -12.70 16.39 µJ -16.01 -8.04 13.04 µJ -11.35 -5.44 11.36 µJ -8.93 -3.51 10.52 µJ -6.49 -2.22 10.10 µJ
+CsiNet+
+2 / / / / / / / / / / / / / / /
+4 -19.06 -11.54 78.63 µJ -15.65 -7.94 75.27 µJ -12.58 -5.49 73.60 µJ -9.37 -2.93 72.76 µJ / / /
+6 -24.97 -12.83 78.63 µJ -18.03 -8.81 75.27 µJ -14.02 -5.75 73.60 µJ -10.35 -3.79 72.76 µJ / / /
+∞ -27.37 -12.40 78.63 µJ -18.29 -8.72 75.27 µJ -14.14 -5.73 73.60 µJ -10.43 -3.40 72.76 µJ / / /
+TransNet
+2 -18.29 -11.26 124.15 µJ -13.94 -7.99 120.80 µJ -10.04 -6.38 119.12 µJ -7.32 -2.52 118.28 µJ -3.34 -1.64 117.86 µJ
+4 -24.48 -13.93 124.15 µJ -18.93 -9.58 120.80 µJ -13.17 -7.50 119.12 µJ -8.91 -3.59 118.28 µJ -5.34 -2.31 117.86 µJ
+6 -29.36 -14.85 124.15 µJ -21.95 -10.00 120.80 µJ -14.56 -7.82 119.12 µJ -10.01 -4.06 118.28 µJ -5.99 -2.61 117.86 µJ
+∞ -32.38 -14.86 124.15 µJ -22.91 -9.99 120.80 µJ -15.00 -7.82 119.12 µJ -10.49 -4.13 118.28 µJ -6.08 -2.62 117.86 µJ
+1) T and b denote the SNN time steps and the ANN quantization bit-width, respectively, both reflecting the feedback bit budget. ∞ denotes the full-precision ANN-based schemes.
+The compression ratio is defined as CR ≜
+2NtNs
+M .
+2) For CsiNet+, we adopt the performance reported in the original paper, and “/” indicates that the performance was not reported. The original papers of CsiNet, CRNet, CLNet, and
+TransNet did not report quantized performance. We train these models using their official code and fine-tune them with the straight-through estimator to obtain quantized results.
+where ρ denotes the average firing rate of the input spikes,
+and Min and Mout denote the input and output dimensions of
+the FC layer.
+IV. SIMULATION RESULTS
+In this section, we evaluate the proposed SpikingCSINet
+through simulation. We adopt the standard COST 2100 bench-
+mark [15] for fair comparison with previous works [4]–
+[8]. The dataset contains indoor and outdoor scenarios. Each
+consists of 10,000 training samples, 30,000 validation samples,
+and 20,000 testing samples. The truncated channel matrix has
+dimensions Ns = Nt = 32 and the inputs are scaled to the
+range [−25, 25] to drive sufficient spiking activity. Moreover,
+since the spike-based model tends to overfit in the indoor
+scenario, we adopt a simple data augmentation strategy that
+multiplies the channel by a random phase-rotation coefficient
+γ = exp(−2πjk/K), where k is uniformly drawn from
+{0, 1, . . . , K − 1} and K = 16. By default, we use the Adam
+optimizer with a learning rate of 0.002 and a cosine learning
+rate schedule. The model is trained for 1,000 epochs. The LIF
+neurons are configured with τ = 2, and the loss weighting
+coefficient is set to α = 0.5. For energy estimation, we adopt
+the standard model based on a 45-nm CMOS process [17],
+where Emac = 3.2 pJ and Eac = 0.1 pJ. The code is available
+at https://github.com/yl5922/SpikingCSINet.
+Table I summarizes the normalized MSE (NMSE) perfor-
+mance and energy consumption of all evaluated schemes.
+Compared with the convolutional architectures, SpikingC-
+SINet reduces the linear-domain NMSE by 54.4%, 28.4%,
+21.6%, and 17.2% over CsiNet, CLNet, CRNet, and CsiNet+,
+respectively, on the indoor dataset. Its outdoor performance,
+however, is less competitive due to the more complex scat-
+tering environment. To close this gap, we further introduce
+SpikingCSINet-L, an extended variant with the decoder LIF
+dimension enlarged from 4, 096 to 8, 192. SpikingCSINet-L
+improves the reconstruction quality in both scenarios, achiev-
+ing average NMSE reductions of 39.8% and 29.0% over
+the four convolutional baselines on the indoor and outdoor
+datasets, respectively. Notably, this gain comes at only a 2.5%
+average increase in energy consumption over SpikingCSINet
+since the additional computation is purely spike-driven and
+benefits from the inherent sparsity of AC operations.
+In terms of energy efficiency, SpikingCSINet is more
+efficient than the convolutional baselines, especially under
+high compression ratios and limited feedback budgets. For
+instance, when T/b = 2, SpikingCSINet and SpikingCSINet-
+L reduce the energy consumption by 61.2% and 60.3% on
+average over CLNet, the most energy-efficient convolutional
+architecture. Compared with the stronger but more expensive
+TransNet, SpikingCSINet-L attains comparable reconstruction
+performance, with a 2.0% average improvement indoors and
+only a 0.9% degradation outdoors, while reducing the energy
+consumption by 93.7% on average.
+Fig. 2 compares the NMSE performance and energy con-
+sumption versus different feedback bit budgets (T/b). We
+include SpikingCSINet without the PR architecture as an
+ablation, denoted as SpikingCSINet (no PR) in the figure. As
+shown in Fig. 2(a), SpikingCSINet continues to improve as
+T/b increases, whereas the ANN-based feedback schemes tend
+to saturate once T/b exceeds 8. When T/b exceeds 10, Spik-
+5
+2 4 6 8 10 12
+Feedback bits (T/b)
+−5
+−10
+−15
+−20
+−25
+−30
+NMSE
+(dB)
+(a) NMSE
+2 4 6 8 10 12
+Feedback bits (T/b)
+10
+1
+10
+2
+Energy
+(µJ)
+SpikingCSINet
+SpikingCSINet-L
+SpikingCSINet (no PR)
+CsiNet
+CLNet
+CRNet
+CsiNet+
+TransNet
+(b) Energy
+Fig. 2. (a) NMSE and (b) energy consumption versus feedback bits under
+CR = 8 in the indoor scenario.
+TABLE II
+PARAMETER COUNTS OF DIFFERENT SCHEMES UNDER CR = 8.
+Scheme CsiNet CsiNet+ CRNet CLNet TransNet SpikingCSINet SpikingCSINet-L
+Param. (M) 1.05 1.07 1.05 1.05 1.32 10.49 19.93
+ingCSINet surpasses TransNet, and SpikingCSINet-L achieves
+further improvement. This contrast reflects a fundamental
+difference between SNN-based and ANN-based quantized
+feedback: SpikingCSINet distributes the feedback information
+through successive spatio-temporal coding, whereas ANN-
+based quantization relies on a static representation whose
+performance saturates as the bit-width increases. The abla-
+tion scheme, SpikingCSINet (no PR), only achieves perfor-
+mance comparable to CsiNet, demonstrating the necessity
+of PR refinement. Fig. 2(b) further compares the energy
+consumption. The energy consumption of SpikingCSINet and
+SpikingCSINet-L increases with the number of time steps
+due to their successive refinement design, but remains much
+lower than that of heavier ANN-based schemes, such as
+TransNet and CsiNet+. When T/b ≤ 4, they further outper-
+form lightweight convolutional architectures in terms of both
+effectiveness and efficiency. SpikingCSINet (no PR) achieves
+the lowest energy consumption, but its limited reconstruction
+accuracy makes this saving less meaningful.
+Table II reports the model sizes of different schemes under
+CR = 8. Due to its spike-based decoder design, SpikingC-
+SINet uses more parameters than the compared ANN-based
+schemes. Nevertheless, its parameter size is still within a
+reasonable range among CSI feedback models. For example,
+DeepCMC contains approximately 9.95M parameters, while
+ConvLSTM-CsiNet contains about 22.30M parameters under
+CR = 8 [18], [19]. More importantly, a larger parameter
+size does not necessarily imply higher energy consumption in
+SNNs. As shown in Table III, the average decoder firing rate
+of SpikingCSINet ranges only from 0.013 to 0.071, and that
+of SpikingCSINet-L is even lower. Therefore, only a small
+fraction of synaptic connections are activated at each time
+step, and most operations can be implemented as low-cost
+AC operations. In contrast, increasing the parameter size of
+ANN-based architectures usually leads to a direct increase in
+dense MAC operations.
+V. CONCLUSION
+In this work, we presented SpikingCSINet, an SNN-based
+architecture for CSI feedback. A progressive residual architec-
+ture is developed to overcome the information bottleneck of
+binary spikes in high-dimensional reconstruction. Experiments
+on the COST 2100 dataset demonstrate that, with acceptable
+memory overhead, SpikingCSINet achieves a more favorable
+TABLE III
+AVERAGE DECODER LIF-LAYER FIRING RATES OF SPIKINGCSINET AND
+SPIKINGCSINET-L UNDER T = 6.
+Environment Scheme CR = 4 CR = 8 CR = 16 CR = 32 CR = 64
+Indoor
+SpikingCSINet 0.0710 0.0421 0.0465 0.0463 0.0411
+SpikingCSINet-L 0.0647 0.0343 0.0318 0.0286 0.0252
+Outdoor
+SpikingCSINet 0.0575 0.0284 0.0202 0.0132 0.0146
+SpikingCSINet-L 0.0222 0.0181 0.0154 0.0096 0.0079
+performance-efficiency tradeoff than convolutional architec-
+tures while achieving competitive performance compared with
+Transformer-based architectures at over 93% lower energy
+consumption.
+REFERENCES
+[1] E. G. Larsson, O. Edfors, F. Tufvesson, and T. L. Marzetta, “Massive
+MIMO for next generation wireless systems,” IEEE Commun. Mag., vol.
+52, no. 2, pp. 186–195, Feb. 2014.
+[2] X. Rao and V. K. N. Lau, “Distributed compressive CSIT estimation
+and feedback for FDD multi-user massive MIMO systems,” IEEE Trans.
+Signal Process., vol. 62, no. 12, pp. 3261–3271, Jun. 2014.
+[3] Y. Guo, W. Chen, F. Sun, J. Cheng, M. Matthaiou, and B. Ai, “Deep
+learning for CSI feedback: One-sided model and joint multi-module
+learning perspectives,” IEEE Commun. Mag., vol. 63, no. 7, pp. 90–97,
+Jul. 2025.
+[4] C.-K. Wen, W.-T. Shih, and S. Jin, “Deep learning for massive MIMO
+CSI feedback,” IEEE Wireless Commun. Lett., vol. 7, no. 5, pp. 748–751,
+Oct. 2018.
+[5] J. Guo, C.-K. Wen, S. Jin, and G. Y. Li, “Convolutional neural network-
+based multiple-rate compressive sensing for massive MIMO CSI feed-
+back: Design, simulation, and analysis,” IEEE Trans. Wireless Commun.,
+vol. 19, no. 4, pp. 2827–2840, Apr. 2020.
+[6] Z. Lu, J. Wang, and J. Song, “Multi-resolution CSI feedback with deep
+learning in massive MIMO system,” in Proc. IEEE Int. Conf. Commun.
+(ICC), Jun. 2020, pp. 1–6.
+[7] S. Ji and M. Li, “CLNet: Complex input lightweight neural network
+designed for massive MIMO CSI feedback,” IEEE Wireless Commun.
+Lett., vol. 10, no. 10, pp. 2318–2322, Oct. 2021.
+[8] Y. Cui, A. Guo, and C. Song, “TransNet: Full attention network for CSI
+feedback in FDD massive MIMO system,” IEEE Wireless Commun. Lett.,
+vol. 11, no. 5, pp. 903–907, May 2022.
+[9] K. Roy, A. Jaiswal, and P. Panda, “Towards spike-based machine intel-
+ligence with neuromorphic computing,” Nature, vol. 575, no. 7784, pp.
+607–617, Nov. 2019.
+[10] Y. Ouyang, Z. Cheng, X. Luo, G. Li, and Y. Qu, “SpikingIR: A novel
+converted spiking neural network for efficient image restoration,” Proc.
+AAAI Conf. Artif. Intell., vol. 40, no. 10, pp. 8215–8223, 2026.
+[11] E. O. Neftci, H. Mostafa, and F. Zenke, “Surrogate gradient learning in
+spiking neural networks: Bringing the power of gradient-based optimiza-
+tion to spiking neural networks,” IEEE Signal Process. Mag., vol. 36, no.
+6, pp. 51–63, Nov. 2019.
+[12] D. Auge, J. Hille, E. Mueller, and A. Knoll, “A survey of encoding
+techniques for signal processing in spiking neural networks,” Neural
+Process. Lett., vol. 53, pp. 4693–4710, Jul. 2021.
+[13] P. Sun, J. Wu, M. Zhang, P. Devos, and D. Botteldooren, “Delay learning
+based on temporal coding in spiking neural networks,” Neural Netw., vol.
+180, Art. no. 106678, Dec. 2024.
+[14] Y. Wu, L. Deng, G. Li, J. Zhu, Y. Xie, and L. Shi, “Direct training for
+spiking neural networks: Faster, larger, better,” in Proc. AAAI Conf. Artif.
+Intell., vol. 33, no. 1, 2019, pp. 1311–1318.
+[15] L. Liu et al., “The COST 2100 MIMO channel model,” IEEE Wireless
+Commun., vol. 19, no. 6, pp. 92–99, Dec. 2012.
+[16] L. Deng et al., “Rethinking the performance comparison between SNNs
+and ANNs,” Neural Netw., vol. 121, pp. 294–307, Jan. 2020.
+[17] M. Horowitz, “1.1 Computing’s energy problem (and what we can do
+about it),” in IEEE Int. Solid-State Circuits Conf. Dig. Tech. Papers
+(ISSCC), Feb. 2014, pp. 10–14.
+[18] M. B. Mashhadi, Q. Yang, and D. Gündüz, “Distributed deep convo-
+lutional compression for massive MIMO CSI feedback,” IEEE Trans.
+Wireless Commun., vol. 20, no. 4, pp. 2621–2633, Apr. 2021.
+[19] X. Li and H. Wu, “Spatio-temporal representation with deep neural
+recurrent network in MIMO CSI feedback,” IEEE Wireless Commun.
+Lett., vol. 9, no. 5, pp. 653–657, May 2020.
+

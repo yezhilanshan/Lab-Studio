@@ -1,0 +1,1663 @@
+Teaching Foundation Models to Read mmWave: Pose-Guided Kinematic
+Representation for Human Behavior Understanding
+Duo Zhang1∗
+, Zhehui Yin1∗
+, Zhiyun Yao1
+, Haotong Qin2
+, Xusheng Zhang1
+,
+Hongliu Yang1
+, Jianyu Sun1
+, Junzhe Wang1
+, Zizhou Fan1
+, Michele Magno2
+, Daqing Zhang1,3†
+1
+Peking University 2
+ETH Zurich 3
+Institut Polytechnique de Paris
+{zhangduo,yinzhehui,zhiyunyao}@stu.pku.edu.cn haotong.qin@pbl.ee.ethz.ch {zhangxusheng,Hongliu_yang}@stu.pku.edu.cn
+jys62544@gmail.com {wjz020606,zzfan25}@stu.pku.edu.cn michele.magno@pbl.ee.ethz.ch dqzhang@sei.pku.edu.cn
+Abstract
+Large language model agents need to perceive human behavior
+in physical environments. Millimeter-wave (mmWave) radar
+provides a privacy-friendly and contactless sensing modality,
+but radar observations are difficult to align with language. Ex-
+isting radar-language methods often rely on synthetic data or
+lack explicit supervision for human body structure and mo-
+tion. We present mmMind, a radar-language model that uses
+synchronized 3D pose as training-only supervision. A spatio-
+temporal radar encoder is pretrained to capture body configu-
+ration and motion dynamics, after which the pose head is re-
+moved so that inference requires radar alone. The learned radar
+representations are then aligned with an LLM for behavior
+captioning and spatio-temporal question answering. We also
+introduce mmMind-Bench, a real-world mmWave-language
+benchmark containing 17.9 hours of recordings from 23 par-
+ticipants across seven indoor environments. Experiments on
+captioning, question answering, and unseen-action general-
+ization show that mmMind consistently outperforms existing
+radar-language baselines, while ablations confirm the impor-
+tance of pose-guided pretraining.
+Introduction
+Large language model (LLM) agents increasingly ground
+their responses in multimodal context, including text, im-
+ages, audio, and video. Agents operating in everyday en-
+vironments, however, must also perceive human behavioral
+context: what people are doing, and how their activities un-
+fold (Fu et al. 2026). Access to such context is essential for
+agents to provide timely, behavior-aware assistance rather
+than relying solely on explicit user input.
+Continuously acquiring such context remains challenging.
+Cameras raise privacy concerns in spaces such as bedrooms
+and bathrooms, while wearables depend on sustained user
+compliance (Kim et al. 2024; Maaz et al. 2024). Millimeter-
+wave (mmWave) radar offers a privacy-friendly, contactless,
+and low-cost alternative by sensing human from radio reflec-
+tions without capturing recognizable imagery or requiring
+on-body devices. It has enabled applications including activ-
+ity recognition, pose estimation, and physiological monitor-
+∗
+These authors contributed equally.
+†
+Corresponding author.
+ing (Adib et al. 2015; Zhang et al. 2026a; Liu et al. 2026;
+Zhang et al. 2023).
+Yet mmWave is not a modality that an LLM can directly
+read. Among common radar representations, temporal point
+clouds provide a promising basis for behavior understanding
+because they retain the 3D locations and radial velocities of
+body reflections (Singh et al. 2019; Palipana et al. 2021; Guo
+et al. 2023; Xue et al. 2023). However, they remain sparse,
+noisy, and temporally irregular, with behavioral semantics
+emerging from subtle changes in body configuration and
+motion over time. This raises a fundamental question:
+How can sparse radar sequences be transformed into
+kinematically grounded representations and aligned
+with an LLM for behavior understanding?
+As illustrated in Fig. 1, answering this question requires
+addressing two coupled challenges: preserving human kine-
+matics in the radar representation, and aligning that repre-
+sentation with language under real sensing conditions.
+Challenge 1: Kinematic representation. Conventional
+mmWave systems map an entire sequence to a closed-set or
+open-vocabulary label (Singh et al. 2019; Cao et al. 2024),
+without describing how the behavior unfolds. Recent radar-
+language models instead construct interfaces between radar
+observations and LLMs. For example, mmExpert aligns 2D
+micro-Doppler spectra with language (Yan et al. 2025), cap-
+turing velocity patterns but providing limited access to ex-
+plicit 3D body structure. RadarLLM converts temporal point
+clouds into discrete motion codes using an Aggregate VQ-
+VAE (Lai et al. 2025). These approaches establish useful
+radar-language interfaces, but their representation-learning
+objectives do not explicitly encourage the latent space to
+preserve body configuration, global displacement, and lo-
+cal joint dynamics. Generic point-cloud LLMs are also not
+directly suited to this setting because they are designed pri-
+marily for dense and largely static objects or scenes (Xu et al.
+2024; Hong et al. 2023).
+To address this challenge, we propose pose-guided kine-
+matic representation learning. A 3D pose sequence provides
+a structured description of human kinematics, capturing both
+body configuration and its temporal evolution—the very in-
+formation radar tokens should preserve. We therefore pre-
+train a spatio-temporal radar encoder to recover synchronized
+arXiv:2608.04127v1
+[cs.CV]
+4
+Aug
+2026
+A Real-world mmWave-language Dataset and Benchmark
+Prior Works
+mmMind (Ours)
+Privacy Friendly
+No visual
+images
+Contactless
+No wearable
+devices
+Privacy-Friendly Behavioral Context via mmWave Radar
+Human point clouds
+RF signal
+Radar Tokenization Gap
+Discrete codebook tokenization
+…
+2D Spectrum tokenization
+2D motion only, no 3D structure
+Captures velocity patterns
+Language-compatible
+Early quantization may coarsen
+subtle motion variations
+2 …
+32 46 79 11
+Kinematics-Aware Radar Encoding
+Temporal
+Transformer
+Spatial
+Transformer
+Point Cloud Sequence
+…
+Continuous
+Kinematic Tokens
+LLM Agent
+Downstream tasks
+User prompts
+Behavior Captioning
+Spatiotemporal QA
+Unseen-action
+Generalization
+Pose Head
+3D Pose
+Pose-Guided
+Kinematic
+Tokenization
+Projector
+mmMind-Bench 17.9h
+Time
+How can sparse radar sequences become kinematics-preserving tokens for LLMs?
+mmExpert
+RadarLLM
+1
+Pose Supervision Only For Training
+Radar–language Alignment and
+Instruction Tuning
+2
+Figure 1: Overview of mmMind. Existing radar-language approaches rely on 2D spectrum representations or discrete codebook
+tokens, which may lose body kinematics or fine-grained motion variations. mmMind addresses these challenges through pose-
+guided kinematic tokenization and mmMind-Bench, a real-world radar-language benchmark for alignment and instruction
+tuning. At inference, radar alone enables behavior captioning, spatio-temporal QA, and unseen-action generalization.
+poses, shaping its latent space toward kinematic structure.
+After pretraining, the pose head is removed, and the encoder
+produces continuous kinematic tokens from radar alone.
+Challenge 2: Real-world radar-language alignment.
+These tokens must then be mapped into the LLM embed-
+ding space and grounded in language through cross-modal
+alignment and instruction tuning. This requires paired radar-
+language data with fine-grained behavior annotations. Syn-
+thetic data provide an elegant and scalable solution when
+such annotations are scarce and have enabled important
+progress in prior work (Lai et al. 2025; Yan et al. 2025; Cao
+et al. 2024; Chen and Zhang 2023; Gong et al. 2025). Nev-
+ertheless, simulation alone cannot fully capture the sparsity,
+multipath, clutter, and hardware noise of physical deploy-
+ments, while large-scale real-world language supervision re-
+mains limited.
+We therefore introduce mmMind-Bench, to our knowl-
+edge the first large-scale real-world mmWave-language
+dataset and benchmark. It contains 17.9 hours of recordings
+from 23 participants, covering 27 daily-life and exercise-
+related behaviors. Beyond action labels, mmMind-Bench
+provides fine-grained language annotations describing body
+states, motion trajectories, temporal evolution, and behav-
+ior context, together with synchronized 3D poses, spatio-
+temporal QA, and multi-turn dialogues. These real-world
+annotations enable radar–language alignment through pro-
+jector training and LLM instruction tuning, while supporting
+unified evaluation on captioning, question answering, inter-
+action, and unseen-action generalization.
+Building on these two components, we develop mmMind
+on commercial off-the-shelf mmWave hardware. mmMind
+achieves a BERTScore of 86.8 on radar captioning, 89.2%
+accuracy on spatio-temporal QA, and 91.2% accuracy on
+unseen actions, consistently outperforming existing radar–
+language baselines. Ablations further validate the proposed
+design. Our contributions are threefold:
+• We redefine radar tokenization as learning kinematically
+grounded continuous representations from training-
+only 3D pose supervision, enabling radar tokens to pre-
+serve body structure and motion evolution.
+• We introduce mmMind-Bench, a large-scale real-world
+mmWave-language dataset and benchmark. The dataset
+and code will be released upon publication.
+• We build, to our knowledge, the first mmWave-enabled
+foundation model that supports multi-turn reasoning and
+interaction for human behavior understanding, achieving
+best performance across all three benchmark tasks.
+Related Work
+Wireless Sensing and mmWave-Based Human
+Behavior Understanding
+Wireless sensing provides a privacy-friendly and contact-
+less approach to understanding human behaviors in physi-
+cal environments (Wang et al. 2025b; Li et al. 2025; Wang
+et al. 2025a; Yao et al. 2025; Fan et al. 2026b). Among vari-
+ous wireless sensing modalities, millimeter-wave (mmWave)
+radar is particularly promising due to its fine-grained spatial
+and motion sensing capability, supporting activity recogni-
+tion (Singh et al. 2019; Yang et al. 2026a; Zhang 2026;
+Zhang et al. 2024c, 2025a; Yang et al. 2026b), 3D pose esti-
+mation (Zhang et al. 2026a; Fan et al. 2026a; Liang et al.
+2026a,b; Xue et al. 2021; Cao et al. 2025; Zheng et al.
+2026), and physiological monitoring (Zhang et al. 2025b,
+2024b; Chang et al. 2024). Most existing methods formu-
+late behavior understanding as classification or regression
+over predefined task spaces. Contrastive approaches such
+as mmCLIP (Cao et al. 2024) extend recognition to open-
+vocabulary categories, but still compress an entire behavior
+sequence into an isolated prediction.
+Multimodal Tokenization and Language Alignment
+Understanding-oriented multimodal LLMs commonly pre-
+serve continuous features from modality-specific encoders
+and align them with the LLM embedding space through pro-
+jectors or query-based connectors (Liu et al. 2023, 2024),
+with recent work further improving their efficiency through
+structure-preserving token compression (Feng et al. 2026;
+Zhang et al. 2026b). This paradigm has also been extended to
+3D point clouds (Xu et al. 2024; Hong et al. 2023). Discrete
+VQ-based tokenization remains useful for compression and
+multimodal generation (Van Den Oord, Vinyals et al. 2017),
+but early quantization may impose an information bottle-
+neck before language alignment. Moreover, reconstruction-
+oriented objectives may not preserve the task-relevant struc-
+tures required for language understanding.
+Radar-Language Models and Benchmarks
+Recent studies connect mmWave sensing with language mod-
+els through different interfaces. mmWave-QA textualizes
+radar observations for training-free reasoning with off-the-
+shelf LLMs (Shin et al. 2026); mmExpert uses 2D micro-
+Doppler spectrograms (Yan et al. 2025); and RadarLLM
+quantizes temporal point clouds into discrete motion codes
+through an Aggregate VQ-VAE (Lai et al. 2025). These in-
+terfaces may limit the preservation of fine-grained 3D body
+structure and motion dynamics. Moreover, trainable radar-
+language models rely heavily on synthetic data and focus
+mainly on radar-to-text generation. In contrast, mmMind
+learns pose-guided continuous radar tokens and is evalu-
+ated on captioning, spatio-temporal question answering, and
+unseen-action generalization using mmMind-Bench, a large-
+scale real-world radar-language benchmark.
+mmMind-Bench
+We introduce mmMind-Bench, a real-world benchmark that
+pairs synchronized mmWave sensing data with bilingual lan-
+guage annotations at multiple levels for human behavior un-
+derstanding. Data collection was conducted under IRB ap-
+proval with informed consent from all participants.
+Real-World Data Collection
+mmMind-Bench contains 17.9 hours of real-world record-
+ings from 23 participants aged 21–62 across seven indoor
+environments. The dataset covers diverse daily activities
+(e.g., walking, sitting, bending, computer usage, lying down,
+sweeping, jogging, falling, drinking, and phone usage), exer-
+cise motions (e.g., sit-ups, squats, jumping jacks, rope skip-
+ping, and boxing), and upper-body gestures and interactions
+(e.g., pushing, pulling, drawing circles, and vertical hand
+motions). The environments include diverse indoor layouts
+and sensing conditions, such as living rooms, meeting rooms,
+offices, and kitchens.
+Radar
+RGBD
+4 Captions (EN/CH)
+13 QA Pairs
+4 Dialogues
+VLM
+Annotations
+mmWave
+Radar
+Modalities
+(Synchronized)
+Figure 2: Overview of mmMind-Bench data collection and
+annotation.
+We retain raw radar measurements and derived point
+clouds from commercial 60-GHz and 77-GHz devices, to-
+gether with synchronized RGB-D videos and 3D pose ground
+truth. All radar observations are transformed into a unified
+extrinsic coordinate system, where the ground plane defines
+the x-y plane for consistent spatial representation. To im-
+prove the quality of radar point clouds, we adopt our previous
+signal processing pipeline (Yang et al. 2025b; Zhang et al.
+2026a), which produces denser point clouds with reduced
+multipath interference and provides richer spatio-temporal
+cues for human motion understanding. The use of multiple
+frequency bands and environments introduces variations in
+reflection characteristics, clutter, and hardware conditions.
+RGB-D video is used only for language annotation, while
+3D pose provides training-only kinematic supervision for the
+radar encoder. Details of signal processing and point-cloud
+generation are provided in the appendix.
+Radar-Grounded Language Annotation
+We segment each continuous recording into 5-second clips,
+yielding 75 radar frames per clip.
+We adopt a human-seeded, pose-aware VLM pipeline.
+Human-written examples define the annotation prompt. Each
+synchronized 3D pose sequence is converted by rule-based
+processing into a structured JSON summary of body states,
+posture transitions, limb motion, direction, trajectory, speed,
+and event order. InternVL3 (Zhu et al. 2025) then uses the
+synchronized RGB-D clip and the JSON summary to draft
+captions, QA pairs, and dialogues.
+The prompt restricts annotations to radar-observable be-
+havior and excludes appearance, identity, clothing, fine-
+grained object identity, and other visual-only information.
+Automatic checks enforce format, bilingual completeness,
+and the absence of prohibited attributes. Importantly, all gen-
+erated annotations are manually reviewed and revised for fac-
+tual correctness, kinematic consistency, radar observability,
+ambiguity, and English–Chinese quality before inclusion in
+the benchmark. Only these human-verified annotations are
+used for training and evaluation.
+Each clip contains concise and detailed captions in English
+and Chinese, 13 single-turn QA pairs, and four multi-turn
+dialogues, covering behavior, body state, limb motion, spatial
+relations, trajectory, speed, temporal ordering, and cross-turn
+reasoning.
+The 5-second window standardizes the benchmark rather
+than constraining the model, which supports variable-length
+inputs. A long-horizon extension based on temporal mem-
+ory and query-driven radar re-perception is described in Ap-
+pendix D.
+Benchmark Tasks and Splits
+mmMind-Bench evaluates three capabilities: radar caption-
+ing generates fine-grained behavior descriptions; spatio-
+temporal question answering covers single-turn and con-
+textual multi-turn reasoning over body states, spatial rela-
+tions, trajectories, motion changes, and event ordering; and
+unseen-action recognition measures zero-shot generaliza-
+tion to actions absent from training.
+We construct participant-, environment-, and session-
+disjoint train, validation, and test sets containing approxi-
+mately 80%/10%/10% of the clips. Participants and environ-
+ments are mutually exclusive across splits, ensuring unseen
+individuals and indoor environments at evaluation. To avoid
+leakage from the 5-second window with a 1-second stride,
+complete recording sessions are partitioned before window-
+ing, so overlapping or adjacent clips never cross split bound-
+aries; all annotations for the same clip follow the same split.
+For unseen-action evaluation, we construct action-disjoint
+test sets containing multiple held-out behavior categories
+that are excluded from training. All clips and associated pose
+and language annotations from the held-out categories are ex-
+cluded from radar encoder pretraining, projector alignment,
+instruction tuning, and hyperparameter selection.
+mmMind
+mmMind learns continuous radar tokens that preserve human
+kinematics through training-only 3D pose supervision, and
+aligns them with an LLM for behavior understanding.
+Overview and Problem Formulation
+Let a radar sequence be
+X = {X1, X2, . . . , XT }, (1)
+where each frame Xt ∈ RNt×4
+contains Nt radar points,
+each represented as (x, y, z, v), including its 3D location
+and radial velocity.
+During encoder pretraining, the radar sequence is paired
+with a synchronized 3D pose sequence
+S = {S1, S2, . . . , ST }, (2)
+where each St contains the 3D coordinates of J body joints.
+Pose is used only as training supervision and is unavailable
+at inference time.
+Given a radar sequence X and a textual instruction q, the
+goal is to generate a language response a = (a1, . . . , aL):
+p(a | X, q). (3)
+As shown in Fig. 3, a spatial encoder first aggregates each
+variable-sized radar frame, and a temporal Transformer mod-
+els the evolution of the resulting features. During pose-guided
+pretraining, a lightweight pose head encourages these repre-
+sentations to preserve body configuration and motion dy-
+namics. The pose head is removed after pretraining, leaving
+a radar encoder that produces continuous kinematic tokens.
+A cross-modal projector maps these tokens into the LLM
+embedding space, where they are combined with the textual
+instruction for language generation.
+Training consists of three stages. First, the radar encoder
+is pretrained with synchronized 3D pose supervision. Sec-
+ond, the encoder and LLM are frozen while the projector
+learns radar-language alignment. Finally, the encoder re-
+mains frozen, while the projector and LLM LoRA adapters
+are instruction-tuned on captioning, single-turn QA, and
+multi-turn dialogue data.
+Pose-Guided Kinematic Tokenization
+A single radar frame provides only a sparse and partial obser-
+vation of the human body, as reflected points vary with body
+orientation, self-occlusion, and limb motion. However, hu-
+man motion is temporally continuous, and body parts missing
+in one frame may become observable in neighboring frames.
+We therefore jointly model spatial point relationships and
+temporal motion continuity.
+Input normalization and augmentation. Each frame is
+standardized to M = 150 points by random subsampling or
+zero-padding with a validity mask. We normalize the x- and
+y-coordinates relative to the first-frame horizontal centroid,
+and clip radial velocity to [−1, 1]. Although radial velocity
+captures only line-of-sight motion, it remains useful for dis-
+tinguishing moving limbs from the torso. During training,
+we apply synchronized scaling, yaw rotation, and horizontal
+translation to the radar and pose sequences, and add co-
+ordinate jitter to the radar points to improve robustness to
+geometric and measurement variations.
+Spatio-temporal radar encoder. Each four-dimensional
+point (x, y, z, v) is projected into a dr-dimensional feature,
+while its 3D coordinates are separately mapped to a learned
+spatial positional embedding. Let e
+Xt denote the standard-
+ized point set and mt its padding mask. A spatial Trans-
+former models relationships among valid points, followed by
+learnable-query pooling that aggregates each frame into one
+representation:
+ht = Pool
+
+Espa( e
+Xt, mt)
+
+. (4)
+A temporal Transformer with rotary position embeddings
+then integrates information across frames:
+Y = Etmp(h1, . . . , hT ) = {y1, . . . , yT }. (5)
+Spatial attention captures the body structure implied by si-
+multaneous reflections, whereas temporal attention exploits
+motion continuity and complementary observations across
+time. Each yt forms one continuous kinematic token for the
+corresponding radar frame.
+Pose-guided pretraining. A lightweight pose head maps
+each radar token to the 3D coordinates of J = 17 body joints:
+b
+St = Dpose(yt). (6)
+We optimize the radar encoder with a kinematic objective:
+Lkin = λpLp + λrLr + λlLl + λbLb. (7)
+Radar
+Tokens
+Dim:256
+𝒀 = {𝒀𝟏, 𝒀𝟐, … , 𝒀𝑻}
+𝑿 = {𝑿𝟏, 𝑿𝟐, … , 𝑿𝑻}
+LLM
+Tokenization
+& Embedding
+Dim:4096
+Dim:4096
+Concatenation
+LoRA
+Fine Tuned
+WA
+WB
+Pose-Guided Kinematic Tokenization
+Temporal
+Domain
+Transformer
+Spatial
+Domain
+Transformer
+Cross-Modal Projector
+FC
+1
+GELU
+FC
+2
+256 4096
+...
+𝑷𝟏 𝑷𝟐 𝑷𝑻
+Answers
+Descriptive Spatial Temporal Causal
+User-Defined Query
+Pose Head
+(Training-only)
+Pose supervision
+shapes the
+token space
+Stage 1: Pose-Guided Pretraining (Encoder + Pose Head) Stage 2: Radar-Language alignment (Projector) Stage 3:Multitask SFT(Projector + LoRA)
+Figure 3: The detailed structure of the proposed mmMind model. Pose supervision shapes continuous radar tokens during
+pretraining, which are aligned with an LLM for behavior understanding through captioning, question answering, and dialogue.
+The four terms supervise joint positions, global root motion,
+local joint articulation, and skeletal consistency, respectively.
+Specifically, Lp adopts a joint-weighted L1 loss that empha-
+sizes distal joints, while the velocity losses capture body
+translation and root-relative articulation. Lb preserves skele-
+tal proportions. After pretraining, the pose head is removed,
+and the radar encoder produces continuous kinematic tokens
+from radar observations alone.
+Continuous Radar-Language Alignment
+After pose-guided pretraining, the radar encoder pro-
+duces a sequence of continuous kinematic tokens Y =
+{y1, . . . , yT }. We introduce a lightweight projector gϕ to
+map each radar token from the encoder dimension dr into
+the LLM embedding space:
+zt = gϕ(yt), Z = {z1, . . . , zT }. (8)
+The projector consists of two linear layers with normalization
+and GELU activation. Each projected token replaces a frame-
+indexed placeholder in the input sequence, preserving the
+one-to-one temporal correspondence between radar frames
+and continuous LLM embeddings.
+We then perform an initial radar-language alignment stage
+using caption-only supervision. The training data contain
+concise and attribute-level behavior descriptions in both En-
+glish and Chinese, but exclude question answering and multi-
+turn dialogue. Given the projected radar tokens and a cap-
+tioning instruction, the model is optimized with the autore-
+gressive language-modeling objective:
+Lalign = −
+L
+X
+ℓ=1
+log p(cℓ | Z, q, c<ℓ). (9)
+where cℓ is the ℓ-th token of the caption, and L is the caption
+length. Only assistant-response tokens contribute to the loss.
+The radar encoder and LLM remain frozen, and only the
+projector is updated. This stage first establishes a stable cor-
+respondence between radar kinematics and basic behavioral
+language before the subsequent instruction tuning on more
+complex reasoning tasks.
+Multitask Instruction Tuning
+After radar-language alignment, we instruction-tune mm-
+Mind on behavior captioning, spatio-temporal question an-
+swering, and multi-turn dialogue. For reasoning-oriented
+QA, we additionally provide kinematic rationales that de-
+scribe observable motion evidence, such as body state tran-
+sitions, trajectories, and temporal changes.
+The projected radar tokens are concatenated with the tex-
+tual context and processed by the LLM. Let s = (s1, . . . , sL)
+denote the complete textual sequence, including system in-
+structions, user queries, dialogue history, and assistant re-
+sponses. We optimize the masked autoregressive objective:
+LSFT = −
+L
+X
+ℓ=1
+mℓ log p (sℓ | Z, s<ℓ) , (10)
+where mℓ = 1 if sℓ is an assistant-response token and mℓ = 0
+otherwise. For multi-turn dialogues, assistant tokens from
+all turns contribute to the loss, while system instructions,
+user messages, radar-prefix tokens, and padding tokens are
+masked out.
+During instruction tuning, the radar encoder remains
+frozen, while the projector and LoRA adapters of the LLM
+are optimized (Hu et al. 2022). This preserves the pose-
+guided radar representation while adapting the LLM for
+language-based behavior understanding.
+Experiments
+Experimental Setup
+Tasks and splits. We evaluate mmMind on radar cap-
+tioning, spatio-temporal question answering, and unseen-
+action recognition using the participant-, environment-, and
+session-disjoint splits in mmMind-Bench. For unseen-action
+evaluation, the tested categories are excluded from both radar
+encoder pretraining and instruction tuning. No method uses
+RGB-D video or 3D pose at inference time.
+Baselines. All trainable baselines are reimplemented and
+fully retrained on mmMind-Bench; all reported results are
+obtained from our reproductions. Whenever supported, they
+use the same captioning, QA, and dialogue annotations as
+Table 1: Main results on mmMind-Bench. Best and second-best results are shown in bold and underlined, respectively. All
+trainable baselines are retrained on the same benchmark splits and language annotations whenever applicable.
+Method Representation
+Captioning Question Answering Unseen Action
+Acc. ↑
+METEOR ↑ BERTScore ↑ Single-turn ↑ Multi-turn ↑
+General-purpose LLM/VLMs
+Qwen3-8B (Text Only) Instruction only 16.2 61.4 34.7 31.9 18.6
+mmWave-QA-style (Shin et al. 2026) Radar textualization 29.4 74.1 69.8 55.7 62.3
+Qwen3-VL-32B-Instruct (Bai et al. 2025) Rendered PC video 34.6 67.9 69.5 61.4 76.7
+Radar-specific models
+mmExpert (Yan et al. 2025) Micro-Doppler spectra 29.5 63.2 66.1 – 67.4
+RadarLLM (Lai et al. 2025) Discrete radar tokens 36.2 75.2 74.6 – 74.8
+mmCLIP (Cao et al. 2024) Contrastive radar-text – – – – 79.7
+mmMind (Ours) Continuous tokens 46.5 86.8 89.2 84.7 91.2
+mmMind. Qwen3-8B (Text Only) receives only the instruc-
+tion and dialogue history and is instruction-tuned on the same
+language annotations. mmWave-QA-style (Shin et al. 2026)
+textualizes each point-cloud sequence using spatial, trajec-
+tory, and radial-velocity statistics before processing it with
+Qwen3-8B. Qwen3-VL-32B-Instruct (Bai et al. 2025) is
+fine-tuned on the same language supervision using synchro-
+nized front- and side-view point-cloud videos, with point
+color encoding radial velocity. mmExpert (Yan et al. 2025)
+is retrained using micro-Doppler spectra generated from the
+same raw radar recordings. RadarLLM (Lai et al. 2025) is
+retrained on the same 75-frame clips, which are directly to-
+kenized by its Aggregate VQ-VAE without temporal resam-
+pling. mmCLIP (Cao et al. 2024) is retrained on the same
+splits for unseen-action recognition. A “–” indicates that the
+corresponding architecture does not support the task.
+Implementation Details. mmMind uses Qwen3-8B as the
+language backbone (Yang et al. 2025a). The radar encoder
+outputs 256-dimensional frame tokens, followed by a two-
+layer projector for radar–language alignment. During instruc-
+tion tuning, the radar encoder is frozen and only the projec-
+tor and LoRA adapters are optimized. Training details and
+hyperparameter settings are provided in the supplementary
+material.
+Metrics. For radar captioning, we report METEOR, which
+measures lexical agreement with stemming and synonym
+matching, and BERTScore-F1, which measures contextual
+semantic similarity between generated and reference descrip-
+tions. For QA, generated answers are lowercased, stripped of
+punctuation and articles, and matched to a fixed canonical
+answer set using a predefined synonym mapping; unmatched
+responses are counted as incorrect. Single-turn accuracy is
+macro-averaged across question categories. For multi-turn
+QA, turn-level accuracy is first computed within each di-
+alogue and then averaged across dialogues, with the com-
+plete preceding dialogue history provided at every turn. For
+unseen-action recognition, tested action categories are ex-
+cluded from all training stages. Generated action names are
+normalized to the held-out label vocabulary before comput-
+ing accuracy. All metrics are reported on a 0–100 scale.
+Main Results on mmMind-Bench
+Table 1 compares representative strategies for connecting
+radar observations with language models. mmMind achieves
+the best performance across all evaluated tasks. The text-
+only baseline performs substantially worse, indicating that
+language and dataset priors alone provide limited informa-
+tion about the observed behavior. Radar textualization and
+point-cloud video rendering expose additional motion cues to
+general-purpose models, but introduce intermediate abstrac-
+tion or rendering steps. Notably, the Qwen3-VL baseline uses
+a substantially larger 32B model and rendered video inputs,
+whereas mmMind operates on compact continuous radar to-
+kens with an 8B language backbone.
+Radar captioning. mmMind achieves a METEOR score
+of 46.5 and a BERTScore of 86.8, outperforming the
+strongest baselines by 10.3 and 11.6 points, respectively.
+It consistently surpasses textualized radar descriptions, ren-
+dered point-cloud videos, micro-Doppler spectra, and dis-
+crete radar tokens. These results indicate that continuous
+kinematic tokens better preserve body configuration and mo-
+tion evolution for language generation.
+Spatio-temporal question answering. mmMind obtains
+89.2% accuracy on single-turn QA, improving over the
+strongest baseline by 14.6 points. It further achieves 84.7%
+accuracy on multi-turn dialogue, exceeding the Qwen3-VL-
+32B baseline by 23.3 points. These results show that the
+learned radar tokens support both direct questions about ob-
+served motion and context-dependent follow-up questions
+across dialogue turns.
+Unseen-action recognition. On action categories ex-
+cluded from both radar pretraining and instruction tun-
+ing, mmMind achieves 91.2% accuracy, outperforming the
+contrastive mmCLIP baseline by 11.5 points. The consis-
+tent improvement over textualized, rendered, micro-Doppler,
+and discrete representations suggests that kinematically
+grounded continuous tokens transfer more effectively to be-
+haviors not observed during training.
+Pose
+Point
+Cloud
+(a) Temporal behavior understanding
+RadarLLM A person sits down in place.
+mmExpert A person squats down.
+Ours
+A person gradually lowers their center
+of gravity from an upright stance,
+bending the knees to transition
+smoothly into a stationary seated
+position.
+Multi-Turn Q & A
+What is the person doing at
+the very beginning?
+The person is stationary in
+a standing posture.
+Overall, what activity does
+the sequence show?
+Overall, the sequence
+shows a transition from
+standing to sitting
+Does this person fall?
+No, the person sits down
+steadily. The gravity center
+is above the floor, meaning
+they likely sit on a chair or
+similar support.
+Pose
+Point
+Cloud
+(b) Fine-grained reasoning
+RadarLLM A person jumps up, waving their arms.
+mmExpert A person is quickly jumping up.
+Ours
+A person jumps from a stationary
+stance, spreading their arms and legs
+outward while keeping the torso
+straight, and pulls their limbs back to
+the starting pose.
+Q & A with reasoning
+How can you tell that the
+person is doing jumping jacks
+rather than simply stretching
+their arms?
+The sequence shows rapid
+lateral arm movements
+coordinated with the opening
+and closing of the legs,
+together with repeated
+vertical body motion. In
+contrast, arm stretching
+mainly involves slower upper-
+body motion without
+synchronized lower-body
+dynamics. These coordinated
+whole-body patterns indicate
+jumping jacks rather than
+simple arm stretching.
+Figure 4: Qualitative results on mmMind-Bench. (a) mmMind captures the transition from standing to sitting and maintains
+consistent answers across dialogue turns. (b) It distinguishes jumping jacks from arm stretching using rapid arm motion,
+coordinated arm-leg movement, and repeated vertical motion. Synchronized 3D poses are shown only for visualization.
+Qualitative Results
+Figure 4 shows that mmMind captures more fine-grained
+body states and motion evolution than RadarLLM and mm-
+Expert. In Fig. 4(a), the baselines recognize a general down-
+ward or sitting motion, whereas mmMind describes the tran-
+sition from an upright stance to a stable seated posture, in-
+cluding the gradual lowering of the body and knee flexion. Its
+responses also remain consistent across dialogue turns, cor-
+rectly identifying the initial state, summarizing the overall
+transition, and distinguishing controlled sitting from falling.
+In Fig. 4(b), all methods recognize a jumping motion, but
+only mmMind describes the coordinated opening and closing
+of both the arms and legs. When asked to distinguish jumping
+jacks from arm stretching, it grounds the answer in rapid
+lateral arm motion, synchronized lower-body dynamics, and
+repeated vertical body movement. These examples illustrate
+that the learned radar tokens support both detailed behavior
+description and context-dependent reasoning over temporal
+observations.
+Ablation Study
+We ablate the key components of mmMind while keeping the
+language backbone, data splits, and instruction-tuning proto-
+col unchanged. w/o Pose Pretraining removes Stage-I pose-
+guided pretraining and learns the radar encoder only through
+subsequent language supervision. w/o Auxiliary Kinematic
+Losses retains pose pretraining with the joint-position loss,
+but removes the global-velocity, local joint-velocity, and
+bone-length constraints. w/o Temporal Encoder removes the
+radar-side temporal Transformer while retaining the ordered
+frame tokens provided to the LLM. w/ VQ Tokens replaces the
+continuous frame-level representations with discrete codes
+learned by a VQ-VAE.
+As shown in Table 2, removing pose-guided pretraining
+causes the largest degradation across all tasks, reducing cap-
+tioning, single-turn QA, multi-turn QA, and unseen-action
+Table 2: Ablation results on mmMind-Bench. Captioning
+is evaluated by BERTScore; the remaining columns report
+accuracy. All metrics are on a 0–100 scale.
+Captioning Question Answering Unseen
+Variant BERT ↑ Single ↑ Multi ↑ Acc. ↑
+No pose pretrain. 69.8 68.6 63.9 69.4
+No aux. kin. losses 84.1 85.0 79.1 86.3
+No temporal enc. 77.5 81.2 73.8 73.1
+VQ tokens 76.6 79.4 73.5 81.9
+Full model 86.8 89.2 84.7 91.2
+accuracy by 17.0, 20.6, 20.8, and 21.8 points, respectively.
+This result suggests that language supervision alone is in-
+sufficient to organize sparse radar observations into effective
+behavior representations.
+Removing the auxiliary kinematic losses produces smaller
+but consistent drops of 2.7–5.6 points. The larger reduc-
+tions on multi-turn QA and unseen-action recognition indi-
+cate that velocity and bone-length constraints complement
+joint-position supervision by preserving motion dynamics
+and skeletal structure. Removing the temporal encoder de-
+creases multi-turn QA by 10.9 points and unseen-action ac-
+curacy by 18.1 points, highlighting the importance of cross-
+frame modeling for temporal reasoning and generalization.
+Finally, replacing continuous representations with VQ to-
+kens reduces performance by 9.3–11.2 points across tasks,
+supporting the benefit of avoiding early quantization when
+encoding fine-grained kinematic variations.
+Limitations and Conclusion
+Limitations and future work. mmMind remains less re-
+liable for estimating precise quantities such as speed, turn-
+ing angle, and repetition count, especially under sparse re-
+flections or partial motion cycles. Future work will explore
+physics-aware reinforcement learning with verifiable radar-
+derived rewards to improve numerical accuracy, physical
+consistency, and uncertainty calibration. Human-preference
+optimization may further improve the naturalness and help-
+fulness of the model’s reasoning and responses.
+In multi-person scenarios, the current system relies on
+an external clustering and tracking pipeline to separate the
+mixed radar point clouds into person-specific sequences, af-
+ter which each sequence is processed independently by mm-
+Mind. Consequently, its performance depends on the accu-
+racy and temporal consistency of the preceding clustering
+and tracking results, particularly when individuals are close
+to each other or interact. Future work will investigate end-to-
+end multi-person radar point-cloud understanding that jointly
+performs person separation, tracking, behavior understand-
+ing, and interaction reasoning.
+Conclusion. We presented mmMind, a radar-language
+agent that learns continuous kinematic tokens from sparse
+temporal mmWave observations through training-only pose
+supervision. We also introduced mmMind-Bench, a large-
+scale real-world radar-language benchmark with synchro-
+nized 3D poses, fine-grained behavior descriptions, spatio-
+temporal QA, and multi-turn dialogues. Together, they
+demonstrate the potential of mmWave sensing as a privacy-
+friendly perceptual interface for human-centered agents.
+Acknowledgments
+This work was supported by the Beijing Natural Science
+Foundation (International Scientists Project) under Grant
+No. IS26037. We thank Jiazun Chen of ByteDance Seed for
+valuable discussions on multimodal large language models
+and related research directions. We also thank all volunteers
+who assisted with data collection. We acknowledge Yingbo
+Cloud for providing computational resources that supported
+model training and evaluation. We thank Peking University’s
+New Yanyuan Campus for providing experimental facilities
+and venue support for data collection.
+Appendix
+This appendix provides additional details of mmMind and
+mmMind-Bench. RGB-D videos and 3D poses are used only
+for language annotation or training-time supervision; all re-
+ported inference results use radar observations alone.
+A mmWave Point Cloud Generation
+mmWave point clouds provide the physical input to
+mmMind-Bench, and their quality determines how much
+posture and motion information is available to downstream
+models. Conventional radar processing often produces sparse
+human reflections and multipath-induced ghost points in in-
+door environments. To improve point-cloud quality, we adopt
+our prior processing methods: ETCM-CFAR (Yang et al.
+2025b) for recovering weak human reflections and AoA–
+AoD consistency checking (Zhang et al. 2026a) for suppress-
+ing multipath artifacts. As illustrated in Fig. 5, the resulting
+point clouds contain denser and cleaner human reflections
+than those produced by conventional processing.
+Point-cloud formation. For each radar frame, raw mea-
+surements are organized as a radar cube over fast time, slow
+time, and antenna channels. Range and Doppler FFTs are first
+applied to obtain Range–Doppler representations, followed
+by target detection and angle estimation. Each detected re-
+flection is converted into a 4D radar point,
+pi = (xi, yi, zi, vi), (11)
+where (xi, yi, zi) denotes its 3D location and vi denotes
+its radial velocity.
+Using calibrated extrinsic parameters, radar points are
+transformed from the sensor coordinate system into a unified
+room-level world coordinate system. The ground plane is de-
+fined as the x-y plane and the vertical direction as the z-axis.
+Consequently, x and y describe the horizontal location of a
+reflection in the environment, while z represents its absolute
+height. This calibration provides consistent spatial represen-
+tations across different radar placements and environments.
+The transformed points are then used for subsequent process-
+ing and radar-language modeling.
+Why point clouds instead of dense radar representations.
+Dense radar heatmaps and high-dimensional radar cubes pre-
+serve rich low-level signal responses, but they are highly
+redundant for human behavior understanding. Human reflec-
+tions occupy only a small portion of the sensing volume,
+while most cells represent empty space, static background,
+clutter, or noise. These dense representations therefore re-
+quire substantial storage and computation for information
+that is often unrelated to human motion.
+Moreover, although radar cubes encode range, Doppler,
+azimuth, and elevation, these physical properties remain im-
+plicitly distributed over a dense grid. It is therefore difficult
+to directly associate individual reflections with their 3D lo-
+cations, velocities, and underlying kinematic structures.
+In contrast, each radar point explicitly represents a physical
+reflection with its 3D location and radial velocity. Temporal
+radar point clouds thus provide a compact 4D representation
+that naturally aligns with human kinematics and facilitates
+Conventional Method Our Method
+Figure 5: Comparison of human point clouds generated by
+conventional processing and the adopted pipeline. The latter
+recovers denser human reflections while reducing multipath-
+induced artifacts.
+language-based behavior understanding. We therefore adopt
+temporal radar point clouds as the primary representation in
+mmMind-Bench.
+Density enhancement with ETCM-CFAR. Conventional
+spatial CFAR estimates the noise level of a Range–Doppler
+bin from neighboring reference cells. Although suitable for
+distant point targets, this assumption can be problematic for
+short-range human sensing. A human body is an extended
+target occupying multiple adjacent bins, and strong torso
+reflections may enter the reference region and increase the
+estimated noise level. As a result, weaker reflections from
+the arms, legs, and other body parts can be suppressed by an
+excessively high detection threshold, producing sparse and
+incomplete point clouds.
+We address this issue using Extended Target Clutter Map
+CFAR (ETCM-CFAR) (Yang et al. 2025b). Rather than es-
+timating noise from spatially adjacent cells, ETCM-CFAR
+maintains an independent temporal noise estimate for each
+Range–Doppler bin. Given the current power st, estimated
+noise power n̂t, and threshold factor α, a target is detected
+when
+st > αn̂t. (12)
+For bins without a detected target, the clutter map is up-
+dated using an exponentially weighted moving average:
+n̂t+1 = (1 − ω)n̂t + ωst. (13)
+The clutter map is initialized using target-free frames,
+and the ETCM-CFAR parameters follow the original
+method (Yang et al. 2025b) without additional tuning. By
+avoiding contamination from neighboring body reflections,
+ETCM-CFAR reduces energy masking and recovers weak
+anatomical reflections that would otherwise be discarded.
+Multipath suppression via AoA–AoD consistency. In-
+door environments introduce dynamic multipath through
+person–environment and inter-person reflections. These indi-
+rect paths may have range and Doppler characteristics similar
+to direct human echoes and are therefore difficult to remove
+using static-background subtraction alone.
+We suppress multipath-induced ghost points using the geo-
+metric consistency between the Angle of Arrival (AoA) and
+Wall
+𝜽
+𝝓
+𝜽
+𝝓
+Direct path（𝜽 = 𝝓） Multipath（ 𝜽 ≠ 𝝓 ）
+𝑨𝒐𝑨: 𝜽
+𝑨𝑶𝑫: 𝝓
+Figure 6: Multipath suppression using Angle of Arrival
+(AoA) and Angle of Departure (AoD) consistency. Direct re-
+flections exhibit consistent angular estimates, whereas multi-
+bounce paths introduce angular discrepancies.
+1D & 2D FFT ETCM-CFAR
+AoA-AoD
+Checking
+Angle-FFT
+1D & 2D FFT CA-CFAR Angle-FFT
+Figure 7: Overview of the adopted mmWave point-cloud gen-
+eration pipeline. ETCM-CFAR recovers weak human reflec-
+tions compared with conventional CA-CFAR, while AoA–
+AoD consistency checking suppresses multipath-induced
+ghost points. Together, they produce denser and cleaner point
+clouds for radar-language modeling.
+Angle of Departure (AoD) (Zhang et al. 2026a). For each
+detected Range–Doppler bin, the azimuth AoA is estimated
+from the receiver array, while the azimuth AoD is estimated
+from the virtual transmitter array using digital beamforming.
+As illustrated in Fig. 6, a direct human reflection preserves
+a consistent propagation direction between transmission and
+reception, resulting in similar AoA and AoD estimates. In
+contrast, multi-bounce paths change direction through en-
+vironmental reflections and therefore produce inconsistent
+angular estimates.
+We retain detections satisfying
+θ̂AoA − θ̂AoD < 2◦
+, (14)
+where the threshold is selected empirically. Only angle-
+consistent detections are retained for elevation estimation
+and Cartesian reconstruction.
+As summarized in Fig. 7, ETCM-CFAR and AoA–AoD
+consistency checking improve point-cloud generation from
+complementary perspectives. ETCM-CFAR recovers weak
+body reflections and increases point density, whereas AoA–
+AoD consistency checking removes multipath-induced ghost
+points. The resulting point clouds provide more complete
+and reliable spatial and kinematic evidence for subsequent
+radar-language modeling.
+B mmMind-Bench Dataset Details
+B.1 Data Collection and Sensor Setup
+mmMind-Bench contains 17.9 hours of synchronized multi-
+modal recordings from 23 participants, including 17 males
+and 6 females, aged 21–62. The data were collected in
+seven real-world indoor environments: a living room, bed-
+room, pantry, kitchen, meeting room, office, and open lounge.
+These environments exhibit diverse room layouts, furniture
+arrangements, sensing distances, and background clutter,
+providing substantial variation in both human motion and
+radar propagation conditions.
+Parameter CAL60S244-IB CAL77S244-IB
+Frequency 60 GHz 77 GHz
+Antenna 4 Tx × 4 Rx 4 Tx × 4 Rx
+Frame rate 15 FPS 15 FPS
+Duration 13.4 h 4.5 h
+Table 3: mmWave radar devices used in mmMind-Bench.
+We use two commercial mmWave radar devices from Cal-
+terah (Calterah Semiconductor Technology Co., Ltd. 2026):
+the 60-GHz CAL60S244-IB and the 77-GHz CAL77S244-
+IB. Both devices contain four transmitting and four receiving
+antennas and operate at 15 frames per second. The 60-GHz
+radar contributes 13.4 hours of recordings and serves as the
+primary sensing device because it is designed for indoor sens-
+ing applications. The 77-GHz radar contributes the remain-
+ing 4.5 hours, introducing additional variation in sensing
+frequency and hardware characteristics. Table 3 summarizes
+the sensing configuration.
+An Orbbec Femto Bolt RGB-D camera operating at 30
+FPS provides synchronized color and depth references for
+dataset annotation and 3D pose acquisition. The Femto Bolt
+is compatible with the Azure Kinect software stack, and the
+3D skeletons are extracted using Microsoft’s official Azure
+Kinect Body Tracking SDK rather than a separately trained
+pose-estimation model. The RGB-D observations and esti-
+mated 3D poses are used only for benchmark construction,
+annotation verification, and training-time pose supervision.
+At inference time, mmMind requires only the mmWave radar
+point-cloud sequence and does not use RGB-D observations
+or pose estimates.
+All data collection was conducted under institutional re-
+view board approval, and informed consent was obtained
+from every participant before recording.
+B.2 Radar Configuration
+The mmWave sensing data are collected using commercial
+FMCW radars with four transmitting and four receiving an-
+tennas. The dataset includes both 60-GHz and 77-GHz de-
+vices, which share the same acquisition configuration. The
+radar bandwidth is 3.5 GHz, and each frame contains 512
+chirps under TDM operation. Each transmit antenna con-
+tributes 128 chirps, resulting in an effective Doppler sam-
+pling interval of 320 µs. The raw range dimension contains
+256 FFT bins.
+Category Behaviors
+Daily activities (11) Walking, sitting, mopping, bending, lying down, using a phone, crouching, using a laptop, drinking, sweep-
+ing, and goose stepping.
+Fitness activities (7) Jumping jacks, Tai Chi, squatting, jogging, sit-ups, boxing, and rope skipping.
+Falls (4) Forward fall, backward fall, side fall, and falling against a wall.
+Upper-body gestures (5) Left–right motion, push–pull motion, circular motion, up–down motion, and waving.
+Table 4: Behavior categories in mmMind-Bench. Category names are normalized from the labels used during data collection.
+For both radar frequencies, the shared bandwidth and
+range FFT configuration provide a range resolution of 5.12
+cm and an unambiguous range of 6.51 m. Although the con-
+figured chirp sweep bandwidth is 3.5 GHz, the effective sam-
+pled bandwidth is narrower than the configured bandwidth,
+resulting in a range resolution of 5.12 cm. Due to the different
+carrier wavelengths, the velocity resolution is 0.061 m/s and
+0.047 m/s for the 60-GHz and 77-GHz radars, respectively,
+with corresponding unambiguous radial velocity ranges of
+±3.87 m/s and ±3.02 m/s.
+Parameter 60 GHz 77 GHz
+Bandwidth 3.5 GHz
+Antenna configuration 4 Tx × 4 Rx
+Frame rate 15 FPS
+Chirps per frame 512
+Chirps per Tx 128
+Chirp period 80 µs
+Effective Doppler chirp period 320 µs
+Range FFT points 256
+Range resolution 0.0512 m 0.0512 m
+Unambiguous range 6.5059 m 6.5059 m
+Velocity resolution 0.0605 m/s 0.0471 m/s
+Unambiguous radial velocity ±3.8740 m/s ±3.0190 m/s
+Table 5: Radar acquisition and sensing parameters used in
+mmMind-Bench. Parameters shared by both radar devices
+are shown in rows spanning both columns, while frequency-
+dependent sensing characteristics are reported separately.
+The radar operates at 15 FPS, providing sufficient temporal
+resolution for capturing human motion dynamics. The shared
+acquisition parameters and the sensing characteristics are
+summarized in Table 5.
+B.3 Behavior Categories
+The benchmark covers 27 behavior categories spanning daily
+activities, physical exercises, falls, and upper-body gestures.
+The daily-activity subset includes both whole-body loco-
+motion and common indoor interactions. The fitness subset
+contains periodic and articulated exercise motions. The fall
+subset covers different falling directions and interactions with
+a wall, while the gesture subset focuses on localized upper-
+body movements. The complete action vocabulary is listed
+in Table 4.
+The categories differ substantially in spatial extent and
+temporal structure. For example, walking and jogging in-
+volve global body translation, whereas waving and circular
+motions are dominated by localized limb movements. Other
+categories, such as sitting, lying down, and falling, require
+recognizing posture transitions and their temporal ordering.
+This diversity supports the evaluation of both coarse behavior
+recognition and fine-grained kinematic understanding.
+B.4 Temporal Synchronization and Spatial
+Calibration
+The radar and RGB-D streams are synchronized using ac-
+quisition timestamps. Radar measurements are recorded at
+15 FPS, while RGB-D frames are recorded at 30 FPS. Dur-
+ing preprocessing, each radar frame serves as the temporal
+reference. The RGB-D frames and 3D pose observations are
+temporally interpolated or matched according to the radar
+timestamps, producing aligned visual and kinematic refer-
+ences for each radar frame.
+The sensing devices are calibrated into a shared room-
+level world coordinate system. The RGB-D camera pose is
+obtained using a checkerboard-based calibration procedure.
+Radar position and orientation are calibrated using the au-
+tomatic location-attribute calibration approach introduced in
+LoCal (Zhang et al. 2024a). The resulting extrinsic transfor-
+mations map radar point clouds, RGB-D observations, and
+3D poses into the same physical coordinate system.
+In this coordinate system, the x-y plane coincides with
+the room ground plane, and the z-axis points vertically up-
+ward. Therefore, x and y encode the horizontal location of
+a radar reflection within the room, while z represents its
+height above the ground. This world-coordinate representa-
+tion preserves absolute spatial relations, supports consistent
+alignment with 3D poses, and enables questions involving
+movement direction, trajectory, and relative position.
+B.5 Clip Construction and Data Splits
+We first partition the continuous recordings into training,
+validation, and test sets, and then perform temporal segmen-
+tation independently within each partition. Each recording
+is segmented into 5-second clips. Since the radar operates
+at 15 FPS, each clip contains 75 radar frames and approx-
+imately 150 synchronized RGB-D frames. Performing the
+partitioning before clip segmentation ensures that tempo-
+rally overlapping clips never appear across different splits,
+preventing potential temporal leakage.
+The benchmark adopts participant-, environment-, and
+session-disjoint partitions. Specifically, participants, record-
+ing environments, and continuous recording sessions as-
+signed to the validation and test sets are not included in the
+training set. This design minimizes leakage from participant-
+specific motion patterns, environment-dependent propaga-
+tion characteristics, and temporally correlated recordings.
+Split Participants Environments Duration
+Train 17 5 14.3 h
+Validation 3 1 1.8 h
+Test 3 1 1.8 h
+Total 23 7 17.9 h
+Table 6: Statistics of the mmMind-Bench data partitions.
+Partitioning is performed before temporal clip segmentation.
+For unseen-action evaluation, complete behavior cate-
+gories are excluded from all model-development stages.
+Specifically, all radar clips and their associated pose, cap-
+tion, question-answer, and dialogue annotations from the
+held-out categories are removed from radar encoder pre-
+training, radar–language alignment, instruction tuning, and
+hyperparameter selection. The model must therefore recog-
+nize unseen behaviors through transferable kinematic repre-
+sentations and language knowledge rather than memorization
+of previously observed action categories.
+C Model Architecture and Training Details
+C.1 Architecture Overview
+Given a 5-second radar clip, the model receives a temporal
+point-cloud sequence
+X ∈ RT ×N×4
+, (15)
+where T = 75 is the number of radar frames, N = 150
+is the maximum number of retained points per frame, and
+each point is represented by its 3D position and radial veloc-
+ity, (x, y, z, v). Frames containing fewer than 150 detections
+are zero-padded with a corresponding binary mask, whereas
+frames containing more points are randomly subsampled dur-
+ing training.
+The radar encoder first embeds each point into a 256-
+dimensional feature. A separate two-layer MLP maps the
+3D coordinates to spatial positional embeddings. Three
+spatial Transformer layers then model interactions among
+points within each frame. A learnable query attends to the
+point features and aggregates each frame into a single 256-
+dimensional token. The resulting frame-token sequence is
+processed by eight temporal Transformer layers with rotary
+positional embeddings, producing
+Y = Eradar(X) ∈ R75×256
+. (16)
+All spatial and temporal Transformer blocks use four atten-
+tion heads and a 1,024-dimensional feed-forward layer. The
+principal architectural settings are summarized in Table 7.
+C.2 Stage I: Pose-Guided Radar Pretraining
+The first stage trains the radar encoder using synchronized
+3D human poses. A lightweight regression head maps ev-
+ery radar frame token to the 3D coordinates of J = 17
+body joints. The pose head consists of LayerNorm, a 256-
+dimensional linear layer with GELU activation, and a final
+linear layer producing 17 × 3 coordinates.
+Component Configuration
+Input point feature (x, y, z, v)
+Radar frames per clip 75
+Points per frame 150
+Radar token dimension 256
+Spatial Transformer layers 3
+Temporal Transformer layers 8
+Attention heads 4
+Feed-forward dimension 1,024
+Pose joints 17
+Language backbone Qwen3-8B
+Language hidden dimension 4,096
+Projector 256→4096→4096
+Table 7: Architecture configuration of mmMind.
+The radar encoder is optimized using
+Lkin = Lp + 5Lr + 10Ll + 2Lb, (17)
+where Lp is the joint-position loss, Lr supervises global
+root motion, Ll supervises root-relative joint motion, and Lb
+preserves bone-length consistency. All terms use L1-based
+supervision except that bone consistency is computed from
+the Euclidean lengths of connected joints.
+To emphasize articulated motion, the position and local-
+motion losses use joint-dependent weights. Torso joints have
+weight 1, shoulders and hips have weight 2, elbows and knees
+have weight 4, and distal joints, including wrists and ankles,
+have weight 8. Inaddition, the final ten frames receivelinearly
+increasing temporal weights from 1 to 5. This emphasizes the
+sequence-end body state, which is particularly important for
+streaming behavior analysis.
+During radar pretraining, the point clouds and synchro-
+nized poses undergo the same spatial augmentation. Each
+augmentation is applied independently with probability 0.5
+and includes isotropic scaling in [0.8, 1.2], rotation around
+the vertical axis in [−π, π], horizontal translation within 5
+cm, and Gaussian coordinate jitter with standard deviation
+0.01 m. Padded points remain masked after augmentation.
+We train this stage with AdamW using a batch size of 96,
+an initial learning rate of 6 × 10−4
+, and weight decay 10−2
+.
+The first three epochs use linear warm-up, followed by cosine
+annealing with warm restarts (T0 = 10, Tmult = 2, and
+ηmin = 10−6
+). Gradients are clipped to a maximum norm
+of 1.0. Training uses bfloat16 mixed precision and gradient
+checkpointing. We set the maximum number of epochs to
+500 and apply early stopping with a patience of 100 epochs
+according to validation MPJPE. The checkpoint with the
+lowest validation MPJPE is retained. This stage is trained on
+an NVIDIA RTX 4090.
+After pretraining, the pose regression head is discarded.
+Only the 256-dimensional radar encoder is retained, and no
+pose input is required during subsequent training or infer-
+ence.
+C.3 Radar–Language Interface
+The radar encoder produces one token for each of the 75 radar
+frames. A two-layer projector maps these tokens from the
+Setting Stage I: Pose pretraining Stage II: Alignment Stage III: Instruction tuning
+Trainable modules Radar encoder and pose head Projector Projector and Qwen3-8B LoRA
+Supervision 17-joint 3D poses English/Chinese motion descrip-
+tions
+Captions, single-turn QA, and
+multi-turn dialogues
+Batch size 96 8 4
+Gradient accumulation 1 4 8
+Effective batch size 96 32 32
+Learning rate 6 × 10−4
+1 × 10−3
+5×10−5
+projector; 2×10−5
+LoRA
+Training epochs Up to 500 with early stopping 8 10
+Maximum text length – 256 2,048
+Checkpoint criterion Validation MPJPE Validation loss Validation loss
+Hardware NVIDIA RTX 4090 NVIDIA A800 NVIDIA A800
+Table 8: Training configuration of the three-stage optimization procedure. The radar encoder is frozen after Stage I.
+radar feature space into the 4,096-dimensional embedding
+space of Qwen3-8B:
+R = P(Y) ∈ R75×4096
+. (18)
+The projector consists of a linear layer, LayerNorm, GELU
+activation, a second linear layer, and an output LayerNorm.
+To preserve the temporal correspondence between lan-
+guage references and radar observations, we construct a
+frame-indexed prefix:
+Frame 0: <|image_pad|> Frame
+1: <|image_pad|> ...Frame 74:
+<|image_pad|>
+Each placeholder embedding is replaced by the projected
+radar token from the corresponding frame. The prefix ad-
+ditionally states that the sequence contains 75 radar tokens
+sampled at 15 FPS. Radar-prefix positions are excluded from
+the language-modeling loss.
+C.4 Stage II: Radar–Language Alignment
+The second stage aligns the pretrained radar tokens with
+the language embedding space. Both the radar encoder and
+Qwen3-8B are frozen, and only the projector is optimized.
+Each radar clip is paired with four description types: concise
+English, detailed temporal English, concise Chinese, and de-
+tailed temporal Chinese. The detailed descriptions empha-
+size posture, limb movement, trajectory, speed, and temporal
+evolution.
+We use the Qwen chat template and compute the autore-
+gressive cross-entropy loss only over assistant-response to-
+kens. System prompts, user prompts, radar-prefix tokens, and
+padding positions are masked from the loss.
+The projector is trained for eight epochs using AdamW
+with learning rate 10−3
+, weight decay 10−2
+, and ϵ = 10−6
+.
+The per-device batch size is 8, with four gradient accumu-
+lation steps, resulting in an effective batch size of 32. The
+maximum text sequence length is 256 tokens, gradients are
+clipped to a maximum norm of 1.0, and all model computa-
+tion uses bfloat16 precision. Qwen3-8B uses FlashAttention-
+2 when available. The best projector is selected according to
+validation language-modeling loss. This stage is trained on
+an NVIDIA A800.
+C.5 Stage III: Instruction Tuning
+The final stage performs multimodal instruction tuning us-
+ing captions, single-turn question answering, and multi-turn
+dialogues. The radar encoder remains frozen. The projector
+is initialized from Stage II and continues to be optimized,
+while Qwen3-8B is adapted using LoRA.
+LoRA modules are inserted into all attention projec-
+tions (q_proj, k_proj, v_proj, and o_proj) and
+feed-forward projections (gate_proj, up_proj, and
+down_proj). We use rank r = 64, scaling parameter
+α = 128, and dropout 0.05. All original Qwen3-8B pa-
+rameters remain frozen.
+Each clip contains four bilingual captions, 13 single-turn
+QA pairs, and four multi-turn dialogues. An annotation is
+randomly selected from the corresponding task type during
+training, while caption prompts and system instructions are
+sampled from prompt pools to reduce dependence on fixed
+question formulations.
+Single-turn examples supervise only the assistant re-
+sponse. For multi-turn examples, the full conversation history
+is supplied as context, while the loss is computed over every
+assistant response in the dialogue. User turns, system instruc-
+tions, radar-prefix tokens, and padding tokens are excluded
+from the loss. Dynamic padding is applied independently
+within each batch. The maximum sequence length is 2,048
+tokens.
+We jointly optimize the projector and LoRA parameters
+using AdamW with separate learning rates:
+ηproj = 5 × 10−5
+, ηLoRA = 2 × 10−5
+. (19)
+The batch size is 4 with eight gradient accumulation steps,
+yielding an effective batch size of 32. Training lasts for ten
+epochs and uses a linear learning-rate schedule with a 5%
+warm-up ratio. Gradients are clipped to a maximum norm of
+0.5. Training uses bfloat16 precision and FlashAttention-2 on
+an NVIDIA A800. The checkpoint with the lowest validation
+loss is used for evaluation.
+Software and hardware environment. Stage-I radar-
+encoder pretraining was conducted on a cloud server
+equipped with an Intel Xeon Gold 6430 CPU, 1.0 TiB of
+system memory, and an NVIDIA GeForce RTX 4090 GPU
+with 24 GB of GPU memory. The server ran Ubuntu 22.04.5
+LTS with NVIDIA driver 580.76.05. The training environ-
+ment used PyTorch 2.6.0, compiled with CUDA 12.4 and
+cuDNN 9.1.0. Although the installed NVIDIA driver sup-
+ports CUDA versions up to 13.0, all experiments in this envi-
+ronment used the CUDA 12.4 runtime bundled with PyTorch.
+Stage-II radar–language alignment and Stage-III instruction
+tuning were performed on NVIDIA A800 GPUs.
+D Long-term Behavior Analysis Agent
+Although mmMind is trained on standardized 5-second clips,
+real-world behavior understanding often requires reasoning
+over longer recordings. Directly processing long sequences
+is inefficient because the number of radar tokens increases
+with recording duration.
+To extend mmMind to long-horizon scenarios, we build a
+hierarchical behavior analysis agent that combines clip-level
+radar perception with temporal memory reasoning. The agent
+first divides a long radar recording into timestamped clips
+and applies mmMind to generate concise radar-grounded
+descriptions. These descriptions form a temporal memory
+that can be organized and queried by a large language model.
+Given a user query, the language model first reasons over
+the temporal memory. When the stored descriptions are in-
+sufficient for fine-grained questions, the agent retrieves the
+relevant radar clips and invokes mmMind again with a query-
+specific instruction. This design separates long-term tem-
+poral reasoning from radar perception: the language model
+manages temporal organization and retrieval, while mmMind
+remains responsible for interpreting radar observations.
+D.1 Temporal Memory Construction
+A long recording is segmented into the same 5-second clips
+used in mmMind-Bench. For each clip X(i)
+, mmMind gen-
+erates a radar-grounded caption ci describing observable be-
+haviors, posture changes, motion directions, and temporal
+transitions.
+Each memory entry is represented as
+mi = (i, tstart
+i , tend
+i , ci). (20)
+The complete recording is stored as an ordered temporal
+memory:
+M = {m1, m2, . . . , mN }. (21)
+The temporal memory enables efficient long-range rea-
+soning without requiring the entire radar sequence to be pro-
+cessed simultaneously.
+D.2 Query-driven Radar Re-perception
+For a given query q, the language model analyzes the tem-
+poral memory and jointly identifies potentially relevant clips
+and generates a clip-specific radar instruction for each re-
+trieved clip:
+π(q, M) =
+
+(i, qi) | i ∈ K , (22)
+where K is the set of retrieved clip indices, qi is the radar
+instruction for clip i generated from the original query and its
+temporal context, and π denotes the query-planning process.
+For questions requiring detailed motion evidence, the se-
+lected clips are re-analyzed by mmMind:
+ri = mmMind(X(i)
+, qi), i ∈ K. (23)
+The final response integrates temporal context from mem-
+ory with detailed radar perception results. This retrieval-
+based design allows the system to scale to long recordings
+while allocating radar computation only to query-relevant
+intervals.
+References
+Adib, F.; Mao, H.; Kabelac, Z.; Katabi, D.; and Miller, R. C.
+2015. Smart Homes that Monitor Breathing and Heart Rate.
+In Proceedings of the 33rd Annual ACM Conference on
+Human Factors in Computing Systems, CHI ’15, 837–846.
+New York, NY, USA: Association for Computing Machinery.
+ISBN 9781450331456.
+Bai, S.; Cai, Y.; Chen, R.; Chen, K.; Chen, X.; Cheng, Z.;
+Deng, L.; Ding, W.; Gao, C.; Ge, C.; Ge, W.; Guo, Z.; Huang,
+Q.; Huang, J.; Huang, F.; Hui, B.; Jiang, S.; Li, Z.; Li, M.;
+Li, M.; Li, K.; Lin, Z.; Lin, J.; Liu, X.; Liu, J.; Liu, C.;
+Liu, Y.; Liu, D.; Liu, S.; Lu, D.; Luo, R.; Lv, C.; Men, R.;
+Meng, L.; Ren, X.; Ren, X.; Song, S.; Sun, Y.; Tang, J.; Tu,
+J.; Wan, J.; Wang, P.; Wang, P.; Wang, Q.; Wang, Y.; Xie,
+T.; Xu, Y.; Xu, H.; Xu, J.; Yang, Z.; Yang, M.; Yang, J.;
+Yang, A.; Yu, B.; Zhang, F.; Zhang, H.; Zhang, X.; Zheng,
+B.; Zhong, H.; Zhou, J.; Zhou, F.; Zhou, J.; Zhu, Y.; and
+Zhu, K. 2025. Qwen3-VL Technical Report. arXiv preprint
+arXiv:2511.21631.
+Calterah Semiconductor Technology Co., Ltd. 2026. Cal-
+terah: mmWave Radar Sensor Solutions. https://www.
+calterah.com/en. Accessed: 2026-08-04.
+Cao, H.; Yu, J.; Kong, H.; Chen, Y.-C.; Zhu, Y.; Kong, L.;
+and Tang, F. 2025. OccMesh: Occlusion-aware multi-user
+3D human mesh reconstruction using mmWave signals. Pro-
+ceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies, 9(3): 1–22.
+Cao, Q.; Xue, H.; Liu, T.; Wang, X.; Wang, H.; Zhang, X.; and
+Su, L. 2024. mmCLIP: Boosting mmWave-based Zero-shot
+HAR via Signal-Text Alignment. In Proceedings of the 22nd
+ACM Conference on Embedded Networked Sensor Systems,
+SenSys ’24, 184–197. New York, NY, USA: Association for
+Computing Machinery. ISBN 9798400706974.
+Chang, Z.; Zhang, F.; Ma, X.; Wang, P.; Chen, W.; Zhang,
+D.; Jouaber, B.; and Zhang, D. 2024. Mmecare: Enabling
+fine-grained vital sign monitoring for emergency care with
+handheld mmwave radars. Proceedings of the ACM on Inter-
+active, Mobile, Wearable and Ubiquitous Technologies, 8(4):
+1–24.
+Chen, X.; and Zhang, X. 2023. Rf genesis: Zero-shot gener-
+alization of mmwave sensing through simulation-based data
+synthesis and generative diffusion models. In Proceedings of
+the 21st ACM Conference on Embedded Networked Sensor
+Systems, 28–42.
+Fan, J.; Rao, H.; Zhang, J.; Yang, J.; and Xie, L. 2026a.
+mmpred: Radar-based human motion prediction in the dark.
+In Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 40, 3777–3785.
+Fan, J.; Zhou, Y.; Yang, Y.; Cui, X.; Zhang, J.; Xie, L.;
+Yang, J.; Lu, C. X.; and Ding, F. 2026b. M4human: A large-
+scale multimodal mmwave radar benchmark for human mesh
+reconstruction. In Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition, 42836–42846.
+Feng, Z.; Yang, S.; Duan, B.; Yang, W.; and Wang, J. 2026.
+EM-KD: distilling efficient multimodal large language model
+with unbalanced vision tokens. In Proceedings of the AAAI
+Conference on Artificial Intelligence, volume 40, 21111–
+21119.
+Fu, Z.; Cheng, D.; Zhang, L.; Huang, W.; Chen, Z.; and Wu,
+H. 2026. DeepSenseMoE: Harnessing Power of Time Series
+Foundation Models for Few-Shot Human Activity Recogni-
+tion. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 40, 292–299.
+Gong, C.; Liang, B.; Gao, W.; and Xu, C. 2025. Data can
+speak for itself: Quality-guided utilization of wireless syn-
+thetic data. In Proceedings of the 23rd Annual International
+Conference on Mobile Systems, Applications and Services,
+209–222.
+Guo, Z.; Guendel, R. G.; Yarovoy, A.; and Fioranelli, F.
+2023. Point Transformer-Based Human Activity Recognition
+Using High-Dimensional Radar Point Clouds. In 2023 IEEE
+Radar Conference (RadarConf23), 1–6.
+Hong, Y.; Zhen, H.; Chen, P.; Zheng, S.; Du, Y.; Chen, Z.;
+and Wang, C. 2023. 3d-llm: Injecting the 3d world into
+large language models. In Advances in Neural Information
+Processing Systems (NeurIPS), volume 36, 20482–20494.
+Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.;
+Wang, L.; Chen, W.; et al. 2022. Lora: Low-rank adaptation
+of large language models. Iclr, 1(2): 3.
+Kim, Y.; Xu, X.; McDuff, D.; Breazeal, C.; and Park, H. W.
+2024. Health-LLM: Large Language Models for Health Pre-
+diction via Wearable Sensor Data. arXiv:2401.06866.
+Lai, Z.; Yang, J.; Xia, S.; Lin, L.; Sun, L.; Wang, R.; Liu,
+J.; Wu, Q.; and Pei, L. 2025. RadarLLM: Empowering
+Large Language Models to Understand Human Motion from
+Millimeter-Wave Point Cloud Sequence. arXiv:2504.09862.
+Li, W.; Zhou, J.; Xiong, J.; Xie, Y.; Wang, L.; Zhang, D.;
+and Zhang, D. 2025. Rethinking wifi-based angle estima-
+tion for robust passive indoor localization. Proceedings of
+the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies, 9(4): 1–28.
+Liang, B.; Gong, C.; Gao, W.; and Xu, C. 2026a. Wave2Body:
+Rethinking mmWave Human Pose Estimation as Radar-to-
+Body Token Translation. arXiv preprint arXiv:2607.18875.
+Liang, B.; Gong, C.; Wang, H.; Liu, Q.; Zhou, R.; Shao, F.;
+Wang, Y.; Gao, W.; Zhou, K.; Cui, G.; et al. 2026b. WiCom-
+pass: Oracle-driven Data Scaling for mmWave Human Pose
+Estimation. arXiv preprint arXiv:2602.18726.
+Liu, H.; Li, C.; Li, Y.; and Lee, Y. J. 2024. Improved Base-
+lines with Visual Instruction Tuning. In 2024 IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+(CVPR), 26286–26296.
+Liu, H.; Li, C.; Wu, Q.; and Lee, Y. J. 2023. Visual instruction
+tuning. In Proceedings of the 37th International Conference
+on Neural Information Processing Systems, NIPS ’23. Red
+Hook, NY, USA: Curran Associates Inc.
+Liu, Z.; He, S.; Liang, F.; Huang, C.; Zhong, S.; and Wu,
+K. 2026. mmJEPA-ECG: Cross-Posture Robust Contactless
+Electrocardiogram Monitoring via Millimeter Wave Radar
+Sensing. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 40, 38962–38970.
+Maaz, M.; Rasheed, H.; Khan, S.; and Khan, F. 2024. Video-
+ChatGPT: Towards Detailed Video Understanding via Large
+Vision and Language Models. In Ku, L.-W.; Martins, A.; and
+Srikumar, V., eds., Proceedings of the 62nd Annual Meeting
+of the Association for Computational Linguistics (Volume 1:
+Long Papers), 12585–12602. Bangkok, Thailand: Associa-
+tion for Computational Linguistics.
+Palipana, S.; Salami, D.; Leiva, L. A.; and Sigg, S.
+2021. Pantomime: Mid-Air Gesture Recognition with Sparse
+Millimeter-Wave Radar Point Clouds. Proc. ACM Interact.
+Mob. Wearable Ubiquitous Technol., 5(1).
+Shin, J.; Kim, J.; Ko, D.; and Choi, J. 2026. Can Language
+Models Understand mmWave Data? Benchmarking Large
+Language Models for mmWave Radar-Based Human Under-
+standing. In Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, 2208–2219.
+Singh, A. D.; Sandha, S. S.; Garcia, L.; and Srivastava, M.
+2019. RadHAR: Human Activity Recognition from Point
+Clouds Generated through a Millimeter-wave Radar. In Pro-
+ceedings of the 3rd ACM Workshop on Millimeter-Wave Net-
+works and Sensing Systems, mmNets ’19, 51–56. New York,
+NY, USA: Association for Computing Machinery. ISBN
+9781450369329.
+Van Den Oord, A.; Vinyals, O.; et al. 2017. Neural discrete
+representation learning. Advances in neural information pro-
+cessing systems, 30.
+Wang, J.; Li, W.; Zhou, J.; Xiong, J.; Wang, X.; Wang,
+Q.; Yao, Z.; Zhang, X.; Zhang, D.; and Zhang, D. 2025a.
+FreeBFI: enabling fine-grained BFI sensing with an arbitrary
+number of antennas. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies, 9(4): 1–32.
+Wang, P.; Yu, A.; Ma, X.; Zheng, R.; Dong, J.; Chang, Z.;
+Zhang, D.; Zeghlache, D.; and Zhang, D. 2025b. Wicg: In-
+body cardiac motion sensing based on a mix-medium wi-fi
+fresnel zone model. IEEE Transactions on Mobile Comput-
+ing, 24(10): 9524–9538.
+Xu, R.; Wang, X.; Wang, T.; Chen, Y.; Pang, J.; and Lin, D.
+2024. PointLLM: Empowering Large Language Models to
+Understand Point Clouds. In Computer Vision – ECCV 2024:
+18th European Conference, Milan, Italy, September 29–Oc-
+tober 4, 2024, Proceedings, Part XXV, 131–147. Berlin, Hei-
+delberg: Springer-Verlag. ISBN 978-3-031-72697-2.
+Xue, H.; Cao, Q.; Miao, C.; Ju, Y.; Hu, H.; Zhang, A.; and Su,
+L. 2023. Towards Generalized mmWave-based Human Pose
+Estimation through Signal Augmentation. In Proceedings of
+the 29th Annual International Conference on Mobile Com-
+puting and Networking, ACM MobiCom ’23. New York,
+NY, USA: Association for Computing Machinery. ISBN
+9781450399906.
+Xue, H.; Ju, Y.; Miao, C.; Wang, Y.; Wang, S.; Zhang, A.; and
+Su, L. 2021. mmMesh: Towards 3D real-time dynamic hu-
+man mesh construction using millimeter-wave. In Proceed-
+ings of the 19th annual international conference on mobile
+systems, applications, and services, 269–282.
+Yan, Y.; Yang, S.; Guo, X.; Wang, X.; Chow, W.; Shu, Y.;
+and He, S. 2025. mmExpert: Integrating Large Language
+Models for Comprehensive mmWave Data Synthesis and
+Understanding. In Proceedings of the Twenty-Sixth Interna-
+tional Symposium on Theory, Algorithmic Foundations, and
+Protocol Design for Mobile Networks and Mobile Comput-
+ing, MobiHoc ’25, 1–10. New York, NY, USA: Association
+for Computing Machinery. ISBN 9798400713538.
+Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.;
+Yu, B.; Gao, C.; Huang, C.; Lv, C.; et al. 2025a. Qwen3
+technical report. arXiv preprint arXiv:2505.09388.
+Yang, H.; Fan, Z.; Wang, Y.; Xiong, J.; Zhang, D.; Zhang,
+X.; Wang, J.; Zhang, F.; and Zhang, D. 2026a. Bridging the
+Resolution Gap: Cost-Effective Human Point Cloud Gener-
+ation via Low-Bandwidth mmWave Radar. Proceedings of
+the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies, 10(2): 1–26.
+Yang, H.; Fan, Z.; Xiong, J.; Zhang, D.; Zhang, X.; Han, Z.;
+Zhang, F.; and Zhang, D. 2026b. Omnipc: A generalizable
+point cloud generation pipeline for mmwave radar. In Pro-
+ceedings of the 2026 ACM/IEEE International Conference
+on Embedded Artificial Intelligence and Sensing Systems,
+291–304.
+Yang, H.; Zhang, D.; Zhang, X.; Xiong, J.; Fan, Z.; Ning,
+W.; Chen, W.; Zhang, F.; Han, Z.; and Zhang, D. 2025b.
+From Spatial Domain to Temporal Domain: Unleashing the
+Capability of CFAR for mmWave Point Cloud Generation.
+Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies, 9(2).
+Yao, Z.; Niu, K.; Wang, X.; Zheng, R.; Wang, J.; Zhang,
+D.; and Zhang, D. 2025. WiCaliper: Simultaneous material
+and 3D size sensing for everyday objects using WiFi. IEEE
+Journal on Selected Areas in Communications.
+Zhang, D. 2026. Towards Cognitive mmWave Agents: From
+Physical Sensing to Cognitive Computing. In Proceedings
+of the 24th Annual International Conference on Mobile Sys-
+tems, Applications and Services Companion, 154–155.
+Zhang, D.; Yin, Z.; Zhang, X.; Wang, J.; Yang, H.; Yao, Z.;
+Fan, Z.; Li, W.; and Zhang, D. 2026a. MuPose: Breaking the
+Scalability Barrier of mmWave Multi-User Pose Estimation
+in the Wild. In Proceedings of the 24th Annual International
+Conference on Mobile Systems, Applications and Services,
+622–636.
+Zhang, D.; Zhang, X.; Li, S.; Xie, Y.; Li, Y.; Wang, X.; and
+Zhang, D. 2023. LT-Fall: The Design and Implementation
+of a Life-threatening Fall Detection and Alarming System.
+Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies, 7(1).
+Zhang, D.; Zhang, X.; Xie, Y.; Zhang, F.; Wang, X.; Li,
+Y.; and Zhang, D. 2024a. LoCal: An Automatic Location
+Attribute Calibration Approach for Large-Scale Deployment
+of mmWave-based Sensing Systems. Proc. ACM Interact.
+Mob. Wearable Ubiquitous Technol., 7(4).
+Zhang, D.; Zhang, X.; Xie, Y.; Zhang, F.; Yang, H.; and
+Zhang, D. 2024b. From Single-Point to Multi-Point Reflec-
+tion Modeling: Robust Vital Signs Monitoring via mmWave
+Sensing. IEEE Transactions on Mobile Computing, 23(12):
+14959–14974.
+Zhang, D.; Zhang, X.; Yin, Z.; Xie, Y.; Wei, H.; Chang, Z.; Li,
+W.; and Zhang, D. 2025a. mmrotation: Unlocking versatility
+of a single mmwave radar via azimuth panning and elevation
+tilting. IEEE Transactions on Mobile Computing, 24(7):
+6045–6061.
+Zhang, D.; Zhang, X.; Yin, Z.; Zhou, P.; Yang, H.; Wang, P.;
+Yao, Z.; Wang, J.; Zhang, F.; and Zhang, D. 2025b. Breaking
+the resolution barriers of mmwave arrays via null steering for
+sleep monitoring in multi-person scenarios. Proceedings of
+the ACM on Interactive, Mobile, Wearable and Ubiquitous
+Technologies, 9(3): 1–29.
+Zhang, L.; Wang, J.; Li, H.; Zhang, B.; and Liu, W. 2026b.
+HCC-3D: Hierarchical Compensatory Compression for 98%
+3D Token Reduction in Vision-Language Models. In Pro-
+ceedings of the AAAI Conference on Artificial Intelligence,
+volume 40, 12618–12626.
+Zhang, X.; Zhang, D.; Xie, Y.; Wu, D.; Li, Y.; and Zhang,
+D. 2024c. Waffle: A Waterproof mmWave-based Human
+Sensing System inside Bathrooms with Running Water. Pro-
+ceedings of the ACM on Interactive, Mobile, Wearable and
+Ubiquitous Technologies, 7(4).
+Zheng, S.; Li, J.; Wang, G.; Ni, M.; Palit, A.; Montana, G.;
+and Guan, Y. 2026. Person parametric physics-informed
+representation for mmwave-based human pose estimation.
+Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies, 10(2): 1–34.
+Zhu, J.; Wang, W.; Chen, Z.; Liu, Z.; Ye, S.; Gu, L.; Tian,
+H.; Duan, Y.; Su, W.; Shao, J.; et al. 2025. Internvl3: Explor-
+ing advanced training and test-time recipes for open-source
+multimodal models. arXiv preprint arXiv:2504.10479.
+

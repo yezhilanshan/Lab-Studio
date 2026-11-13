@@ -1,0 +1,1049 @@
+MASTER: A Multi-modal Foundation Model for Human Activity
+Recognition
+GUANZHOU ZHU, DONG ZHAO, CHUNLIANG LI, MINGYUE ZHAO, ZHENGYUAN ZHANG,
+HEFENG QUAN, and HUADONG MA, State Key Laboratory of Network and Switching Technology,
+Beijing University of Posts and Telecommunications, China
+Multi-modal sensing has become crucial in Human Activity Recognition (HAR) due to its ability to combine data from diverse
+sensors. However, challenges arise in recognizing various activities in different scenes using multi-modal data from different
+positions and devices, due to dynamic combinations of modal inputs, data heterogeneity, and scarcity of labeled data. To tackle
+these challenges, we propose MASTER, a multi-modal foundation model specifically designed for HAR. MASTER introduces a
+masked-data modeling-based self-supervised pre-training method, enabling the model to learn from unlabeled data and adapt
+to dynamic combinations of modal inputs. Moreover, it incorporates a few-shot alignment mechanism to facilitate adaptation
+to different activities, scenes, positions, and devices. Through the pre-training and fine-tuning on 7 multi-modal HAR datasets,
+MASTER currently supports, but is not limited to, 8 modalities (ACC, Gyro, mmWave, WiFi, Skeleton, Lidar, Infrared, and RGB)
+and 45 human activities. The results demonstrate that MASTER achieves the highest accuracy with minimal labeled data across
+various situations, surpassing alternative solutions.
+CCS Concepts: • Human-centered computing → Ubiquitous and mobile computing theory, concepts and paradigms.
+ACM Reference Format:
+Guanzhou Zhu, Dong Zhao, Chunliang Li, Mingyue Zhao, Zhengyuan Zhang, Hefeng Quan, and Huadong Ma. 2025. MASTER:
+A Multi-modal Foundation Model for Human Activity Recognition. Proc. ACM Interact. Mob. Wearable Ubiquitous Technol. 9, 3,
+Article 157 (September 2025), 26 pages. https://doi.org/10.1145/3749511
+1 INTRODUCTION
+Human Activity Recognition (HAR) plays a significant role in our daily lives, enabling the monitoring of various
+aspects such as living habits [37], stress levels [25], rehabilitation progress [33], abnormal behaviors [53], and
+the early detection of Alzheimer’s disease [30]. In real-world scenarios, human activities tend to be complex
+and dynamic. As a result, multi-modal sensing has become an important paradigm for HAR by fusing data from
+diverse sources such as accelerometers (ACC), gyroscopes (Gyro), cameras, mmWave and WiFi radars, which has
+attracted considerable research attention [17, 28, 30, 31, 46, 50].
+However, there are three limitations of the existing HAR methods. First, they are primarily designed for fixed
+modal inputs [20, 46, 47, 61] and cannot adapt to dynamic combinations of modal inputs. Second, most of them
+[28, 50] heavily rely on a large amount of labeled data; while some studies [17, 31] have explored the use of
+few-shot learning techniques in HAR, they still require a relatively high proportion of labeled data (e.g., 20% [31])
+Authors’ Contact Information: Guanzhou Zhu, guanzhou.zhu@bupt.edu.cn; Dong Zhao, dzhao@bupt.edu.cn; Chunliang Li,
+lcl748@bupt.edu.cn; Mingyue Zhao, myzhao@bupt.edu.cn; Zhengyuan Zhang, zhangzhengyuan@bupt.edu.cn; Hefeng Quan, quan-
+hefeng@bupt.edu.cn; Huadong Ma, mhd@bupt.edu.cn, State Key Laboratory of Network and Switching Technology, Beijing University of
+Posts and Telecommunications, Beijing, China;
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that
+copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page.
+Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy
+otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from
+permissions@acm.org.
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 2474-9567/2025/9-ART157
+https://doi.org/10.1145/3749511
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:2 • Zhu et al.
+to achieve comparable accuracy to supervised methods that utilize 100% labeled data. Third, they only support a
+limited range of activities, making it challenging to meet the requirements of diverse real-world scenarios. Due
+to these limitations, current HAR methods fail to effectively address the following three real-world issues:
+• Sensor aspect: Different scenes often involve varying sensor combinations, including differences in the
+numbers and types of sensors used. When users transition between different rooms, they often encounter changes
+in the combination of available sensing modalities. For instance, in indoor HAR, a combination of WiFi, a
+smartphone held in hand, and a smartwatch may be employed. On the other hand, for outdoor HAR, a typical
+configuration might consist of only a smartphone in the pocket and a smartwatch.
+• Data aspect: First, even for a single modality, the diversity of adopted devices, their usage scenes, and
+placement positions leads to heterogeneous sensing data, which severely impairs model performance, especially
+for rare or unseen scenes, positions, and devices. This challenge becomes even more severe in multi-modal
+settings. Second, labeling multi-modal data is challenging, especially for less intuitive modalities like mmWave
+and WiFi, raising concerns about the availability of labeled training data.
+• Task aspect: In HAR scenarios, there are numerous types of activities that need to be recognized. For
+example, six commonly used public multi-modal datasets include 39 activities in total (detailed in Sect. 6.1). In
+addition to classification tasks, mobility metrics are also needed to be estimated. For example, in the gait metrics
+dataset [1], stride velocity and double support time were calculated for each participant to access walking quality.
+To comprehensively address these challenges, it is significant to design a multi-modal foundation model for
+HAR that can flexibly adapt to various combinations of sensor modalities (sensor aspect), across diverse scenes,
+positions, and devices with minimal labeled data (data aspect), while maintaining high performance across diverse
+HAR tasks (task aspect). In summary, this requires the model to possess two unique abilities:
+• Dynamic combinations of modal inputs: The model can adapt to various combinations of data from
+diverse sensors, such as ACC, Gyro, and mmWave radar. In other words, the model needs to support pre-training
+and fine-tuning on all possible combinations of multi-modal HAR datasets.
+• Few-shot learning: The model can achieve accurate HAR with minimal labeled data for training (e.g., 1% of
+labeled data, which can be collected within only a few minutes), especially for new scenes, positions, and devices,
+while supporting various tasks, such as recognizing different activity types and even performing mobility metric
+regression.
+However, two unique challenges must be addressed first:
+(i) How to make the model adapt to the dynamic combinations of modal inputs? Most existing Multi-modal Large
+Language Models (MLLMs) [16, 23, 32] only handle a small fixed number of input modalities (e.g., text, image, and
+audio), which are highly interpretable. These models typically align the embeddings of non-textual modalities
+with word embeddings in large language models or employ expert models to translate non-textual modalities
+into natural language that large language models can comprehend. However, this restricts the model’s ability to
+flexibly adapt to more modalities. This limitation arises from two main factors: i) the non-intuitive nature of most
+sensing data, which makes data annotation challenging, let alone adding corresponding textual descriptions,
+and ii) the absence of a single modality that can comprehensively describe all modalities like text does. Some
+methods [7, 43] train and switch between multiple modality experts to reduce reliance on text. However, this
+significantly increases the training overhead, requiring the training of multiple experts for various combinations
+of modalities (e.g., 15 experts for all combinations of four modalities), and diminishes knowledge sharing across
+different modalities.
+(ii) How to make the model adapt to various activities, scenes, positions, and devices with only a small amount of
+labeled data? Even for the same activity type with a single modality, notable heterogeneity exists in sensing data
+across different scenes, positions, and devices [45]. This means that samples belonging to the same class cannot
+be aligned into the same representation space. This heterogeneity exists independently within each individual
+modality and further magnifies the overall differences in multi-modal data. Moreover, sensing modalities (e.g.,
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:3
+mmWave and WiFi) are sensitive to changes in scenes and positions [13, 26], which further exacerbates the
+challenge of adapting to new scenes and positions. Finally, the scarcity of labeled data makes it more difficult for
+the model to adapt to various activities, scenes, positions, and devices.
+To address these challenges, we design the Multi-modal Activity Sensing TransformER (MASTER), a multi-modal
+foundation model for HAR, which has two key innovations:
+First, to handle dynamic combinations of modal inputs, we propose a masked-data modeling-based self-supervised
+pre-training method. Specifically, we concatenate all modal inputs into a single sentence and exploit the consistent
+and complementary information implicitly present in other modalities by masking some modal inputs for recovery
+based on a transformer architecture. It should be noted that standard loss functions designed for masked-text
+modeling [14] or masked-image modeling [15, 19] are unsuitable for the heterogeneous sensing data. Sensing data
+lacks the ability to generate unique representations akin to word embeddings, rendering the loss for masked-text
+modeling inapplicable. Moreover, the dimensional variations in sensing data, such as 1D (ACC), 2D (RGB), and
+3D (skeleton), make the loss for masked-image modeling unsuitable. Consequently, we design a recovery loss
+specifically tailored for sensing data to effectively accomplish the pre-training tasks of masked-data modeling.
+Second, we design a few-shot alignment mechanism to eliminate the data heterogeneity with only a small
+amount of labeled data. Specifically, we treat the labeled data as anchor points of different distributions and then
+minimize the distance between intra-class anchor points to align all intra-class samples to the same representation
+space with the same classification boundary. Meanwhile, we maximize the distance between inter-class anchor
+points to make the classification boundaries between classes more discriminative. In this way, we align samples
+of the same activity class from the same modality and different modalities into the same representation space,
+and thus the model can adapt to various activities, scenes, positions, and devices.
+Existing public multi-modal HAR datasets typically collect multi-modal data in a single scene. Although it is
+possible to simulate different modality combinations by simply dropping certain modalities, this approach fails to
+reflect the dynamic nature of modality combinations, i.e., both the combinations and data distributions change
+with scene variations. Therefore, a new multi-modal (mmWave, Skeleton, and 2 × IMU) HAR dataset called DCM
+is specifically designed to capture Dynamic Combinations of Modalities in real-world settings, includes data from
+two scenes, four types of modal input combinations (can be extended to 12 different combinations, detailed in
+Sect. 5), 30 subjects, and 10 activities.
+Moreover, the multi-modal foundation model for HAR should also have the ability for mobility-metric regression
+[48], such as estimating stride velocity and support time. However, there is currently a lack of publicly available
+multi-modal datasets suitable for evaluating the regression performance. Therefore, a new multi-modal stride
+velocity dataset called MSV is specifically designed (detailed in Sect. 5). The dataset includes data from 11 subjects,
+covering a stride velocity range from 0.65 m/s to 1.8 m/s, and comprises three modalities: mmWave, skeleton, and
+2 × IMU.
+We evaluate the classification performance of MASTER on the self-collected multi-modal HAR dataset DCM
+and six public multi-modal datasets, including 8 sensor modalities (ACC, Gyro, mmWave, WiFi, Skeleton, Lidar,
+Infrared, and RGB) and 45 human activities. The results show that: (i) With some modalities missing, MASTER
+trained with only 2% of labeled data delivers an average accuracy improvement of at least 21.6% compared to other
+baselines [11, 28, 29, 31, 38] with 100% labeled data. (ii) The ability of MASTER to handle dynamic modal inputs
+allows collaborative training on seven datasets, improving average accuracy from 89.4% to 92.2% compared to
+training on a single dataset. (iii) When applies to new scenes, positions or devices, MASTER only requires minimal
+labeled data (e.g., 1%) to achieve comparable accuracy to the state-of-the-art (SOTA) supervised method AttnSense
+[28] with 100% labeled data. (iv) MASTER utilizes only 1%-3% of labeled data to achieve comparable accuracy to
+the SOTA self-supervised method COSMO [31] (which necessitates 10%-20% of labeled data), highlighting its
+superior few-shot learning ability across various activities, scenes, positions, and devices. We further evaluate
+the regression performance of MASTER on the self-collected multi-modal stride velocity dataset MSV. The results
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:4 • Zhu et al.
+demonstrate that MASTER achieves the best overall regression performance, with a mean squared error of only
+0.0295 m/s.
+In particular, the key contributions of this work include:
+• To the best of our knowledge, this is the first work on a multi-modal foundation model for HAR called
+MASTER. It features a novel masked-data modeling-based self-supervised pre-training method to adapt to
+dynamic combinations of modal inputs, and a few-shot alignment mechanism to adapt to various activities,
+scenes, positions, and devices.
+• A new multi-modal HAR dataset with dynamic modality combinations in different scenes is collected by
+ourselves to evaluate the abilities of MASTER on handling dynamic combinations of input modalities in
+real-world scenarios. Additionally, a multi-modal stride velocity dataset is collected by ourselves to evaluate
+the performance of MASTER on regression-based downstream tasks.
+• Through the pre-training and fine-tuning on 7 multi-modal HAR datasets, our MASTER supports, but is
+not limited to, 8 modalities and 45 activities. Experimental results show that MASTER achieves the highest
+classification accuracy with minimal labeled data in various situations. Meanwhile, MASTER achieves the
+best overall regression performance in stride velocity estimation.
+• To benefit the IMWUT community, we have released our code and processed data. Specifically, the DCM
+and MSV datasets are now publicly available at this link, and the code is available at this link.
+2 BACKGROUND AND MOTIVATION
+2.1 Why Multi-modal Foundation Models for HAR
+In recent years, significant advancements have been made in foundation models for understanding human
+intentions using text, image, and audio modalities. Notably, ChatGPT [8] has demonstrated exceptional capabilities
+in language comprehension and generation, showcasing the power of transformer-based models in NLP. The
+introduction of Vision Transformer (ViT) [15] has also bridged the gap between NLP and computer vision (CV),
+leading to MLLMs like PaLM-E [16], a combination of language model PaLM [10] with visual model ViT. However,
+it is worth noting that no existing multi-modal foundation model has the capability to handle inputs from all
+sensing modalities. Existing models primarily focus on modalities that humans can intuitively understand, such
+as images and audio. However, for less intuitive sensing data like ACC, Gyro, mmWave, and WiFi, current
+multi-modal models struggle to comprehend the underlying meanings without accompanying text descriptions.
+This limitation is evident in the fact that four representative MLLM learning paradigms require the assistance of
+text [51].
+On the other hand, it is significant to develop a multi-modal foundation model specifically designed to
+understand the human activity information embedded in sensing data. First, the aforementioned multi-modal
+sensing data are crucial for recognizing human intentions beyond the text, image, and audio, e.g., understanding
+people’s stress levels [25, 27] by analyzing the frequency of certain actions, identifying signs of Parkinson’s
+disease [54, 55], etc. Second, sensing modalities like mmWave and WiFi offer better privacy protection compared
+to images and audio. Third, the complexity of human activities necessitates a more effective model. Lastly,
+beyond the above three points, it is of great significance to equip the model with the ability to handle dynamic
+combinations of sensing modalities and adapt effectively with minimal labeled data.
+Based on the above considerations, we define a multi-modal foundation model for HAR as a model capable of
+learning generalizable representations of human activities from diverse sensing modality combinations, across
+varying scenes, positions, devices, and users. Such a model should exhibit strong cross-modal transferability and
+few-shot adaptability to diverse downstream tasks, aligning with the key properties of foundation models in the
+fields of NLP and CV. We believe this definition is essential for guiding the development of generalizable, scalable
+HAR systems under real-world conditions.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:5
+Fig. 1. Damaging effects of missing modalities. Fig. 2. High demand for labeled data.
+2.2 Challenges in Multi-modal Foundation Models for HAR
+To investigate the challenges encountered by multi-modal foundation models for HAR, i.e., dynamic combinations
+of modal inputs and few-shot learning, we evaluate two SOTA multi-modal HAR methods, AttnSense [28] and
+COSMO [31]. The former adopts a supervised learning paradigm with a large amount of labeled data, while the
+latter leverages a pre-training + fine-tuning paradigm with limited labeled data. First, we evaluate these methods
+on the multi-modal dataset MMFi [49], which comprises six modalities: mmWave, Lidar, Infrared, WiFi, Skeleton,
+and RGB. This evaluation aims to investigate the impact of missing modalities and assess the models’ ability to
+handle dynamic combinations of modal inputs. Second, we assess the few-shot learning ability of both methods
+across different scenes, positions, and devices using the USC [56] dataset and Shoaib [35] dataset. The USC
+dataset comprises ACC and Gyro data collected by MotionNode [2] (a 6-DOF inertial measurement unit) from
+the waist position in both indoor and outdoor scenes. The Shoaib dataset encompasses the ACC and Gyro data
+from smartphones at five body positions (waist, front left hip, front right hip, upper arm, wrist) in indoor scenes.
+Both datasets are down-sampled to a sampling rate of 50 Hz.
+2.2.1 Dynamic Combinations of Modal Inputs. With the development of sensing technologies and smart devices,
+there are a wide range of sensors that can be utilized for HAR. However, many previous studies on multi-modal
+HAR have been limited to specific modalities or sensors [47]. While some works support most modalities, they
+assume that those modalities are available at all times [28, 31, 50]. However, this assumption may not hold true in
+real-world scenarios, as certain sensors may be out of range, e.g., WiFi is typically limited to monitoring indoor
+scenes. The issue of missing modalities poses significant challenges to HAR models, as they are typically designed
+with fixed modalities as input. As shown in Fig. 1, even when any of the six modalities is missing1, the average
+accuracy of AttnSense and COSMO significantly decreases from 66.9% and 87.4% to 51.4% and 73.9%, respectively.
+Moreover, the accuracy drops sharply as more modalities are missing. For instance, when only one modality is
+present in the input, the average accuracy of AttnSense and COSMO drops to 11.8% and 19.5%, respectively.
+2.2.2 Few-shot Learning. Labeling multi-modal data for HAR is extremely difficult in practice, which greatly
+affects the model performance. Fig. 2 demonstrates the impact of the amount of labeled data on AttnSense and
+COSMO in the Shoaib dataset. We can observe that: (i) The accuracy of both AttnSense and COSMO drops as the
+amount of labeled data decreases. (ii) The self-supervised method COSMO exhibits higher accuracy compared to
+AttnSense. However, there remains a notable accuracy gap between COSMO and AttnSense that utilizes 100%
+labeled data for supervised learning.
+1We utilize zero-filling to address missing modalities, a common practice to facilitate model training and inference when modalities are
+absent [39].
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:6 • Zhu et al.
+Fig. 3. The impact of different scenes and devices. Fig. 4. The impact of different positions.
+The heterogeneity of sensing data across different scenes, positions, and devices not only affects the accuracy
+of HAR but also increases the demand for data labeling. Fig. 3 demonstrates the impact of limited labeled data
+on recognition accuracy across different datasets, representing various scenes and devices. The notation 𝑆 → 𝑇
+indicates that the model is pre-trained with unlabeled data from the source dataset 𝑆, fine-tuned with 10% labeled
+data from 𝑆, and then tested on the target dataset 𝑇, while 𝑆 → 𝑇+10% indicates that the model is trained (both
+pre-trained and fine-tuned) on 𝑆, fine-tuned with an additional 10% of labeled data from 𝑇, and then tested on 𝑇.
+Note that, considering the challenge of acquiring sufficient labeled data for fine-tuning in practice, we use only
+10% of the source domain data as labeled data. We can observe that: (i) Without fine-tuning on the target dataset,
+both AttnSense and COSMO experience a notable decrease in accuracy. (ii) When more labeled data (e.g., 10%)
+from the target dataset is incorporated during the fine-tuning stage, the recognition accuracy improves for both
+methods, but it is only comparable to that of a new model directly trained with 10% labeled data from the target
+dataset. It implies that both methods fail to effectively utilize the pre-trained source data and lack the ability to
+transfer knowledge to different scenes and devices.
+Even within the same scene and device, the variation in device positions has a significant impact on recognition
+accuracy. Fig. 4 shows the few-shot learning abilities of COSMO trained on the waist position with 10% labeled
+data when applied to other positions. We can observe that: (i) Changing the device position from the waist to
+the right hip, left hip, upper arm, and wrist all leads to a substantial drop in recognition accuracy, from 94.8% to
+47.6%, 49.8%, 43.6%, and 38.0%, respectively. (ii) COSMO requires a considerable amount of additional labeled data
+(at least 5%) for each position to achieve comparable accuracy to 10% labeled data on the waist.
+In conclusion, it is both significant and challenging to design a few-shot learning method that can effectively
+handle the heterogeneity of sensing data across different scenes, positions, and devices.
+3 SYSTEM OVERVIEW
+In this section, we present MASTER, a multi-modal foundation model for HAR. Our key idea is to capture consistent
+and complementary information simultaneously from unlabeled multi-modal data and align the heterogeneous
+embeddings of the same activity class across different scenes, positions, and devices. As shown in Fig. 5, MASTER
+consists of two stages as follows:
+• Self-supervised Pre-training. First, an unlabeled multi-modal pre-training dataset is created by merging publicly
+available multi-modal datasets. Second, unimodal encoders extract high-dimensional feature embeddings for
+each modality, which are then projected to the same dimension using an inner projection layer. By concatenating
+the output embeddings of each modality in a sample into a sequence and padding it with zero embeddings to the
+maximum length 𝑚, the embedding sequence length becomes consistent across all samples, regardless of the
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:7
+Fig. 5. MASTER overview.
+number of modalities present. Third, a masked-data modeling mechanism is designed to capture consistent and
+complementary information from unlabeled multi-modal data. Specifically, it randomly masks an embedding in
+the embedding sequence and utilizes the transformer blocks to recover the masked embedding. To facilitate the
+learning of both consistent information within modalities and complementary information between modalities
+for effective recovery, a recovery loss is devised. This loss encourages the generated feature embeddings to closely
+resemble the original feature embeddings while maximizing their dissimilarity from other feature embeddings in
+the batch, thereby preserving more discriminative features.
+• Few-shot Alignment and Fine-tuning. To facilitate the adaptation of the foundation model to new scenes,
+positions, or devices with limited labeled data, we propose a few-shot alignment mechanism. It involves two steps:
+i) We initialize the unimodal encoders and transformer blocks using parameters trained in the first stage and
+freeze these parameters. ii) An adaptation layer is introduced to align samples belonging to the same activity class
+via an alignment loss. By maximizing the similarity between intra-class samples while minimizing the similarity
+between inter-class samples, the samples from the same class share a common classification boundary. After
+that, we adopt an iterative fine-tuning mechanism [31] to fine-tune the pre-trained encoders, transformer blocks,
+alignment adaption layers, and a newly added classifier with the same labeled data. This iterative process helps
+refine the model’s representations and adapt them to the specific task.
+4 DESIGN OF MASTER
+4.1 Self-supervised Pre-training
+4.1.1 Basic Idea. Human activities consist of a series of continuous sub-actions, such as the back-and-forth
+movements of legs and arms during walking. These continuous sub-actions can be captured by different modalities,
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:8 • Zhu et al.
+Fig. 6. Overview of self-supervised pre-training.
+such as vision and sound. For example, even when we temporarily close our eyes, we can still mentally picture
+the actions of a person based on recent sub-action segments, along with the sounds we hear. This ability arises
+from our comprehensive understanding of different activities, as well as the consistent and complementary
+relationships between different modalities. Inspired by this observation, our goal is to design a self-supervised
+pre-training method that learns the correlations between different modalities by reconstructing masked sub-
+actions. To accomplish this, we segment the input of each modality into patches, representing sub-actions of the
+current action. We then employ the attention mechanism in the transformer block to learn the consistent and
+complementary relationships between different modalities to facilitate mask recovery.
+4.1.2 Detailed Design. An overview of the self-supervised pre-training stage is depicted in Fig. 6. Briefly, the input
+of each modality is divided into patches, which are then fed into the corresponding unimodal encoder to get Patch
+Embeddings. Then, Position Embeddings and Modality Embeddings are added to the patch embeddings to retain
+temporal and modality information, respectively. To learn the whole modality representation, an extra learnable
+classification (CLS) token is added at the beginning of the whole patch embedding sequence. The CLS token play
+a significant role in the subsequent few-shot alignment and fine-tuning stages. The other High-level Embeddings
+learned through the transformer blocks are responsible for recovering masked patches during pre-training.
+Patch Embeddings. The standard transformer receives a 1D sequence of token embeddings as input. Suppose
+we have 𝑚 modalities M = {𝑀𝑖, ∀𝑖 = 1, . . . ,𝑚}. Each time the model receives a subset of all modalities, i.e.,
+{𝑀𝑎, . . . , 𝑀𝑘 } ⊆ M. To handle various combinations of multi-modal inputs, we reshape and split each modal
+input sequence 𝑥 ∈ R𝐷×𝐿𝑠 into 𝑛 patches 𝑥𝑝𝑐ℎ ∈ R𝐷×𝐿𝑝 , where 𝐷 is the dimension of the input modality, 𝐿𝑠 is
+the length of the input sequence, 𝐿𝑝 is the length of each patch, and 𝑛 is calculated as
+
+𝐿𝑠/𝐿𝑝
+
+, representing the
+number of patches. As the data from different modalities can be highly heterogeneous, we employ different
+feature encoders to extract the patch embeddings for each modality. The formulation of a patch embedding
+sequence of modality 𝑀𝑖 can be written as:
+𝐸𝑀𝑖
+𝑝𝑐ℎ
+=
+h
+𝐸𝑛𝑐𝑀𝑖
+(𝑥𝑀𝑖
+𝑝𝑐ℎ1
+), . . . , 𝐸𝑛𝑐𝑀𝑖
+(𝑥𝑀𝑖
+𝑝𝑐ℎ𝑛
+)
+i
+, (1)
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:9
+where 𝐸𝑛𝑐𝑀𝑖 is the encoder of the modality 𝑀𝑖.
+Positional Embeddings. Sensing data exhibits temporal continuity. However, the transformer cannot capture
+the temporal information of embedding sequences. Hence, we incorporate the classic sines and cosines position
+embeddings [41] into the patch embeddings to integrate temporal information.
+Modality Embeddings. The transformer may be chaotic when the input modality is dynamic, as the same
+position of different patch embeddings may correspond to different modalities. To address this issue, we incorpo-
+rate learnable 1D modality embeddings 𝐸𝑀𝑖
+𝑚𝑜𝑑
+∈ R1×𝐿𝑝 into the patch embeddings to indicate the modality of each
+patch.
+CLS Token. As the length of the input sequence is also dynamic, it is hard to use a fixed structured multi-layer
+perceptron to perform classification. Although zero padding can be applied to standardize the length of input
+sequences, changes in the dynamic combination of input modalities result in varying amounts of zero padding,
+which may introduce distributional discrepancies. Inspired by Bert [14], we prepend a learnable embedding,
+known as the CLS token (𝐶𝐿𝑆), to the sequence of embedded patches. This token serves as the representation of
+all input modalities. In this way, we can easily employ a multi-layer perceptron to recognize human activities by
+utilizing the fixed-length CLS token. CLS tokens play significant roles in the subsequent few-shot alignment and
+fine-tuning stage.
+Transformer Blocks. To make training more stable, we adopt the post-norm and deep-norm architecture [42],
+as the pre-norm architecture encounters convergence issues during training when the number of transformer
+layers increases. The formulation of transformer blocks can be written as:
+𝐻0 = [𝐶𝐿𝑆, 𝐸𝑀𝑎
+𝑝𝑐ℎ
+, . . . , 𝐸𝑀𝑘
+𝑝𝑐ℎ
+] + 𝐸𝑝𝑜𝑠 + 𝐸𝑚𝑜𝑑, (2a)
+𝐻′
+𝑙 = 𝐿𝑁 (𝛼𝐻𝑙−1 + 𝑀𝑆𝐴(𝐻𝑙−1))), (2b)
+𝐻𝑙 = 𝐿𝑁 (𝛼𝐻′
+𝑙 + 𝑀𝐿𝑃(𝐻′
+𝑙 ))), (2c)
+where 𝐸𝑝𝑜𝑠 is the position embedding sequence, 𝐸𝑚𝑜𝑑 is the modality embedding sequence, 𝑀𝑆𝐴 is the Multi-
+headed Self Attention layer, 𝐿𝑁 is the Layer Normalization layer, 𝑀𝐿𝑃 is the Multi-layer Perceptron layer, 𝛼
+is the parameter for scaling residual connections, and 𝐻𝑙 is the output of the 𝑙-th layer of transformer blocks
+(high-level embeddings).
+Patch Recovery. We employ the masked-data modeling objective for self-supervised pre-training. Similar
+to ViT [15], we corrupt 50% of patch embeddings by either replacing their embeddings with learnable mask
+embeddings (80%), randomly replacing other patch embeddings (10%) or just keeping them unchanged (10%).
+Then, a recovery loss is designed to calculate the consistent and complementary information from multi-modal
+sensing data simultaneously. The main idea is to leverage the complementary information from other modalities
+to reconstruct the masked patch while ensuring the consistency of discriminative features within the same class
+(i.e., maximize the difference with other patches within the same batch). The loss function can be written as:
+L𝑟𝑒𝑐=−
+1
+|K|
+∑︁
+𝑖∈K
+𝑙𝑜𝑔
+𝑒𝑥𝑝(𝑠(𝐸𝑝𝑐ℎ𝑖 , ˆ
+𝐸𝑝𝑐ℎ𝑖 )/𝜏)
+Í
+𝑗 ∈A\{𝑖} 𝑒𝑥𝑝(𝑠(𝐸𝑝𝑐ℎ𝑗 , ˆ
+𝐸𝑝𝑐ℎ𝑖 )/𝜏)
+, (3)
+where 𝑠(𝑢, 𝑣) = 𝑢𝑇 𝑣/∥𝑢∥ ∥𝑣∥ denotes the cosine similarity between 𝑢 and 𝑣, ˆ
+𝐸𝑝𝑐ℎ𝑖 is the recovered result of
+𝐸𝑝𝑐ℎ𝑖 , K is the index set of masked patches, A is the index set of all patches in a batch, and 𝜏 is the temperature
+parameter.
+Fig. 7 demonstrates the t-sne plot [40] of CLS tokens pre-trained with MSE2 loss and proposed recovery loss
+on an ensemble multi-modal dataset, i.e., UCI, Shoaib HHAR and USC (detailed in Sect. 6). We observe that: (i)
+The CLS tokens pre-trained with MSE loss are almost unable to distinguish between different activities through
+2A loss function that is widely adopted in large vision models, e,g., ViT.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:10 • Zhu et al.
+(a) MSE. (b) Recovery loss.
+Fig. 7. Effectiveness of the recovery loss function.
+masked-data modeling. (ii) Our recovery loss yields better discrimination between activities through masked-data
+modeling.
+4.1.3 Model Pre-training. To construct the unlabeled pre-training dataset, we merge data from various multi-
+modal datasets. For each input sample of MASTER, all modalities of a single dataset are included at a time. Due to
+the presence of modality embedding, there is no need to restrict the order of different datasets for each input
+sample. Before feeding the raw data into the MASTER encoder group, we split the raw data based on the duration,
+e,g., 0.4 seconds. We first apply padding operations on data within a modality, as the data may include varying
+lengths. Then we determine the length of each multi-modal input and pad all inputs with zeros to match the
+length of the longest input.
+Subsequently, we set attention masks to prevent transformer blocks from focusing on the padded sections.
+Since direct recovery of the original patch signal requires an additional decoder and may compromise modality
+alignment performance, the patch embedding output by the feature encoder is regarded as the recovery ground
+truth for pre-training.
+4.2 Few-shot Alignment and Fine-tuning
+The objective of few-shot alignment and fine-tuning is to enable the foundation model to be easily adapted to new
+scenes, positions, and devices with limited labeled data only. In this way, the trained model not only minimizes
+the fine-tuning overhead but also enhances its knowledge transfer capability.
+4.2.1 Few-shot Alignment. The essential reason for the poor performance of directly applying the model to new
+scenes, positions, or devices is the difference in data distribution, causing the original classification boundary to
+diverge from the target domain data. To address this challenge, we introduce a few-shot alignment module aimed
+at aligning feature embeddings of the same activity from different scenes, positions, and devices into the same
+classification boundary.
+Specifically, the feature encoders and the transformer blocks are initialized using the model weights from the
+pre-training stage (Sect. 4.1), which generates patch embeddings 𝐸𝑝𝑐ℎ = (𝐸𝑀𝑎
+𝑝𝑐ℎ
+, . . . , 𝐸𝑀𝑘
+𝑝𝑐ℎ
+) for different modalities.
+However, the length of the patch embeddings dynamically changes due to the varying input modality combinations,
+making it challenging to align and fine-tune using a fixed-structured multi-layer perceptron. To overcome this,
+we use CLS tokens for alignment and fine-tuning. Since CLS tokens are initialized without specific semantic
+information, they can more reasonably integrate the semantic information of other patch embeddings in a
+multi-modal input sequence, thereby better representing the semantics of the entire input.
+The training process for few-shot alignment involves a staged approach, which includes the following steps:
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:11
+(a) Before alignment. (b) After alignment.
+Fig. 8. Effectiveness of the few-shot alignment. With only 2% of labeled data used for alignment, the CLS tokens from
+different scenes, positions, and devices exhibit a consistent data distribution.
+1) Minimize the distance between CLS tokens of the same class to align all input modalities from different
+scenes, positions, and devices into the same classification boundary. Specifically, we introduce an alignment
+loss to achieve that:
+L𝐴𝑙𝑔1=−
+1
+|G|
+∑︁
+𝑖∈G
+𝑙𝑜𝑔
+Í
+𝑗 ∈G\{𝑖} 𝑒𝑥𝑝(𝑠(𝐶𝐿𝑆𝑗,𝐶𝐿𝑆𝑖)/𝜏)
+(|G|−1)
+Í
+𝑞∈A\{𝑖} 𝑒𝑥𝑝(𝑠(𝐶𝐿𝑆𝑞,𝐶𝐿𝑆𝑖)/𝜏)
+, (4)
+where G is the index set of the same class of CLS tokens in a batch.
+2) Maintain the distance between CLS tokens of all input modalities while minimizing the distance between
+CLS tokens of the same class across different modality combinations. This helps improve the model’s ability
+to transfer knowledge among modalities and enhances its resilience to missing modalities. To achieve this,
+we leverage the aligned CLS tokens (𝐶𝐿𝑆𝑡 ) from the previous stage as anchors to: i) ensure the CLS tokens
+of all input modalities 𝐶𝐿𝑆𝑎 in the current stage remain consistent, and ii) serve as alignment targets for
+the CLS tokens (𝐶𝐿𝑆𝑖) within the set of modality combinations C. This objective is formally implemented
+through the following loss function:
+L𝐴𝑙𝑔2 = 𝛽𝑀𝑆𝐸(𝐶𝐿𝑆𝑡,𝐶𝐿𝑆𝑎) +
+1
+|C|
+∑︁
+𝑖∈C
+𝑀𝑆𝐸(𝐶𝐿𝑆𝑡,𝐶𝐿𝑆𝑖), (5)
+where 𝛽 is a scaling parameter that emphasizes the consistency of the CLS tokens of all input modalities.
+The pre-training stage (Sect 4.1) effectively aggregates CLS tokens of the same class within the same dataset
+(as shown in Fig. 7). Therefore, by aligning a small number of labeled samples, the CLS tokens from different
+modalities, scenes, positions, and devices can easily share a more consistent data distribution. Fig. 8 demonstrates
+the alignment result using 2% of labeled data on the MMFi dataset which includes 27 activities. We observe that
+the few-shot alignment mechanism can effectively cluster samples within a class, even only with 2% of labeled
+data.
+4.2.2 Few-shot Fine-tuning. Since the classifier is randomly initialized, significant gradient changes will occur
+during the fine-tuning stage, leading to the knowledge forgetting problem for components that have already
+been trained. Therefore, we adopt an iterative fine-tuning [31] method.
+Specifically, the feature encoders and the transformer blocks are initialized with weights from the pre-training
+stage, the adaption layer is initialized with weights from the alignment stage, and the classifier is randomly
+initialized. Subsequently, the classifier undergoes fine-tuning for 𝑁𝑖𝑡𝑒𝑟 epochs, during which the encoders,
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:12 • Zhu et al.
+Fig. 9. The setting of the self-collected multi-modal HAR dataset DCM.
+Fig. 10. The distribution of stride velocities.
+transformer blocks, and adaptation layer remain fixed. Here, the hyperparameter 𝑁𝑖𝑡𝑒𝑟 represents the number of
+epochs for iterative fine-tuning. Afterward, the freeze operation is reversed to train the encoders, transformer
+blocks, and adaption layer for 𝑁𝑖𝑡𝑒𝑟 more epochs with the classifier fixed. This procedure continues until the
+preset epoch number is reached.
+5 SYSTEM DEPLOYMENT
+To evaluate the performance of MASTER in handling dynamic combinations of modal inputs in real-world scenarios,
+a new multi-modal HAR dataset with dynamic modality combinations in different scenes is collected by ourselves,
+as shown in Fig. 9.
+The dataset is collected in a bedroom environment and includes data from two scenes, four types of modal
+input combinations, 30 subjects, and 10 activities. The collection environment (4.55 m × 4 m) shares a similar
+area and furniture layout with a typical one-bedroom apartment. All participants performed activities freely,
+i.e., they were free to perform activities in any location without any specific pose instructions. The activities
+include pushing, drawing circles, knocking, raising hands, sitting, standing, walking, falling, trembling hands,
+and rummaging through. The bedroom is divided into privacy zones (areas containing the bed) and non-privacy
+zones, with different data collection strategies (i.e., modal combinations) employed to address privacy concerns.
+In non-privacy zones, we collect data with two types of modality combinations separately: i) mmWave, skeleton
+(extracted from a depth camera), and 2×IMU (wrist and thigh) with 8000 samples; ii) skeleton and 2×IMU with
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:13
+Table 1. Summary of the seven multi-modal HAR datasets.
+Datasets Modalities # of Activities Positions # of Subjects
+UCI [6] ACC, Gyro 6 Waist 30
+Shoaib [35] ACC, Gyro 7
+Waist, Wrist,
+Arm, Front hip x2
+10
+HHAR [36] ACC, Gyro 6 Wrist, Waist 9
+USC [56] ACC, Gyro 12 Waist 14
+MMFi [49]
+mmWave, Lidar, Infrared,
+WiFi, Skeleton, RGB
+27 - 40
+MRI [5]
+ACC, Gyro, mmWave,
+Skeleton
+12 - 20
+DCM
+ACC, Gyro, mmWave,
+Skeleton
+10 Wrist, Thigh 30
+770 samples. In privacy zones, we collect data with two types of modality combinations separately: i) mmWave
+and 2×IMU with 2200 samples; ii) mmWave with 3000 samples. Different from non-privacy zones, the activities
+of pushing, drawing circles, knocking, and raising hands are performed while reclining on the bed. Since the
+IMU is not affected by viewpoint variations, we can also obtain the following modal combinations: mmWave
+with wrist IMU, mmWave with thigh IMU, skeleton with wrist IMU, skeleton with thigh IMU, wrist IMU with
+thigh IMU, wrist IMU, and thigh IMU.
+In addition to HAR classification, another important downstream task is metric regression [48], such as
+estimating double support time and stride velocity. To evaluate the regression performance of MASTER, we
+collected a new multi-modal stride velocity dataset, incorporating mmWave, skeleton, and 2 × IMU. The data
+are collected in a corridor environment from 11 participants. Each participant is instructed to walk at three
+self-selected constant speeds, i.e., slow, normal, and fast. For each participant, six walking trials are recorded at
+slow and normal speeds, and eight trials at fast speed. The stride velocity is calculated by measuring the time
+𝑡𝑣 that a participant spends on walking a distance 𝑑𝑣 of 3.2 meters at a constant speed, and then applying the
+formula 𝑣 = 𝑑𝑣
+𝑡𝑣
+. The distribution of stride velocities is illustrated in Fig. 10. For walking trial 𝑖 with velocity 𝑣𝑖, a
+sliding window of 1.6 seconds with a stride of 0.1 seconds is applied to generate 5 fixed length training/testing
+samples. The pre-training set consists of samples from 6 participants.
+6 EVALUATION
+6.1 Experimental Setup
+6.1.1 Datasets. In this study, we first evaluate the classification performance of MASTER on a new self-collected
+HAR dataset with real-world dynamic modalities setting (detailed in Sect. 5) and six public HAR datasets, which
+contain almost all common modalities related to HAR. We then evaluate the regression performance of MASTER
+on a new self-collected multi-modal stride velocity dataset (detailed in Sect. 5). The summary of the seven
+multi-modal HAR datasets is shown in Table 1. The detailed reasons for using these public datasets are as follows:
+• UCI [6], Shoaib [35], HHAR [36], and USC [56]. All of these datasets contain the ACC and Gyro data, which
+are the most commonly used modalities for HAR. However, they exhibit data heterogeneity due to collection
+from various scenes, positions, and devices. UCI dataset contains two streams of ACC data and one stream of
+Gyro data, which are used for evaluating the dynamic modal inputs with similar modalities. Shoaib dataset
+contains ACC and Gyro data from 5 positions and is used to evaluate the model’s cross-position few-shot
+learning ability. Besides, the collection devices and sensing positions for one stream of ACC and Gyro data in
+the UCI dataset are the same as that in the Shoaib dataset. Therefore, they can be combined to evaluate the
+model’s cross-scene few-shot learning ability. HHAR dataset is used to evaluate the cross-device few-shot
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:14 • Zhu et al.
+learning ability as it contains ACC and Gyro data simultaneously collected from 4 different smartphones
+(Nexus 4, Galaxy S3, Galaxy S3 mini, and Galaxy S plus) with the same position. USC is a commonly used
+dataset evaluated by most baselines we compare.
+• MMFi [49]. It contains various common wireless sensing modalities, while some of them are not covered by
+existing MLLMs, e.g., mmWave, Lidar, and WiFi. MMFi dataset is utilized to evaluate the model’s ability in
+handling dynamic combinations of modal inputs.
+• MRI [5]. It contains both wearable sensing modalities and wireless sensing modalities. MRI dataset is utilized
+to further comprehensively evaluate the performance of MASTER.
+6.1.2 Baselines. There are many multi-modal HAR methods, but most of them are designed for specific modalities,
+e.g., Limu-bert [47] and UniHAR [46] are designed for a combination of ACC and Gyro only. For fair comparisons,
+we compare the performance of MASTER with the following SOTA baselines that can easily adapt to other
+modalities by changing the feature encoders or training strategy.
+• AttnSense [28], an attention-based supervised multi-modal fusion method.
+• STMAE [29], a transformer-based masked autoencoder for multi-device wearable HAR. Specifically, we
+remove the pre-training stage for MMFi, MRI, and DCM datasets, as the pre-training strategy (recover raw
+data) and loss (MSE) are unsuitable for wireless sensing modalities and demonstrate poor performance.
+• CMC [38], a contrastive learning-based method designed for multi-view image data input.
+• COSMO [31], a contrastive learning-based method for fusing multiple heterogeneous modalities for HAR.
+• BABEL [11], a state-of-the-art multimodal foundation HAR model that follows the ImageBind paradigm,
+aligning modalities from different datasets in an iterative pairwise manner.
+6.1.3 Implementation Details. To ensure a consistent input format and fair comparisons across different methods
+and modalities, we adopt a unified encoder architecture for all baselines and our proposed method. Specifically,
+1D CNN is used for ACC, Gyro, and WiFi; 3D CNN is used for mmWave, Infrared, Lidar, and Skeleton. The
+number of transformer layers is set as 4. 𝑁𝑖𝑡𝑒𝑟 is set as 3. The scaling parameter 𝛼 in Eq. 2 is set according to
+[42], while the scaling parameter 𝛽 in Eq. 5 is set to 10. The learning rate and batch size are set as 3e-4 and 128,
+respectively. We choose Adam as the optimizer. Each experiment is repeated five times.
+Note that all models are trained using the same labeled set, and the subjects in the test set are different from
+those in the training set. Unlike other baselines that can only train with one dataset, MASTER can pre-train and
+fine-tune on all the multi-modal datasets together. However, to ensure a fair evaluation, MASTER is only pre-trained
+on one dataset and does not utilize labeled data from other datasets for alignment, except for the cross-scene
+few-shot learning case where labeled data from other datasets is used for alignment (detailed in Sect. 6.4.1). The
+performance of MASTER pre-trained on all the multi-modal datasets is verified separately in Sect. 6.5.
+6.1.4 Evaluation Metrics. To evaluate the classification performance, we follow prior works [48, 52] and adopt
+three widely used metrics: Accuracy, F1-score, and Kappa. These metrics collectively reflect the overall correctness,
+balance between precision and recall, and inter-rater agreement of the classification results.
+For regression tasks, following prior studies [1, 48], we use five standard metrics: Mean Squared Error (MSE),
+Standard Deviation of Squared Error (SDSE), Mean Absolute Error (MAE), Standard Deviation of Absolute Error
+(SDAE), and Pearson’s Correlation Coefficient (Corr). These metrics jointly capture the average and variance of
+estimation errors, as well as the linear correlation between estimated and ground-truth values.
+6.2 Overall Performance
+MASTER achieves comparable classification performance to SOTA supervised methods that utilize 100%
+labeled data, even with extremely limited labeled data. Fig. 11(a) presents the accuracy of each model on
+seven datasets, using labeled data with specific label rates. The following observations can be made: (i) With
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:15
+(a) Accuracy aspect. (b) Data aspect.
+Fig. 11. MASTER utilizes a small portion of labeled data to achieve comparable accuracy to AttnSense that utilizes 100% labeled
+data; in contrast, baseline methods require at least 5× labeled data to achieve comparable accuracy.
+Table 2. Overall performance of activity classification. Note that “A” stands for accuracy, “F1” stands for F1-score, and “K”
+stands for Kappa.
+Activity Classification
+UCI 1% Shoaib 3% HHAR 2% USC 1% MMFi 2% MRI 2% DCM 1%
+Model ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K ↑ A ↑ F1 ↑ K
+AttnSense .546 .513 .379 .758 .748 .706 .420 .297 .274 .399 .363 .329 .395 .305 .340 .278 .271 .185 .482 .473 .398
+STMAE .856 .855 .827 .824 .820 .794 .570 .595 .489 .496 .460 .442 .655 .623 .580 .673 .669 .611 .570 .522 .520
+CMC .667 .654 .605 .863 .862 .816 .685 .614 .580 .322 .292 .236 .549 .477 .526 .468 .465 .412 .719 .712 .657
+COSMO .635 .624 .557 .868 .866 .839 .686 .610 .562 .428 .393 .268 .553 .490 .533 .554 .544 .488 .813 .808 .788
+BABEL .630 .621 .552 .798 .793 .764 .611 .586 .529 .396 .326 .321 .629 .580 .612 .809 .802 .790 .851 .845 .834
+MASTER .894 .892 .872 .936 .932 .914 .846 .826 .800 .734 .701 .706 .897 .892 .894 .990 .987 .985 .926 .927 .916
+limited labeled data, the supervised method AttnSense exhibits lower recognition accuracy. (ii) Contrastive
+learning methods CMC and COSMO showcase higher recognition accuracy compared to supervised methods.
+Notably, COSMO often outperforms CMC due to its ability to extract consistent and complementary information
+from different modalities. However, there still exists a significant gap between the recognition accuracy of
+supervised methods AttnSense that utilize 100% labeled data. For example, in the UCI dataset, COSMO achieves a
+recognition accuracy of 63.4%, while AttnSense utilizing 100% labeled data achieves 91.7%. (iii) BABEL demonstrates
+inconsistent performance across different datasets, as it is specifically designed to fuse high-dimensional features
+extracted by pretrained encoders, e.g., Vit, and thus performs poorly when applied to randomly initialized
+lightweight encoders that are trained from scratch. (iv) STMAE demonstrates higher recognition accuracy than
+other baselines in the majority of datasets, highlighting the superiority of using the transformer as the backbone.
+(v) In comparison to other baselines, MASTER achieves the highest recognition accuracy with limited labeled data
+and even surpasses AttnSense, which utilizes 100% labeled data, in some multi-modal datasets. For instance, in the
+MMFi dataset, MASTER achieves an accuracy of 89.9%, surpassing AttnSense with 100% labeled data that achieves
+84.2%. This is primarily due to MASTER’s ability to extract both consistent and complementary information
+simultaneously during the self-supervised pre-training stage. From Table 2, we observe that in addition to
+accuracy, MASTER also significantly outperforms other baselines in terms of F1-score and Kappa.
+Fig. 11(b) presents the labeled data requirement for each model on seven datasets in order to achieve comparable
+accuracy to that of AttnSense, which utilizes 100% labeled data. We can observe that when compared to other
+baselines that achieve similar accuracy to AttnSense utilizing 100% labeled data, MASTER significantly reduces the
+amount of labeled data required for training. The reduction is substantial, reaching at least 80% compared to the
+COSMO method. Moreover, the proposed recovery loss significantly enhances the potential of the transformer
+compared to STMAE.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:16 • Zhu et al.
+Table 3. Overall performance of stride velocity regression.
+Stride Velocity Regression (m/s)
+Model ↓ MSE ↓ SDSE ↓ MAE ↓ SDAE ↑ Corr
+AttnSense 0.1027 0.1090 0.2709 0.1713 0.7981
+STMAE 0.0298† 0.0405 0.1394† 0.1017 0.8061
+CMC 0.0326 0.0416† 0.1456 0.1066 0.8024
+COSMO 0.0362 0.0464 0.1562 0.1088 0.8140
+BABEL 0.0343 0.0475 0.1470 0.1128 0.8601
+MASTER 0.0295 0.0421 0.1355 0.1057† 0.8259†
+† represents the second best result.
+MASTER achieves strongest consistent performance on stride velocity regression. Table 3 presents the
+regression performance of each model on self-collected dataset, using 6 walking trails for fine-tuning. The
+following observations can be made: (i) MASTER achieves the lowest MSE and MAE, and achieves the second
+best results in SDSE and Corr, demonstrating the strong generalization ability of the proposed pre-training
+strategy to regression tasks. (ii) The transformer-based method STMAE also shows competitive performance,
+achieving the best results in SDSE and SDAE and ranking second in MSE and MAE, indicating the effectiveness
+of Transformer architectures for stride velocity regression. (iii) Although BABEL achieves the highest Corr, it
+exhibits larger errors on other metrics, indicating that focusing primarily on modality-consistent information
+may limit its ability in regression tasks. (iv) Compared with other methods, the contrastive learning methods
+CMC and COSMO only outperform the supervised method AttnSense, indicating that contrastive pre-training
+alone may lack sufficient generalization ability for regression tasks.
+6.3 Dynamic Combinations of Modal Inputs
+MASTER can handle various combinations of data from diverse sensors while requiring a minimal
+amount of labeled data. In order to comprehensively evaluate the impact of different modalities, all baseline
+models utilize 100% labeled data for training. However, for training MASTER, only 2%, 1%, and 3% of labeled data are
+used for the MMFi, UCI, and DCM datasets, respectively. This limited labeled data setting allows us to assess the
+effectiveness of MASTER in scenarios with extremely scarce labeled data. Furthermore, all models are fine-tuned
+only once on all input modalities, i.e., all models are not separately trained on each specific combination of
+modalities.
+Fig. 12(a) compares the performance of different models on various combinations of modal inputs specifically
+on the MMFi dataset. The following observations are made: (i) MASTER w/o Ali (i.e., MASTER without Alignment)
+outperforms all baselines, even with extremely limited labeled data for training, highlighting the effectiveness
+of masked-data modeling-based self-supervised pre-training method. Building on this, the few-shot alignment
+mechanism in MASTER further enhances performance, demonstrating its robust ability to leverage limited informa-
+tion and handle challenging scenarios with missing modalities. Furthermore, even when only a single modality is
+available, MASTER maintains an average accuracy higher than that of other methods utilizing three modalities,
+underscoring the superior cross-modal learning ability of MASTER. (ii) Both COSMO and CMC exhibit inferior
+performance compared to MASTER, and their performance significantly deteriorates when fewer modalities are
+available. This decline can be attributed to the fact that the absence of certain modalities leads to changes in
+the data distribution, rendering the knowledge learned by COSMO and CMC during the self-supervised pre-
+training phase ineffective. (iii) STMAE performs worse than COSMO and CMC. This can be attributed to the
+pre-training strategy of STMAE, i.e., reconstructing the raw data, cannot effectively align feature embeddings
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:17
+(a) MMFi dataset (6 modalities in total). (b) UCI dataset.
+(c) DCM dataset.
+Fig. 12. MASTER can handle diverse sensor data combinations while requiring a minimal amount of labeled data; in contrast,
+baseline methods experience a significant decline in performance when fewer modalities are available.
+in high-dimensional space, whereas contrastive learning directly aligns them in high-dimensional space. (iv)
+BABEL performs worse under missing modality conditions, as its alignment strategy tends to cause the loss
+of complementary information in informative modalities, resulting in each modality providing only limited
+consistent information.
+Fig. 12(b) presents the detailed performance of different models across various combinations of similar modal
+inputs (ACC and Gyro data) on the UCI dataset. The following observations can be made: (i) MASTER achieves
+high accuracy across various modal inputs, even with only 1% of labeled data for training. (ii) MASTER w/o Ali
+achieves sub-optimal accuracy across various modal inputs, even with only 1% of labeled data for training. (iii)
+When the missing modalities are similar to the other modalities in the input (e.g., ACC1 is missing), AttnSense,
+STMAE, CMC, COSMO, and BABEL all experience a significant decrease in recognition accuracy.
+Fig. 12(c) presents the detailed performance of different models across various possible combinations of modal
+inputs in real-world scenarios on the self-collected DCM dataset. The following observations can be made: (i)
+MASTER achieves high accuracy across various modal inputs, even with only 3% of labeled data for training.
+(ii) Due to variations in data distributions across different modality combinations in the DCM dataset, the
+few-shot alignment mechanism significantly improves the MASTER’s recognition accuracy, achieving an average
+improvement of 9.3%, by effectively adapting to distribution shifts across modalities and scenes. (iii) COSMO
+demonstrates high accuracy on modal combinations involving only Skeleton, as its fusion weights focus more on
+Skeleton rather than other modalities. However, it performs poorly on modal combinations that include mmWave,
+wrist IMU, and thigh IMU. (iv) BABEL performs poorly on modal combinations that do not include wrist IMU,
+as the complementary information from other modalities is lost during alignment with wrist IMU, limiting the
+available additional information when wrist IMU is absent.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:18 • Zhu et al.
+(a) UCI to Shoaib. (b) Shoaib to UCI. (c) DCM dataset: Non-privacy
+zone to Privacy zone.
+(d) DCM dataset: Privacy zone
+to Non-privacy zone.
+Fig. 13. Cross-scene few-shot learning cases.
+6.4 Few-shot Learning Abilities
+6.4.1 Cross-scene Ability. Fig. 13 shows the recognition accuracy of different methods across different scenes.
+Specifically, Figs. 13(a) and 13(b) show simulated cross-scene experiments conducted with different datasets,
+using the same data collection devices and wearing positions. In contrast, Figs. 13(c) and 13(d) show cross-
+scene experiments (i.e., privacy zone and non-privacy zone) based on our self-collected DCM dataset, reflecting
+real-world scenarios. The following observations can be made: (i) Without fine-tuning on the target dataset,
+all methods experience a significant degradation in accuracy. This degradation is more severe in real-world
+cross-scene scenarios (i.e., P → NP and NP → P) compared to the U → S and S → U scenarios, indicating
+that real-world conditions present a much greater challenge. (ii) With only 1% of labeled data for fine-tuning,
+MASTER demonstrates the best few-shot learning ability on all cross-scene few-shot learning cases, achieving
+comparable recognition accuracy to methods utilizing 10% labeled data and exhibiting the most substantial
+improvement in accuracy compared to the non-fine-tuned models. (iii) The transfer learning performance of
+MASTER varies across different scenes. The difference in recognition accuracy between S → S and U → S+1% is
+smaller than that between U → U and S → U+1%. This discrepancy can be attributed to the lower quality and
+higher recognition difficulty of the UCI dataset compared to the Shoaib dataset. Consequently, during transfer
+learning, the knowledge acquired from the more challenging dataset is more generalizable, resulting in a more
+effective transfer of learned knowledge.
+6.4.2 Cross-position Ability. Fig. 14 shows the recognition accuracy of different models across different positions,
+where all models are trained with 10% of labeled data on the source position and utilize 1% of labeled data
+from target positions for fine-tuning. We can observe that MASTER achieves the best performance compared to
+other baselines. Despite using only 10% and 1% of labeled data at the source and target positions, respectively,
+MASTER achieves comparable or even higher performance than AttnSense, which utilizes 100% labeled data. This
+demonstrates the superior knowledge understanding and transfer abilities of MASTER. The transfer learning
+performance of BABEL is worse than that of STMAE, COSMO, and CMC. This can be attributed to the fact that
+the data fusion mechanism of BABEL is not suitable for lightweight encoders.
+6.4.3 Cross-device Ability. As the HHAR dataset is collected using four different smartphones, we utilize it to
+evaluate the cross-devices few-shot learning performance. Due to the significant differences in data volume
+across these devices, i.e., Nexus 4: 8295, Galaxy S3: 7857, Galaxy S3 mini: 3608, and Galaxy S plus: 703, we use 642
+samples (10% of the training set of Nexus 4) to fine-tune each model on Nexus 4, and use additional 36 samples to
+fine-tune each model on other target devices. From Fig. 15, it can be observed that MASTER achieves comparable
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:19
+Fig. 14. Cross-position few-shot learning case. Fig. 15. Cross-device few-shot learning case.
+(a) ACC. (b) Gyro.
+Fig. 16. Comparison of classification accuracy with uni-modal HAR foundation model.
+or even higher performance than AttnSense, which utilizes 100% labeled data. This demonstrates the superior
+few-shot cross-devices transfer ability of MASTER.
+6.5 Understanding MASTER’s Performance
+6.5.1 Comparison with Uni-modal Foundation Model. We further compare the classification performance and
+regression performance of MASTER with the accelerometer-specific foundation model RelCon [48] based on a single
+modality. From Fig. 16, we can observe that MASTER consistently outperforms both the uni-modal foundation model
+Relcon and the multi-modal foundation model BABEL across multiple datasets, achieving higher classification
+accuracy and better balance between ACC and Gyro modalities. While BABEL exhibits relatively balanced results
+across ACC and Gyro, it performs worse than Relcon on the ACC modality. In contrast, MASTER achieves strong
+performance on both ACC and Gyro, without requiring modality-specific design. This demonstrates MASTER’s
+superior cross-modal knowledge transfer capability, indicating that a well-designed multi-modal foundation
+model can even outperform uni-modal model in single-modality scenarios.
+For the regression performance, RelCon achieves the lowest MSE of 0.0500 m/s and 0.0468 m/s on ACC and
+Gyro, respectively. Our MASTER achieves highly comparable performance, with only a slight increase of 1.670 cm/s
+and 1.525 cm/s, respectively. Such minimal differences are negligible in practical stride velocity estimation. This
+minor performance gap can be attributed to MASTER emphasizing broad generalization across modalities rather
+than optimization for specific modalities. In contrast, the multi-modal approach BABEL exhibits significantly
+higher regression errors, particularly on Gyro (MSE of 0.1003 m/s, approximately 10 cm/s), highlighting the
+limitations of relying solely on consistent information alignment while overlooking complementary information.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:20 • Zhu et al.
+Fig. 17. Accuracy of MASTER under different pre-training
+strategies.
+Fig. 18. Accuracy of MASTER under different fine-tuning
+strategies.
+Fig. 19. Impact of few-shot alignment. Fig. 20. Impact of pre-training loss.
+6.5.2 Impact of Pre-training Strategies. Fig. 17 presents a comparison of the overall recognition accuracy of
+MASTER when utilizing unlabeled data from a single dataset versus all datasets for pre-training, along with 5% of
+labeled data for fine-tuning. Note that the pre-training dataset does not include the testing set. The following
+observations are made: (i) MASTER (without alignment), when pre-trained on all datasets, achieves an average
+accuracy improvement from 88.8% to 91.0%, in contrast to when it is pre-trained on a single dataset only. This
+improvement can be attributed to MASTER’s ability to adapt to any modal input, enabling collaborative training
+on multiple datasets. (ii) The few-shot alignment mechanism can effectively aid MASTER in adapting to various
+activities, scenes, positions, and devices when pre-trained on all datasets, resulting in an accuracy improvement
+from 89.4% to 92.2%.
+6.5.3 Impact of Fine-tuning Strategies. Fig. 18 presents a comparison of the overall recognition accuracy of
+MASTER using different fine-tuning strategies, alongside the best performance of fully fine-tuned baselines. We
+can observe that even with minimal adaptation cost, i.e., when only fine-tuning the last layer of MASTER, it
+outperforms the fully fine-tuned baselines. Furthermore, compared to MASTER with the maximum adaptation
+cost, its performance decreases by only 7.21%.
+6.5.4 Impact of Few-shot Alignment. Fig. 19 shows the impact of the few-shot alignment mechanism on the
+Shoaib dataset. The Shoaib dataset is selected due to its high data heterogeneity, encompassing multi-modal
+data from five different positions. It is observed that the few-shot alignment mechanism significantly enhances
+the recognition accuracy of MASTER, particularly when the labeled data is extremely limited (e.g., 1%, 2%). This
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:21
+Fig. 21. Convergence comparison on limited labeled data. Fig. 22. Impact of transformer blocks.
+improvement is attributed to the ability of the few-shot alignment mechanism to capture overall distribution
+differences using only a small amount of labeled data.
+6.5.5 Impact of Pre-training Loss. Fig. 20 illustrates the impact of different pre-training loss on the accuracy
+across various datasets. The results show that the recovery loss outperforms the MSE loss in terms of accuracy
+across all datasets, demonstrating the effectiveness of the proposed recovery loss. Notably, the performance of
+MSE loss decreases as the number of modalities increases, highlighting the limitations of MSE loss in handling
+more complex multi-modal inputs.
+6.5.6 Convergence Performance. As the edge devices usually own limited computation resources, the fine-tuning
+stage should be more efficient. Fig. 21 shows the convergence perofrmance of different methods when trained
+with 1% labeled data on DCM dataset. It is observed that MASTER not only converges faster but also requires only
+about 60 epochs of training to achieve the highest testing accuracy.
+6.5.7 Impact of Transformer Blocks. Fig. 22 presents the accuracy performance of MASTER on the MMFi dataset
+with varying numbers of transformer blocks. It is observed that the accuracy of MASTER with 1%, 2%, and 5% of
+labeled data initially increases with the number of transformer blocks, but gradually decreases after reaching four
+blocks. This number of transformer blocks is significantly smaller compared to existing LLMs that often have 96
+transformer blocks. The main reason for the limited number of transformer blocks in MASTER is the scarcity of
+unlabeled data for pre-training. Pre-training datasets for LLMs typically consist of over 950,000 samples [21],
+whereas the MMFi dataset contains only approximately 13,700 samples.
+7 DISCUSSION
+Generality. Our MASTER aims to address two real-world issues from the sensor aspect (dynamic sensor combina-
+tions), data aspect (limited labeled data and heterogeneous data distribution), and task aspect (various recognition
+tasks in different scenes). Specifically, (i) we propose a masked-data modeling-based self-supervised pre-training
+method and a tailored recovery loss for sensing data to make the model harness various combinations of data
+from diverse available sensors, meanwhile enabling the model to train simultaneously on datasets from different
+scenarios and tasks; (ii) we propose a few-shot alignment and fine-tuning mechanism to enable the model to
+adapt to different scenes, positions, and devices with only a small amount of labeled data. Furthermore, MASTER
+can be compatible with other masked modeling-based methods, e.g., masked-text modeling. This implies that
+MASTER has the potential to align with text and facilitate zero-shot HAR.
+System Deployment. As a multi-modal foundation foundation model for HAR, MASTER is typically trained
+on a cloud server. The limited amount of labeled data required for alignment and fine-tuning can be annotated
+by volunteers. When it comes to a new device, if no new modalities are introduced, there is no need to retrain
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:22 • Zhu et al.
+the model. In practical applications, the lightweight encoders of MASTER can be deployed on the sensors’ side to
+perform feature extraction. The remaining components of the recognition model, such as transformer blocks and
+the classifier, which are computationally intensive, can be deployed on smart devices with abundant computational
+resources, such as smartphones and home hubs.
+Potential Applications. In addition to the HAR application scenarios mentioned in Sect. 1, MASTER can be
+further extended to other applications, such as handling multi-modal physiological data. This includes data from
+sources like electrocardiography (ECG) and photoplethysmography (PPG). This extension would enable the
+monitoring of physiological indicators and identification of potential diseases, as multi-modal physiological data
+also contains consistent and complementary information.
+Limitations. There are several limitations that need to be claimed. First, in multi-modal HAR, we currently
+face a shortage of high-quality multi-modal data for pre-training, which hampers the performance of the model.
+For instance, the UTD dataset [9] comprises 3 modalities and 27 categories but only contains 828 samples. This
+data scarcity makes it challenging for the transformer in MASTER to be fully activated, resulting in the MASTER’s
+performance being comparable with the SOTA baselines. This limitation also restricts the width and depth of
+the MASTER model, preventing it from reaching the scale of other multi-modal foundation models in the field of
+NLP or CV, which can stack up to over 96 transformer blocks. Although our experiments have demonstrated
+that leveraging data generation/augmentation methods can enhance MASTER’s performance, the patterns in the
+generated data are constrained and may diverge from the real-world data. Second, the pre-training overhead of
+MASTER is higher than the SOTA baselines. Fortunately, MASTER offers the advantage of requiring only a single
+model to be trained to apply to various modalities, scenarios, positions, devices, and tasks. In contrast, existing
+methods require the training of multiple separate models for different situations. Third, the high computational
+requirements during the inference stage of the model may necessitate the uploading of multi-modal sensing data
+or patch embeddings [59] to the cloud or edge servers, resulting in privacy concerns and extra communication
+overhead [57, 58].
+8 RELATED WORKS
+Multi-modal Sensing for HAR. Many studies [12, 28, 29, 31, 46, 47, 50, 54, 61] focus on using multi-modal data
+to perform HAR. For example, PDLens [54] utilizes multiple built-in smartphone sensors to monitor human daily
+activities; Zhu et al. [61] combine smart speakers and smart meters to recognize human electricity consumption
+behaviors. However, these methods are designed for fixed modalities. Some deep learning-based multi-modal
+fusion methods are designed for multiple combinations of modalities [12, 28, 31, 50]. For instance, Eldele et al. [17]
+propose a self-supervised framework to fuse any two different modalities; Ouyang et al. [30] propose a contrastive
+learning-based unified framework for multi-modal HAR with small labeled data. However, these methods still
+have strict restrictions on the number of input modalities, which cannot adapt to real-world scenarios with
+any combination of modalities. To make the model adapt to dynamic input modalities, Zheng et al. [60] use an
+autoencoder-based data imputation method to fulfill the missing modality in pairs of modalities, enabling normal
+model inference; Li et al. [24] train an independent sub-model for each modality using a model ensemble method.
+However, the above works prove ineffective or entail significant training overhead when dealing with HAR data
+that is rich in modalities.
+Multi-modal Large Language Models. Many MLLMs [3, 16, 18, 23, 32, 43] have emerged to understand
+human intentions from a multi-modal view. For instance, in the fields of NLP and CV, CLIP [32] employs
+contrastive learning to align features from text and images, enabling the model to distinguish between unseen
+classes; PaLM-E [16] projects image representations into the text representation space, allowing the model
+to understand image information in a language processing manner; ImageBind [18] can handle data from six
+modalities, including text, images, audio, depth, thermal, and IMU, by binding them with text or images. However,
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:23
+the above MLLMs can only handle a small fixed number of input modalities (e.g., text, images, and audio). When
+extended to some HAR-related sensing modalities (e.g., depth, thermal, and IMU), they still require alignment
+with strong interpretable modalities like text, which are not commonly present in HAR scenarios.
+Foundation Models for HAR. Some studies [44, 46–48, 52] build a uni-modal foundation model for HAR.
+For example, Xu et al. [47] propose limu-bert, the first IMU-specific foundation model in the HAR field. Xu
+et al. [48] propose RelCon, an accelerometer-specific foundation model. Similarly, Weng et al. [44] propose a
+Radio-Frequency-specific foundation model for HAR. Although these models are limited to specific sensing
+modalities, they share a similar objective with our MASTER, i.e., achieving superior performance across diverse
+scenes, positions, and devices with limited labeled data. However, their pretraining strategies or backbone
+architectures are difficult to generalize to multi-modal settings. For multi-modal HAR foundation models, a recent
+representative work is BABEL [11], which builds on the ImageBind [18] architecture to perform pairwise modality
+alignment. However, it faces several limitations during pretraining: i) It lacks the ability to learn discriminative
+information during pre-training, as it focuses solely on aligning different modalities into the same representation,
+without the capacity to distinguish between activities in an unsupervised manner, as shown in Figs. 7(a) and
+8(b). ii) It fails to utilize the complementary information within heterogeneous modalities; specifically, aligning
+modalities with rich information to those with less information leads to the loss of valuable complementary
+information. iii) Its alignment strategy is restricted to modality pairs from a single dataset at a time, which
+prevents comprehensive knowledge integration across multiple modalities and datasets. Different from the
+aforementioned foundation models for HAR, MASTER is a multi-modal foundational model specifically designed
+to tackle the practical challenges of HAR, i.e., dynamic modality combinations and few-shot adaptability, as
+discussed in Sect. 1. Furthermore, our pre-training strategy facilitates simultaneous learning of both consistency
+and complementary information across multiple datasets and heterogeneous modalities.
+Few-shot Learning. Several studies [4, 22, 31, 34, 46] have investigated the application of few-shot learning
+in HAR. These works use meta-learning or complex data augmentation techniques to pre-train a well-generalized
+backbone model, and then fine-tune the model with small labeled data to adapt to the target users. However,
+these approaches are designed for a fixed pair of specific sensor modalities and cannot be easily extended to
+other heterogeneous sensor modalities. While some works [12, 31] explore multi-modal few-shot learning using
+contrastive learning, they still face limitations in handling dynamic combinations of modalities.
+9 CONCLUSION
+This work proposes MASTER, a multi-modal foundation model specifically designed for HAR in real-world settings.
+MASTER features a novel masked-data modeling-based self-supervised pre-training method to adapt to dynamic
+combinations of modal inputs, and a few-shot alignment mechanism to adapt to various activities, scenes, positions,
+and devices. Through pre-training and fine-tuning on 7 multi-modal HAR datasets, our MASTER supports at least
+8 modalities and 45 activities. Extensive experimental results demonstrate that MASTER achieves the highest
+accuracy with minimal labeled data in various situations, surpassing other SOTA baselines.
+ACKNOWLEDGMENTS
+This project was supported by the National Major Scientific Instruments and Equipments Development Project
+of National Natural Science Foundation of China under Grant 62427810; in part by National Natural Science
+Foundation of China under Grant 62222202, 62232004, and U24B20176; in part by the Beijing Natural Science
+Foundation under Grant L223002; in part by the 111 Project under Grant B18008; in part by BUPT Excellent Ph.D.
+Students Foundation under Grant CX20242002. Huadong Ma and Dong Zhao are corresponding authors.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:24 • Zhu et al.
+REFERENCES
+[1] 2021. Apple: Measuring Walking Quality Through iPhone Mobility Metrics. https://www.apple.com/ca/healthcare/docs/site/Measuring_
+Walking_Quality_Through_iPhone_Mobility_Metrics.pdf.
+[2] 2024. MotionNode IMU platform. http://www.motionnode.com/.
+[3] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt,
+Sam Altman, Shyamal Anadkat, et al. 2023. GPT-4 technical report. arXiv:2303.08774 (2023).
+[4] Sizhe An, Ganapati Bhat, Suat Gumussoy, and Umit Ogras. 2023. Transfer learning for human activity recognition using representational
+analysis of neural networks. ACM Transactions on Computing for Healthcare 4, 1 (2023), 1–21.
+[5] Sizhe An, Yin Li, and Umit Ogras. 2022. mri: Multi-modal 3d human pose estimation dataset using mmwave, rgb-d, and inertial sensors.
+Advances in NeurIPS 35 (2022), 27414–27426.
+[6] Davide Anguita, Alessandro Ghio, Luca Oneto, Xavier Parra, Jorge Luis Reyes-Ortiz, et al. 2013. A public domain dataset for human
+activity recognition using smartphones.. In Esann, Vol. 3. 3–4.
+[7] Hangbo Bao, Wenhui Wang, Li Dong, Qiang Liu, Owais Khan Mohammed, Kriti Aggarwal, Subhojit Som, Songhao Piao, and Furu Wei.
+2022. Vlmo: Unified vision-language pre-training with mixture-of-modality-experts. Advances in NeurIPS 35 (2022), 32897–32912.
+[8] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam,
+Girish Sastry, Amanda Askell, et al. 2020. Language models are few-shot learners. Advances in NeurIPS 33 (2020), 1877–1901.
+[9] Chen Chen, Roozbeh Jafari, and Nasser Kehtarnavaz. 2015. UTD-MHAD: A multimodal dataset for human action recognition utilizing a
+depth camera and a wearable inertial sensor. In 2015 IEEE International conference on image processing (ICIP). IEEE, 168–172.
+[10] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won
+Chung, Charles Sutton, Sebastian Gehrmann, et al. 2023. PaLM: Scaling language modeling with pathways. Journal of Machine Learning
+Research 24, 240 (2023), 1–113.
+[11] Shenghong Dai, Shiqi Jiang, Yifan Yang, Ting Cao, Mo Li, Suman Banerjee, and Lili Qiu. 2024. Advancing Multi-Modal Sensing Through
+Expandable Modality Alignment. arXiv preprint arXiv:2407.17777 (2024).
+[12] Shohreh Deldari, Hao Xue, Aaqib Saeed, Daniel V Smith, and Flora D Salim. 2022. COCOA: Cross modality contrastive learning for
+sensor data. Proceedings of the ACM IMWUT 6, 3 (2022), 1–28.
+[13] Kaikai Deng, Dong Zhao, Wenxin Zheng, Yue Ling, Kangwen Yin, and Huadong Ma. 2024. G 3 R: Generating Rich and Fine-Grained
+Mmwave Radar Data From 2D Videos for Generalized Gesture Recognition. IEEE Transactions on Mobile Computing (2024).
+[14] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of Deep Bidirectional Transformers for
+Language Understanding. In Proceedings of the NAACL. 4171–4186.
+[15] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani,
+Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. 2020. An Image is Worth 16x16 Words: Transformers for Image Recognition at
+Scale. In ICLR.
+[16] Danny Driess, Fei Xia, Mehdi SM Sajjadi, Corey Lynch, Aakanksha Chowdhery, Brian Ichter, Ayzaan Wahid, Jonathan Tompson, Quan
+Vuong, Tianhe Yu, et al. 2023. PaLM-E: An Embodied Multimodal Language Model. In ICML. 8469–8488.
+[17] Emadeldeen Eldele, Mohamed Ragab, Zhenghua Chen, Min Wu, Chee Keong Kwoh, Xiaoli Li, and Cuntai Guan. 2021. Time-Series
+Representation Learning via Temporal and Contextual Contrasting. In Proceedings of IJCAI.
+[18] Rohit Girdhar, Alaaeldin El-Nouby, Zhuang Liu, Mannat Singh, Kalyan Vasudev Alwala, Armand Joulin, and Ishan Misra. 2023. Imagebind:
+One embedding space to bind them all. In Proceedings of the IEEE/CVF CVPR. 15180–15190.
+[19] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, and Ross Girshick. 2022. Masked autoencoders are scalable vision
+learners. In Proceedings of the IEEE/CVF CVPR. 16000–16009.
+[20] Zhiqing Hong, Zelong Li, Shuxin Zhong, Wenjun Lyu, Haotian Wang, Yi Ding, Tian He, and Desheng Zhang. 2024. CrossHAR:
+Generalizing Cross-dataset Human Activity Recognition via Hierarchical Self-Supervised Pretraining. Proceedings of the ACM IMWUT 8,
+2 (2024), 1–26.
+[21] Mandar Joshi, Eunsol Choi, Daniel S Weld, and Luke Zettlemoyer. 2017. TriviaQA: A Large Scale Distantly Supervised Challenge Dataset
+for Reading Comprehension. In Proceedings of the ACL. 1601–1611.
+[22] Hua Kang, Qianyi Huang, and Qian Zhang. 2022. Augmented adversarial learning for human activity recognition with partial sensor
+sets. Proceedings of the ACM IMWUT 6, 3 (2022), 1–30.
+[23] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. Blip-2: Bootstrapping language-image pre-training with frozen image
+encoders and large language models. In ICML. 19730–19742.
+[24] Jingcheng Li, Lina Yao, Binghao Li, Xianzhi Wang, and Claude Sammut. 2022. Multi-agent Transformer Networks for Multimodal
+Human Activity Recognition. In Proceedings of the ACM CIKM. 1135–1145.
+[25] Kun Liang, Anfu Zhou, Zhan Zhang, Hao Zhou, Huadong Ma, and Chenshu Wu. 2023. mmStress: Distilling Human Stress from Daily
+Activities via Contact-less Millimeter-wave Sensing. Proceedings of the ACM IMWUT 7, 3 (2023), 1–36.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+MASTER: A Multi-modal Foundation Model for Human Activity Recognition • 157:25
+[26] Yue Ling, Dong Zhao, Kaikai Deng, Kangwen Yin, Wenxin Zheng, and Huadong Ma. 2024. Uranus: Empowering Generalized Gesture
+Recognition with Mobility through Generating Large-scale mmWave Radar Data. Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies 8, 4 (2024), 1–28.
+[27] Jian Liu, Hongbo Liu, Yingying Chen, Yan Wang, and Chen Wang. 2019. Wireless sensing for human activity: A survey. IEEE
+Communications Surveys & Tutorials 22, 3 (2019), 1629–1645.
+[28] Haojie Ma, Wenzhong Li, Xiao Zhang, Songcheng Gao, and Sanglu Lu. 2019. AttnSense: Multi-level attention mechanism for multimodal
+human activity recognition. In IJCAI. 3109–3115.
+[29] Shenghuan Miao, Ling Chen, and Rong Hu. 2024. Spatial-Temporal Masked Autoencoder for Multi-Device Wearable Human Activity
+Recognition. Proceedings of the ACM IMWUT 7, 4 (2024), 1–25.
+[30] Xiaomin Ouyang, Xian Shuai, Yang Li, Li Pan, Xifan Zhang, Heming Fu, Sitong Cheng, Xinyan Wang, Shihua Cao, Jiang Xin, et al. 2024.
+ADMarker: A Multi-Modal Federated Learning System for Monitoring Digital Biomarkers of Alzheimer’s Disease. In Proceedings of the
+ACM Mobicom. 404–419.
+[31] Xiaomin Ouyang, Xian Shuai, Jiayu Zhou, Ivy Wang Shi, Zhiyuan Xie, Guoliang Xing, and Jianwei Huang. 2022. Cosmo: contrastive
+fusion learning with small data for multimodal human activity recognition. In Proceedings of the ACM MobiCom. 324–337.
+[32] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela
+Mishkin, Jack Clark, et al. 2021. Learning transferable visual models from natural language supervision. In Proceedings of the ACM ICML.
+8748–8763.
+[33] Lisa Schrader, Agustín Vargas Toro, Sebastian Konietzny, Stefan Rüping, Barbara Schäpers, Martina Steinböck, Carmen Krewer,
+Friedemann Müller, Jörg Güttler, and Thomas Bock. 2020. Advanced sensing and human activity recognition in early intervention and
+rehabilitation of elderly people. Journal of Population Ageing 13 (2020), 139–165.
+[34] Biyun Sheng, Rui Han, Hui Cai, Fu Xiao, Linqing Gui, and Zhengxin Guo. 2024. CDFi: Cross-Domain Action Recognition using WiFi
+Signals. IEEE Transactions on Mobile Computing (2024).
+[35] Muhammad Shoaib, Stephan Bosch, Ozlem Durmaz Incel, Hans Scholten, and Paul JM Havinga. 2014. Fusion of smartphone motion
+sensors for physical activity recognition. Sensors 14, 6 (2014), 10146–10176.
+[36] Allan Stisen, Henrik Blunck, Sourav Bhattacharya, Thor Siiger Prentow, Mikkel Baun Kjærgaard, Anind Dey, Tobias Sonne, and
+Mads Møller Jensen. 2015. Smart devices are different: Assessing and mitigating mobile sensing heterogeneities for activity recognition.
+In Proceedings of the ACM SenSys. 127–140.
+[37] Ke Sun, Chunyu Xia, Xinyu Zhang, Hao Chen, and Charlie Jianzhong Zhang. 2024. Multimodal Daily-Life Logging in Free-living
+Environment Using Non-Visual Egocentric Sensors on a Smartphone. Proceedings of the ACM IMWUT 8, 1 (2024), 1–32.
+[38] Yonglong Tian, Dilip Krishnan, and Phillip Isola. 2020. Contrastive multiview coding. In Proceedings of the ECCV. Springer, 776–794.
+[39] Stef Van Buuren. 2018. Flexible imputation of missing data. CRC press.
+[40] Laurens Van der Maaten and Geoffrey Hinton. 2008. Visualizing data using t-SNE. Journal of Machine Learning Research 9, 11 (2008).
+[41] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017.
+Attention is all you need. Advances in NeurIPS 30 (2017).
+[42] Hongyu Wang, Shuming Ma, Li Dong, Shaohan Huang, Dongdong Zhang, and Furu Wei. 2024. Deepnet: Scaling transformers to 1,000
+layers. IEEE Transactions on Pattern Analysis and Machine Intelligence (2024).
+[43] Wenhui Wang, Hangbo Bao, Li Dong, Johan Bjorck, Zhiliang Peng, Qiang Liu, Kriti Aggarwal, Owais Khan Mohammed, Saksham
+Singhal, Subhojit Som, et al. 2022. Image as a foreign language: Beit pretraining for all vision and vision-language tasks. arXiv:2208.10442
+(2022).
+[44] Yuxuan Weng, Guoquan Wu, Tianyue Zheng, Yanbing Yang, and Jun Luo. 2024. Large Model for Small Data: Foundation Model for
+Cross-Modal RF Human Activity Recognition. In Proceedings of the 22nd ACM Conference on Embedded Networked Sensor Systems.
+436–449.
+[45] Ling Xing, Kaikai Deng, Honghai Wu, Huahong Ma, Jianping Gao, and Yue Ling. 2025. The Dawn of Synthetic Era: Synthesizing
+mmWave Radar Data from 2D Videos for Human Sensing. IEEE Communications Magazine (2025).
+[46] Huatao Xu, Pengfei Zhou, Rui Tan, and Mo Li. 2023. Practically Adopting Human Activity Recognition. In Proceedings of the ACM
+MobiCom. 1–15.
+[47] Huatao Xu, Pengfei Zhou, Rui Tan, Mo Li, and Guobin Shen. 2021. Limu-bert: Unleashing the potential of unlabeled data for imu sensing
+applications. In Proceedings of the ACM SenSys. 220–233.
+[48] Maxwell A Xu, Jaya Narain, Gregory Darnell, Haraldur Hallgrimsson, Hyewon Jeong, Darren Forde, Richard Fineman, Karthik J
+Raghuram, James M Rehg, and Shirley Ren. 2024. RelCon: Relative Contrastive Learning for a Motion Foundation Model for Wearable
+Data. arXiv preprint arXiv:2411.18822 (2024).
+[49] Jianfei Yang, He Huang, Yunjiao Zhou, Xinyan Chen, Yuecong Xu, Shenghai Yuan, Han Zou, Chris Xiaoxuan Lu, and Lihua Xie. 2024.
+Mm-fi: Multi-modal non-intrusive 4d human dataset for versatile wireless sensing. Advances in NeurIPS 36 (2024).
+[50] Shuochao Yao, Shaohan Hu, Yiran Zhao, Aston Zhang, and Tarek Abdelzaher. 2017. DeepSense: A unified deep learning framework for
+time-series mobile sensing data processing. In Proceedings of the ACM WWW. 351–360.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+157:26 • Zhu et al.
+[51] Shukang Yin, Chaoyou Fu, Sirui Zhao, Ke Li, Xing Sun, Tong Xu, and Enhong Chen. 2023. A Survey on Multimodal Large Language
+Models. arXiv:2306.13549 (2023).
+[52] Hang Yuan, Shing Chan, Andrew P Creagh, Catherine Tong, Aidan Acquah, David A Clifton, and Aiden Doherty. 2024. Self-supervised
+learning for human activity recognition using 700,000 person-days of wearable data. NPJ digital medicine 7, 1 (2024), 91.
+[53] Duo Zhang, Xusheng Zhang, Shengjie Li, Yaxiong Xie, Yang Li, Xuanzhi Wang, and Daqing Zhang. 2023. Lt-fall: The design and
+implementation of a life-threatening fall detection and alarming system. Proceedings of the ACM IMWUT 7, 1 (2023), 1–24.
+[54] Hanbin Zhang, Gabriel Guo, Chen Song, Chenhan Xu, Kevin Cheung, Jasleen Alexis, Huining Li, Dongmei Li, Kun Wang, and Wenyao
+Xu. 2020. PDLens: smartphone knows drug effectiveness among Parkinson’s via daily-life activity fusion. In Proceedings of the ACM
+MobiCom. 1–14.
+[55] Hanbin Zhang, Chen Song, Aosen Wang, Chenhan Xu, Dongmei Li, and Wenyao Xu. 2019. Pdvocal: Towards privacy-preserving
+Parkinson’s disease detection using non-speech body sounds. In Proceedings of the ACM MobiCom. 1–16.
+[56] Mi Zhang and Alexander A Sawchuk. 2012. USC-HAD: A daily activity dataset for ubiquitous activity recognition using wearable
+sensors. In Proceedings of the ACM UbiComp. 1036–1043.
+[57] Zhengyuan Zhang, Dong Zhao, Renhao Liu, Kuo Tian, Yuxing Yao, YuanChun Li, and Huadong Ma. 2024. CamoNet: On-Device Neural
+Network Adaptation With Zero Interaction and Unlabeled Data for Diverse Edge Environments. IEEE Transactions on Mobile Computing
+(2024).
+[58] Zhengyuan Zhang, Dong Zhao, Renhao Liu, Yuxing Yao, Xiangyu Li, and Huadong Ma. 2025. ACL: Adaptive Edge-Cloud Collaborative
+Learning for Heterogeneous Devices with Unlabeled Local Data. IEEE Transactions on Mobile Computing (2025).
+[59] Mingyue Zhao, Jiayi Shi, Zhengyuan Zhang, Yue Ling, Guanzhou Zhu, Dong Zhao, and Huadong Ma. 2025. C 2 F: Enabling Context-Aware
+Edge-Cloud Collaborative Inference for Foundation Models. In IEEE INFOCOM 2025-IEEE Conference on Computer Communications.
+IEEE, 1–10.
+[60] Tianyue Zheng, Ang Li, Zhe Chen, Hongbo Wang, and Jun Luo. 2023. Autofed: Heterogeneity-aware federated multimodal learning for
+robust autonomous driving. In Proceedings of the ACM Mobicom. 1–15.
+[61] Guanzhou Zhu, Dong Zhao, Kuo Tian, Zhengyuan Zhang, Rui Yuan, and Huadong Ma. 2023. Combining Smart Speaker and Smart Meter
+to Infer Your Residential Power Usage by Self-supervised Cross-modal Learning. Proceedings of the ACM IMWUT 7, 3 (2023), 1–26.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 3, Article 157. Publication date: September 2025.
+

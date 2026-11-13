@@ -1,0 +1,2380 @@
+MPD-SGR: Robust Spiking Neural Networks with Membrane Potential
+Distribution-Driven Surrogate Gradient Regularization
+Runhao Jiang1, 2
+, Chengzhi Jiang1, 2
+, Rui Yan3
+, Huajin Tang1, 2, 4*
+1
+College of Computer Science and Technology, Zhejiang University
+2
+The State Key Lab of Brain-Machine Intelligence, Zhejiang University
+3
+College of Computer Science and Technology, Zhejiang University of Technology
+4
+MOE Frontier Science Center for Brain Science and Brain-Machine Integration, Zhejiang University
+RhJiang@zju.edu.cn, jiangchengzhi2024@zju.edu.cn, Ryan@zjut.edu.cn, htang@zju.edu.cn
+Abstract
+The surrogate gradient (SG) method has shown significant
+promise in enhancing the performance of deep spiking neural
+networks (SNNs), but it also introduces vulnerabilities to ad-
+versarial attacks. Although spike coding strategies and neural
+dynamics parameters have been extensively studied for their
+impact on robustness, the critical role of gradient magnitude,
+which reflects the model’s sensitivity to input perturbations,
+remains underexplored. In SNNs, the gradient magnitude is
+primarily determined by the interaction between the mem-
+brane potential distribution (MPD) and the SG function. In
+this study, we investigate the relationship between the MPD
+and SG and their implications for improving the robustness
+of SNNs. Our theoretical analysis reveals that reducing the
+proportion of membrane potentials lying within the gradient-
+available range of the SG function effectively mitigates the
+sensitivity of SNNs to input perturbations. Building upon this
+insight, we propose a novel MPD-driven surrogate gradient
+regularization (MPD-SGR) method, which enhances robust-
+ness by explicitly regularizing the MPD based on its interac-
+tion with the SG function. Extensive experiments across mul-
+tiple image classification benchmarks and diverse network ar-
+chitectures confirm that the MPD-SGR method significantly
+enhances the resilience of SNNs to adversarial perturbations
+and exhibits strong generalizability across diverse network
+configurations, SG functions, and spike encoding schemes.
+Introduction
+Robustness is an intrinsic characteristic of the human brain,
+a trait that traditional artificial neural networks (ANNs)
+fail to replicate. Unlike ANNs that rely on dense embed-
+dings (Wang et al. 2022, 2024a,b), Spiking neural networks
+(SNNs) (Maass 1997) emulate the structural and functional
+properties of the brain by biological neurons that encode
+information via binary spikes, thereby demonstrating en-
+hanced resilience to noise and perturbations (Marchisio et al.
+2020; Sharmin et al. 2019; Hu et al. 2024). Although SNNs
+currently underperform ANNs in terms of accuracy, their in-
+trinsic robustness advantage makes them particularly suit-
+able for high-security applications like autonomous driv-
+ing (Zhu et al. 2024) and privacy computing (Kim, Venkate-
+sha, and Panda 2022).
+*Author for correspondence
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+The development of surrogate gradient (SG) methods has
+significantly advanced the performance of deep SNNs (Ta-
+vanaei et al. 2019), yet this progress introduces vulnera-
+bilities to gradient-based adversarial attacks (Liang et al.
+2021). Recent studies have shown that, although SNNs in-
+herently exhibit greater robustness than ANNs, such adver-
+sarial perturbations can critically compromise their accu-
+racy (Ding et al. 2022). Enhancing the adversarial robustness
+of SNNs remains a pivotal challenge in the research commu-
+nity. Some techniques originally developed for ANNs, such
+as adversarial training (Ding et al. 2024a) and Lipschitz reg-
+ularization (Ding et al. 2022), have been extended to SNNs.
+In parallel, growing attention has been paid to understand-
+ing how structural parameters (e.g., leak factors (Chowd-
+hury, Lee, and Roy 2021; Sharmin et al. 2020; Xu et al.
+2024), thresholds (El-Allami et al. 2021)) and neural encod-
+ing schemes (Ma, Yan, and Tang 2023; Ding et al. 2024b;
+Wu et al. 2024) affect the robustness of SNNs. The intrin-
+sic noise-filtering properties of spiking dynamics, along with
+the stochastic nature of neural coding, are considered critical
+factors underpinning the robustness of SNNs.
+However, existing research (Xu et al. 2024; Liu et al.
+2024) has demonstrated that a model’s sensitivity to in-
+put perturbations (i.e., robustness error) can be reflected in
+the magnitude of gradients, which is primarily governed by
+the interaction between the membrane potential distribution
+(MPD) and the SG function in SNNs. The MPD not only re-
+flects the response characteristics of the neuronal population
+but also significantly influences the gradient propagation
+across network layers. Recent studies (Guo et al. 2022a,b,
+2023) have further shown that constraining the MPD to re-
+main within the gradient-available region of the SG func-
+tion with an appropriate proportion facilitates more effective
+gradient-based optimization. Therefore, it is also crucial to
+investigate how to constrain the MPD according to the SG
+function to enhance the robustness of SNNs.
+In this paper, we present a theoretical and empirical in-
+vestigation into the role of neuronal MPD and SG mech-
+anisms in enhancing the adversarial robustness of SNNs.
+First, through rigorous gradient analysis, we establish a the-
+oretical framework that formally connects robustness error
+with the SG in SNNs, demonstrating that reducing the SG
+magnitude can effectively mitigate robustness error. Since
+the SG magnitude is primarily influenced by the membrane
+arXiv:2511.12199v2
+[cs.LG]
+18
+Nov
+2025
+potential, we further investigate the MPD and establish an
+explicit connection between the MPD and network param-
+eters. Thus, the MPD can be optimized by learning the
+network parameters. Lastly, based on the relationship be-
+tween the MPD and the SG function, we derive an approxi-
+mate expression for the SG magnitude. Based on these the-
+oretical insights, we design an MPD-driven surrogate gra-
+dient regularization (MPD-SGR) method that reduces the
+proportion of MPD within the gradient-available region of
+the SG function, thereby enhancing the network’s resilience
+against adversarial attacks (Figure 1). The proposed frame-
+work demonstrates remarkable adaptability across diverse
+neuron parameter configurations, SG function variants, and
+spike coding methods. Experimental results across multiple
+image classification datasets, network architectures, and gra-
+dient approximation methods demonstrate that our MPD-
+SGR method effectively improves the robustness of SNNs
+against various input perturbations.
+Related Work
+Surrogate Gradient Learning
+Surrogate gradient (SG) methods provide approximate gra-
+dients for the non-differentiable spiking neurons, thus sup-
+porting the backpropagation of errors in both spatial and
+temporal domains (Wu et al. 2018; Gu et al. 2019; Neftci,
+Mostafa, and Zenke 2019). Recent studies have found that
+the relationship between the gradient-available interval of
+the SG function and the membrane potential dynamics has
+a significant impact on the backpropagation training of
+SNNs (Zenke and Vogels 2021), inspiring a series of works
+to study the alignment between membrane potential and
+gradient-available interval. Some researchers adopt a fixed
+SG function and constrain the membrane potential distribu-
+tion to ensure that the gradient is propagated in an appro-
+priate proportion. InfLoR-SNN (Guo et al. 2022a) designed
+a membrane potential rectifier to redistribute the membrane
+potential closer to the spiking threshold. RecDis-SNN (Guo
+et al. 2022b) introduced three regularization losses to penal-
+ize three undesired shifts of the membrane potential distri-
+bution. Optimizing the SG function is another appealing ap-
+proach. Dspike (Li et al. 2021) adaptively changed its shape
+and captured the direction of finite difference gradients to
+find the optimal shape and smoothness for gradient estima-
+tion. LSG (Lian et al. 2023) adapted the width of the SG
+function automatically during training based on the mem-
+brane potential dynamics. ASGL (Wang et al. 2023) learned
+the precise gradients of the loss landscape in SNNs adap-
+tively by fusing the learnable relaxation degree into a proto-
+type network with random spike noise.
+Adversarial Defense for SNN
+SNNs exhibit inherent robustness (Marchisio et al. 2020;
+Sharmin et al. 2019), a property that is often attributed
+to their biologically plausible components, such as neural
+coding and dynamics. Several studies aim to enhance ro-
+bustness from a neurodynamic perspective. For example,
+structural parameters, including time windows, leak fac-
+tors, and thresholds, play a key role in determining the ad-
+versarial robustness of SNNs (El-Allami et al. 2021). The
+noise-filtering effect of membrane potential leakage char-
+acteristics has motivated approaches to improve the SNN
+robustness by evolving leaky factor (Chowdhury, Lee, and
+Roy 2021; Sharmin et al. 2020). Additionally, leveraging
+stochasticity or attention mechanisms in neural coding can
+mitigate noise in the information transmission process. For
+instance, Poisson coding, which encodes the continuous in-
+tensity of an image into binary spikes with inherent ran-
+domness, has been shown to exhibit greater robustness than
+direct coding (Sharmin et al. 2020; Kim et al. 2022). To
+further utilize the noisy, non-deterministic nature of neu-
+ral coding, NDL (Ma, Yan, and Tang 2023) incorporates
+noisy neuronal dynamics into SNNs to investigate their po-
+tential robustness benefits, while StoG (Ding et al. 2024b)
+introduces additional stochastic gating for spiking neurons
+to enhance model robustness. The FEEL method (Xu et al.
+2024) adopts a frequency encoding inspired by selective vi-
+sual attention mechanisms, suppressing noise in different
+frequency ranges at different time steps. Moreover, there are
+also some SNN-specific defensive techniques that draw in-
+spiration from ANNs. A typical representative is adversarial
+training (AT) (Kundu and Pedram 2021), which enhances
+robustness by incorporating adversarial examples generated
+through attacks into the training process. RAT (Ding et al.
+2022) proposes a regularized training strategy based on Lip-
+schitz analysis of SNNs.
+Preliminaries
+Spiking Neural Networks
+In the field of deep SNNs, the most commonly used spik-
+ing neuron is the iterative leaky integrate-and-fire (LIF)
+model. The iterative LIF model simulates biological neurons
+through three key dynamic processes: synaptic integration,
+membrane potential accumulation, and neuronal firing with
+resetting, which are mathematically defined as follows:
+Il−1
+(t) = Wl
+· Ol−1
+(t), (1)
+Rl
+(t − 1) = Ol
+(t − 1)rl
+(t − 1), (2)
+Ul
+(t) = τ(Ul
+(t − 1) − Rl
+(t − 1)) + Il−1
+(t), (3)
+Ol
+(t) = H(U
+l
+(t) − vth), (4)
+where l and t denote the layer index and the time step of neu-
+ral activity, respectively. The postsynaptic current Il−1
+(t) is
+the sum of spike signals Ol−1
+(t) weighted by the synaptic
+weights Wl
+. Rl
+(t − 1) is the reset term, where the trigger-
+ing spike Ol
+(t − 1) causes the membrane potential reset and
+rl
+(t) is the subtracted value due to reset. Under the hard reset
+condition, rl
+(t) = Ul
+(t), whereas under the soft reset con-
+dition, rl
+(t) = vth. Ul
+(t) denotes the membrane potential
+state, receiving the postsynaptic current and decaying with
+a leaky factor τ. When Ul
+(t) exceeds the threshold vth, a
+spike is generated according to the Heaviside function H(·).
+Adversarial Attacks for SNN
+Neural networks are notorious for their vulnerability to sub-
+tle perturbations in the input data, known as adversarial at-
+≈ | ⨀ ( )|
+Spiking Neural Networks
+Input
+Original
+Attack
+Noisy Sample
++
+=
++
+Robustness Error
+Task
+Loss
+Min.
+∝
+MPD After : 2 ( ) ∼ 2, 2
+2
+Vanilla MPD： 1 ( ) ∼ 1, 1
+2
+-6 -4 -2 0 1 2
+− =
+-6 -4 -2 0 1 2
+-1
+>
+SG range
+| ( + ) − ( )|
+.
+Figure 1: The overall framework of MPD-SGR. The MPD-SGR constrains membrane potential distribution (MPD) of SNNs
+(mean µ and standard deviation σ) to reduce the overlap Ω between MPD and the gradient-available range of the SG function
+(gray area). This regularization minimizes output error under adversarial perturbations.
+tacks. Adversarial attacks generate a perturbation δ by max-
+imizing the network’s task loss L and then applying it to in-
+put data x, resulting in adversarial examples. Formally, this
+maximization problem can be expressed as:
+δ = arg max L(f(x + δ; W), y) s.t.δ ∈ R(x, ϵ) (5)
+where y is the target label, f is the network parameterized by
+its weights W, and R(x, ϵ) is the ℓp-constrained neighbor-
+hood centered on x with radius ϵ, ensuring the perturbation
+remains imperceptible.
+Researchers have observed that adversarial attacks can
+also be applied to deep SNNs using SG (Bu et al. 2023),
+where the SG function provides approximate gradients
+for non-differentiable Heaviside step function. In the SG
+method, the backpropagation of the loss is derived by un-
+folding the dynamics of LIF neurons as follows:
+∂L
+∂Ul
+(t)
+=
+∂L
+∂Ol
+(t)
+∂Ol
+(t)
+∂Ul
+(t)
++
+∂L
+∂Ul
+(t + 1)
+∂Ul
+(t + 1)
+∂Ul
+(t)
+(6)
+where L is the task loss. SG methods approximate the non-
+differentiable term ∂Ol
+(t)
+∂Ul(t)
+with an SG function. Among the
+various SG functions demonstrated to be effective (Neftci,
+Mostafa, and Zenke 2019), we employ the triangle SG func-
+tion defined as:
+∂Ol
+(t)
+∂Ul
+(t)
+≈ h
+
+U
+l
+(t)
+
+=
+1
+γ2
+max
+
+γ − U
+l
+(t) , 0
+
+(7)
+where U
+l
+(t) = Ul
+(t) − vth and γ is a hyperparameter that
+controls the smoothness and gradient-available interval of
+the surrogate function.
+Methods
+Analysis of robustness error
+The effect of a perturbation is quantified as the difference
+in error values before and after perturbation (i.e., robustness
+error), L(x+δ)−L(x). This perturbation-induced error dif-
+ference is theoretically analyzed using local linearity tech-
+niques (Qin et al. 2019), yielding the following expression:
+|L (x + δ) − L (x)| ⩽ |δ ⊙ ∇xL (x)|1 + g (δ, x) (8)
+where g (δ, x) is the residual term and ∇xL (x) is the in-
+put gradient. This theorem reveals a relationship between
+variations in robustness error and the L1 norm of the input
+gradient. A natural approach to reduce these variations is
+to regularize the input gradient. However, this requires dou-
+ble backpropagation to compute its gradient with respect to
+model parameters, which is computationally expensive and
+impractical for large-scale SNNs.
+To address this, we leverage LIF dynamics and BPTT to
+reformulate input-gradient optimization as internal network-
+gradient optimization (Xu et al. 2024). Specifically, the
+constraint term for SNNs can be rewritten as
+P
+t |δt ⊙
+∇OL(Ot)|1, which can be further derived as follows:
+min
+X
+t
+δt ⊙
+∂L
+∂Ot 1
+= min
+X
+t
+1
+L
+L
+X
+l=1
+(P1 · P2 · P3)
+∂L
+OT
+l 1
+(9)
+Equation 9 outlines the key components influencing ro-
+bustness, including the perturbation term P1 =
+QT
+k=t δ(t)⊙
+τk
+l , the model weight term P2 =
+Ql
+q=2 Wq−1,q and the
+SG term P3 =
+Ql
+v=1
+∂Ot
+v
+∂Ut
+v
+. These constraints offer a princi-
+pled way to regularize SNNs for robustness, explaining why
+recent methods such as weight regularization (Ding et al.
+2022) and evolving leak factors (Xu et al. 2024) are effec-
+tive. However, the potential of SG terms for improving ro-
+bustness has been largely overlooked, which is the motiva-
+tion of this work. Beyond the gradient-based analysis, we
+also derive an upper bound on robustness sensitivity from
+the perspective of neuron firing states (Appendix A).
+Analysis of Membrane Potential Distribution
+Equation 9 shows that regularizing the SG terms suppresses
+fluctuations in robustness error. As defined in Equation 7,
+the SG magnitude depends on the SG function and the mem-
+brane potential (U). Therefore, analyzing the membrane po-
+tential distribution (MPD) is a prerequisite for understanding
+how SG affects SNN robustness. In forward propagation, the
+MPD is constrained by the threshold-dependent batch nor-
+malization (tdBN) (Zheng et al. 2021) and the dynamics of
+LIF neurons. tdBN first transforms the postsynaptic current
+I into a Gaussian-distributed variable I using the scaling
+factors (α and Vth) and a learnable affine transformation (λ
+and β). The dynamics of LIF neurons reveal that the MPD is
+governed by the decay factor (τ), leading to a shift and scal-
+ing relative to the normalized postsynaptic current I. Based
+on these observations, we propose Theorem 1 to explain the
+detailed dynamic distribution of membrane potential.
+Theorem 1. In an iterative LIF model with decay factor
+τ over T timesteps, the tdBN-normalized postsynaptic in-
+put follows the distribution I ∼ N(βc, (λcαVth)2
+). For
+t = 1, 2, 3, ..., T, the membrane potentials is distributed as
+U
+l
+c(t) ∼ N(βcD(τ, t) − S(t), (λcαVth)2
+D(τ2
+, t)), where
+c is the channel number of the tdBN layer, D(τ, t) =
+Pt
+i=1 τt−i
+is the cumulative decay function, and S(t) is the
+cumulative response strength constant.
+Proof. The proof of Theorem 1 is included in Appendix A.
+The relationship between MPD and SG
+In SG methods, the SG function determines the gradient-
+available interval of the membrane potential and provides
+an approximate gradient. The membrane potential distribu-
+tion is modeled as a Gaussian distribution according to The-
+orem 1, where gradient information is primarily carried by
+the membrane potential within the overlap between this dis-
+tribution and the gradient-available interval of the SG func-
+tion. A smaller overlap obstructs gradient propagation, while
+an excessively large overlap introduces numerous inaccu-
+rate approximate gradients, increasing the deviation from
+the true gradients (See Appendix B for a detailed explana-
+tion). To optimize SNNs more effectively, much of the cur-
+rent work focuses on identifying the optimal overlap areas
+by adjusting the MPD (Guo et al. 2022a,b) or the gradient-
+available interval (Lian et al. 2023; Wang et al. 2023). Their
+key objective is to ensure that the proportion of membrane
+potentials with gradients is appropriate, allowing for stable
+gradient propagation and reliable training. However, the SG
+not only plays a pivotal role in network training but also sig-
+nificantly impacts the robustness error induced by perturba-
+tions (P3 term in Equation 9). Therefore, to achieve reliable
+model output, the SG magnitude needs to be appropriately
+reduced while avoiding interference with network training,
+which motivates us to impose thoughtful constraints on the
+SG magnitude to ensure training and robust performance.
+The SG magnitude is determined by the overlap area, so
+we first derive the expression for the overlap area to rep-
+resent the SG magnitude. We assume that the SG function
+satisfies Equation 7, with its gradient-available interval de-
+fined as [−γ, γ]. The MPD follows a Gaussian distribution
+U
+l
+(t) ∼ N(µ, σ2
+), with the probability density function
+(PDF) given by p(x) = 1
+σ
+√
+2π
+exp
+
+−(x−µ)2
+2σ2
+
+. The overlap
+area is defined as the integral of the Gaussian distribution
+over the interval [−γ, γ]:
+Ω =
+Z γ
+−γ
+p(x)dx =
+1
+σ
+√
+2π
+Z γ
+−γ
+exp
+
+−
+(x − µ)2
+2σ2
+
+dx (10)
+To simplify the integral, we perform a change of variables.
+Let z = x−µ
+σ , so that dx = σdz. Under this substitution, we
+obtain:
+Ω =
+Z µ+γ
+σ
+µ−γ
+σ
+1
+√
+2π
+exp
+
+−
+z2
+2
+
+dz (11)
+The integral can be evaluated using the cumulative distri-
+bution function (CDF) of the standard normal distribution:
+Φ(x) =
+1
+2
+
+1 + erf(
+x
+√
+2
+)
+
+(12)
+where erf(x) = 2
+√
+π
+R x
+0
+e−t2
+dt is the error function. Using
+this CDF, the target overlap Ω can be written as:
+Ω = Φ
+
+µ + γ
+σ
+
+− Φ
+
+µ − γ
+σ
+
+(13)
+When the SG function parameters γ is fixed, the value of
+Ω is controlled by the mean µ and standard deviation σ of
+membrane potential. The gradient of Ω with respect to the
+parameters of the membrane potential distribution is com-
+puted as follows:
+∂Ω
+∂µ
+=
+1
+σ
+
+p
+
+µ+
+σ
+
+− p
+
+µ−
+σ
+
+(14)
+∂Ω
+∂σ
+=
+1
+σ2
+
+−µ+
+p
+
+µ+
+σ
+
++ µ−
+p
+
+µ−
+σ
+
+(15)
+where µ+
+= µ + γ and µ−
+= µ − γ are the upper and lower
+bounds of the overlap area, respectively.
+Therefore, Equation 13 can serve as a SG regularizer, re-
+ducing the SG magnitude by constraining the parameters of
+the MPD (Figure 1). In practice, except for the last linear
+output layer, the SG is penalized at every timestamp in ev-
+ery channel for each layer in the training phase. Specifically,
+LMP D−SGR for the b-th batch of input is given by:
+Lb
+MP D−SGR =
+1
+LCT
+X
+l,c,t
+Ωb,l
+c (t) (16)
+=
+1
+LCT
+X
+l,c,t
+
+Φ
+
+µl
+c(t) + γ
+σl
+c(t)
+
+− Φ
+
+µl
+c(t) − γ
+σl
+c(t)
+
+(17)
+Methods CIFAR-10 CIFAR-100
+Clean FGSM PGD BIM Clean FGSM PGD BIM
+Vanilla Training
+REG (Ding et al. 2022) 92.49 25.18 0.88 0.60 72.82 10.14 0.27 0.31
+StoG (Ding et al. 2024b) 91.64 16.22 0.28 0.12 72.22 5.92 0.26 0.20
+DLIF (Ding et al. 2024a) 92.01 11.52 0.08 0.06 71.38 7.20 0.08 0.08
+FEEL (Xu et al. 2024) 90.08 29.17 6.67 5.99 70.06 9.74 2.06 1.92
+SR (Liu et al. 2024) 91.04 31.72 8.55 7.28 66.76 16.16 8.00 6.43
+Ours 91.63 47.59 20.55 16.85 70.42 34.51 9.03 8.41
+Improvement -0.86 +15.87 +12 +9.57 -2.4 +18.35 +1.03 +1.98
+Adversarial Training
+RAT (Ding et al. 2022) 91.41 45.00 22.95 20.80 69.43 19.07 9.23 8.41
+StoG (Ding et al. 2024b) 90.13 45.75 27.74 26.32 69.24 19.64 9.77 3.23
+DLIF (Ding et al. 2024a) 88.94 39.21 27.17 25.98 67.08 19.34 9.96 9.39
+FEEL (Xu et al. 2024) 89.00 45.62 29.52 28.39 68.05 19.55 12.11 11.97
+SR (Liu et al. 2024) 88.26 44.28 28.63 27.03 61.26 23.10 17.07 16.28
+Ours 90.69 59.27 33.38 32.61 69.56 39.45 22.23 19.45
+Improvement -0.72 +13.52 +3.86 +4.22 +0.13 +16.35 +5.16 +3.17
+Table 1: Compare with state-of-the-art work on adversarial robustness of SNN (VGG11, T = 8)
+2 4 6 8
+0
+20
+40
+60
+80
+100
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+80
+100
+k
+ACC
+(%)
+2 4 6 8
+0
+20
+40
+60
+80
+100
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+80
+100
+k
+ACC
+(%)
+Vanilla Ours Vanilla+AT Ours+AT
+VGG11
+VGG11
+WRN16
+WRN16
+Figure 2: Performance of the white-box PGD attack with in-
+creasing perturbation ϵ and iterative step k = 4 (Top Panels),
+increasing iterative step k and ϵ = 8/255 (Bottom Panels).
+where L is the number of layers, C is the number of chan-
+nels, and T is the number of time step. Ωl
+c(t) is the overlap
+area of the membrane potential distribution at the channel c
+of the layer l at time t. Finally, taking classification loss into
+consideration, the total loss can be written as:
+Lb
+= Lb
+task + ηLb
+MP D−SGR (18)
+where Lb
+task denotes the task loss (e.g., cross-entropy), and η
+is a coefficient that modulates the strength of the regulariza-
+tion. The training evolution of the MPD and the SG overlap
+(Ω), as well as an analysis of η are provided in Appendix C.
+Experiments
+Experimental settings
+We conduct experiments to evaluate our proposed method
+on image classification tasks using the CIFAR-10, CIFAR-
+100 and Tiny-ImageNet (Le and Yang 2015) datasets. The
+SNN models are VGG (VGG11) (Simonyan and Zisserman
+2014) and WideResNet (WRN16) (Zagoruyko 2016). The
+LIF neuron parameters and the SG function settings are con-
+sistent with previous work (Ding et al. 2022).
+We evaluate model robustness under three attack sce-
+narios: white-box, black-box and non-gradient attacks. The
+adversarial examples are generated by four attack meth-
+ods using differentiable approximation techniques (BPTT
+or BPTR (Bu et al. 2023)): FGSM (Goodfellow, Shlens,
+and Szegedy 2014), PGD (Madry 2017), BIM (Kurakin,
+Goodfellow, and Bengio 2018) and CW (Carlini and Wagner
+2017). The attack perturbation strength is set to ϵ = 8/255,
+the iterative steps k = 7 and step size α = 0.01 for PGD
+and BIM. For adversarial training (AT), models are trained
+with white-box PGD adversarial examples (k = 2, ϵ = 2/255).
+The bold values in all tables represent the optimal results for
+each setting. Full details on experimental settings and attack
+algorithms are provided in Appendix D.
+Performance for various attack types
+Comparison with state-of-the-art work. We evaluate
+MPD-SGR against state-of-the-art (SOTA) adversarial de-
+fense methods for SNNs including REG (Ding et al. 2022),
+StoG (Ding et al. 2024b), DLIF (Ding et al. 2024a), SR (Liu
+et al. 2024) and FEEL (Xu et al. 2024), under both vanilla
+and adversarial training (AT) settings. As shown in Table 1,
+MPD-SGR demonstrates superior robustness across vari-
+ous attacks and datasets, outperforming all SOTA methods.
+Under vanilla training, it significantly surpasses the SOTA
+baseline (SR) by 15.87%, 12.00%, and 9.57% on CIFAR-10,
+and by 18.35%, 1.03% (PGD), and 1.98% (BIM) on CIFAR-
+DATASET MODEL CLEAN FGSM PGD BIM CW
+CIFAR10
+VGG11, BPTT
+92.45/90.62
+23.86/42.12 0.87/17.18 0.60/14.59 6.26/18.85
+VGG11, BPTR 27.92/47.61 7.82/25.52 6.61/25.00 24.38/38.07
+VGG11, BPTT, AT
+91.08/90.34
+43.80/58.71 20.63/28.94 18.63/24.74 29.87/34.38
+VGG11, BPTR, AT 49.11/66.17 35.74/43.12 34.59/41.17 58.73/65.05
+WRN16, BPTT
+93.46/92.22
+18.81/45.82 0.02/8.44 0.03/6.59 3.61/18.66
+WRN16, BPTR 15.28/38.18 0.17/8.03 0.16/6.65 11.76/31.21
+WRN16, BPTT, AT
+91.15/91.34
+42.31/63.32 19.93/38.11 18.03/33.13 29.60/43.06
+WRN16, BPTR, AT 51.75/70.93 34.44/46.91 33.00/44.79 58.90/70.10
+CIFAR100
+VGG11, BPTT
+72.54/69.56
+8.95/20.16 0.24/6.90 0.20/5.51 5.62/13.54
+VGG11, BPTR 11.45/34.49 4.66/10.07 4.44/9.94 25.03/26.99
+VGG11, BPTT, AT
+68.60/67.67
+20.28/36.18 9.97/18.23 8.82/15.70 15.46/22.33
+VGG11, BPTR, AT 29.78/40.42 22.14/26.38 21.27/25.88 40.96/47.44
+WRN16, BPTT
+73.86/72.61
+10.99/22.58 0.04/1.97 0.05/1.77 4.93/10.34
+WRN16, BPTR 9.74/21.60 0.44/5.52 0.35/5.50 14.81/24.13
+WRN16, BPTT, AT
+69.29/69.67
+25.35/39.47 12.09/21.71 11.30/18.87 20.17/27.55
+WRN16, BPTR, AT 31.99/44.23 22.58/35.67 22.04/35.08 43.23/53.21
+Table 2: The classification accuracy (Vanilla/Ours) under white-box attacks across multiple datasets and architectures (T = 4).
+Methods Clean Gaussian Noise Uniform Noise
+REG 72.82 24.73 (-48.09) 49.86 (-23.86)
+FEEL 70.06 32.63 (-37.43) 52.47 (-17.59)
+SR 66.76 47.47 (-19.29) 61.37 (-5.39)
+Ours 70.42 53.01 (-17.41) 64.21 (-6.21)
+Table 3: Comparative evaluation of defense mechanisms un-
+der random perturbation attacks on CIFAR100 datasets with
+VGG11 (T = 8). Values in parentheses denote accuracy
+degradation relative to clean performance.
+100 under FGSM, PGD, and BIM attacks, respectively. With
+AT, MPD-SGR maintains superior robustness, exceeding the
+SOTA baseline (FEEL) by 13.52%, 3.86%, and 4.22% on
+CIFAR-10, and the SOTA baseline (SR) by 16.35%, 5.16%,
+and 3.17% on CIFAR-100 for FGSM, PGD, and BIM at-
+tacks, respectively.
+Current adversarial defense mechanisms enhance model
+robustness against perturbations, yet often incur a degrada-
+tion in clean accuracy—a trade-off particularly pronounced
+in AT frameworks and consistent with findings in prior liter-
+ature (Wu et al. 2024). While SR achieves relatively strong
+robustness under AT, its clean accuracy declines markedly
+to 61.26% on CIFAR-100 and 88.26% on CIFAR-10, in-
+dicating a significant compromise in nominal performance.
+In contrast, MPD-SGR achieves a more favorable balance,
+demonstrating its practical advantage.
+White-box attack. We compare the classification accu-
+racy of MPD-SGR with the vanilla method (REG/RAT) un-
+der various white-box attacks across VGG11/WRN16 net-
+works and CIFAR-10/100 datasets. As summarized in Ta-
+ble 2, the MPD-SGR method significantly enhances the ro-
+bustness of the vanilla SNN model against all tested attacks,
+with consistent gains observed under both BPTT and BPTR
+methods across all datasets and architectures. Notably, with-
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+0
+20
+40
+60
+80
+Acc
+CIFAR10, VGG11
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+0
+20
+40
+60
+Acc
+CIFAR100, VGG11
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+0
+20
+40
+60
+80
+Acc
+CIFAR10, WRN16
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+0
+10
+20
+30
+40
+Acc
+CIFAR100, WRN16
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+70
+75
+80
+85
+Acc
+CIFAR10, VGG11, AT
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+40
+45
+50
+55
+60
+Acc
+CIFAR100, VGG11, AT
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+70
+75
+80
+85
+Acc
+CIFAR10, WRN16, AT
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+F
+G
+S
+M
+P
+G
+D
+B
+I
+M
+50
+55
+60
+65
+Acc
+CIFAR100, WRN16, AT
+Vanilla
+BPTT
+MPD-SGR
+BPTT
+Vanilla
+BPTR
+MPD-SGR
+BPTR
+Vanilla
+BPTT
+MPD-SGR
+BPTT
+Vanilla
+BPTR
+MPD-SGR
+BPTR
+Figure 3: Performance of the proposed MPD-SGR method
+under different black-box attacks.
+out AT, the vanilla SNN completely fails under strong itera-
+tive attacks such as PGD and BIM, with accuracy dropping
+close to 0%. In contrast, the MPD-SGR method maintains
+a certain level of performance, achieving an accuracy of ap-
+proximately 10%.
+We evaluate how model accuracy degrades under increas-
+ing PGD attack intensity ϵ and number of iterations k on
+the CIFAR-10 dataset. The results in Figure 2 show that the
+MPD-SGR exhibits a slower accuracy decline than the base-
+line under stronger PGD attacks for both VGG and WRN
+Model+SG Methods Clean FSGM PGD BIM
+VGG11+Rec
+REG 91.85 24.00 3.13 2.33
+Ours 91.23 43.28 15.82 14.2
+VGG11+Sig
+REG 92.15 19.42 0.24 0.15
+Ours 89.38 37.25 9.26 7.23
+VGG11+Sup
+REG 86.82 21.39 0.82 0.50
+Ours 84.45 43.42 6.32 4.50
+WRN16+Rec
+REG 92.94 24.13 0.08 0.09
+Ours 92.13 49.51 18.15 13.83
+WRN16+Sig
+REG 92.50 16.80 0.02 0.01
+Ours 91.44 36.30 8.77 7.05
+WRN16+Sup
+REG 86.57 11.54 0.05 0.05
+Ours 86.54 39.25 7.17 4.74
+Table 4: Performance (%) of the proposed MPD-SGR
+method under three different SG functions.
+Dataset Model Methods Clean FGSM PGD
+Tiny-
+ImageNet
+VGG16 DIR 57.90 2.04 0.01
+VGG16 DIR+Ours 54.78 14.33 5.72
+VGG16 POS 48.14 6.79 2.68
+VGG16 POS+Ours 47.83 20.42 8.21
+VGG16 RSC 47.47 22.63 13.75
+VGG16 RSC+Ours 46.98 35.06 17.60
+Table 5: Performance (%) of the proposed MPD-SGR
+method under three different spike coding methods.
+architectures, regardless of whether AT is used. This demon-
+strates that our method exhibits strong tolerance to more in-
+tense adversarial perturbations. For additional results about
+white-box attacks, including varying T and different attack
+settings, please refer to Appendix E.
+Black-box attack. We train a substitute SNN model to
+generate adversarial examples that are transferable to both
+the vanilla and MPD-SGR models for black-box attacks.
+This substitute SNN is trained without any regularization on
+the same dataset, using identical neuron parameters and ar-
+chitecture as the target model. Figure 3 highlights the perfor-
+mance of the MPD-SGR method across various black-box
+attacks. We observe that black-box attacks are less effec-
+tive than white-box attacks, and the MPD-SGR method also
+achieves comparable robustness improvements under black-
+box attacks as in the white-box setting, suggesting its robust-
+ness stems not from gradient obfuscation but from inherent
+properties of the method. For detailed gradient obfuscation
+analysis, please refer to the Appendix F.
+Non-gradient attack. We further evaluate the impact of
+MPD-SGR on the robustness of SNNs under non-gradient
+attacks, specifically two types of random perturbations:
+Gaussian (δ ∼ N(0, ϵ)) and Uniform (δ ∼ U(−ϵ, ϵ)) noise.
+All results are reported using a fixed noise intensity of ϵ =
+0.1. As shown in Table 3, our method maintains high classi-
+fication performance under both perturbation types, signif-
+icantly outperforming the REG baseline, which suffers se-
+vere performance degradation (accuracy drops of 48.09%
+and 23.86%). Although SR exhibits a degree of robustness,
+its substantially lower clean accuracy (66.76%) fundamen-
+tally constrains its performance under noisy conditions, re-
+sulting in absolute accuracies below those achieved by our
+approach. These results indicate that MPD-SGR exhibits
+strong robustness to non-gradient perturbations, showcasing
+its versatility across diverse input disturbances.
+Ablation study
+Performance under different SG functions. We investi-
+gate the applicability of our method to other commonly used
+SG functions, including Rectangular (Rec) (Wu et al. 2019),
+Sigmoid (Sig) (Roy, Chakraborty, and Roy 2019) and Su-
+perspike (Sup) (Zenke and Ganguli 2018). As presented in
+Table 4, our proposed MPD-SGR method consistently en-
+hances robustness across different SG functions, further con-
+firming the versatility and effectiveness of our method.
+Performance under different spike coding. Considering
+the significant impact of input spike encoding methods on
+the robustness of SNNs, we also compare the performance of
+MPD-SGR with that of the vanilla SNN model under differ-
+ent spike coding methods, including Direct Coding (DIR),
+Poisson Coding (POS) and Randomized Smoothing Coding
+(RSC) (Wu et al. 2024). The proposed MPD-SGR method
+exhibits consistently superior performance over the baseline
+SNN model across all tested spike coding schemes (Table 5),
+demonstrating the compatibility of our method with various
+spike coding approaches.
+Conclusion
+This paper presents a theoretical and empirical investiga-
+tion into the role of neuronal membrane potential distribu-
+tion (MPD) and surrogate gradient (SG) mechanisms in en-
+hancing the adversarial robustness of deep spiking neural
+networks (SNNs). Through rigorous gradient analysis, we
+establish a theoretical framework that formally connects in-
+put perturbation sensitivity to the magnitude characteristics
+of SG in SNNs. Our analysis reveals that reducing the pro-
+portion of membrane potentials within the gradient-available
+range of the SG function effectively mitigates the sensitiv-
+ity of SNNs to input perturbations. Based on these theo-
+retical insights, we propose MPD-driven surrogate gradient
+regularization (MPD-SGR), which systematically constrains
+the MPD during training to optimize gradient flow, thereby
+enhancing the network’s resilience against adversarial at-
+tacks. Extensive experiments across multiple benchmark
+datasets and SNN architectures show that MPD-SGR main-
+tains comparable clean accuracy while consistently improv-
+ing robustness against gradient-based attacks and random
+noise, outperforming existing defense methods. The pro-
+posed approach also demonstrates remarkable adaptability
+across diverse network configurations, SG function variants,
+and spike coding schemes. These results position MPD-SGR
+as a promising, generalizable defense strategy for SNNs un-
+der diverse perturbation scenarios.
+Acknowledgements
+This work was supported by the National Natural Science
+Foundation of China (Grant Nos. 62236007, 32441113, and
+62276235). The authors would also like to acknowledge
+anonymous reviewers and chairs for providing insightful
+comments to help improve this work.
+References
+Bu, T.; Ding, J.; Hao, Z.; and Yu, Z. 2023. Rate gradient
+approximation attack threats deep spiking neural networks.
+In Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, 7896–7906.
+Carlini, N.; and Wagner, D. 2017. Towards evaluating the
+robustness of neural networks. In 2017 IEEE symposium on
+security and privacy (sp), 39–57. IEEE.
+Chowdhury, S. S.; Lee, C.; and Roy, K. 2021. Towards un-
+derstanding the effect of leak in spiking neural networks.
+Neurocomputing, 464: 83–94.
+Ding, J.; Bu, T.; Yu, Z.; Huang, T.; and Liu, J. 2022. Snn-rat:
+Robustness-enhanced spiking neural network through regu-
+larized adversarial training. Advances in Neural Information
+Processing Systems, 35: 24780–24793.
+Ding, J.; Pan, Z.; Liu, Y.; Yu, Z.; and Huang, T. 2024a. Ro-
+bust Stable Spiking Neural Networks. In Forty-first Interna-
+tional Conference on Machine Learning. PMLR.
+Ding, J.; Yu, Z.; Huang, T.; and Liu, J. K. 2024b. Enhanc-
+ing the robustness of spiking neural networks with stochastic
+gating mechanisms. In Proceedings of the AAAI Conference
+on Artificial Intelligence, 492–502.
+El-Allami, R.; Marchisio, A.; Shafique, M.; and Alouani, I.
+2021. Securing deep spiking neural networks against ad-
+versarial attacks through inherent structural parameters. In
+2021 Design, Automation & Test in Europe Conference &
+Exhibition (DATE), 774–779. IEEE.
+Goodfellow, I. J.; Shlens, J.; and Szegedy, C. 2014. Explain-
+ing and harnessing adversarial examples. arXiv preprint
+arXiv:1412.6572.
+Gu, P.; Xiao, R.; Pan, G.; and Tang, H. 2019. STCA: Spatio-
+temporal credit assignment with delayed feedback in deep
+spiking neural networks. In IJCAI, volume 15, 1366–1372.
+Guo, Y.; Chen, Y.; Zhang, L.; Wang, Y.; Liu, X.; Tong, X.;
+Ou, Y.; Huang, X.; and Ma, Z. 2022a. Reducing information
+loss for spiking neural networks. In European Conference
+on Computer Vision, 36–52. Springer.
+Guo, Y.; Liu, X.; Chen, Y.; Zhang, L.; Peng, W.; Zhang, Y.;
+Huang, X.; and Ma, Z. 2023. Rmp-loss: Regularizing mem-
+brane potential distribution for spiking neural networks. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, 17391–17401.
+Guo, Y.; Tong, X.; Chen, Y.; Zhang, L.; Liu, X.; Ma, Z.; and
+Huang, X. 2022b. Recdis-snn: Rectifying membrane poten-
+tial distribution for directly training spiking neural networks.
+In Proceedings of the IEEE/CVF conference on computer vi-
+sion and pattern recognition, 326–335.
+Hu, Y.; Zheng, Q.; Li, G.; Tang, H.; and Pan, G. 2024.
+Toward Large-scale Spiking Neural Networks: A Com-
+prehensive Survey and Future Directions. arXiv preprint
+arXiv:2409.02111.
+Kim, Y.; Park, H.; Moitra, A.; Bhattacharjee, A.; Venkate-
+sha, Y.; and Panda, P. 2022. Rate coding or direct coding:
+Which one is better for accurate, robust, and energy-efficient
+spiking neural networks? In ICASSP 2022-2022 IEEE Inter-
+national Conference on Acoustics, Speech and Signal Pro-
+cessing (ICASSP), 71–75. IEEE.
+Kim, Y.; Venkatesha, Y.; and Panda, P. 2022. PrivateSNN:
+Privacy-Preserving Spiking Neural Networks. Proceedings
+of the AAAI Conference on Artificial Intelligence, 36(1):
+1192–1200.
+Kundu, S.; and Pedram, M. 2021. HIRE-SNN: Harnessing
+the adversarial robustness of energy-efficient deep spiking
+neural networks via training with crafted input noise. In
+ICCV.
+Kurakin, A.; Goodfellow, I. J.; and Bengio, S. 2018. Adver-
+sarial examples in the physical world. In Artificial intelli-
+gence safety and security, 99–112. Chapman and Hall/CRC.
+Le, Y.; and Yang, X. 2015. Tiny imagenet visual recognition
+challenge. CS 231N, 7(7): 3.
+Li, Y.; Guo, Y.; Zhang, S.; Deng, S.; Hai, Y.; and Gu, S.
+2021. Differentiable spike: Rethinking gradient-descent for
+training spiking neural networks. Advances in Neural Infor-
+mation Processing Systems, 34: 23426–23439.
+Lian, S.; Shen, J.; Liu, Q.; Wang, Z.; Yan, R.; and Tang,
+H. 2023. Learnable Surrogate Gradient for Direct Training
+Spiking Neural Networks. In IJCAI, 3002–3010.
+Liang, L.; Hu, X.; Deng, L.; Wu, Y.; Li, G.; Ding, Y.;
+Li, P.; and Xie, Y. 2021. Exploring adversarial attack
+in spiking neural networks with spike-compatible gradient.
+IEEE transactions on neural networks and learning systems,
+34(5): 2569–2583.
+Liu, Y.; Bu, T.; Ding, J.; Hao, Z.; Huang, T.; and Yu, Z.
+2024. Enhancing Adversarial Robustness in SNNs with
+Sparse Gradients. In International Conference on Machine
+Learning, 30738–30754. PMLR.
+Ma, G.; Yan, R.; and Tang, H. 2023. Exploiting noise as
+a resource for computation and learning in spiking neural
+networks. Patterns, 4(10).
+Maass, W. 1997. Networks of spiking neurons: the third gen-
+eration of neural network models. Neural networks, 10(9):
+1659–1671.
+Madry, A. 2017. Towards deep learning models resistant to
+adversarial attacks. arXiv preprint arXiv:1706.06083.
+Marchisio, A.; Nanfa, G.; Khalid, F.; Hanif, M. A.; Martina,
+M.; and Shafique, M. 2020. Is spiking secure? a compara-
+tive study on the security vulnerabilities of spiking and deep
+neural networks. In 2020 International Joint Conference on
+Neural Networks (IJCNN), 1–8. IEEE.
+Neftci, E. O.; Mostafa, H.; and Zenke, F. 2019. Surrogate
+gradient learning in spiking neural networks: Bringing the
+power of gradient-based optimization to spiking neural net-
+works. IEEE Signal Processing Magazine, 36(6): 51–63.
+Qin, C.; Martens, J.; Gowal, S.; Krishnan, D.; Dvijotham,
+K.; Fawzi, A.; De, S.; Stanforth, R.; and Kohli, P. 2019. Ad-
+versarial robustness through local linearization. Advances in
+neural information processing systems, 32.
+Roy, D.; Chakraborty, I.; and Roy, K. 2019. Scaling deep
+spiking neural networks with binary stochastic activations.
+In 2019 IEEE international conference on cognitive com-
+puting (ICCC), 50–58. IEEE.
+Sharmin, S.; Panda, P.; Sarwar, S. S.; Lee, C.; Ponghiran, W.;
+and Roy, K. 2019. A comprehensive analysis on adversarial
+robustness of spiking neural networks. In 2019 International
+Joint Conference on Neural Networks (IJCNN), 1–8. IEEE.
+Sharmin, S.; Rathi, N.; Panda, P.; and Roy, K. 2020. Inherent
+adversarial robustness of deep spiking neural networks: Ef-
+fects of discrete input encoding and non-linear activations.
+In Computer Vision–ECCV 2020: 16th European Confer-
+ence, Glasgow, UK, August 23–28, 2020, Proceedings, Part
+XXIX 16, 399–414. Springer.
+Simonyan, K.; and Zisserman, A. 2014. Very deep convo-
+lutional networks for large-scale image recognition. arXiv
+preprint arXiv:1409.1556.
+Tavanaei, A.; Ghodrati, M.; Kheradpisheh, S. R.; Masque-
+lier, T.; and Maida, A. 2019. Deep learning in spiking neural
+networks. Neural networks, 111: 47–63.
+Wang, Q.; Yang, X.; Chen, H.; and Geng, X. 2024a. Vision
+Transformers as Probabilistic Expansion from Learngene. In
+Forty-first International Conference on Machine Learning.
+Wang, Q.; Yang, X.; Feng, F.; Wang, J.; and Geng, X. 2024b.
+Cluster-Learngene: Inheriting Adaptive Clusters for Vision
+Transformers. In The Thirty-eighth Annual Conference on
+Neural Information Processing Systems.
+Wang, Q.-F.; Geng, X.; Lin, S.-X.; Xia, S.-Y.; Qi, L.; and
+Xu, N. 2022. Learngene: From open-world to your learning
+task. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 36, 8557–8565.
+Wang, Z.; Jiang, R.; Lian, S.; Yan, R.; and Tang, H. 2023.
+Adaptive smoothing gradient learning for spiking neural net-
+works. In International Conference on Machine Learning,
+35798–35816. PMLR.
+Wu, K.; Yao, M.; Chou, Y.; Qiu, X.; Yang, R.; Xu, B.; and Li,
+G. 2024. RSC-SNN: Exploring the Trade-off Between Ad-
+versarial Robustness and Accuracy in Spiking Neural Net-
+works via Randomized Smoothing Coding. In Proceedings
+of the 32nd ACM International Conference on Multimedia,
+2748–2756.
+Wu, Y.; Deng, L.; Li, G.; Zhu, J.; and Shi, L. 2018. Spatio-
+temporal backpropagation for training high-performance
+spiking neural networks. Frontiers in neuroscience, 12: 331.
+Wu, Y.; Deng, L.; Li, G.; Zhu, J.; Xie, Y.; and Shi, L. 2019.
+Direct training for spiking neural networks: Faster, larger,
+better. In Proceedings of the AAAI conference on artificial
+intelligence, volume 33, 1311–1318.
+Xu, M.; Ma, D.; Tang, H.; Zheng, Q.; and Pan, G. 2024.
+FEEL-SNN: Robust Spiking Neural Networks with Fre-
+quency Encoding and Evolutionary Leak Factor. In The
+Thirty-eighth Annual Conference on Neural Information
+Processing Systems.
+Zagoruyko, S. 2016. Wide residual networks. arXiv preprint
+arXiv:1605.07146.
+Zenke, F.; and Ganguli, S. 2018. Superspike: Supervised
+learning in multilayer spiking neural networks. Neural com-
+putation, 30(6): 1514–1541.
+Zenke, F.; and Vogels, T. P. 2021. The remarkable robustness
+of surrogate gradient learning for instilling complex func-
+tion in spiking neural networks. Neural computation, 33(4):
+899–925.
+Zheng, H.; Wu, Y.; Deng, L.; Hu, Y.; and Li, G. 2021. Going
+deeper with directly-trained larger spiking neural networks.
+In Proceedings of the AAAI conference on artificial intelli-
+gence, 11062–11070.
+Zhu, R.-J.; Wang, Z.; Gilpin, L.; and Eshraghian, J. 2024.
+Autonomous driving with spiking neural networks. Ad-
+vances in Neural Information Processing Systems, 37:
+136782–136804.
+AAAI 2026 Supplementary Material
+Runhao Jiang1, 2
+, Chengzhi Jiang1, 2
+, Rui Yan3
+, Huajin Tang1, 2, 4*
+1
+College of Computer Science and Technology, Zhejiang University
+2
+The State Key Lab of Brain-Machine Intelligence, Zhejiang University
+3
+College of Computer Science and Technology, Zhejiang University of Technology
+4
+MOE Frontier Science Center for Brain Science and Brain-Machine Integration, Zhejiang University
+RhJiang@zju.edu.cn, jiangchengzhi2024@zju.edu.cn, Ryan@zjut.edu.cn, htang@zju.edu.cn
+A Proofs of Theorems
+Theorem 1. In an iterative LIF model with decay factor
+τ over T timesteps, the postsynaptic input to neurons pro-
+cessed through the tdBN layer is normalized to follow the
+distribution I ∼ N(βc, (λcαVth)2
+). For t = 1, 2, 3, ..., T,
+the membrane potentials satisfy U
+l
+c(t) ∼ N((βcD(τ, t) −
+S(t), (λcαVth)2
+D(τ2
+, t)), where c is the channel number of
+the tdBN layer, D(τ, t) =
+Pt
+i=1 τt−i
+is the cumulative de-
+cay function and S(t) is the cumulative response strength
+constant.
+Proof. Assuming the postsynaptic current Ic at c-th input
+channel satisfy Gaussian distribution. The tdBN (Zheng
+et al. 2021) normalizes it as follows:
+ˆ
+Ic =
+αVth (Ic − E [Ic])
+p
+VAR [Ic] + ϵ
+(1)
+Ic = λc
+ˆ
+Ic + βc, (2)
+Eqs 1 eliminates the mean of the input and normalizes its
+variance to 1. Subsequently, the variance is scaled by two
+factors, α and Vth, resulting in ˆ
+Ic with a distribution of
+N(0, (αVth)2
+). Eq. 2 introduce the learnable affine trans-
+formation parameters λc and βc, which shift and scale the
+normalized input current ˆ
+Ic, producing Ic with a distribu-
+tion of N(βc, (λcαVth)2
+).
+Ic is then fed to the iterative LIF neuron following dynam-
+ics in Eq.3 in the main text. Combining Eq.2 and Eq.3 in the
+main text, we obtain the recursive formula for the membrane
+potential prior to spike generation, expressed as follows:
+Ul
+c(t) = τ(Ul
+c(t − 1) − Ol
+c(t − 1)rl
+c(t − 1)) + I
+l−1
+c (t) (3)
+By stacking Eq. 3, we have:
+Ul
+c(t) − τUl
+c(t − 1) = I
+l−1
+c (t) − τOl
+c(t − 1)rl
+c(t − 1)
+τUl
+c(t − 1) − τ2
+Ul
+c(t − 2) = τI
+l−1
+c (t − 1) − τ2
+Ol
+c(t − 2)rl
+c(t − 2)
+(4)
+Notice that the left sides of Eq. 4 can iteratively eliminate
+Ul
+c(t). With the initial membrane potential Ul
+c(0) set to zero,
+*Author for correspondence
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+we obtain the following:
+Ul
+c(t) =
+t
+X
+i=1
+τt−i
+I
+l−1
+c (i)
+| {z }
+M1(t)
+−
+t−1
+X
+i=1
+τt+1−i
+Ol
+c(i)rl
+c(i)
+| {z }
+M2(t)
+(5)
+From the above formula, The distribution of membrane
+potential is mainly composed of two factors M1(t) and
+M2(t). M1(t) is a weighted sum of independent Gaussian
+variables I
+l−1
+c (i), so it is still a Gaussian distribution with
+the following distribution parameters:
+M1(t) ∼ N(βc
+t
+X
+i=1
+τt−i
+, (λcαVth)2
+t
+X
+i=1
+τ2(t−i)
+) (6)
+In M2(t), rl
+c(i) represents the value subtracted due to re-
+set. Under the hard reset condition, where rl
+c(i) = Ul
+c(t−1),
+Eq 5 becomes recursive. To facilitate derivation, we adopt
+the soft reset approach, setting rl
+c(i) = vth. Furthermore,
+Ol
+c(i) and Ul
+c(t) exhibit a nonlinear coupling relationship,
+making precise analysis challenging. Therefore, we employ
+mean field theory to approximate the true values using the
+expected value of the spikes, yielding the following approx-
+imate expression:
+M2(t) ≈
+t−1
+X
+i=1
+τt+1−i
+E[Ol
+c(i)]vth (7)
+=
+t−1
+X
+i=1
+τt+1−i
+P[U
+l
+c(i) > vth]vth (8)
+=
+t−1
+X
+i=1
+τt+1−i
+fl
+(i)vth = S(t) (9)
+In this case, the item M2(t) can be regarded as a constant
+S(t), representing the cumulative response strength modu-
+lated by the spike firing rate fl
+(i). Therefore, we can get
+the approximate distribution of membrane potential Ul
+c(t)
+as follows:
+Ul
+c(t) ∼ N((βcD(τ, t) − S(t), (λcαVth)2
+D(τ2
+, t)) (10)
+where D(τ, t) =
+Pt
+i=1 τt−i
+is the cumulative decay func-
+tion.
+Theorem 2. Adversarial Sensitivity Bound From Firing
+State Perspective. For a SNN represented by f : Rn
+→ Rm
+,
+perturbation input x + εδ within a ℓp-constrainted pertur-
+bation ball Bp(x, ε) = {x + εδ : ∥δ∥p ≤ 1} induce a finite
+set of firing pattern transitions. The adversarial sensitivity
+Sadv(f, x, ε) upper bound can be approximated as:
+Sadv(f, x, ε) ≤ ε2
+max
+1≤k≤K
+∥WPk
+∥2
+p→2 (11)
+where WPk
+represents the affine transformation matrix de-
+termined by the firing pattern Pk = {(ℓ, i, t) : U
+ℓ
+i(t) ≥ 0}
+and ∥ · ∥p denotes the p-norm.
+Proof. Let f : Rn
+→ Rm
+denote the SNN that maps the
+input space to the output space. For a given input x, the firing
+pattern P(x) generated by the network can be defined as:
+P(x) = {(ℓ, i, t) : U
+ℓ
+i(t) ≥ 0} (12)
+where U
+ℓ
+i(t) = Uℓ
+i(t; x)−vℓ
+th. Therefore, each firing pattern
+P also corresponds uniquely to a convex polyhedral cell CP
+in the input space:
+CP = {x ∈ Rn
+: P(x) = P}. (13)
+Within any CP , the firing pattern P can be considered a
+fixed binary gate, so the network reduces to an affine map:
+f(x) = WP x + bP , x ∈ CP (14)
+where WP ∈ Rm×n
+and bP ∈ Rm
+are determined by the
+weights and biases under this gate configuration.
+Let the ℓp-constrainted perturbation ball be Bp(x, ε) =
+{x + εδ : ∥δ∥p ≤ 1}, where ε is the perturbation budget and
+δ represents a perturbation direction vector. When the small
+perturbations εδ that stays inside the same cell (x + εδ ∈
+CP ), the local upper bound of the output f(x) is given by:
+∥f(x + εδ) − f(x)∥2
+2 = ∥εWP δ∥2
+2 ≤ ε2
+∥WP ∥2
+p→2 (15)
+where ∥WP ∥2
+p→2 denotes the operator norm of the matrix
+WP with respect to the input p-norm and output 2-norm.
+However, the adversarial sensitivity Sadv measures the
+maximum change in the output of f caused by a small per-
+turbation εδ, as follows:
+Sadv(f, x, ε) = max
+δ∈Bp(x,ε)
+f(x + εδ) − f(x)
+2
+2
+. (16)
+Therefore, when maximizing the ”worst-case direction”,
+we need to consider the maximum upper bound in all finite
+K cells that intersect with the perturbation ball. The global
+upper bound of adversarial sensitivity is expressed as
+Sadv(f, x, ε) ≤ ε2
+max
+1≤k≤K
+∥WPk
+∥2
+p→2 (17)
+Since the matrix WPk
+is determined by the firing pattern
+Pk, it is influenced by the relationship between neuronal
+membrane potential and threshold. The closer the membrane
+potential is to the threshold, the easier it is for the neuron’s
+firing state to flip, resulting in more convex polyhedral cells
+intersecting the perturbation ball and a higher upper bound.
+Therefore, larger margins between membrane potential and
+threshold shrink the set of reachable cells and typically re-
+duce the dominating ∥WPk
+∥2
+p→2.
+In surrogate gradient training, the effective gradient mag-
+nitudes of the spike nonlinearity decrease with increasing
+membrane-threshold margins (cf. Eq.7 in the main text).
+Consequently, smaller gradient magnitudes Oℓ
+(t)
+Uℓ(t)
+implies
+larger margins U
+ℓ
+(t), yielding a more stable firing pattern,
+which in turn reduces variability in the affine transformation
+WPk
+and lowers the dominating operator norm ∥WPk
+∥2
+p→2,
+resulting in a smaller adversarial sensitivity:
+Oℓ
+(t)
+Uℓ
+(t)
+↓=⇒ U
+ℓ
+(t) ↑=⇒ Sadv(f, x, ε) ↓ . (18)
+B The relationship between surrogate
+gradient function and membrane potential
+distribution
+As illustrated in Figure.1, the relationship between the surro-
+gate gradient (SG) function and membrane potential distri-
+bution (MPD) will appear several extreme cases: (1) Degen-
+eration (Fig.1a): almost all the membrane potential values of
+the neurons in a channel are below the firing threshold. Thus
+very few membrane potentials carry gradients, which ob-
+structs gradient propagation; (2) Saturated (Figure.1b): Al-
+most all the membrane potential values in a channel fall into
+the gradient-available interval, it is equivalent to use SGs
+for all gradient computation, which will enlarge the approx-
+imated errors from the accurate gradients.
+C Analysis of MPD-SGR methods
+The effect of balanced coefficient η. The balanced coef-
+ficient η determines the strength of the proposed MPD-SGR
+effect. A larger η reduces the proportion of membrane poten-
+tials contributing effectively to the gradient computation, ob-
+structing gradient propagation and lowering clean accuracy.
+Conversely, a smaller η imposes insufficient constraints on
+the surrogate gradient, failing to improve robustness effec-
+tively. Therefore, we perform an extensive exploration of the
+optimal coefficient η to strike a trade-off between accuracy
+on clean data (clean accuracy) and robustness on adversarial
+inputs (adversarial accuracy). The investigation focuses on
+the CIFAR-10 dataset, with an SNN version of the VGG11
+architecture and a timestep setting of T = 2.
+To assess the impact of η varying within the range of 0.01
+to 0.1, we conduct experiments under BPTT-based FGSM
+and PGD attacks (Figure 2). We also provide the clean and
+adversarial accuracy of the vanilla SNN model as a baseline
+reference, as indicated by the dashed line in Figure 2. It can
+be seen that the optimal value of η appears to be around 0.05,
+striking a suitable balance between accuracy and robustness.
+Analysis of MPD and SG overlap evolution To empir-
+ically validate our theoretical method, we visualized the
+membrane potential distribution (MPD) of neurons during
+training, along with its Gaussian fitting results, as shown in
+! − #!"
+Gradient-available Interval
+(a) Degeneration
+! − #!"
+Gradient-available Interval
+(b) Saturated
+Figure 1: The relationship between the surrogate gradient (SG) function and membrane potential distribution (MPD)
+0.02 0.04 0.06 0.08 0.10
+0
+20
+40
+60
+80
+100
+h
+ACC
+(%)
+Clean FGSM PGD
+Figure 2: The influence of the coefficient parameter η on
+clean and adversarial accuracy under BPTT-based attacks.
+The dashed line indicates the accuracy of the vanilla SNN
+model
+Figure 3. The empirical MPD exhibits a close approxima-
+tion to a Gaussian distribution, indicating that the membrane
+dynamics during training can be statistically characterized
+by its mean and variance. Building on this observation, the
+proposed MPD-SGR method explicitly regulates the mean
+and variance of the MPD to reduce the proportion of po-
+tentials that fall within the gradient-available interval of the
+surrogate gradient (SG) function (overlap Ω), thereby offer-
+ing empirical support for both the theoretical derivation and
+the design of the algorithm.
+we further analyze the evolution of MPD statistics
+throughout training, including the mean, standard deviation,
+and the proposed regularization term Ω, as shown in Fig-
+ure 4. The results reveal that MPD-SGR consistently reduces
+the mean and increases the variance of the membrane poten-
+tial distribution over time. This transformation shifts more
+membrane potentials outside the gradient-available interval
+of the SG function, thereby reducing the overlap region Ω.
+Such behavior aligns with our theoretical motivation and
+empirically confirms the effectiveness of MPD-SGR in pro-
+moting robustness by regulating gradient during training.
+D Details of Implementation
+Experimental settings
+The training process lasts for 300 epochs and all reported re-
+sults are averaged over five independent algorithm runs. In
+the training process, the stochastic gradient descent (sgd) is
+deployed, and the initial learning rate is set to 0.1. The learn-
+ing rate uses a cosine annealing schedule with Tmax equal-
+ing the max number of epochs. The Threshold-dependent
+batch normalization (tdBN) is used in the network to over-
+come the gradient vanishing or explosion for deep SNNs as
+suggested by (Zheng et al. 2021). The image data is first
+normalized by the means and variances of the three chan-
+nels and then fed into SNNs to trigger spikes. All the exper-
+iments are conducted on the PyTorch platform on NVIDIA
+GeForce RTX 3090. Note that we adapt and modify the im-
+plementation of gradient-based attacks of the torchattacks
+Python package (Kim 2020) as we need to perform success-
+ful attacks on SNNs. LIF neurons are used with a threshold
+of vth = 1.0 and a decay factor of τ = 1, consistent with
+previous work (Ding et al. 2022). The SG function is config-
+ured with γ=1.
+Adversarial attack settings
+We mainly explore two types of attack scenarios: in white-
+box (WB) attacks, the attacker has complete access to
+the target model, including its architecture and parameters,
+while in black-box (BB) attacks, the attacker has no direct
+knowledge of the model and typically constructs a substitute
+A B C
+D E F
+Figure 3: Membrane potential distribution (MPD) and Gaussian fitting during training. Subfigures (A-C) show the MPD his-
+tograms and corresponding Gaussian fits for the third layer of VGG11 at epochs 100, 200, and 300, respectively. Subfigures
+(D-F) display the same for the fifth layer. The empirical MPD closely matches a Gaussian curve, supporting our MPD-SGR
+strategy based on mean and variance control.
+A B C
+D E F
+Figure 4: Evolution of MPD statistics and the regularization term Ω during training. Subfigures (A-C) show the changes in the
+mean, standard deviation, and Ω for the third layer of VGG11, respectively, while (D-F) present the same for the fifth layer.
+DATASET T MODEL CLEAN FGSM PGD BIM CW
+CIFAR10
+8
+VGG11, BPTT
+92.49/90.69
+25.18/47.59 0.88/20.55 0.60/16.85 7.19/24.50
+VGG11, BPTR 21.50/43.32 3.37/27.18 2.87/26.54 19.74/37.60
+4
+VGG11, BPTT
+92.45/90.62
+23.86/42.12 0.87/17.18 0.60/14.59 6.26/18.85
+VGG11, BPTR 27.92/47.61 7.82/25.52 6.61/25.00 24.38/38.07
+WRN16, BPTT
+93.46/92.22
+18.81/45.82 0.02/8.44 0.03/6.59 3.61/18.66
+WRN16, BPTR 15.28/38.18 0.17/8.03 0.16/6.65 11.76/31.21
+2
+VGG11, BPTT
+92.22/90.18
+18.17/48.08 0.33/13.03 0.24/11.17 5.31/14.63
+VGG11, BPTR 46.91/61.69 15.07/27.40 13.48/26.93 36.43/61.12
+WRN16, BPTT
+92.96/91.81
+17.13/48.20 0.00/6.85 0.01/5.44 2.27/15.68
+WRN16, BPTR 25.70/54.31 1.15/14.93 1.12/14.16 17.95/47.59
+CIFAR100
+8
+VGG11, BPTT
+72.82/70.42
+10.14/34.51 0.27/9.03 0.31/8.41 6.18/16.12
+VGG11, BPTR 8.53/21.25 1.64/16.66 1.64/16.44 18.75/24.96
+4
+VGG11, BPTT
+72.54/69.56
+8.95/20.16 0.24/6.90 0.20/5.51 5.62/13.54
+VGG11, BPTR 11.45/34.49 4.66/10.07 4.44/9.94 25.03/26.99
+WRN16, BPTT
+73.86/72.61
+10.99/22.58 0.04/1.97 0.05/1.77 4.93/10.34
+WRN16, BPTR 9.74/21.60 0.44/5.52 0.35/5.50 14.81/24.13
+2
+VGG11, BPTT
+71.73/69.23
+7.29/29.29 0.13/6.68 0.10/5.88 3.12/13.04
+VGG11, BPTR 18.48/36.03 5.96/15.81 5.57/15.25 26.40/35.41
+WRN16, BPTT
+71.79/71.35
+11.04/21.43 0.05/1.23 0.06/1.00 3.75/7.74
+WRN16, BPTR 14.36/29.69 2.06/12.99 1.84/12.60 15.34/33.40
+Table 1: The classification accuracy (Vanilla/Ours) under white-box attacks. The attack perturbation strength is set to ϵ = 8/255
+for all attacks, the iterative steps k = 7 and step size α = 0.01 for PGD, BIM.
+DATASET T MODEL CLEAN FGSM PGD BIM CW
+CIFAR10
+8
+VGG11, BPTT
+91.41/90.69
+45.00/59.27 22.95/33.38 20.80/32.61 36.04/49.50
+VGG11, BPTR 41.16/61.01 23.07/36.43 21.25/35.50 54.93/59.88
+4
+VGG11, BPTT
+91.08/90.34
+43.80/58.71 20.63/28.94 18.63/24.74 29.87/34.38
+VGG11, BPTR 49.11/66.17 35.74/43.12 34.59/41.17 58.73/65.05
+WRN16, BPTT
+91.15/91.34
+42.31/63.32 19.93/38.11 18.03/33.13 29.60/43.06
+WRN16, BPTR 51.75/70.93 34.44/46.91 33.00/44.79 58.90/70.10
+2
+VGG11, BPTT
+90.71/89.92
+40.26/55.89 19.18/22.76 17.40/19.24 28.49/30.51
+VGG11, BPTR 51.87/66.28 40.70/58.72 49.39/57.05 68.25/83.46
+WRN16, BPTT
+92.96/91.81
+17.13/48.20 0.00/6.85 0.01/5.44 2.27/15.68
+WRN16, BPTR 25.70/54.31 1.15/14.93 1.12/14.16 17.95/47.59
+CIFAR100
+8
+VGG11, BPTT
+69.43/69.56
+19.07/39.45 9.23/22.23 8.41/19.45 18.82/22.53
+VGG11, BPTR 25.44/48.0 15.74/33.84 14.68/33.29 30.33/43.82
+4
+VGG11, BPTT
+68.60/67.67
+20.28/36.18 9.97/18.23 8.82/15.70 15.46/22.33
+VGG11, BPTR 29.78/40.42 22.14/26.38 21.27/25.88 40.96/47.44
+WRN16, BPTT
+69.29/69.67
+25.35/39.47 12.09/21.71 11.30/18.87 20.17/27.55
+WRN16, BPTR 31.99/44.23 22.58/35.67 22.04/35.08 43.23/53.21
+2
+VGG11, BPTT
+67.79/66.90
+18.94/35.10 9.00/15.89 8.27/13.70 15.32/20.56
+VGG11, BPTR 35.10/42.65 28.79/37.58 27.96/37.22 42.40/51.55
+WRN16, BPTT
+67.04/67.69
+24.51/35.51 11.31/18.69 10.49/17.06 21.40/24.96
+WRN16, BPTR 35.93/49.97 28.71/45.50 27.88/44.21 45.07/57.55
+Table 2: The classification accuracy (Vanilla/Ours with AT) under white-box attacks. The attack perturbation strength is set to
+ϵ = 8/255 for all attacks, the iterative steps k = 7 and step size α = 0.01 for PGD, BIM.
+2 4 6 8
+0
+20
+40
+60
+80
+100
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+80
+100
+k
+ACC
+(%)
+2 4 6 8
+0
+20
+40
+60
+80
+100
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+80
+100
+k
+ACC
+(%)
+Vanilla Ours Vanilla+AT Ours+AT
+VGG11
+VGG11
+WRN16
+WRN16
+(a) CIFAR10
+2 4 6 8
+0
+20
+40
+60
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+k
+ACC
+(%)
+2 4 6 8
+0
+20
+40
+60
+e*255
+ACC
+(%)
+1 3 5 7 9
+0
+20
+40
+60
+80
+k
+ACC
+(%)
+Vanilla Ours Vanilla+A
+T Ours+AT
+VGG11
+VGG11
+WRN16
+WRN16
+(b) CIFAR100
+Figure 5: Performance of the white-box PGD attack with increasing perturbation ϵ and iterative step k = 4 (Top Panels),
+increasing iterative step k and ϵ = 8/255 (Bottom Panels).
+Table 3: Checklist for characteristic behaviors caused by obfuscated and masked gradients.
+Items to identify gradient obfuscation BPTR BPTT
+(1) Single-step attack performs better compared to iterative attacks Pass Pass
+(2) Black-box attacks performs better compared to white-box attacks Pass Pass
+(3) Increasing perturbation bound can’t increase attack strength Pass Pass
+(4) Unbounded attacks can’t reach ∼ 100% success Pass Pass
+(5) Adversarial example can be found through random sampling Pass Pass
+model to approximate the behavior of the target model. In
+this work, four classic adversarial attack algorithms are used
+to evaluate the vulnerability of SNN: Fast Gradient Sign
+Method (FGSM) (Goodfellow, Shlens, and Szegedy 2014),
+Projected Gradient Descent (PGD) (Madry 2017), Basic It-
+erative Method (BIM) (Kurakin, Goodfellow, and Bengio
+2018) and CW (Carlini and Wagner 2017) attacks. Given
+a classification model f with dataset (x, ytrue), where x is
+the clean image and ytrue is the corresponding correct label.
+The formulations of the attacks we used in this study are
+described as follows:
+FGSM. FGSM aims to perturb the original data x along
+the sign direction of the gradient on loss function with one
+step to increase the perturbed linear output, thus fool the net-
+work. It can be formalized as follows:
+x̂ = x + ϵ · sign(∇xL(f(x), ytrue)), (19)
+where sign(·) is an odd mathematical function that extracts
+the sign of a real number.
+PGD. PGD attack is the iterative variant of FGSM. It first
+starts from a random perturbation in the Lp-norm constraint
+around the original sample x, then takes a gradient iteration
+step in the sign direction to achieve the greatest loss output.
+It can be formalized as follows:
+x̂0
+= x + U(−ϵ, +ϵ), (20)
+x̂k+1
+= Clipx,ϵ
+
+x̂k
++ α · sign(∇xL(f(x̂k
+), ytrue)) , (21)
+where k is the iterative step, α is the step size for each at-
+tack iteration, ϵ controls the perturbation level. U(·) is a uni-
+form function, Clipx,ϵ{x} is the function which performs
+per-pixel clipping of the image x̂, so the result will be in
+L∞-norm ϵ-neighborhood of the original image x.
+BIM. Both BIM and PGD attacks are iterative attacks.
+Different from PGD attacks, BIM updates the adversarial
+samples starting from the original image.
+CW. CW attack is different from previous gradient-based
+attack methods. It is based on model optimization to gener-
+ate adversarial samples. Its optimization function is as fol-
+lows:
+minimize
+1
+2
+∥tanh(W)+1−x∥2
+2+c·f(tanh(W)+1), (22)
+where f is defined as
+f(x̂) = max(max{Z(x̂)i : i ̸= j} − Z(x̂)j, 0), (23)
+where c is a parameter to control the perturbation, Z(·) rep-
+resents the logits output on label yi.
+Unlike in ANNs, the input data x is first encoded into
+sequences O0
+over time windows T in SNNs. The most
+common encoding method involves duplicating x across the
+Figure 6: Performance of untargeted PGD attacks with dif-
+ferent approximation. The red dashed line represents the ac-
+curacy of random guess (10% for CIFAR-10).
+temporal dimension (Kim et al. 2022), enabling the gradient
+w.r.t x to be derived from gradient w.r.t O0
+as follows:
+∇xL(f(x), ytrue) =
+1
+T
+X
+t
+∂L
+∂O0
+(t)
+. (24)
+Backward Pass Through Time. The most commonly
+used differentiable approximation is the Backward Pass
+Through Time (BPTT) with surrogate gradients. In this
+method, the non-differentiable neuron fire function is re-
+placed by a differentiable function (h
+
+U
+l
+(t)
+
+) on the back-
+ward pass. The backward pass can be described as:
+∂L
+∂Ul
+(t)
+=
+∂L
+∂Ol
+(t)
+∂Ol
+(t)
+∂Ul
+(t)
++
+∂L
+∂Ul
+(t + 1)
+∂Ul
+(t + 1)
+∂Ul
+(t)
+.
+(25)
+≈
+∂L
+∂Ol
+(t)
+h
+
+U
+l
+(t)
+
++
+∂L
+∂Ul
+(t + 1)
+∂Ul
+(t + 1)
+∂Ul
+(t)
+.
+(26)
+Backward Pass Through Rate. Another differentiable
+approximation is the Backward Pass Through Rate (BPTR).
+In this method, the backward pass takes the derivative di-
+rectly from the average firing rate of the spiking neurons be-
+tween layers. We consider neurons at each time-step equiv-
+alent, and the derivative is determined by the average firing
+rate.
+∂L
+∂Ol(t)
+=
+∂L
+∂Ol+1(t)
+∂ 1
+T
+PT
+i=0 Ol+1
+(i)
+∂ 1
+T
+PT
+i=0 Ol(i)
+. (27)
+Since the relationship of the firing rates in adjacent lay-
+ers for non-leaky IF neuron is nearly linear, the gradients
+of
+∂ 1
+T
+PT
+i=0 Ol+1
+(i)
+∂ 1
+T
+PT
+i=0 Ol(i)
+can be approximated using the straight-
+through estimator, here we use the constant 1
+T to approxi-
+mate the value of
+∂ 1
+T
+PT
+i=0 Ol+1
+(i)
+∂ 1
+T
+PT
+i=0 Ol(i)
+The backward pass of the
+complete neuronal dynamic is approximated by one single
+function, and the gradient will not accumulate through time-
+steps. As the forward pass still follows the rule of the spiking
+neurons, the obtained gradients will be more accurate than
+the conversion-based attack.
+E More experimental results
+White-box attack with various timestamps T
+In Table 1 and Table 2, we compare the classifica-
+tion accuracy of MPD-SGR with the vanilla method
+(REG/RAT (Ding et al. 2022)) under various white-box
+attacks. We can see that in different datasets (CIFAR-10
+and CIFAR-100), networks (VGG11 and WRN16) and time
+steps (T = 2, 4, 8), MPD-SGR can effectively and stably im-
+prove the robustness of the vanilla model to different attacks.
+This further verify the effectiveness of our method.
+Performance under different ϵ and iterative step k
+We evaluate model accuracy degradation under increasing
+PGD attack intensity ϵ and iterative step k. The results in
+Figure 5 show that MPD-SGR achieves a slower accuracy
+decline than the baseline under stronger PGD attacks for
+both VGG and WRN architectures, regardless of AT. This
+demonstrates that our method exhibits strong tolerance to
+more intense adversarial perturbations.
+F Analysis of Gradient Obfuscation
+The main concern of the gradient obfuscation lies in the
+inaccurate of updating gradients. In particular, the perfor-
+mance of the two differentiable approximations was checked
+against the five tests that can identify gradient obfuscation as
+done in (Kundu and Pedram 2021). Our analysis is mainly
+based on the quantification results in Tab. 1 and Fig. 3 in the
+main text.
+As shown in Tab. 1 in the main text, for all the trials in the
+main text, the performance of single-step FGSM is worse
+than its iterative counterpart PGD, which certifies the suc-
+cess of BPTT and BPTR approximation in terms of Test(1)
+in Table 3. To verify Test(2), we conduct black-box attacks
+on the proposed models and the vanilla ones in Fig. 3 in
+the main text. The black-box perturbation performs weaker
+than white-box perturbation, so Test(2) is satisfied. To ver-
+ify Test(3)(4) we analyze VGG-11 on CIFAR-10 with in-
+creasing attack bound. In Figure.6, the classification accu-
+racy decreases as we increase ϵ and finally reaches an accu-
+racy of random guessing. As suggested in (Kundu and Pe-
+dram 2021), Test(5) ”can fail only if gradient-based attacks
+cannot provide adversarial examples for the model to mis-
+classify”. To sum up, we found no gradient obfuscation for
+the BPTT and BPTR approximation, which are suitable for
+adversarial training and testing.
+References
+Carlini, N.; and Wagner, D. 2017. Towards evaluating the
+robustness of neural networks. In 2017 IEEE symposium on
+security and privacy (sp), 39–57. IEEE.
+Ding, J.; Bu, T.; Yu, Z.; Huang, T.; and Liu, J. 2022. Snn-rat:
+Robustness-enhanced spiking neural network through regu-
+larized adversarial training. Advances in Neural Information
+Processing Systems, 35: 24780–24793.
+Goodfellow, I. J.; Shlens, J.; and Szegedy, C. 2014. Explain-
+ing and harnessing adversarial examples. arXiv preprint
+arXiv:1412.6572.
+Kim, H. 2020. Torchattacks: A pytorch repository for adver-
+sarial attacks. arXiv preprint arXiv:2010.01950.
+Kim, Y.; Park, H.; Moitra, A.; Bhattacharjee, A.; Venkate-
+sha, Y.; and Panda, P. 2022. Rate coding or direct coding:
+Which one is better for accurate, robust, and energy-efficient
+spiking neural networks? In ICASSP 2022-2022 IEEE Inter-
+national Conference on Acoustics, Speech and Signal Pro-
+cessing (ICASSP), 71–75. IEEE.
+Kundu, S.; and Pedram, M. 2021. HIRE-SNN: Harnessing
+the adversarial robustness of energy-efficient deep spiking
+neural networks via training with crafted input noise. In
+ICCV.
+Kurakin, A.; Goodfellow, I. J.; and Bengio, S. 2018. Adver-
+sarial examples in the physical world. In Artificial intelli-
+gence safety and security, 99–112. Chapman and Hall/CRC.
+Madry, A. 2017. Towards deep learning models resistant to
+adversarial attacks. arXiv preprint arXiv:1706.06083.
+Zheng, H.; Wu, Y.; Deng, L.; Hu, Y.; and Li, G. 2021. Going
+deeper with directly-trained larger spiking neural networks.
+In Proceedings of the AAAI conference on artificial intelli-
+gence, 11062–11070.
+

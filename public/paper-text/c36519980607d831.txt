@@ -1,0 +1,1432 @@
+1
+RaStream: Edge-Deployable Streaming Human
+Mesh Recovery from mmWave Radar
+Jiazhen Dong and Lei Liu, Senior Member, IEEE
+Abstract—Millimeter-wave (mmWave) radar provides a
+privacy-preserving sensing modality for human motion analysis,
+yet continuous SMPL eXpressive (SMPL-X) recovery on edge
+devices remains difficult because accurate reconstruction benefits
+from dense volumetric radar observations that preserve weak
+articulated-body reflections, while repeatedly processing such
+high-dimensional data over time incurs substantial computational
+cost. Temporal context is also necessary to resolve frame-
+local ambiguity, but the relevant SMPL-X attributes evolve on
+different time scales, with body morphology remaining rela-
+tively stable and articulated pose, root orientation, and global
+translation changing rapidly, which makes a single temporal
+update mechanism suboptimal for streaming reconstruction. We
+present RaStream, a causal streaming framework that separates
+rich volumetric spatial perception from lightweight temporal
+reasoning. For each radar observation, a localization-conditioned
+spatial encoder first exploits global scene context to estimate a
+coarse body location and then focuses detailed reconstruction on
+a center-guided region of interest while preserving the native
+3D radar structure; the resulting global and local features
+are fused into a compact spatial representation, so that high-
+dimensional volumetric evidence is extracted only once per ob-
+servation and temporal history can subsequently be propagated
+through compact representations and fixed-size persistent states.
+To further account for the heterogeneous temporal dynamics
+of SMPL-X attributes, RaStream maintains a slow morphology
+state for shape-related information and a fast motion state for
+pose, orientation, and translation. On the 661K-frame M4Human
+benchmark, RaStream reduces MVE from 90.90 mm for RT-
+Mesh to 84.27 mm with spatial-only inference and further to
+72.05 mm with causal temporal refinement, while the Base
+configuration requires 26.93 ms per FP32 invocation on a Jetson
+Orin Nano. These results demonstrate that continuous radar
+mesh recovery can be made practical for edge streaming by ex-
+tracting rich volumetric evidence once and propagating temporal
+information thereafter in a compact causal form. Our code is
+available at https://github.com/LeiLiu-s-Lab/RaStream.git.
+Index Terms—mmWave radar, human mesh recovery, dual-
+state modeling, streaming inference, edge deployment
+I. INTRODUCTION
+Continuous human motion sensing supports a wide range
+of indoor monitoring and human–computer interaction appli-
+cations [1]–[4]. Camera-based pose and mesh recovery has
+advanced rapidly [5]–[10], but identifiable visual observations
+limit its use in privacy-sensitive environments. Millimeter-
+wave (mmWave) radar provides a complementary sensing
+modality that is less affected by illumination and partial visual
+Jiazhen Dong and Lei Liu are with the Zhejiang Provincial Key Laboratory
+of Information Processing, Communication and Networking, College of Infor-
+mation Science and Electronic Engineering, Zhejiang University, Hangzhou,
+310007, China (e-mail: {dongjiazhen, lei liu}@zju.edu.cn).
+Corresponding author: Lei Liu.
+Radar Data
+Stream
+SMPL
+Parameters
+mmWave Radar Edge Device Cloud Server
+Fig. 1. Edge streaming scenario for privacy-preserving mmWave human mesh
+recovery on resource-constrained devices.
+occlusion while avoiding direct capture of visual appearance.
+As illustrated in Fig. 1, our target setting is causal mesh
+recovery from a continuous radar stream on a resource-
+constrained edge device. Prior RF/mmWave systems have
+addressed through-wall sensing [11], [12], skeletal pose es-
+timation [13]–[15], fine-grained radar signal generation [16],
+gait and identity recognition [17], cross-category action recog-
+nition [18], gesture interaction [19], and vital-sign monitor-
+ing [20]. Recent work has further extended radar sensing
+to real-time continuous activity recognition [21], while radar
+benchmarks increasingly support dense human reconstruction
+with SMPL [22], [23] and SMPL-X [24], [25]. Unsupervised
+learning has also been explored for general radar representa-
+tions [26]. These advances demonstrate the growing capability
+of radar-based human sensing, but they primarily target signal
+generation, recognition, representation learning, or frame-wise
+reconstruction. Continuous radar mesh recovery is a different
+problem: a practical streaming system must preserve weak
+spatial evidence, exploit temporal continuity, and satisfy causal
+edge-inference constraints simultaneously.
+The central difficulty lies in reconciling spatial fidelity,
+temporal context, and streaming efficiency. Point-cloud meth-
+ods such as mmMesh [27], MiliPoint [14], mmBody [23],
+and P4Transformer [28] reduce computation through peak
+extraction or point-level processing. Video-based synthesis can
+generate radar training data for privacy-preserving mobile hu-
+man sensing [29], but it does not remove the need to preserve
+informative evidence in measured radar observations. Peak
+selection is computationally attractive, yet it can irreversibly
+discard weak responses from limbs, partially occluded body
+parts, and other regions that remain informative for dense
+articulated reconstruction. Evidence that may be redundant for
+coarse localization can still constrain detailed mesh recovery.
+Radar-tensor methods such as HuPR [30], RT-Pose [31],
+RETR [32], and RT-Mesh [25] preserve denser spatial evi-
+dence, but repeatedly processing full radar volumes becomes
+expensive in a continuous stream. Related data-generation
+work targets rich radar observations for generalized gesture
+arXiv:2608.11791v2
+[eess.SP]
+28
+Sep
+2026
+2
+recognition [33], rather than full-body SMPL-X recovery. At
+the same time, frame-wise estimates remain sensitive to body
+orientation, self-occlusion, weak or missing returns, multipath,
+and clutter, making temporal context important for stable
+reconstruction. Existing real-time continuous radar sensing has
+primarily focused on activity recognition [21]; short-window
+motion models [34] provide only bounded context, whereas
+buffering longer radar sequences increases memory use. Re-
+currently processing volumetric radar features, for example
+with recurrent units derived from LSTM [35], further adds
+high-dimensional computation and memory traffic, while bidi-
+rectional or offline models rely on future observations unavail-
+able during causal inference. The key question is therefore not
+how to process more radar data over longer windows, but how
+to extract rich spatial evidence once from each observation
+and then propagate temporal information in a compact form.
+A further requirement arises from the temporal heterogeneity
+of SMPL-X attributes. Causal history aggregation can already
+stabilize frame-local radar ambiguity, but body shape and
+gender remain approximately stable within a subject sequence
+and benefit from evidence accumulated over time, whereas
+articulated pose, root orientation, and global translation change
+rapidly and must remain responsive to the current observation.
+A single temporal state therefore faces conflicting update
+requirements: rapid updates can make morphology estimates
+sensitive to transient radar noise, while aggressive smooth-
+ing can suppress genuine motion changes. Separating slowly
+varying morphology information from rapidly varying motion
+information is therefore expected to provide an additional
+refinement beyond generic causal temporal modeling.
+These observations suggest three design principles for con-
+tinuous mmWave mesh recovery. First, the spatial encoder
+should preserve the native volumetric representation while sep-
+arating global body localization from subject-centered detailed
+reconstruction, so that expensive fine-grained processing is
+concentrated where it is most useful. Second, each radar ob-
+servation should undergo high-dimensional spatial processing
+only once, after which its information should be compressed
+into a compact representation for temporal propagation. Third,
+temporal reasoning should distinguish slowly varying mor-
+phology from rapidly varying motion so that long-term evi-
+dence accumulation does not compromise responsiveness to
+current observations.
+Based on these principles, we propose RaStream, a unified
+framework for spatial encoding, causal temporal refinement,
+and edge-aware streaming. For each radar observation, a
+localization-conditioned spatial encoder preserves the native
+3D radar structure and first exploits global scene context to
+estimate a coarse body center. Detailed feature extraction is
+then focused on a center-guided region of interest, and gated
+global–local fusion compresses the resulting evidence into a
+compact spatial token. This token serves as the interface be-
+tween spatial perception and temporal reasoning, allowing rich
+volumetric information to be extracted once from the current
+observation and temporal history to be propagated thereafter in
+a compact form. Causal history aggregation supplies the main
+temporal benefit over spatial-only inference. RaStream further
+maintains two persistent temporal states with different roles: a
+morphology state accumulates slowly varying evidence about
+body shape and related attributes, while a motion state tracks
+rapidly changing pose, orientation, and translation, providing
+an additional refinement beyond a single recurrent state. In
+this way, RaStream avoids both long raw-volume histories and
+recurrent processing of high-dimensional radar volumes, while
+retaining fixed-size causal temporal memory suitable for edge
+deployment.
+Table I positions RaStream relative to representative
+RF/mmWave sensing and reconstruction methods. Point-cloud
+approaches operate on selected reflections, while radar-tensor
+or heatmap methods preserve denser spatial evidence but
+generally perform frame-wise keypoint estimation, detection,
+segmentation, or mesh recovery. Sequence models provide
+temporal context, but do not combine native-tensor spatial
+encoding with persistent, fixed-state causal refinement for
+streaming SMPL-X recovery. RaStream brings these compo-
+nents together within a single edge-oriented framework.
+The main contributions of this paper are:
+• RaStream introduces a localization-conditioned spatial
+encoder that preserves the native 3D radar structure,
+separates global localization from subject-centered re-
+construction, and fuses global and local evidence into a
+compact spatial token for temporal reasoning.
+• RaStream performs causal temporal reasoning in compact
+token space, enabling fixed-memory history aggregation
+without future observations, long raw-radar histories, or
+recurrent processing of high-dimensional radar volumes;
+its slow morphology and fast motion states provide an
+additional consistent refinement beyond a comparable
+single-state recurrent baseline.
+• RaStream is evaluated across spatial-backbone scale,
+streaming stride, and temporal unroll horizon, with re-
+construction, temporal consistency, latency, memory, and
+power profiling on M4Human and Jetson Orin Nano.
+The remainder of this paper is organized as follows. Sec-
+tion II provides an overview of RaStream, including the
+problem formulation and complete architecture. Sections III
+and IV detail the spatial encoder and dual-state causal temporal
+refiner, respectively. Section V presents the deployment-aware
+streaming design. Section VI reports experimental results,
+ablations, and edge profiling. Section VII concludes the paper
+and discusses remaining limitations.
+II. OVERVIEW
+A. Problem Formulation
+We formulate streaming radar mesh recovery as a causal,
+fixed-memory state estimation problem. At each emitted step,
+the model receives only the most recent radar observation and
+persistent states propagated from preceding steps, and must
+predict the SMPL-X state for the current instant.
+Let Xt ∈ RTw×H×W ×D
+denote the short-window mmWave
+radar tensor at time step t, where Tw is the number of
+consecutive radar frames and H, W, D are the three radar
+spatial dimensions. Here, t indexes streaming observations
+or emitted tokens rather than raw radar frames; consecutive
+3
+TABLE I
+COMPARISON WITH REPRESENTATIVE RF/MMWAVE SENSING, RECONSTRUCTION, AND RADAR-PERCEPTION METHODS.
+Method Primary Task Input Output Temporal Mode
+RF-Capture [11] Human figure sensing RF waveform Coarse human figure Offline sensing
+mm-Pose [13] Pose estimation Radar point cloud 3D keypoints Frame-wise
+HuPR [30] Pose estimation benchmark Radar tensor 2D keypoints Frame-wise
+MiliPoint [14] Pose estimation Radar point cloud 3D keypoints Frame-wise
+mmMesh [27] Dynamic mesh construction Radar point cloud Human mesh Sequential prior
+P4Transformer [28] Point-cloud sequence modeling Point cloud sequence Spatio-temporal features Sequence-level
+mmBody [23] Human mesh recovery Radar point cloud SMPL mesh Frame-wise
+RT-Pose [31] Pose estimation benchmark Radar tensor 3D keypoints Frame-wise
+RETR [32] Indoor radar perception Radar heatmaps Detection / segmentation Frame-wise
+RT-Mesh [25] Human mesh recovery Radar tensor SMPL-X mesh Frame-wise
+RaStream (Ours) Human mesh recovery Radar tensor SMPL-X mesh Causal streaming
+observations are separated by the streaming stride s introduced
+in Section IV-E.
+At streaming step t, Xt is formed from the latest Tw radar
+frames and the window advances according to the stream-
+ing stride s. Consecutive inputs can therefore overlap when
+s < Tw. The radar frames are concatenated along the input-
+channel dimension, while the three spatial axes (H, W, D) are
+preserved. This defines a short spatio-temporal input for the
+spatial encoder without peak extraction, point-cloud conver-
+sion, or spatial-axis flattening. The same windowing rule is
+used during training and causal inference.
+The goal is to estimate a sequence of parametric human
+body states
+yt = (βt, φt, ωt, pt, gt) , (1)
+where βt ∈ R10
+denotes the SMPL-X body-shape parameters,
+φt denotes the articulated body pose, ωt denotes the global
+root orientation, pt ∈ R3
+denotes the global translation, and
+gt ∈ [0, 1] denotes the predicted gender probability [24].
+For edge deployment, the prediction at time t must depend
+on the current and preceding observations {Xτ }τ≤t only;
+it cannot access future frames. We represent the bounded
+memory available from preceding steps by fixed-size states
+ut−1 and ht−1, giving the causal recurrence
+(ŷt, ut, ht) = FRaStream(Xt, ut−1, ht−1). (2)
+This causal edge-deployment constraint distinguishes our set-
+ting from offline temporal mesh and pose models that can
+leverage full video context [7], [36], [37]. It also rules out
+retaining long raw-radar histories or recurrently processing
+high-dimensional volumetric features. The next subsection
+introduces the resulting spatial–temporal decomposition of this
+recurrence.
+B. RaStream Overview
+Figure 2 summarizes RaStream. Each current radar win-
+dow is processed once by a localization-conditioned spatial
+encoder, which preserves the volumetric radar structure while
+combining global scene context with subject-centered local
+evidence. The encoder compresses this rich observation into a
+compact spatial token,
+zt = fsp(Xt; θsp). (3)
+The token is the interface between costly spatial perception
+and lightweight streaming inference: high-dimensional radar
+processing is confined to the current window, whereas tempo-
+ral history is represented only by persistent compact states.
+For single-window evaluation, an auxiliary head produces
+ŷsp
+t = hsp(zt), (4)
+which establishes the body information available from the
+current observation alone. The full model refines this estimate
+causally through
+(ŷt, ut, ht) = ftemp(zt, ut−1, ht−1). (5)
+The morphology state ut accumulates slowly varying evidence
+for body shape and gender, while the motion state ht tracks
+rapidly changing pose, root orientation, and translation. This
+division lets RaStream improve temporal stability without
+making morphology estimates overly responsive or suppress-
+ing genuine motion.
+III. RASTREAM SPATIAL ENCODING
+A. Spatial Design Principles
+Dense radar-based human mesh recovery requires both full-
+scene context and spatially concentrated body evidence. The
+full radar volume is needed to localize the subject, whereas
+fine-grained articulated geometry depends on weak reflections
+from limbs and other body parts. Fine-grained multi-user
+hand sensing has likewise considered target localization before
+detailed pose estimation [38], although its hand-pose setting
+differs from full-body SMPL-X recovery. Applying uniform
+mesh reasoning to the entire volume spends computation on
+background regions, but processing only a local crop requires a
+reliable spatial anchor. RaStream therefore decomposes spatial
+perception into global body localization followed by subject-
+centered local reconstruction.
+The spatial representation must also retain weak radar evi-
+dence and the geometry of the sensing grid. Peak selection and
+point-cloud conversion can remove low-amplitude responses,
+while folding one radar axis into the channel dimension weak-
+ens the native 3D organization of the tensor. RaStream instead
+preserves the three radar axes (H, W, D) throughout spatial
+feature extraction. The Tw frames in each short window are
+organized only along the input-channel dimension, allowing
+3D convolutions to operate on the original radar geometry.
+4
+…
+3D Radar
+Tensor Frame
+Time
+(a) Temporal Sampling
+Center guidance
+(b) Spatial Module
+Spatial Token SMPL-X
+Heads
+(c) Temporal Module
+…
+Spatial Token Sequence
+(d) HMR or Downstream Tasks
+SMPL-X
+Models
+Other Downstream Tasks:
+• Fall-risk detection
+• Mobility analysis
+• …
+Motion
+Dynamics
+Tracker
+Morphology
+Evidence
+Accumulator
+Morphology
+Params
+Motion
+Params
+Global Detection
+Encoder
+RoI Crop
+Local Mesh
+Encoder
+Global-Local
+Fusion
+MLP
+Head
+MLP
+Head
+Spatial
+Module
+Fig. 2. Overall architecture of RaStream. Each short radar window passes through spatial encoding, compact-token causal temporal refinement, and SMPL-X
+parameter regression. The dual-state refiner updates morphology state ut and motion state ht without future observations or recurrent processing of raw radar
+volumes.
+These principles define the interface between spatial percep-
+tion and temporal reasoning. The full volume provides coarse
+localization and global context, the center-guided RoI focuses
+computation on subject-centered evidence, and gated global–
+local fusion produces the compact spatial token zt. This token
+supports both single-window prediction and the causal tem-
+poral refinement in Section IV. For direct spatial supervision
+and evaluation, the RaStream (spatial-only) mapping is
+ŷsp
+t = hsp(fsp(Xt; θsp)), (6)
+where θsp denotes the spatial encoder parameters. The RaS-
+tream (spatial-only) output can still exhibit temporal jitter
+under sparse and noisy observations, motivating the fixed-state
+temporal processing described in the next section.
+B. Spatial Encoder Architecture
+The RaStream spatial encoder is organized as a two-stage
+radar-aware model:
+Xt
+Edet
+−
+−
+−
+→ zdet
+t , ĉt
+Π(·,ĉt)
+−
+−
+−
+−
+−
+→ X̃t
+Emesh
+−
+−
+−
+−
+→ zmesh
+t
+Φ
+−
+−
+→ ŷsp
+t , (7)
+where Edet is the global detection encoder, ĉt is the predicted
+coarse body center, Π(·, ĉt) is the center-guided RoI crop
+operator, Emesh is the local mesh encoder, and Φ denotes the
+final global-local fusion and regression heads.
+3D Conv
+Norm
+GELU
+Self Attention
++
+3D Conv
+×3
+MLP
+RoI
+Crop
+3D Conv
+Norm
+GELU
+×3
+MLP
+Center guidance
+Self Attention
++
+3D Conv
+Gated
+Fusion
+MLP
+Fig. 3. RaStream spatial encoder. The localization-conditioned pipeline
+estimates the body center from the full radar volume, extracts a subject-
+centered RoI for the local branch, and fuses global and local features before
+SMPL-X parameter regression.
+The spatial encoder follows the two-stage pipeline in Fig-
+ure 3. The detection branch encodes the full radar volume and
+predicts a coarse body center ĉt:
+zdet
+t = Edet(Xt), ĉt = hc(zdet
+t ), (8)
+where Edet is a 3D CNN backbone followed by a single-scale
+3D FPN block with residual multi-head spatial self-attention,
+5
+and hc is a lightweight MLP head. The encoder uses adaptive
+pooling to aggregate sparse radar features into a compact
+descriptor zdet
+t . Given the predicted center, a differentiable RoI
+crop operator Π(·, ĉt) extracts a subject-centered local volume
+X̃t = Π(Xt, ĉt). The mesh branch then encodes this crop to
+obtain a local descriptor:
+zmesh
+t = Emesh(X̃t). (9)
+The same single-scale FPN-attention block is used in the mesh
+branch; Table II reports the number of attention heads used by
+the tiny, small, and base variants.
+The global descriptor zdet
+t and local descriptor zmesh
+t are
+combined through gated fusion:
+αt = σ(Wα[zdet
+t ; zmesh
+t ] + bα), (10a)
+zt = αt ⊙ zdet
+t + (1 − αt) ⊙ zmesh
+t , (10b)
+where σ is the sigmoid function, and ⊙ denotes element-wise
+multiplication. The gate αt adaptively balances global and
+local information based on observation characteristics. The
+spatial token zt is passed to task-specific MLP heads that
+predict shape β̂, body pose φ̂, root orientation ω̂, translation p̂,
+and gender ĝ, following parametric mesh recovery [5]–[7] with
+radar-aware tokens. Pose and root orientation are regressed
+with the continuous 6D rotation representation [39] rather
+than axis-angle targets, which avoids discontinuities that can
+amplify ambiguity from weak or missing radar reflections. The
+network predicts the first two columns of a rotation matrix and
+recovers a valid matrix by Gram-Schmidt orthonormalization,
+denoted as R̃ = GS(v); this conversion is applied before
+SMPL-X decoding, and pose loss is computed on recovered
+rotation matrices rather than raw 6D vectors. Together with
+ĉt, these form the RaStream (spatial-only) output ŷsp
+t .
+C. Spatial Training Objective
+The single-window objective is formulated as a weighted
+multi-task loss
+Lsp = λβLβ + λposeLpose + λrootLroot
++ λtransLtrans + λgenderLgender + λcenterLcenter. (11)
+Here, Lβ, Lpose, Lroot, Ltrans, Lgender, and Lcenter supervise
+shape, body pose, root orientation, translation, gender, and
+body center, respectively. The scalar coefficients balance the
+relative importance of the six tasks; the concrete loss forms
+and weights are reported with the implementation details
+in Section VI-B. The center term directly supervises the
+anchor used for RoI cropping. Localization errors can shift
+the crop toward background or exclude weak limb reflections,
+degrading mesh and translation estimates; joint supervision
+therefore couples localization and reconstruction.
+IV. DUAL-STATE CAUSAL TEMPORAL REFINEMENT
+A. Temporal Design Principles
+Frame-local radar ambiguity can destabilize mesh estimates,
+motivating causal temporal refinement. Rather than buffering
+or recurrently processing radar volumes, RaStream processes
+each window once and propagates history only through com-
+pact token zt and fixed-size states. Because morphology varies
+slowly while pose and translation change rapidly, RaStream
+separates temporal state into a morphology accumulator ut
+and motion tracker ht. This dual-state design refines generic
+causal recurrence while preserving responsiveness to current
+observations.
+B. Dual-State Latent Refinement
+The dual-state causal temporal refiner receives the spatial
+token from the pretrained localization-conditioned spatial en-
+coder. Let
+zt = fsp(Xt) (12)
+denote the token extracted from the fused spatial feature
+stream, where fsp(·) summarizes the single-window encoder
+and pooling pipeline up to the shared representation used by
+the output heads. The temporal mapping is
+ftemp : (zt, ut−1, ht−1) 7→ (ŷt, ut, ht), (13)
+where ut is the morphology state, ht is the motion state, and
+ŷt is the SMPL-X state predicted by the complete RaStream
+framework.
+algorithm 1 Causal streaming inference in RaStream
+Input: radar stream, window length Tw, stride s
+Output: emitted SMPL-X meshes
+1 u0 ← 0; h0 ← 0
+2 for each emitted step t do
+3 Form Xt from the latest radar frames
+4 zt ← fsp(Xt)
+5 st ← Estatic(zt); at ← σ(gstatic(zt))
+6 ut ← (1 − at)ut−1 + atst
+7 mt ← Edynamic(zt)
+8 ht ← Fdynamic(ht−1, mt) + Rdynamic(mt)
+9 (β̂t, ĝt) ← Hstatic(ut)
+10 (φ̂t, ω̂t, p̂t) ← Hdynamic(ht, ut)
+11 Decode the parameters locally or transmit them for
+cloud decoding
+12 end for
+The streaming states and SMPL-X parameters are main-
+tained at the edge. If a full mesh is not required locally, the
+predicted parameters can be transmitted to a remote server
+for mesh decoding and visualization. The temporal refiner
+operates on the 512–1024 dimensional spatial token zt. The
+morphology and motion encoders are two-layer MLPs with
+layer normalization, GELU activation, and dropout.
+The morphology branch extracts a single-frame morphology
+observation
+st = Estatic(zt), (14)
+which encodes stable body scale, limb-proportion, and subject-
+identity cues. The morphology evidence accumulator main-
+tains the slow state through a token-conditioned exponential
+moving average (EMA):
+ut = (1 − at)ut−1 + atst, at ∈ [0, 1], (15)
+where at is an adaptive EMA update coefficient. The learned
+gate allows the model to assign different update weights to
+different radar observations, reducing the influence of frames
+6
+Dynamic Enc
+Static Enc
+Update Gate
+GRU
+EMA
+MLP
+MLP
+Static
+Params
+Dynamic
+Params
+Fig. 4. Dual-state causal temporal refinement in RaStream. The spatial
+token zt is separated into morphology and motion features. The morphology
+evidence accumulator updates slow state ut for shape and gender estimation,
+while the motion dynamics tracker updates fast state ht for pose, orientation,
+and translation.
+that are less useful for stable morphology estimation. A mor-
+phology prediction head maps this accumulated representation
+to morphology-related SMPL-X attributes:
+(β̂t, ĝt) = Hstatic(ut). (16)
+The state aggregates morphology evidence across the stream
+instead of estimating these attributes independently at every
+step. The motion branch extracts the fast-varying feature
+mt = Edynamic(zt), (17)
+and updates a causal recurrent state:
+ht = Fdynamic(ht−1, mt) + Rdynamic(mt). (18)
+In our implementation, Fdynamic is a unidirectional GRU [40],
+[41] and Rdynamic is a lightweight projection residual from the
+current motion feature. Since ht already contains the current
+motion evidence through this residual recurrent update, the
+motion prediction head is conditioned on the fast motion state
+and the slow morphology state:
+(φ̂t, ω̂t, p̂t) = Hdynamic(ht, ut). (19)
+This conditioning is necessary because the same joint rotations
+produce different joints and vertices when applied to different
+body shapes. The adaptive update weight is regressed directly
+from the current spatial token:
+at = σ(gstatic(zt)), (20)
+where gstatic is a small MLP producing a scalar gate. The
+learned gate modulates how much each token updates the mor-
+phology state instead of treating all radar observations equally.
+The residual recurrent update of ht keeps motion refinement
+causal while retaining the contribution of the current token.
+C. Initialization and State Recovery
+At the beginning of an independent sequence, RaStream
+initializes both temporal states to zero. The first valid radar
+window is processed by the spatial encoder, after which the
+states are updated and predictions are emitted at the chosen
+stride. The states are reset when a new sequence or subject
+is encountered. If observations are temporarily unavailable,
+the most recent states are retained. When the stream resumes,
+cached spatial tokens can be replayed to re-warm the temporal
+states without recomputing the corresponding volumetric win-
+dows. This recovery procedure keeps spatial recomputation
+separate from temporal state recovery.
+D. Temporal Training Objective
+The temporal training objective extends the spatial mesh-
+parameter loss with all-frame supervision, temporal consis-
+tency, and morphology-stability terms. Temporal motion losses
+reduce jitter, following video pose and mesh recovery [36],
+[42], [43]:
+Ltemp = αtvLtrans-vel + αpvLpose-vel + αrvLroot-vel
++ αtaLtrans-acc. (21)
+The velocity terms compare adjacent prediction and target
+differences:
+Ltrans-vel =
+X
+τ
+∥(p̂τ − p̂τ−1) − (pτ − pτ−1)∥2
+2, (22a)
+Lpose-vel =
+X
+τ
+∥(φ̂τ − φ̂τ−1) − (φτ − φτ−1)∥2
+2, (22b)
+Lroot-vel =
+X
+τ
+∥(ω̂τ − ω̂τ−1) − (ωτ − ωτ−1)∥2
+2. (22c)
+For pose and root orientation, the differences are computed
+after converting the 6D representation to rotation matrices, so
+the loss is applied in matrix space rather than by subtracting
+axis-angle parameters. The acceleration term penalizes second-
+order motion mismatch:
+Ltrans-acc =
+X
+τ
+∥∆2
+p̂τ − ∆2
+pτ ∥2
+2, (23)
+where ∆2
+pτ = pτ − 2pτ−1 + pτ−2.
+The all-frame parameter term supervises every emitted
+prediction in the finite unroll:
+Lall =
+T
+X
+τ=1
+ℓparam(ŷτ , yτ ), (24)
+where ℓparam uses the same shape, pose, root, translation,
+and gender components as the single-window objective.
+Within-sequence morphology stability is further encouraged
+by prediction- and state-level smoothness:
+Lshape-cons =
+T
+X
+t=2
+∥β̂t − β̂t−1∥2
+2. (25)
+Lstate-smooth =
+T
+X
+t=2
+∥ut − ut−1∥2
+2. (26)
+These terms encode the prior that body shape is stable within
+a stream without adding inference-time cost. Let Llast =
+ℓparam(ŷT , yT ) denote the last-frame parameter loss.
+The full objective is
+L = Llast + λallLall + λtempLtemp + λshape-consLshape-cons
++ λstateLstate-smooth. (27)
+All emitted steps are supervised rather than only the final
+prediction, while the velocity and acceleration terms penalize
+short-term temporal artifacts.
+7
+TABLE II
+RASTREAM SPATIAL ENCODER SCALE CONFIGURATIONS.
+Scale Backbone Embedding MHSA Params GFLOPs
+Channels Dim Heads (M) /window
+Tiny 32/64/128 512 4 5.6 1.0
+Small 48/96/192 768 6 12.5 2.0
+Base 64/128/256 1024 8 22.2 3.2
+E. Temporal Sampling Parameters
+RaStream uses three temporal sampling parameters: local
+window length Tw, streaming stride s, and finite unroll horizon
+T. Unless otherwise stated, Tw = 4. The effective raw-frame
+coverage of a finite training or evaluation segment is
+Tcov = Tw + (T − 1)s. (28)
+Here Tw controls local radar evidence, s controls output
+rate, and T controls the finite training unroll and warm-
+up/replay horizon. The recurrent states persist during steady-
+state inference and are not reset after every T tokens. Thus,
+Tcov describes the physical span of the finite segment, not a
+limit on recurrent memory.
+For example, Tw = 4, T = 16, and s = 2 cover 34 raw
+radar frames, or approximately 2.83 s at 12 Hz. Increasing Tw
+increases the cost of each spatial-encoder invocation, increas-
+ing T extends the supervised temporal span, and increasing s
+lowers the output rate while reducing the amortized invocation
+frequency. We evaluate the effects of T and s in Section VI,
+while fixing Tw = 4 in the reported experiments.
+V. DEPLOYMENT-AWARE STREAMING DESIGN
+A. Scale Variants
+For deployment, RaStream provides Tiny, Small, and Base
+spatial-backbone scales as the model-scale variable m. Table II
+summarizes the proportional channel scaling; backbone chan-
+nels are listed as Stage1/Stage2/Stage3.
+Backbone channels scale by 0.5× (tiny), 0.75× (small),
+or 1.0× (base), with downstream dimensions scaled propor-
+tionally. The variants span a 4× parameter range and a 3×
+compute range without architectural redesign. The base model
+targets the highest reconstruction quality, the small model
+offers an accuracy-efficiency compromise, and the tiny model
+supports latency-sensitive or low-power deployments.
+B. Hardware and Inference Pipeline
+We deploy RaStream on the NVIDIA Jetson Orin Nano, a
+representative edge computing platform for embedded sensing
+and robotics applications. The device features an NVIDIA
+Ampere GPU with 1024 CUDA cores and Tensor Cores, 8 GB
+of unified memory shared between CPU and GPU, and typical
+power consumption of 7-15W under load. The software stack
+consists of PyTorch with TensorRT optimization for inference
+acceleration.
+The deployment pipeline has two computational stages
+within RaStream: spatial encoding and dual-state temporal
+refinement. The spatial encoder produces the compact token
+and accounts for most inference time because it processes
+3D radar volumes. The temporal refiner updates persistent
+morphology and motion states, applies the token-conditioned
+gate, and runs SMPL-X heads. Since the states persist across
+frames, RaStream avoids replaying the finite unroll horizon
+from scratch at every output.
+The system stores a small ring buffer of compact tokens
+rather than raw radar volumes. Streaming updates ut and
+ht with O(1) temporal cost, minimizing memory traffic on
+embedded devices [44]–[46]. If tracking is interrupted or
+frames are dropped, states can be re-warmed by replaying
+cached tokens without rerunning the spatial encoder; this
+replay is lightweight enough for the short warm-up/replay
+horizons used in our system.
+Profiling uses batch size one. Each run executes 10 warm-
+up inferences before measurement, excludes the first measured
+frame from steady-state statistics, synchronizes CUDA around
+timed GPU stages, and reports mean and 95th-percentile end-
+to-end latency over the remaining stream. Power is read from
+Jetson VDD IN before and after the inference run and reported
+as idle/active power.
+C. Computation and State Memory
+Let dz denote the spatial-token dimension and dh the
+dimension of the motion state. The spatial encoder is evaluated
+once for each emitted token and accounts for most of the
+per-invocation computation. The temporal refiner processes
+only zt and updates fixed-dimensional states, so its recurrent
+computation and state memory do not grow with stream
+length. The persistent states require O(dz + dh) memory. If a
+replay buffer of K tokens is retained, its memory is O(Kdz),
+compared with O(KTwHWD) for storing the corresponding
+radar windows.
+The stride changes the invocation frequency but not the cost
+of an individual spatial-encoder call. If Csp(m) and Ctemp(m)
+denote the costs of the spatial and temporal branches at model
+scale m, the approximate cost per raw radar frame is
+Cframe(m, s) ≈
+Csp(m) + Ctemp(m)
+s
+. (29)
+This expression is used only to interpret the measured profil-
+ing results; preprocessing and host–device transfer costs are
+included in the reported end-to-end measurements.
+D. Configuration Space
+Edge devices have heterogeneous latency, power, memory,
+and output-rate requirements. Because radar mesh recovery
+uses sparse 4D volumetric tensors, its accuracy-efficiency
+tradeoffs differ from RGB-based systems. We therefore make
+the main deployment variables explicit.
+A deployment configuration is x = (m, Tw, T, s, q), where
+m is model scale, Tw is local radar window length, T is the
+finite unroll and warm-up/replay horizon, s is streaming stride,
+and q is inference precision. The experiments fix Tw = 4 and
+q = FP32, and vary m, T, and s. The RaStream (spatial-only)
+variant is used as the non-temporal reference.
+8
+The framework-level deployment configuration space is
+Ω = M × Tw × T × S × Q, (30)
+where M = {Tiny, Small, Base}, Tw = {2, 4, 8}, T =
+{4, 8, 16}, S = {1, 2, 4}, and Q denotes the set of precision
+modes supported by the target hardware.
+The actually evaluated subset is
+Ωeval = M × {Tw = 4} × T × S × {FP32}, (31)
+Only this subset is enumerated in the experiments and pro-
+filing; Tw and q remain configurable framework dimensions
+rather than systematically evaluated dimensions in this paper.
+For a target application, the measured configurations can be
+ranked by mesh error, temporal quality (TA and JA), and
+energy per output, then filtered to satisfy P95 latency, mem-
+ory, power, output-rate, and steady-state end-to-end latency
+requirements. Energy per output normalizes average power by
+the output rate.
+Steady-state end-to-end latency is decomposed as:
+Dsteady(x) = Lsp(m, Tw, q) + Lstate(m, q)
++ Lhead(m, q) + Lpost + Lsync,
+(32)
+where the terms denote spatial encoding, state update, predic-
+tion heads, SMPL-X decoding, and host-device synchroniza-
+tion.
+The measured candidate set can be enumerated and pruned
+for Pareto dominance. Section VI reports the resulting FP32
+Jetson profiling and Pareto analysis.
+VI. EXPERIMENTS
+A. Dataset and Evaluation Protocol
+Dataset and protocol. We evaluate on M4Human [25], a
+large-scale mmWave radar human mesh benchmark compris-
+ing 661K synchronized radar–mesh frames, 50 actions, and
+20 subjects. The synchronized observations provide paired
+radar tensors and SMPL-X supervision across static and
+dynamic body motions, making the benchmark suitable for
+evaluating both single-window reconstruction and causal tem-
+poral refinement. Following the benchmark protocol, we use
+a 75%/5%/20% train/validation/test split, corresponding to
+approximately 496K/34K/132K synchronized samples. Our
+reported results use the S1 random split, in which clips are as-
+signed randomly to non-overlapping subsets, and are grouped
+into In-Place (IP, 30 actions), Sit-In-Place (SIP, 5 actions),
+Non-In-Place (NIP, the remaining non-in-place actions), and
+ALL. This grouping follows the benchmark protocols and
+separates local daily/rehabilitation motions, seated motions,
+and larger-displacement activities. Cross-subject, cross-action,
+and cross-device generalization are not evaluated in this study.
+Spatial metrics. We report the four M4Human spatial met-
+rics in the world coordinate frame, without root alignment or
+Procrustes alignment; lower values indicate better reconstruc-
+tion. Let V = 10,475 be the number of SMPL-X vertices,
+J = 22 the number of evaluated joints, v̂i and vi the predicted
+and ground-truth vertices, q̂j and qj the corresponding joint
+positions, R̂j and Rj the predicted and ground-truth joint
+rotations, and p̂ and p the predicted and ground-truth global
+root translations. Mean Vertex Error (MVE) is
+MVE =
+1
+V
+V
+X
+i=1
+∥v̂i − vi∥2. (33)
+Mean Joint Error (MJE) is
+MJE =
+1
+J
+J
+X
+j=1
+∥q̂j − qj∥2. (34)
+Mean Rotation Error (MRE) measures the geodesic angular
+error on SO(3):
+MRE =
+1
+J
+J
+X
+j=1
+arccos
+tr(R̂jRT
+j ) − 1
+2
+!
+, (35)
+reported in degrees. Translation Error (TE) is the global root-
+translation error
+TE = ∥p̂ − p∥2. (36)
+MVE, MJE, and TE are reported in millimeters.
+Temporal metrics. To evaluate temporal consistency beyond
+single-frame accuracy, Translation Acceleration (TA) measures
+global translation smoothness:
+TA =
+1
+∆t2
+Et [∥pt+1 − 2pt + pt−1∥2] , (37)
+where pt is the predicted translation and ∆t is the physical
+interval. Joint Acceleration (JA) applies the same second-order
+measure to per-joint trajectories:
+JA =
+1
+∆t2
+Et
+
+ 1
+J
+J
+X
+j=1
+qj
+t+1 − 2qj
+t + qj
+t−1
+2
+
+ , (38)
+where qj
+t is joint j at frame t.
+Both metrics use ∆t = s/fradar, where fradar = 12 Hz and
+s is the stride. This converts finite differences into physical
+acceleration units, but it does not remove the effect of temporal
+subsampling: larger strides change the sampled trajectory
+and may suppress high-frequency jitter before acceleration
+is computed. We therefore interpret TA and JA with stride-
+matched references rather than comparing raw values across
+different strides. These metrics are complementary to MVE
+and MJE. MVE and MJE average independent frame errors,
+so two methods can obtain similar spatial accuracy while
+producing very different motion quality. TA and JA instead
+measure second-order global translation changes and second-
+order joint trajectory changes. This distinction is important
+for radar sensing because frame-local ambiguities can create
+short high-frequency artifacts: a missing limb reflection may
+not dominate average reconstruction error, but it can disturb
+activity recognition, gait analysis, rehabilitation monitoring,
+or human-robot interaction. We therefore report temporal
+smoothness alongside spatial accuracy rather than treating it
+as only a qualitative property.
+Deployment metrics. Deployment metrics include mean
+latency, P95 latency, memory usage, and power consumption.
+Unless otherwise stated, profiling uses FP32 inference on
+Jetson Orin Nano and reports the measured end-to-end path for
+the evaluated configuration rather than an operator-by-operator
+latency decomposition.
+9
+B. Training and Inference Protocol
+The RaStream spatial encoder is trained first with the single-
+window objective described in Section III, using synchronized
+radar–mesh pairs. After training, the selected spatial check-
+point is applied to the radar stream to produce the compact
+tokens used by the causal temporal refiner. The refiner is
+trained on finite token segments with the temporal objective in
+Section IV. The recurrent states are initialized at the beginning
+of each sampled segment during training. At inference time,
+the states are carried from one emitted prediction to the next
+and reset when a new sequence starts; no future radar frames
+are used. The stride determines when a prediction is emitted.
+During steady-state inference, ut and ht carry the temporal
+context; cached tokens are retained only for warm-up or state
+recovery after an interruption.
+Training details. Implementation details follow the config-
+uration used for the reported runs. The spatial encoder uses
+batch size 64, learning rate 2 × 10−4
+, three epochs, and step
+decay with factor 0.8. Its loss weights are 0.3 for shape, 15
+for body pose, 1 for root orientation, 10 for translation and
+center anchoring, and 0.5 for gender; vertex and joint losses
+are disabled during training and used only for evaluation.
+The causal temporal refiner uses cached spatial tokens, batch
+size 256, 20 epochs, AdamW with learning rate 3 × 10−4
+and weight decay 10−4
+, a two-layer GRU motion state with
+hidden dimension 512, and zero-initialized recurrent states at
+the start of each sampled segment. The temporal loss weights
+are 0.3 for all-frame supervision, 0.5 for translation velocity,
+0.1 for pose velocity, 0.1 for root-orientation velocity, 0.1 for
+translation acceleration, 0.1 for shape consistency, and 0.01
+for shape-state smoothness. The best checkpoint is selected
+by validation loss.
+Baseline protocol. The external baseline numbers in Ta-
+ble III follow the M4Human mesh-recovery benchmark pro-
+tocol. Methods whose original papers target keypoints, de-
+tection, segmentation, or point-cloud sequence representation
+are evaluated through the benchmark’s adapted SMPL/SMPL-
+X regression setting, so MVE, MJE, MRE, and TE are
+computed from reconstructed parametric meshes rather than
+from their original task outputs alone. Since existing radar-
+tensor SMPL-X baselines are predominantly frame-wise, we
+separate the evaluation into two stages: the RaStream (spatial-
+only) variants are compared with prior methods under the
+common single-window protocol, and the complete framework
+is evaluated through controlled causal refinements using the
+same pretrained spatial backbone. The dual-state design is
+compared with a single-state recurrent baseline.
+C. Single-Window Spatial Results
+Table III compares the RaStream (spatial-only) variants with
+single-window baselines across action groups. Params are in
+millions; grouped cells report In-Place / Sit-In-Place / Non-
+In-Place, with ALL shown separately. All three RaStream
+(spatial-only) scales improve over RT-Mesh in the ALL setting
+with fewer parameters. RaStream (spatial-only, Base) reduces
+ALL MVE from 90.90 mm to 84.27 mm with 22.2M pa-
+rameters versus RT-Mesh’s 63.3M, while the Tiny and Small
+Fig. 5. Qualitative mesh reconstruction comparison across four representative
+test sequences. Columns from left to right: Ground Truth, RT-Mesh, RaStream
+(spatial-only, Base), and RaStream. The snapshots illustrate improved body
+structure and limb articulation.
+variants reach 87.5 mm and 85.8 mm. The largest gain appears
+on Sit-In-Place actions, where RaStream (spatial-only, Base)
+reduces MVE from 118.10 mm to 63.15 mm. The grouped
+results show that performance varies with action type, so the
+aggregate score alone does not capture the full behavior of the
+models.
+Figure 5 qualitatively compares ground truth, RT-Mesh,
+the RaStream (spatial-only, Base) variant, and the complete
+RaStream framework across four test samples. The snapshots
+illustrate improved spatial reconstruction fidelity, especially
+around limb articulations and body contours. Compared with
+RT-Mesh, the RaStream (spatial-only) variant recovers cleaner
+body extent and more plausible limbs, which is consistent with
+the spatial gains in Table III. Temporal behavior is analyzed
+separately using quantitative smoothness metrics and trajectory
+curves in the following sections.
+D. Causal Temporal Results
+1) Temporal Hyperparameter Effects: Figure 6 reports the
+effect of finite unroll horizon T and streaming stride s on
+accuracy and smoothness. All configurations use the pretrained
+Base spatial backbone. The best configuration, T = 16, s = 2,
+achieves 72.05 mm MVE on ALL, reducing the RaStream
+(spatial-only) reference by 12.22 mm (14.5%). Reductions in
+MRE and TE show that the causal temporal refiner improves
+articulated rotation and global localization, not only dense
+vertex error. We therefore emphasize MVE, MRE, TE, and
+10
+TABLE III
+SINGLE-WINDOW RECONSTRUCTION RESULTS ACROSS ACTION GROUPS.
+Method Params
+IP / SIP / NIP ALL
+(M) MVE MJE MRE TE MVE MJE MRE TE
+mmMesh [27] 41.5 105.9/183.3/201.4 88.0/164.2/170.6 11.0/10.7/15.4 57.2/92.8/105.4 132.7 112.1 11.8 70.4
+P4Transformer [28] 129.0 71.5/115.2/139.7 59.0/109.3/121.7 8.0/9.5/13.5 37.3/69.1/77.9 89.5 76.6 9.2 48.6
+RT-Pose [31] 6.1 80.0/130.2/158.5 66.5/126.0/139.3 8.7/9.9/14.2 43.0/81.6/92.2 100.7 87.0 9.9 56.7
+RETR [32] 53.1 73.2/133.6/162.6 58.8/126.2/140.4 7.5/10.0/14.2 34.8/80.4/90.1 97.1 81.8 9.1 50.4
+RT-Mesh [25] 63.3 72.4/118.1/142.0 59.1/112.2/123.1 8.3/9.7/13.8 36.2/68.4/77.1 90.9 77.2 9.6 47.6
+RaStream (spatial-only, Tiny) 5.6 70.5/66.8/127.5 57.2/55.9/112.8 8.1/7.8/12.5 35.0/36.2/74.6 87.5 73.8 9.3 46.5
+RaStream (spatial-only, Small) 12.5 69.3/64.7/125.0 56.1/54.0/110.2 7.9/7.5/12.2 34.3/35.0/73.0 85.8 72.3 9.1 45.9
+RaStream (spatial-only, Base) 22.2 68.6/63.2/122.6 55.6/52.7/108.5 7.8/7.4/12.0 34.0/34.2/71.9 84.3 71.2 9.0 45.4
+70
+75
+80
+85
+90
+84.27
+75.29
+72.84
+74.78
+72.05
+MVE (mm)
+6.5
+7.0
+7.5
+8.0
+8.5
+9.0
+9.5
+9.03
+7.67
+7.37 7.37
+7.23
+MRE (deg)
+42
+43
+44
+45
+46
+47
+48
+45.37
+43.39
+43.02
+44.95
+42.79
+TE (mm)
+0
+1
+2
+3
+4
+5
+6
+7
+8
+6.30
+4.52
+4.11
+2.46
+1.81 1.74
+s = 1 s = 2
+TA (m/s2
+)
+0
+2500
+5000
+7500
+10000
+12500
+15000
+17500
+20000
+15639
+9426
+8454
+6094
+40713864
+s = 1 s = 2
+JA (deg/s2
+)
+(a) Spatial accuracy (b) Temporal smoothness
+RaStream (spatial-only) T = 8, s = 1 T = 16, s = 1 T = 8, s = 2 T = 16, s = 2
+Fig. 6. RaStream results with different temporal configurations on the ALL action group. (a) Spatial accuracy is shown using raw MVE, MRE, and TE values.
+(b) Temporal smoothness is shown using raw TA and JA values with stride-matched RaStream (spatial-only) references. Lower is better for all metrics.
+Fig. 7. Representative temporal trajectory comparison. The horizontal axis
+denotes time t. RaStream produces smoother and more temporally consistent
+trajectories than the RaStream (spatial-only) variant while preserving the main
+motion trend.
+temporal smoothness in Fig. 6. Figure 6(b) reports TA and
+JA with stride-matched RaStream (spatial-only) references
+for s = 1 and s = 2, avoiding cross-stride smoothness
+comparisons caused by different sampled trajectories. Among
+the tested configurations, T = 16, s = 2 obtains the best MVE,
+MRE, and TE. Increasing T alone does not guarantee the same
+improvement: the T = 16, s = 1 setting improves rotation
+error but does not achieve the lowest MVE. The results support
+selecting T and s jointly.
+Figure 7 visualizes representative temporal trajectories for
+root translation, pelvis height, and left-wrist motion. Com-
+TABLE IV
+ABLATION OF THE RASTREAM SPATIAL ENCODER ON THE M4HUMAN
+SINGLE-WINDOW PROTOCOL.
+Variant MVE↓ MJE↓ MRE↓ TE↓
+Spatial encoder 84.3 71.2 9.0 45.4
+w/o 3D structure 89.6 76.8 9.6 47.1
+w/o localization and RoI 92.1 78.3 9.9 47.1
+pared with the RaStream (spatial-only) variant, the complete
+RaStream framework follows the ground-truth trends with
+fewer abrupt local fluctuations. The trajectories complement
+the quantitative TA and JA results.
+E. Ablation Studies
+a) Spatial encoder components: Table IV uses the single-
+window protocol. For “w/o 3D structure,” the third radar axis
+is folded into channels and 3D convolutions are replaced by
+2D counterparts. For “w/o localization and RoI,” the detection
+branch and crop are removed, and the resized full volume is
+directly processed by the mesh encoder. Both variants degrade
+all metrics, increasing MVE from 84.3 mm to 89.6 mm and
+92.1 mm, respectively. This confirms the value of native 3D
+structure and localization-conditioned reconstruction.
+11
+TABLE V
+ABLATION STUDY ON TEMPORAL LOSSES AND ARCHITECTURE.
+Setting
+Spatial Accuracy Temporal Smoothness ↓
+MVE MRE TE TA JA
+Temporal loss components
+Last frame 76.30 7.68 46.44 4.64 10032.12
+All-frame+vel. 74.59 7.56 43.92 4.42 9206.04
+All-frame+vel.+acc. 72.71 7.57 42.27 4.39 9208.81
+Temporal architecture
+Single-state GRU 74.10 7.62 43.58 4.51 9360.42
+Dual-state + fixed EMA 72.89 7.57 42.44 4.39 9235.62
+Dual-state + learned EMA 72.71 7.57 42.27 4.39 9208.81
+TABLE VI
+MEASURED JETSON ORIN NANO FP32 PROFILING OF REPRESENTATIVE
+RASTREAM SCALE VARIANTS WITH T = 16, s = 2.
+Scale MVE↓ Latency↓ P95↓ Memory Power
+(mm) (ms) (ms) (MB) (idle/active W)
+Tiny 77.58 19.69 30.86 201 3.9 / 6.8
+Small 75.12 23.30 33.52 240 4.3 / 7.2
+Base 72.05 26.93 32.88 291 4.6 / 7.3
+b) Temporal loss components: Table V reports the tem-
+poral supervision and temporal architecture ablations. All rows
+use T = 8, s = 1 and the best validation checkpoint. Adding
+all-frame supervision and velocity losses improves the last-
+frame-only baseline, while translation acceleration gives the
+lowest MVE and TE in this study.
+c) Temporal architecture: The architecture rows use the
+same objective and comparable hidden dimensions. The dual-
+state model improves over the single-state GRU from 74.10 to
+72.71 mm MVE and from 4.51 to 4.39 TA. Fixed EMA slightly
+degrades performance, indicating that state decomposition
+provides the main gain while adaptive morphology updating
+supplies a modest further benefit.
+F. Edge Profiling and Pareto Analysis
+1) Edge Performance Profiling: Table VI reports FP32
+Jetson Orin Nano profiling for representative RaStream config-
+urations using T = 16, s = 2 across the three backbone scales.
+The MVE column uses the same temporal configuration as
+the profiled edge setting, while latency, memory, and power
+characterize the per-invocation streaming path before stride
+amortization.
+2) Pareto Frontier Analysis: Figure 8 shows the accuracy–
+latency Pareto frontier over model scale, unroll horizon, and
+stride. Larger models favor reconstruction accuracy, whereas
+larger strides reduce amortized latency by lowering spatial-
+encoder invocation frequency. The Base configuration requires
+26.93 ms per invocation, below the 83.3 ms radar-frame
+interval at 12 Hz. Thus, RaStream exposes multiple operating
+points without architectural changes.
+VII. CONCLUSION
+We presented RaStream, a causal streaming framework for
+mmWave-based SMPL-X recovery that separates native 3D
+72 74 76 78 80 82 84 86 88
+MVE (mm) ↓
+4
+6
+8
+10
+12
+14
+16
+18
+20
+22
+24
+26
+28
+Amortized
+latency
+(ms/frame)
+↓
+Tiny
+Small
+Base
+m T s ref.
+Tiny
+Small
+Base
+T=4
+T=8
+T=16
+s=1
+s=2
+s=4
+RaStream
+(spatial-only)
+Pareto frontier
+Fig. 8. Pareto frontier of deployment configurations over reconstruction
+accuracy and amortized latency. RaStream candidates enumerate the FP32
+design space with Tw = 4, m ∈ {Tiny, Small, Base}, T ∈ {4, 8, 16}, and
+s ∈ {1, 2, 4}. Marker size denotes model scale, color denotes finite unroll
+horizon T, and marker shape denotes stride s. Gray points are RaStream
+(spatial-only) references.
+spatial encoding from compact temporal state propagation.
+Its localization-conditioned encoder improves single-window
+reconstruction, while causal token-space history aggregation
+improves accuracy and temporal consistency. Separating slow
+morphology and fast motion states provides an additional gain
+over single-state recurrence. On M4Human, RaStream reduces
+MVE from 90.90 mm for RT-Mesh to 84.27 mm in spatial-
+only mode and to 72.05 mm with temporal refinement. Jetson
+Orin Nano profiling demonstrates practical accuracy–latency
+trade-offs for edge streaming. Cross-subject and cross-action
+generalization remain future work.
+REFERENCES
+[1] L. Atzori, A. Iera, and G. Morabito, “The internet of things: A survey,”
+Computer Networks, vol. 54, no. 15, pp. 2787–2805, 2010.
+[2] B. Rashid and M. H. Rehmani, “Applications of wireless sensor net-
+works for urban areas: A survey,” Journal of Network and Computer
+Applications, vol. 60, pp. 192–219, 2016.
+[3] X. Wang, J. Ellul, and G. Azzopardi, “Elderly fall detection systems: A
+literature survey,” Frontiers in Robotics and AI, vol. 7, p. 71, 2020.
+[4] Y. Zhang, Z. Zhang, Y. Zhang, J. Bao, Y. Zhang, and H. Deng, “Human
+activity recognition based on motion sensor using u-net,” IEEE Access,
+vol. 7, pp. 75 213–75 226, 2019.
+[5] A. Kanazawa, M. J. Black, D. W. Jacobs, and J. Malik, “End-to-
+end recovery of human shape and pose,” in Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition, 2018, pp.
+7122–7131.
+[6] N. Kolotouros, G. Pavlakos, M. J. Black, and K. Daniilidis, “Learning
+to reconstruct 3d human pose and shape via model-fitting in the loop,”
+in Proceedings of the IEEE/CVF International Conference on Computer
+Vision, 2019, pp. 2252–2261.
+[7] M. Kocabas, N. Athanasiou, and M. J. Black, “Vibe: Video inference
+for human body pose and shape estimation,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2020, pp. 5252–5262.
+[8] J. Li, C. Xu, Z. Chen, S. Bian, L. Yang, and C. Lu, “Hybrik: A
+hybrid analytical-neural inverse kinematics solution for 3d human pose
+and shape estimation,” in Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, 2021, pp. 3383–3393.
+[9] H. Zhang, Y. Tian, X. Zhou, W. Ouyang, Y. Liu, L. Wang, and Z. Sun,
+“Pymaf: 3d human pose and shape regression with pyramidal mesh
+alignment feedback loop,” in Proceedings of the IEEE/CVF International
+Conference on Computer Vision, 2021, pp. 11 446–11 456.
+12
+[10] Y. Yuan, U. Iqbal, P. Molchanov, K. Kitani, and J. Kautz, “Glamr:
+Global occlusion-aware human mesh recovery with dynamic cameras,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2022, pp. 11 038–11 049.
+[11] F. Adib, C.-Y. Hsu, H. Mao, D. Katabi, and F. Durand, “Capturing the
+human figure through a wall,” ACM Transactions on Graphics, vol. 34,
+no. 6, pp. 219:1–219:13, 2015.
+[12] M. Zhao, T. Li, M. Abu Alsheikh, Y. Tian, H. Zhao, A. Torralba, and
+D. Katabi, “Through-wall human pose estimation using radio signals,”
+in Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition, 2018, pp. 7356–7365.
+[13] A. Sengupta, F. Jin, R. Zhang, and S. Cao, “mm-pose: Real-time human
+skeletal posture estimation using mmwave radars and cnns,” IEEE
+Sensors Journal, vol. 20, no. 17, pp. 10 032–10 044, 2020.
+[14] H. Cui, S. Zhong, J. Wu, Z. Shen, N. Dahnoun, and Y. Zhao, “Milipoint:
+A point cloud dataset for mmwave radar,” in Advances in Neural
+Information Processing Systems, vol. 36, 2023, pp. 62 713–62 726.
+[15] M. Zhao, Y. Tian, H. Zhao, M. Abu Alsheikh, T. Li, R. Hristov,
+Z. Kabelac, D. Katabi, and A. Torralba, “Rf-based 3d skeletons,” in
+Proceedings of the ACM Special Interest Group on Data Communication
+(SIGCOMM), 2018, pp. 267–281.
+[16] J. Li, D. Zhang, Z. Wu, C. Yu, Y. Li, Q. Chen, Y. Hu, Q. Sun,
+and Y. Chen, “Sbrf: A fine-grained radar signal generator for human
+sensing,” IEEE Transactions on Mobile Computing, vol. 23, no. 12, pp.
+13 114–13 130, 2024.
+[17] Y. Huang, Y. Wang, K. Shi, C. Gu, Y. Fu, C. Zhuo, and Z. Shi, “Hdnet:
+Hierarchical dynamic network for gait recognition using millimeter-
+wave radar,” in Proceedings of the IEEE International Conference on
+Acoustics, Speech and Signal Processing (ICASSP), 2023, pp. 1–5.
+[18] B. Sheng, J. Li, H. Cai, Y. Zuo, L. Lu, and F. Xiao, “mmzear: Zero-
+effort cross-category action recognition with mmwave radar,” IEEE
+Transactions on Mobile Computing, vol. 24, no. 10, pp. 11 164–11 179,
+2025.
+[19] Y. Liu, Y. Wang, H. Liu, A. Zhou, J. Liu, and N. Yang, “Long-range
+gesture recognition using millimeter wave radar,” in Proceedings of the
+International Conference on Green, Pervasive, and Cloud Computing,
+2020, pp. 30–44.
+[20] Z. Xu, C. Shi, T. Zhang, S. Li, Y. Yuan, C.-T. M. Wu, Y. Chen, and
+A. Petropulu, “Simultaneous monitoring of multiple people’s vital sign
+leveraging a single phased-mimo radar,” IEEE Journal of Electromag-
+netics, RF and Microwaves in Medicine and Biology, vol. 6, no. 3, pp.
+311–320, 2022.
+[21] Y. Liu, J. Zhang, Y. Chen, W. Wang, S. Yang, X. Na, Y. Sun, and Y. He,
+“Real-time continuous activity recognition with a commercial mmwave
+radar,” IEEE Transactions on Mobile Computing, vol. 24, no. 3, pp.
+1684–1698, 2025.
+[22] M. Loper, N. Mahmood, J. Romero, G. Pons-Moll, and M. J. Black,
+“Smpl: A skinned multi-person linear model,” ACM Transactions on
+Graphics, vol. 34, no. 6, pp. 248:1–248:16, 2015.
+[23] A. Chen, X. Wang, S. Zhu, Y. Li, J. Chen, and Q. Ye, “mmbody
+benchmark: 3d body reconstruction dataset and analysis for millimeter
+wave radar,” in Proceedings of the 30th ACM International Conference
+on Multimedia, 2022, pp. 3501–3510.
+[24] G. Pavlakos, V. Choutas, N. Ghorbani, T. Bolkart, A. A. A. Osman,
+D. Tzionas, and M. J. Black, “Expressive body capture: 3d hands,
+face, and body from a single image,” in Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR), 2019,
+pp. 10 975–10 985.
+[25] J. Fan, Y. Zhou, Y. Yang, X. Cui, J. Zhang, L. Xie, J. Yang, C. X.
+Lu, and F. Ding, “M4human: A large-scale multimodal mmwave radar
+benchmark for human mesh reconstruction,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition
+(CVPR), June 2026, pp. 42 836–42 846.
+[26] H. Zhang, D. Zhang, R. Song, Z. Wu, J. Chen, L. Fang, Z. Lu, Y. Hu,
+H. Lin, and Y. Chen, “Umimo: Universal unsupervised learning for
+mmwave radar sensing with mimo array synthesis,” IEEE Transactions
+on Mobile Computing, vol. 24, no. 8, pp. 7042–7058, 2025.
+[27] H. Xue, Y. Ju, C. Miao, Y. Wang, S. Wang, A. Zhang, and L. Su,
+“mmmesh: Towards 3d real-time dynamic human mesh construction
+using millimeter-wave,” in Proceedings of the 19th Annual International
+Conference on Mobile Systems, Applications, and Services (MobiSys),
+2021, pp. 269–282.
+[28] H. Fan, Y. Yang, and M. Kankanhalli, “Point 4d transformer networks
+for spatio-temporal modeling in point cloud videos,” in Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+(CVPR), 2021, pp. 14 204–14 213.
+[29] K. Deng, D. Zhao, Z. Zhang, S. Wang, W. Zheng, and H. Ma, “Midas++:
+Generating training data of mmwave radars from videos for privacy-
+preserving human sensing with mobility,” IEEE Transactions on Mobile
+Computing, vol. 23, no. 6, pp. 6650–6666, 2024.
+[30] S.-P. Lee, N. P. Kini, W.-H. Peng, C.-W. Ma, and J.-N. Hwang, “Hupr:
+A benchmark for human pose estimation using millimeter wave radar,”
+in Proceedings of the IEEE/CVF Winter Conference on Applications of
+Computer Vision (WACV), 2023, pp. 5715–5724.
+[31] Y.-H. Ho, J.-H. Cheng, S.-Y. Kuan, Z. Jiang, W. Chai, H.-W. Huang,
+C.-L. Lin, and J.-N. Hwang, “Rt-pose: A 4d radar tensor-based 3d
+human pose estimation and localization benchmark,” in Proceedings of
+the European Conference on Computer Vision (ECCV), 2024, pp. 107–
+125.
+[32] R. Yataka, A. Cardace, P. Wang, P. T. Boufounos, and R. Takahashi,
+“Retr: Multi-view radar detection transformer for indoor perception,” in
+Advances in Neural Information Processing Systems, vol. 37, 2024, pp.
+19 839–19 869.
+[33] K. Deng, D. Zhao, W. Zheng, Y. Ling, K. Yin, and H. Ma, “G3r:
+Generating rich and fine-grained mmwave radar data from 2d videos
+for generalized gesture recognition,” IEEE Transactions on Mobile
+Computing, vol. 24, no. 4, pp. 2917–2934, 2025.
+[34] H. H. Pham, S. Zheng, J. Li, and Y. Guan, “A two-stage motion-aware
+framework for mmwave-based human mesh recovery,” arXiv preprint
+arXiv:2605.08530, 2026.
+[35] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural
+Computation, vol. 9, no. 8, pp. 1735–1780, 1997.
+[36] H. Choi, G. Moon, J. Y. Chang, and K. M. Lee, “Beyond static features
+for temporally consistent 3d human pose and shape from a video,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2021, pp. 1964–1973.
+[37] W. Zhu, X. Ma, Z. Liu, L. Liu, W. Wu, and Y. Wang, “Motionbert:
+A unified perspective on learning human motion representations,” in
+Proceedings of the IEEE/CVF International Conference on Computer
+Vision, 2023, pp. 15 085–15 099.
+[38] C. Peng, J. Gai, K. Cui, Z. Guo, Y. Zheng, and F. Xiao, “Enabling
+robust multi-user multi-hand pose estimation with mmwave sensing,”
+IEEE Transactions on Mobile Computing, vol. 25, no. 10, pp. 15 958–
+15 975, 2026.
+[39] Y. Zhou, C. Barnes, J. Lu, J. Yang, and H. Li, “On the continuity
+of rotation representations in neural networks,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition
+(CVPR), 2019, pp. 5745–5753.
+[40] K. Cho, B. van Merrienboer, C. Gulcehre, D. Bahdanau, F. Bougares,
+H. Schwenk, and Y. Bengio, “Learning phrase representations using
+rnn encoder-decoder for statistical machine translation,” in Proceedings
+of the 2014 Conference on Empirical Methods in Natural Language
+Processing (EMNLP), 2014, pp. 1724–1734.
+[41] J. Chung, C. Gulcehre, K. Cho, and Y. Bengio, “Empirical evaluation of
+gated recurrent neural networks on sequence modeling,” arXiv preprint
+arXiv:1412.3555, 2014.
+[42] D. Pavllo, C. Feichtenhofer, D. Grangier, and M. Auli, “3d human pose
+estimation in video with temporal convolutions and semi-supervised
+training,” in Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, 2019, pp. 7753–7762.
+[43] A. Kanazawa, J. Y. Zhang, P. Felsen, and J. Malik, “Learning 3d human
+dynamics from video,” in Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition, 2019, pp. 5614–5623.
+[44] J. Chen and X. Ran, “Deep learning with edge computing: A review,”
+Proceedings of the IEEE, vol. 107, no. 8, pp. 1655–1674, 2019.
+[45] L. Deng, G. Li, S. Han, L. Shi, and Y. Xie, “Model compression and
+hardware acceleration for neural networks: A comprehensive survey,”
+Proceedings of the IEEE, vol. 108, no. 4, pp. 485–532, 2020.
+[46] N. D. Lane, S. Bhattacharya, P. Georgiev, C. Forlivesi, L. Jiao, L. Qen-
+dro, and F. Kawsar, “Deepx: A software accelerator for low-power
+deep learning inference on mobile devices,” in Proceedings of the
+15th ACM/IEEE International Conference on Information Processing
+in Sensor Networks (IPSN), 2016, pp. 1–12.
+

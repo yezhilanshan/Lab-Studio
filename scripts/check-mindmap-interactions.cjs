@@ -1,0 +1,17 @@
+const fs=require('node:fs'),ts=require('typescript'),assert=require('node:assert/strict'),path=require('node:path');
+function load(file){const exports={},src=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;new Function('exports','require',src)(exports,p=>load(path.resolve(path.dirname(file),p+'.ts')));return exports}
+assert(fs.existsSync('lib/mindmap-actions.ts'),'Dedicated mind-map actions missing');
+const A=load('lib/mindmap-actions.ts'),M=load('lib/structured-mindmap.ts');
+let scene={files:{},elements:[]};scene=A.insertTopic(scene,'r',null,'中心主题').scene;scene=A.insertTopic(scene,'a','r','A').scene;scene=A.insertTopic(scene,'b','r','B').scene;scene=A.insertTopic(scene,'c','a','C').scene;
+const single=A.deleteSingle(scene,['a']);assert.equal(M.topics(single).find(n=>n.id==='c').parentId,'r');assert(!M.topics(single).some(n=>n.id==='a'));
+const before=A.insertSibling(scene,'before','b',true).scene;assert(M.topics(before).find(n=>n.id==='before').order<M.topics(before).find(n=>n.id==='b').order);
+const parent=A.insertParent(scene,'p','a').scene;assert.equal(M.topics(parent).find(n=>n.id==='a').parentId,'p');assert.equal(M.topics(parent).find(n=>n.id==='p').parentId,'r');
+const reordered=A.reorderTopic(scene,'b','first');assert.deepEqual(M.topics(reordered).filter(n=>n.parentId==='r').map(n=>n.id),['b','a']);
+const decorated=A.addDecoration(scene,'box',['a','b'],'boundary','分组');assert.equal(M.topics(decorated).length,4);
+const related=A.addRelation(scene,'rel','a','b');assert.equal(M.topics(related).find(n=>n.id==='b').parentId,'r');
+let summary=A.insertTopic(scene,'summary',null,'概要').scene;summary=A.addDecoration(summary,'brace',['a'],'summary','概要','summary');summary=M.layoutTopics(summary);let sn=M.topics(summary),members=sn.filter(n=>['a','c'].includes(n.id)),sb=A.topicBounds(members),st=sn.find(n=>n.id==='summary');assert(st.x>=sb.x+sb.width+100,'Summary must stay outside its complete branch after layout');const shifted=M.translateBranch(summary,'a',0,90);assert.equal(M.topics(shifted).find(n=>n.id==='summary').y-st.y,90);
+const styled=A.applyStyle(scene,['a'],{bold:true,fontSize:26});assert.equal(A.topicMeta(styled,'a').style.bold,true);assert.equal(A.topicMeta(styled,'a').style.fontSize,26);
+const deep=A.insertTopic(scene,'d','c').scene,folded=A.foldBranches(deep,'r');assert(M.topics(folded).find(n=>n.id==='a').collapsed);assert(M.topics(folded).find(n=>n.id==='c').collapsed);assert(!M.topics(A.foldBranches(folded,'r')).find(n=>n.id==='c').collapsed);
+assert.equal(A.shortcut({code:'Tab'}),'child');assert.equal(A.shortcut({code:'Enter',shiftKey:true}),'before');assert.equal(A.shortcut({code:'Enter',ctrlKey:true}),'parent');assert.equal(A.shortcut({code:'Backspace',ctrlKey:true}),'deleteSingle');assert.equal(A.shortcut({code:'Slash',ctrlKey:true,altKey:true}),'foldBranches');assert.equal(A.shortcut({code:'BracketRight',ctrlKey:true}),'format');assert.equal(A.SHORTCUTS.length,59);assert.equal(new Set(A.SHORTCUTS.map(k=>k.command)).size,52);
+for(const key of A.SHORTCUTS)assert.equal(A.shortcut({code:key.code,ctrlKey:key.ctrl,altKey:key.alt,shiftKey:key.shift}),key.command);assert.equal(A.shortcut({code:'KeyB'}),undefined);
+console.log('Mind-map actions: topology, single deletion, ordering, grouping, relation isolation, styles, deep folding and all 52 commands / 59 key combinations passed.');

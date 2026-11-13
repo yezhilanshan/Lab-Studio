@@ -1,0 +1,1876 @@
+Neuromorphic Models for
+Energy-Efficient Onboard
+Interference Detection in
+Satellite Systems
+GEOFFREY EAPPEN , Member, IEEE
+OQ Technology Luxembourg, Leudelange, Luxembourg
+SAED DAOUD , Member, IEEE
+University of Luxembourg, Luxembourg City, Luxembourg
+NICOLAS SKATCHKOVSKY , Member, IEEE
+Francis Crick Institute, London, U.K.
+FLOR ORTIZ , Member, IEEE
+EVA LAGUNAS , Senior Member, IEEE
+University of Luxembourg, Luxembourg City, Luxembourg
+WALLACE A. MARTINS , Senior Member, IEEE
+Université de Toulouse, Toulouse, BP, France
+SYMEON CHATZINOTAS , Fellow, IEEE
+University of Luxembourg, Luxembourg City, Luxembourg
+Received 14 August 2024; revised 12 May 2025 and 27 June 2025;
+accepted 29 August 2025. Date of publication 10 September 2025; date of
+current version 8 December 2025.
+DOI. No. 10.1109/TAES.2025.3608092
+Refereeing of this contribution was handled by H. Xu.
+This work was supported in part by the European Space Agency (ESA)
+through The Application of Neuromorphic Processors to Satcom Applica-
+tions under Grant 4000137378/22/UK/ND, in part by the Luxembourg
+National Research Fund (FNR) through the project SmartSpace under
+Grant C21/IS/16193290, in part by the Marie Speyer Excellence Grant
+2024 (BrainSat), and in part by the FNR BrainSatCom project under Grant
+BRIDGES/2024/IS/19003118.
+Authors’ addresses: Geoffrey Eappen was with the Interdisciplinary Cen-
+tre for Security Reliability and Trust, University of Luxembourg, 1855
+Luxembourg City, Luxembourg. He is now with OQ Technology Luxem-
+bourg, 3364 Leudelange, Luxembourg, E-mail: (geoffrey.eappen@oqtec.
+com); Saed Daoud, Flor Ortiz, Eva Lagunas, and Symeon Chatzino-
+tas are with the Interdisciplinary Centre for Security Reliability
+and Trust, University of Luxembourg, 1855 Luxembourg City, Lux-
+embourg, E-mail: (saed.daoud@uni.lu; flor.ortiz@uni.lu; eva.lagunas@
+uni.lu; symeon.chatzinotas@uni.lu); Nicolas Skatchkovsky is with the
+Francis Crick Institute, NW1 1AT London, U.K., E-mail: (nicolas.
+skatchkovsky@crick.ac.uk); Wallace A. Martins is with Fédération ENAC
+ISAE-SUPAERO ONERA, Université de Toulouse, BP 54032, Toulouse,
+France, E-mail: (wallace.martins@isae-supaero.fr). (Geoffrey Eappen,
+Saed Daoud, and Nicolas Skatchkovsky contributed equally to this work.)
+(Corresponding author: Geoffrey Eappen.)
+0018-9251 © 2025 IEEE
+The surge in the number of nongeostationary satellites has in-
+tensified interference issues. Interference detection in satellite com-
+munication with onboard processing is critical, as it relies heavily
+on accurately identifying interference events to ensure seamless and
+reliable data transmission. This article delves into the critical problem
+of onboard interference detection and identification within satellite
+communication systems. A scenario comprising a satellite that re-
+ceives radio frequency (RF) interference from a ground terminal not
+belonging to its network is considered. Conventional techniques, such
+as energy detection, have shown difficulties in detecting weak inter-
+ferences. In this context, artificial intelligence (AI)-based techniques
+are a promising solution to enhance performance when addressing RF
+interference. In particular, the case of brain-inspired spiking neural
+networks (SNNs) for energy-efficient implementations is studied. The
+primary contributions of this work encompass the creation of a labeled
+dataset for interference detection in noisy channel environments, the
+implementation of both SNN and convolutional neural network (CNN)
+models for interference detection and classification, and a thorough
+evaluation of their performance for onboard interference detection
+and identification in actual commercially available AI-acceleration
+chipset of Xilinx and Intel’s research neuromorphic processor, Loihi 2.
+The results confirm that SNNs implemented on neuromorphic chips
+can offer orders of magnitude improvements in energy efficiency com-
+pared to CNNs implemented on specialist hardware while maintaining
+accuracy.
+I. INTRODUCTION
+Satisfying the ever-increasing demand for Internet-
+based applications poses a number of challenges. Among
+these, terrestrial networks are not well suited to deliver
+wireless connectivity to remote areas and regions with poor
+terrestrial infrastructure [1]. To address these issues and
+satisfy the increasing need for global coverage, both the
+research community and industry have shown keen interest
+in deploying satellite communication (SatCom) constella-
+tions [2]. Several prominent companies, including OneWeb,
+SpaceX, and Amazon, are notably deploying large-scale
+satellite constellations to address this need [2].
+Satellite constellations rely on nongeostationary orbit
+(NGSO) satellite technology, which benefited from a num-
+ber of advances in recent years, leading to a rise in the
+quantity of satellites operating in space, as noted in prior
+research [3], [4], [5], [6]. Given that these satellites vie
+for the same frequency spectrum, the challenge of inter-
+ference emerges as a critical factor for their coexistence.
+According to a recent report [7], roughly 93% of satellite
+operators experience interference annually, with over half
+encountering it monthly. Detecting and understanding the
+specific portion of the spectrum affected by interference is
+a significant initial step in addressing this issue.
+In previous studies [8], [9], a satellite interference de-
+tection method based on energy analysis was introduced.
+The authors specifically explored the energy detection (ED)
+technique to determine the presence or absence of inter-
+ference. An alternative approach proposed in [10] utilizes
+compressive sensing to approximate the signal’s power
+spectrum. In addition, other studies, such as [11], concen-
+trate on localizing interference by utilizing techniques like
+time difference of arrival or frequency difference of arrival.
+Currently, the spectrum allocation in SatCom follows a
+17682 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+strategy of assigning fixed bands to different services/users,
+thus preventing interference via planned frequency and spa-
+tial separation. However, this is not a sustainable approach
+in face of the increasing demand for satellite and terrestrial
+services.Amoredynamicandflexibleapproachtospectrum
+utilization is, therefore, called for.
+Many previous works leveraged the use of cognitive
+radio (CR) technology as a way to dynamically utilize the
+spectrum in SatCom [3], [12], [13], where the services
+are divided into primary and secondary, and the secondary
+services have to operate within the quality-of-service (QoS)
+requirements of the primary system. There are two main
+categories of CR networks: underlay and overlay [14]. In
+underlay CR networks, the secondary system can oper-
+ate over the same frequency and simultaneously as the
+primary system, provided that its operation does not re-
+sult in substantial interference to the point of hampering
+the QoS guarantees of the primary system. In this mode,
+some QoS parameters must be communicated between the
+different systems, which is usually done by a centralized
+third-part manager. This adds overhead, delay, and cost.
+On the other hand, in overlay CR networks, the secondary
+system continuously monitors the spectrum to detect white
+spaces (parts of the spectrum that are not currently being
+used by the primary system). This, however, requires the
+knowledge of some statistical characteristics of the primary
+signal as well as the channels [15]. In other words, different
+spectrum detection blocks are needed for different signals,
+which is not sustainable as the number of services grows
+and varies [16].
+Machine learning (ML)-based solutions have recently
+been proposed to address issues encountered in SatCom
+systems [17]. Such solutions offer a number of desirable
+properties, among which their capability of operating in
+real time [18], [19], [20], e.g., for interference detection
+through analysis of the received signal’s spectrum. These
+ML-based solutions have shown considerable improve-
+ments compared to conventional techniques, such as ED,
+which struggle with detecting weak interferences [21].
+Another conventional method is cyclostationary detection,
+which can overcome some limitations of ED in low-signal-
+to-noise-ratio (SNR) environments. For example, Dimc
+et al. [22] explored cyclostationary feature detection for
+mobile satellite transmissions. Although this method is
+more effective in low-SNR conditions, it demands high time
+and energy complexity due to the need to calculate all cycle
+frequencies [20]. This complexity poses significant chal-
+lenges in fast time-varying scenarios, such as those involv-
+ing rapidly moving NGSO satellites, where the interference
+impact on the desired signal is relatively brief. In addition,
+techniques like matched filtering offer better sensitivity
+and specificity in detecting known signal patterns but also
+suffer from high computational costs and require precise
+synchronization, which is difficult to maintain in dynamic
+satellite environments [23]. These limitations highlight the
+advantages of ML-based solutions, which provide more
+robust and adaptive interference detection capabilities with
+lower computational demands. ML-based algorithms have
+proven advantageous even with low SNR [24]. Moreover,
+ML models can be trained using data on the ground, before
+being uploaded onboard the satellite. This allows one to
+shift most of the processing to the ground, where computa-
+tional power and energy expenditure are not issues [25]. In
+addition, a single ML model can be used to detect several
+interference signals, which results in a reduction in the
+number of detection blocks and thus computational power
+needed to detect several interference signals.
+Despite these advantages, a significant drawback of
+using ML models for satellite onboard processing is their
+need for substantial initial training data and periodic up-
+dates, which can be challenging to manage remotely and
+may require significant bandwidth and time for model up-
+dates [18]. Moreover, another issue of using ML models
+in satellite onboard processing is their requirement for
+substantial computational resources and power, which can
+be challenging to manage within the limited onboard capa-
+bilities of satellites.
+A promising solution to address these limitations, in-
+cluding high energy expenditure, large memory require-
+ments, and inference latency, can be found in brain-inspired
+spiking neural networks (SNNs) [26]. Operating over time
+using binary spike-based signaling, SNNs offer exceptional
+energy efficiency compared to traditional ML algorithms,
+which are notorious for their power consumption—even
+during inference [27]. This characteristic becomes particu-
+larly valuable in resource-constrained environments such
+as satellites, where power budgets are highly restricted
+and hardware must be optimized for thermal and radiation
+constraints.
+Neuromorphic processors (NPs), such as Intel’s Loihi 2,
+support event-driven massively parallel processing that nat-
+urally aligns with the sparse and asynchronous nature of
+satellite signal processing tasks. These chips enable real-
+time onboard inference, significantly reduce the need for
+offloading computations to ground stations, and can also
+support online learning. In addition, SNNs exhibit high
+scalability and robustness to noise, making them ideal for
+spectrum monitoring and interference detection tasks in
+dynamic orbital environments.
+Recent successful applications of neuromorphic learn-
+ing in communication systems further underscore its poten-
+tial [26], [28]. These advantages position neuromorphic-
+based deployment as a compelling architectural choice
+for enhancing onboard processing performance in next-
+generation SatCom systems.
+Therefore, in this article, we address the challenge of
+detecting and identifying the interference within a specific
+subband of the spectrum by treating it as a supervised
+classification problem using SNN. Based on our previ-
+ous work [29], we provide a more detailed approach of
+creating a labeled dataset that reduces the feature space
+dimension and implementing a benchmark ML model to
+evaluate its performance in onboard interference detection
+and spectrum classification. The proposed SNN model
+predicts interference in various subbands, enabling oper-
+ators to switch to interference-free subbands. This article
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17683
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 1. System model diagram for the interference detection scenario:
+the coexistence of GSO and NGSO systems in the uplink.
+advances the research by designing, implementing, and
+assessing the effectiveness of the formulated SNN model
+on Intel Loihi 2 board, providing a thorough analysis of its
+effectiveness for onboard interference detection process-
+ing. We evaluate the effectiveness of the proposed SNN
+approach against a benchmark convolutional neural net-
+work (CNN) model for onboard interference detection and
+classification. The benchmark CNN model is also designed
+and evaluated on its dedicated hardware (Xilinx board—
+VCK5000). We selected the VCK5000 for implementing
+the CNN model as the benchmark because Xilinx artificial
+intelligence(AI)accelerators,suchastheVCK5000,deliver
+optimal CNN performance. This choice ensures a fair com-
+parison with the SNN implemented on an NP [30]. Both
+ML models were evaluated on their respective hardware
+using profiling tools: the VCK5000 utilized the Vitis AI
+Profiler,1
+while the Intel Loihi 2 employed the Lava libraries
+for profiling.2
+A. Background and Related Works
+The proliferation of NGSO satellite constellations is
+aggravating the space interference scenario. With multi-
+ple small satellites flying in different orbits and different
+inclinations, and belonging to different NGSO operators,
+the event of in-line interference is becoming more likely
+to occur, both inter-NGSO and between NGSO and geosta-
+tionary orbit (GSO) systems, as illustrated in Fig. 1. Particu-
+larly for the uplink scenario, transmissions originating from
+ground stations can have an impact on adjacent or nearby
+satellites, causing service degradation and potentially dis-
+rupting the communication. While the radio regulations are
+trying to prevent such extreme cases [31], [32], the actual
+power–flux density limits are not convincing to satellite
+operators [33]. In this context, the detection of interference
+event, as well as extracting information of such interference,
+is becoming a powerful tool to dynamically reconfigure
+1[Online]. Available: https://docs.amd.com/r/en-US/ug1414-vitis-ai/
+Profiling-the-Model
+2[Online]. Available: https://lava-nc.org/lava/lava.utils.html#module-
+lava.utils.profiler
+satellite systems and mitigate harmful interference situ-
+ations. To do so, the use of ML techniques in SatCom
+applications has recently gained significant attention.
+1) Conventional ML and Neural Networks: In the
+literature, conventional ML algorithms as well as neu-
+ral networks were used and reported for interference de-
+tection. In [34], a long short-term memory network was
+implemented to forecast anticipated signal snapshots and
+contrast them with the actual received signals. Similarly,
+Henarejos et al. [35] explored the use of deep learning tech-
+niques, specifically autoencoders, for detecting interference
+in terrestrial-to-satellite communication links. On a broader
+scale, Kulin et al. [36] focused on wireless signal identifi-
+cation, including modulation recognition and interference
+detection, using ML algorithms. Unlike online processing
+methods, these approaches offer several benefits by employ-
+ing data-driven interference detection techniques.
+Jamming represents an additional source of interfer-
+ence, distinct from the interference caused by the coexis-
+tence of legitimate services. Qin and Dovis [25] explored
+a k-nearest neighbor method for detecting and categoriz-
+ing chirp jamming signals in Global Navigation Satellite
+Services systems. This task poses challenges for traditional
+approaches due to the diverse nature of jamming signals,
+necessitating postprocessing and human-driven analysis,
+which in turn restricts timely detection and response to
+jamming attacks. Conversely, ML methods offer automated
+detection and classification of jamming signals, render-
+ing them superior choices in situations demanding prompt
+awareness and response.
+2) Spiking Neural Networks: In an attempt to im-
+plement low-power AI models, NPs and SNNs have re-
+cently attracted interest from both the research community
+and industry players. SNNs have hence been proposed
+for a number of applications in communication systems.
+Skatchkovsky et al. [37] proposed to tackle the joint source-
+channel coding problem via a probabilistic spiking au-
+toencoder architecture. Traditional autoencoders have been
+employed in the past for interference detection, as one
+can train the system using noiseless data, which will then
+report the presence of interference when the difference
+between its inputs and outputs exceeds some threshold [38].
+However, this does not include the prediction of which
+frequency bands are interference-free, which we obtain here
+using supervised classification. The Loihi 2 chip has further
+been demonstrated to implement spectral analysis on toy
+tasks [39].
+B. Motivation and Contributions
+In this article, we examine the scenario of an uplink to-
+ward a GSO (also known as GEO) satellite whose spectrum
+is shared with that of an NGSO satellite [12], where the total
+available spectrum between 29.5 and 30 GHz is segmented
+into several nonoverlapping subbands, with GSO and/or
+NGSO systems able to utilize only one subband at any given
+time. Fig. 2 illustrates this with a baseband example when
+the GSO signal occupies the first subband, while the NGSO
+17684 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 2. Diagram of the shared spectrum between GSO and NGSO
+satellites.
+signal occupies the second subband,3
+where each subband
+is represented by a rectangle with a central frequency Fi,
+for i ∈ {1, . . . , 5}. The GSO satellite employs an ML model
+that continuously scans the GSO subbands to detect inter-
+ference and classifies the subbands into two groups: one
+group consists of the subbands that contain interference,
+and the other group consists of the subbands that do not
+contain interference. If the subband that is currently used
+by the GSO satellite uplink is one of the subbands that
+contain interference, then the GSO satellite uplink changes
+the carrier frequency to the carrier frequency of the closest
+interference-free subband. Otherwise, it continues to use
+the current subband.
+We tackle the challenge of identifying and pinpointing
+interference within a subband of the spectrum of interest
+through the lens of a supervised classification problem. We
+propose a pipeline for the preparation of a labeled dataset to
+address this task, which results in a specialized data format
+and reduced feature space dimension. We further implement
+a benchmark ML model and evaluate its performance for
+onboard interference detection and spectrum classification.
+We propose a neuromorphic SNN model, which operates
+on the postprocessed samples from the analog-to-digital
+(A/D) converter of the GSO system. The proposed SNN so-
+lution predicts whether there is interference in the different
+subbands the GSO satellite operates on, which allows the
+operator to decide whether to change the carrier frequency
+to an interference-free subband. Since we wish to detect
+interference and list which subbands are interference-free
+using a single model, the magnitude of the discrete Fourier
+3In the frequency domain, there is usually spectrum leakage from adjacent
+subbands due to side lobes, which are depicted with shaded areas in Fig. 2.
+In this article, we assume that this power leakage is negligible; in this
+example, the two signals are, therefore, deemed noninterfering signals.
+transform (DFT)4
+of the received signal, with size reduced
+to the bandwidth of interest, is considered and evaluated.
+The performance of the proposed SNN-based approaches
+for onboard interference detection and classification is com-
+pared with a benchmark CNN model. The primary contri-
+butions of this study are outlined as follows.
+1) For the considered interference detection scenario,
+we begin by investigating the use of neuromorphic
+computing in satellite onboard operations. Our study
+is one of the pioneering efforts to evaluate the im-
+pact of using NPs in SatComs for efficient inter-
+ference detection, addressing the significant power
+constraints of CNN platforms.
+2) Next, we design and generate a dataset considering a
+GSO system model and reduced-size DFT to address
+theinterferencedetectionandclassificationproblem.
+The proposed ML scheme capitalizes on interference
+detection capabilities in a noisy channel environment
+through this approach. Moreover, we have made the
+dataset generated during this study publicly available
+online5
+tofacilitatefurtherresearchandvalidationby
+the scientific community.
+3) We developed the SNN model for the interference
+detection. Through comprehensive benchmarking,
+we show that the SNN deployed on Intel’s cutting-
+edge NP, Loihi 2, achieves an extraordinary reduc-
+tion in power consumption by more than 100-fold
+while upholding superior accuracy in comparison
+to the traditional CNN-based benchmark solution
+running on the Xilinx Versal VCK5000 platform.
+4) Our experimental results provide a benchmark to
+validate the use of neuromorphic computing in space
+applications. They demonstrate the potential of neu-
+romorphic SNN models to transform interference
+detection in SatComs, greatly improving onboard
+operational efficiency and sustainability.
+5) This study establishes a basis for future research
+in this field. The datasets presented, along with the
+comparative analysis and findings, provide a foun-
+dation for further investigation and improvement
+of energy-efficient neuromorphic models within
+the context of increasingly complex, interference-
+limited SatCom systems.
+C. Organization
+The rest of this article is organized as follows. Section II
+presents the system model for interference detection in GSO
+satellite systems. Section III outlines the data generation
+process. Sections IV and V introduce the architectures of
+CNN and SNN, respectively, for interference detection.
+Section VI evaluates the performance of both models. Fi-
+nally, Section VII concludes this article.
+4The DFT is computed via a fast Fourier transform (FFT) algorithm.
+5[Online]. Available: https://fnr-smartspace-project.uni.lu/satellite-on-
+board-interference-detection/
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17685
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Mathematical functions and notations: Z+
+is the set of
+positive integers, R is the set of real numbers, C is the set of
+complex numbers, Q(x) and Q−1
+(x) are the Q- and inverse
+Q-function, respectively, where Q(x) = 1
+√
+2π
+ ∞
+x e−u2
+/2
+du,
+e(x)
+represents exponential of x, and the notation ϕ : C −→
+R is a transformation from complex numbers to real num-
+bers. The imaginary unit is denoted as j, so that j2
+= −1.
+II. SYSTEM MODEL: INTERFERENCE DETECTION
+In this article, we consider an uplink scenario where a
+GSO source SD transmits the baseband signal xd (t), referred
+to hereafter as the desired signal to the GSO satellite. This
+signal is given by
+xd (tt ) =
+Z−1
+
+z=0
+xd [z] G (tt − zT ) (1)
+for tt ∈ [0, ZT ], where {xd [z]}Z−1
+z=0 are binary phase-shift
+keying (BPSK) modulated symbols, with P and T as the
+average power and duration associated with each modu-
+lated symbols, respectively; also, we consider a rectan-
+gular pulse shaping filter of unit energy and duration T ,
+represented as G(tt ). T is related to the bandwidth W
+of the baseband signals as T = 1
+W
+, and Z represents the
+number of symbols within the transmitted block. Assuming
+[ fmin, fmax] as the GSO spectrum range, it is divided into
+B nonoverlapping subbands, each of bandwidth 2W , i.e.,
+fmax − fmin = B × (2W ), whereV ∈ Z+
+. Each subband Db
+has a center frequency Fb for b = 1, 2, . . . , B. See Fig. 2
+for B = 5. The desired signal’s carrier frequency is denoted
+as fd , and it can take on any of these center frequencies
+and subbands. At the outset, we assume that fd = F1,
+meaning that xd (tt ) occupies the first subband. However,
+this can change whenever significant interference disrupts
+theQoSofthetransmissionofthedesiredsignalintheinitial
+subband.
+Concurrently, a source from the NGSO satellite system,
+labeled as SI, may begin transmitting the baseband signal
+xI (tt ), referred to hereafter as the interference signal. This
+interference signal has the potential to interfere with xd (tt )
+at the receiver R in the frequency domain, as depicted in
+Fig. 1. The interference signal xI (tt ) is given by
+xI (tt ) =
+Z−1
+
+z=0
+xI [z] G (tt − zT ) (2)
+for tt ∈ [0, ZT ], where {xI [z]}Z−1
+z=0 are modulated symbols
+drawn from a BPSK constellation, whose properties are the
+same as for the desired signal symbols described earlier.
+The baseband received signal at the GSO satellite, ob-
+tained by downconverting the bandpass received signal with
+frequency fd , can be represented in the time domain as
+r(tt ) = xd(t)
+
+SNRd + α xI (tt )ej2π(fI − fd )tt
+
+SNRi + n(tt )
+(3)
+where fd denotes the carrier frequency of the desired signal
+xd (tt ), fI ∈F = {F1, F2, F3, . . . , FB} represents the car-
+rier frequency of the interference signal xI (tt ), and n(tt )
+represents a complex-valued additive white Gaussian noise
+with zero-mean and unity power over the bandwidth 2W .
+SNRd and SNRi stand for the SNR of the desired signal
+xd (tt ) and interference signal xI (tt ), respectively, over a
+bandwidth of 2W . The presence/absence of the interference
+signal xI (tt ) is denoted by the variable α ∈ 0, 1, where α
+= 0 represents the absence of interference. The received
+baseband signal is sampled by the A/D converter of the
+GSO satellite at a rate of fs = 1/Ts Hz, where the sample
+time is represented as Ts.
+Note that the maximum and minimum bandpass fre-
+quency components are fU = F5 + W and fL = F1 − W ,
+respectively. To avoid very high sampling frequency rate,
+however, and thus large number of samples per symbol,
+we assume that the signal is sampled in the baseband.
+In baseband after shifting the received signal by fd , the
+maximum frequency component is fU + W − fd , and since
+the sampling frequency must be at least twice the largest
+frequency component in the baseband, the minimum sam-
+pling frequency in the baseband to capture the total avail-
+able spectrum and the interference signal in all cases is
+f (min)
+s = 2[ fU + W − fd ].
+A. Detection of Interference and Classification of the
+Spectrum
+In order to categorize the subbands within the spec-
+trum [ fmin, , fmax], we first establish a metric to determine
+whether a subband experiences significant interference that
+disrupts the QoS of the GSO system. We employ the max-
+imum value obtained in the BER as the metric, denoted
+as ε, along with the associated minimum value for the
+signal-to-interference-plus-noise ratio (SINR), denoted as
+SINRmin, which must be satisfied to maintain the QoS of the
+desired signal . The BER at the GSO satellite is expressed
+as
+ε = Q
+
+2 SINRmin
+
+(4)
+or equivalently
+SINRmin =
+
+Q−1
+(ε)
+2
+2
+=
+SNRd
+SNRi,max + 1
+. (5)
+The maximum allowed interference from SI at the GEO
+satellite is denoted by SNRi,max, and it is computed via (5)
+as
+SNRi,max = max
+SNRd
+SINRmin
+− 1, 0 . (6)
+Targeting a worst case scenario, we assume that the
+interference signal xi(t) bandwidth is exactly the same as
+the desired signal bandwidth. Given the maximum allow-
+able SNR, denoted as SNRi,max, and the actual SNR of
+the interference signal for each subband, represented as
+{SNRi,v}V
+v=1, we can determine whether a subband v is
+subject to interference by checking if SNRi,v ≥ SNRi,max. If
+this condition is met, the subband is classified as containing
+interference; otherwise, it is considered free of interference.
+17686 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 3. PSD of the noisy received signal r(t), noise-free x(t), and
+interference i(t). SNRd = 12 dB, SNRi = 6 dB, fs = 5 GHz, ε = 10−5,
+fX = 29.55 GHz, and WX = 50 MHz.
+In the following, we will demonstrate the process of
+classifying the subbands. In Fig. 3, the PSD of the baseband
+received signal (3) (solid black), as well as its noise-free
+constituents xd (t)
+√
+SNRd (dotted blue) and interference
+xi(t) ej2π( fI − fd )t
+√
+SNRi (dotted pink) are shown. In this
+figure, the desired signal xd (t) with baseband bandwidth
+WX = 50 MHz and interference signal xI (t) having base-
+band bandwidth ofWi = 50 MHz. The desired signal carrier
+frequency is fd = fX = 29.55 GHz; the interference signal
+is also having the same carrier frequency of fI = 29.55
+GHz. The desired signal SNR is SNRd = 12 dB, while that
+of the interference signal is SNRi = 6 dB. In baseband, the
+desired signal spectrum is shifted to the zero frequency
+component. The spectrum of the signal after taking DFT
+spans the spectrum (− fs/2, fs/2]; however, we are only
+interested in the spectrum range [−W, 9W ], which is the
+part of the PSD shown in the figure limited by the left most
+and right most orange lines, which are the minimum and
+maximum frequencies in baseband. The QoS of the desired
+signal is protected by the parameter ε = 10−5
+, which results
+in SNRi,max = 0.743. Finally, the sampling frequency is
+fs = 5 GHz, and the number of samples in the signals is
+100. The subbands are shown by the orange lines. As can
+be seen, the interference signal falls into subband 1, and
+the power of the interference signal is SNRi,1 = 3.7, which
+is greater than the maximum allowed threshold (SNRi,max).
+This means that subband 1 contains significant interference
+that can disturb the QoS of the GSO satellite system if
+it is operating on that subband, which is the case in the
+beginning. Thus, the signal xd (t) has to change the subband.
+Since subband 2 contains no interference, the GSO system
+will change the transmission to subband 2, which is the
+closest interference-free subband, and use center frequency
+fd = F2. The five-binary-valued vector iSubs captures the
+state of the subbands if they contain interference or not,
+where the element of the subband that contains interference,
+in this case element 1 for subband 1, is set to 1 and 0 for
+Fig. 4. PSD of the noisy received signal r(t), noise-free x(t), and
+interference i(t). SNRd = 12 dB, SNRi = 6 dB, fs = 5 GHz, ε = 10−5,
+fX = 29.55 GHz, and WX = 50 MHz.
+Fig. 5. PSD of the noisy received signal r(t), noise-free x(t), and
+interference i(t). SNRd = 12 dB, SNRi = 6 dB, fs = 5 GHz, ε = 10−5,
+fX = 29.55 GHz, and WX = 50 MHz.
+Fig. 6. PSD of the noisy received signal r(t), noise-free x(t), and
+interference i(t). SNRd = 12 dB, SNRi = 6 dB, fs = 5 GHz, ε = 10−5,
+fX = 29.55 GHz, and WX = 50 MHz.
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17687
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 7. PSD of the noisy received signal r(t), noise-free x(t), and
+interference i(t). SNRd = 12 dB, SNRi = 6 dB, fs = 5 GHz, ε = 10−5,
+fX = 29.55 GHz, and WX = 50 MHz.
+otherelements.InFigs.4–7,thesameparameterswereused,
+except for the interference signal carrier frequency, where
+it changes from F2 to F5. In all these examples, however,
+since the interference is not inside the first subband, the
+GSO transmission does not need to change the spectrum or
+take any action.
+III. DATASET GENERATION
+To enable effective training and evaluation of both the
+SNN and the CNN, we developed a labeled dataset tailored
+for the task of onboard interference detection in SatCom
+systems.Thedatasetsimulatesrealisticsignalreceptionsce-
+narios involving both interference-present and interference-
+free conditions across a range of SNRs. Interference sources
+include signals designed to mimic uncoordinated transmis-
+sions from ground terminals operating outside the satel-
+lite’s network. Channel impairments, frequency offsets,
+and Doppler shifts are incorporated to reflect practical
+link conditions in LEO environments. Each signal sample
+is associated with a known ground truth label, and care
+was taken to ensure class balance and sufficient intraclass
+variability. The generated dataset includes thousands of
+signal windows across multiple interference intensities and
+temporal characteristics to facilitate the learning of robust
+spatiotemporal features. Given the unique characteristics
+of SNNs, we also ensured that the dataset is amenable to
+spiking encodings. Both rate-based and temporal coding
+schemes were explored to enable biologically plausible
+input representations suitable for neuromorphic hardware.
+This approach ensures that the dataset is not only suffi-
+ciently large but also diverse and representative enough to
+train data-efficient SNN architectures without overfitting,
+thereby supporting real-time low-power onboard inference.
+In this section, we elucidate the data generation process.
+For this purpose, we adhere to the fixed parameters outlined
+in Table I, where the total spectrum is partitioned into
+five nonoverlapping subbands, each with a bandwidth of
+TABLE I
+Parameters for the Dataset Generation
+100 MHz. The carrier frequency of the interference signal
+assumes the following values:
+fI ∈ {29.55, 29.65, 29.75, 29.85, 29.95} GHz. (7)
+The input data comprise preprocessed information ob-
+tained through DFT analysis of the received signal. Mean-
+while, the output data consist of five binary vectors, with
+each digit signifying whether interference is present or ab-
+sent in the respective subband. These vectors are generated
+following the procedure outlined in Section II-A. Hence-
+forth, we have six categories depicting scenarios either
+devoid of interference across any subband or indicating
+the presence of interference in one of the subbands. We
+generated 2500 data points per class, subsequently divided
+the total data points into 80% for training and 20% for
+validation.
+A. Reduced-Size DFT
+In this article, we consider reduced size DFT. In our
+earlier research [29], we demonstrated that while the DFT
+signal band encompasses the spectrum within the baseband
+range of (− fs
+2
+, , fs
+2
+], most of this spectrum lies outside the
+desired range, which is limited to [−W, , 9W ]. Therefore,
+we consider reduced-dimension absolute DFT, since the
+DFT components outside this spectrum can provide noisy
+data to the algorithm that it will inevitably incorporate in
+its learning process, which will lead to less accuracy in
+recognizing interfered from noninterfered signals, which is
+against our main goal of maximizing the accuracy of the
+algorithm in detecting interference in the received signal.
+As mentioned earlier, the DFT of the signal at the output
+of the A/D converter spans the frequency range (− f s
+2
+, , f s
+2
+].
+The number of frequency bins in the frequency domain is
+equivalent to the number of time-domain samples, denoted
+as S = 1000. Consequently, the training dataset has dimen-
+sions of 12000 × 1000, while the validation dataset has
+dimensions of 3000 × 1000. However, prior to data prepa-
+ration, we extract the segment of the DFT corresponding
+to the desired spectrum, yielding U = 100 frequency bins
+within this range. Consequently, the training datasets are
+of dimensions 12000 × 100, while the validation dataset is
+3000 × 100. Assuming that the DFT of a data point dj is
+D
+j ∈ CS
+, and Dj ∈ CU
+is the part of D
+j that corresponds to
+the spectrum we are interested in, the training and validation
+datasets can be expressed as
+Dtr = ϕ Dj , yj , j = 1, 2, . . . , Ltr
+
+(8)
+17688 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 8. CNN and VCK5000 work flow. (a) Fine-tuning of the data for the training. (b) CNN training on normal CPU and saving the model in HDF5
+format. (c) Exporting the HDF5 format to VCK5000 and quantizing it. (d) Compiling the quantized model and performance evaluation.
+Fig. 9. CNN architecture for benchmark solution with DFT-based training data as input and binary classification as output.
+and
+Dva = {(ϕ (Dm) , ym) , m = 1, 2, . . . , Lval} (9)
+respectively, where Ltr and Lval are the training and valida-
+tion dataset sizes, respectively, and
+ϕ : CU
+−→ RU
+(10)
+transforms the signal from complex to real, by taking the
+magnitude of the domain elements.
+IV. INTERFERENCE DETECTION WITH THE CNN:
+BENCHMARK MODEL
+In this section, we provide a concise overview of the
+architecture of the CNN model proposed as the benchmark
+solution in this study. Following that, we will outline the
+data flow within the deep learning model. Furthermore,
+we will detail the training procedure for the CNN architec-
+ture implementation on VCK5000 specifically designed for
+the interference detection in the SatCom system depicted
+in Fig. 8. The CNN architecture employed for efficient
+interference detection classification is depicted in Fig. 9.
+A. CNN Architecture for the Interference Detection:
+Reduced-Size DFT
+CNNs are popular ML schemes for different image
+processing applications, and it will serve as a benchmark
+model to compare with our proposed SNN model.
+The employed CNN model takes Dtr as the input and
+comprises five convolutional layers with varying filter sizes.
+The first convolutional layer uses f il1 = 100 filters with
+valid padding. Subsequent layers use filters and maintain
+padding, with the number of filters gradually reducing
+( f il2 = 64, f il3 = 32, f il4 = 16, and f il5 = 4) to capture
+finer details and interactions. Each convolutional layer is
+followed by a rectified linear unit (ReLU) activation func-
+tion to introduce nonlinearity and max pooling layer with
+stride = 2 to enhance feature extraction capabilities. The
+CNN model with a max pooling stride value of 2 was chosen
+as the benchmark because it provided the best performance
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17689
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+in terms of accuracy and execution time. The output of each
+convolutional layer i = 1, . . . , 5 followed by ReLU can be
+described as
+Zi = ReLU(Conv2D(Zi−1))
+= ReLU(Wi ∗ Zi−1 + βi) (11)
+where Zi is a tensor with all output feature maps, Wi is a ten-
+sor containing the convolutional filters of the ith layer, ∗ de-
+notes the convolution operation, Zi−1 is the output from the
+previous layer, βi are the biases, and ReLU(c) = max(0, c).
+After the convolutional layers, the CNN model includes a
+flattenedlayer,whichplaysacriticalroleintransformingthe
+data from a multidimensional array into a 1-D vector. This
+step is essential for connecting the convolutional part of the
+network, which handles spatial hierarchies and patterns, to
+the fully connected part of the network, which performs the
+final classification tasks. Subsequently, the CNN utilizes a
+fully connected layer consisting of six units. The fully con-
+nected output layer has a softmax-based activation function
+as
+C = [C1, . . . ,Cm]T
+= softmax(p) (12)
+where p is the input from the previous layer. The predicted
+interference Cm corresponds to the mth value among the M
+classes.
+Mathematically, the training and validation matrices can
+be written as
+ =
+⎛
+⎜
+⎜
+⎜
+⎜
+⎝
+0
+1
+.
+.
+.
+5
+⎞
+⎟
+⎟
+⎟
+⎟
+⎠
+(13)
+where  is the data part that corresponds to class l, for
+l = 0, 1, . . . , 5, where
+[l ]m,k =
+
+ϕ DL(l−1)+m
+
+k
+= ϕL(l−1)+m,k (14)
+for m = 1, 2, . . . , L and k = 1, 2, . . . , 100, where L cor-
+responds to the number of data points per class in either the
+training or validation data.
+The output matrix can be written as
+Y =
+⎛
+⎜
+⎜
+⎜
+⎜
+⎝
+y0
+y1
+.
+.
+.
+y5
+⎞
+⎟
+⎟
+⎟
+⎟
+⎠
+(15)
+where yl corresponds to class l for l = 0, 1, . . . , 5 and is a
+matrix of dimensions L × 5, where L is the number of data
+points per class in either the training or validation data. Each
+row of yl is identical and consists of all zeros except at the
+column position lc, which has a value 1 at lc = 1 for l =
+1, lc = 2 for l = 2, . . . , and lc = 5 for l = 5;forl = 0,
+all elements are 0. Thus, the training label output matrix has
+dimensions of 12000 × 5, while the validation label matrix
+has dimensions of 3000 × 5.
+B. CNN Architecture Implementation on VCK5000
+The Keras-based sequential CNN model on VCK5000
+is the benchmark solution for interference detection and
+spectrum classification. We chose the VCK5000 for im-
+plementing the CNN model as the benchmark because the
+best performance of CNNs can be achieved using Xilinx
+AI accelerators like the VCK5000, ensuring a fair com-
+parison with the SNN implemented on an NP [30]. The
+employed VCK5000 Versal development card is engineered
+to deliver impressive AI inference and signal processing
+computational power, offering robust support for widely
+used ML frameworks like TensorFlow, PyTorch, and Caffe.
+In addition, the framework designed for Vitis AI simplifies
+the implementation of ML algorithms on the VCK5000 for
+performing inference tasks. The workflow, which includes
+CNN model training and its deployment on the VCK5000,
+is illustrated in Fig. 8, with the process flow depicted
+by the blue line. The CNN model under examination is
+currently in a floating-point format. In order to execute
+this model on the VCK5000, it is crucial to convert it to
+a quantized format. Analyzing the hardware requirements
+for the float-based CNN model reveals that it demands
+extensive computational resources, necessitating a substan-
+tial memory bandwidth for low-latency high-throughput
+operations. Consequently, the adoption of quantization is
+essential to attain superior performance while reducing the
+computationalloadandmemorydemands.Thequantization
+is carried out in representing the weights and activations
+with lower bits integer computing unit. Post quantization,
+the CNN model is compiled and deployed on VCK5000 to
+estimate its latency and power utilization.
+V. INTERFERENCE DETECTION WITH THE SNN: PRO-
+POSED MODEL
+Now, we assess SNNs as a low-power alternative to
+conventional ML algorithms. As previously mentioned,
+implementing the latter poses challenges due to the sig-
+nificant computational resources required for both training
+and inference. This constraint becomes especially apparent
+in situations such as deploying models onboard satellites,
+where utilizing one or multiple GPUs, typical in modern
+ML architectures, is unfeasible due to power limitations.
+In the following section, we introduce SNNs, discussing
+training methodologies and data encoding techniques.
+A. Spiking Neural Networks
+AnSNNcomprisesofspikingneuronsinterconnectedas
+a network. These neurons are dynamic in nature, with their
+inputs characterized by sequences of binary signals known
+as spikes, and their outputs are also characterized by spikes.
+SNNs comprise read-out, or visible, neurons that generate
+the network’s outputs, in addition to exogenous input neu-
+rons. It also includes hidden neurons, which are responsible
+for generating a specific desired sequence of spikes, guided
+by a sequence of exogenous inputs [40]. In this study,
+our attention is directed toward SNNs that feature fully
+connected layered structures, where every neuron in a given
+17690 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+layer is interconnected with all neurons in the subsequent
+layer. In this study, our attention is directed toward SNNs
+that feature fully connected layered structures, where every
+neuron in a given layer is interconnected with all neurons in
+the subsequent layer. Let L represent the number of layers
+in the network, with each layer  ∈ 1, . . . , L comprising N
+spiking neurons. We define w as the N + 1 × N weight
+matrix connecting layer  to layer  + 1, and w as the
+vector containing all parameters. Each neuron k in layer
+ + 1 receives inputs from the set N of neurons in layer ,
+meaning that recurrent connections are not considered. The
+final layer contains NL output neurons, corresponding to the
+total number of classes.
+We consider neurons following the standard spike re-
+sponse model (SRM) [41]. Throughout this section, we
+adopt the convention, usual in applications to neuromorphic
+hardware, of discrete time. At every time step t = 1, . . . , T ,
+where T < +∞ denotes the temporal horizon of the task
+at hand, each spiking neuron k ∈ {N1, . . . , NL} outputs a
+binary signal sk,t ∈ {0, 1}, where “1” denotes a spike firing
+and “0” signifies idle neuron. Following the SRM, each
+neuron k maintains at every time step t an internal analog
+state variable uk,t , known as the membrane potential. In
+mathematical terms, uk,t is determined as the aggregate of
+filtered contributions originating from incoming spikes and
+the neuron’s own previous outputs, i.e.,
+uk,t =
+
+j∈N
+wk, j, · (αt ∗ bj,t ) + βt ∗ sk,t (16)
+where element wk, j, represents the (k, j) entry in the matrix
+w, indicating the synaptic weight connecting neuron j ∈
+N to neuron k in layer  + 1. Here, αt denotes the synaptic
+response triggered by a spike from presynaptic neurons j ∈
+N to postsynaptic neuron k ∈ N + 1, while βt captures
+the synaptic response to the spike produced by the neuron
+itself. The symbol ∗ stands for the convolution operation.
+Neuron k generates a spike at time stept when its membrane
+potential uk,t exceeds a certain threshold ϑ, i.e.,
+sk,t = (uk,t − ϑ) (17)
+with referring to the Heaviside function. See review [26]
+for more details.
+B. Interference Detection as Supervised Learning for
+SNNs
+We propose to train the system via supervised frequen-
+tist learning. The goal is to minimize the training loss
+over a set of parameter vector w using a training dataset
+D = {(x, y)} composed of the encoded traffic requirement
+signals x = (x1, . . . , xT ) and corresponding targets y =
+(y1, . . . , yT ). The target signals encode in which subband
+index b ∈ [0, 5], the interference can be found, where b = 0
+corresponds to no interference. They are obtained via one-
+hot encoding and repetition over time of the target subband
+b, as detailed in Section V-D.
+We define the loss Lr,y(w) measured with respect to a
+data (r, y) ∈ D as the error between the reference signals y
+and the output spiking signals produced by the SNN with
+parameters w, given the input r. Accordingly, the loss is
+written as a sum over time instants t ∈ {1, . . . , T } and over
+the NL read-out neurons as
+Lr,y(w) =
+T
+
+t=1
+Lrt ,yt
+(w)
+=
+T
+
+t=1
+NL
+
+k=1
+L yk,t , fk (w, rt
+) (18)
+where function L(yk,t , fk (w, rt
+)) is a local loss measure
+comparing the target output yk,t of neuron k at time t and
+the actual output fk (w, rt
+) of the same neuron, given the
+inputs rt
+= (r1, . . . , rt ) up to time t. The notations fk (w, rt
+)
+and Lrt ,yt
+(w) are used as a reminder that the output of the
+SNN and the corresponding loss at time t generally depend
+on the input rt
+up to time t, and on the target output yt at
+time t. Specifically, the notation fk (w, rt
+) makes it clear that
+the output of neuron k ∈ N is produced with the model
+parameters w from exogenous input rt
+, consisting of all
+input samples up to time t, using the SRM (16) and (17).
+The training loss LD(w) represents an estimated mea-
+sure of the population loss, derived from the data samples
+present in the training dataset D, and is given as
+LD(w) =
+1
+|D|
+
+(r,y)∈D
+Lr,y(w). (19)
+Frequentist learning addresses the empirical risk minimiza-
+tion problem
+min
+w
+LD(w). (20)
+We focus on the spike-rate loss, in which the SNN receives
+a specified rate ρ that sets the target rate for the correct
+output neuron for each example, along with a spike rate ρF
+that determines the target spike rate for the remaining output
+neurons. For a classification problem with C classes, if c is
+the correct class for the given input, the spike-rate loss is
+defined as
+Lr,y(w) =
+1
+2
+T
+
+t=1
+
+k=c
+( fk (w, rt
+) − ρF ) + ( fc(w, rt
+) − ρ).
+(21)
+Throughout, we set ρF = 0.01.
+Problem (20) cannot be directly addressed with conven-
+tional gradient-based techniques because the spiking mech-
+anism (17) is not differentiable in w due to the inclusion
+of the threshold function (·). To address the aforemen-
+tioned issue, surrogate gradient (SG) methods substitute
+the derivative of the threshold function (·) in (17) with an
+appropriate differentiable approximation. For more detailed
+information on this approach, we refer the reader to the
+reviews found in [26] and [42].
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17691
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 10. Encoding of the signal with interference. (a) Encoding of the DFT. (b) Encoding of the STFT. (c) Direct neuromorphic encoding using R&F
+neurons.
+C. Data Encoding
+While SNNs are theoretically capable of receiving sig-
+nals as an analog current, NPs, including Loihi 2, are gen-
+erally limited to processing binary signals. Training, hence,
+relies on the processing of signal r(t) from (3) to encode it
+into a spiking signal. As seen in Fig. 10, we propose to do
+so in one of the following three ways.
+1) Rate/time encoding machine (TEM) encoding of the
+DFT: We first encode the magnitude of the DFT of
+signal r(t) into spikes using rate encoding or a TEM
+over an integer number of T time steps, for which
+details can be found in, e.g., [40]. We hence obtain
+a feature vector x ∈ R100×T
+.
+2) Short-term Fourier transform (STFT): Computing
+the spectral components of the signal r(t) through
+preprocessing using an auxiliary processor, such as
+a CPU, can introduce substantial latency in a neu-
+romorphic system, particularly when the signals are
+either very long or numerous. We hence propose to
+compute the STFT of the signal and encode it with a
+TEM. This solution offers an alternative to the usage
+of the DFT, which allows processing of the received
+signals online, without the need to wait for the end of
+the communication to process them. We compute the
+STFT with a segment length of 100 and a 99-point
+overlap between segments, also resulting in a signal
+of size 100 × T .
+3) Resonate-and-fire (R&F) neurons: Recent studies
+have shown that R&F neurons are capable of directly
+computing the STFT within the spiking domain [39].
+An R&F neuron operates as an oscillatory system,
+with a complex-valued internal variable. The neuron
+generates a spike when the real component of this
+variable exceeds a specific threshold while its phase
+equals zero. The mathematical formulation of this
+behavior is given by the following equations:
+zt = λeiω t
+zt−1 + xt (22)
+st = (|zt | − ϑ) and arg(zt ) = 0 (23)
+where zt ∈ C is the neuron state at time instant t, λ ∈
+[0, 1] is a decay factor, ω is the resonant frequency of
+the neuron, t is the time step, and xt is the input at
+instantt.Startingfromaninitialconditionz0 = 0 and
+assuming no reset mechanism, (22) can be rewritten
+as
+zt =
+
+n
+einω t
+λn
+xt−n (24)
+which defines the discrete STFT of signal x with an
+exponential window.
+When DFT computation is expensive, models that
+incorporate R&F neurons offer greater efficiency in
+all metrics [43]. Therefore, we propose to use 100
+R&F neurons to directly estimate the discrete STFT
+of signal r(t) in the spiking domain, resulting in a
+spiking signal of size 100 × T .
+17692 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+D. Decoding
+Since resulting signals from the SNN are obtained in
+the form of spiking signals, they need to be decoded into a
+natural signal that encodes the presence of an interference
+within a frequency subband. We do so in one of two ways.
+1) We first consider rate decoding, where, similarly to
+the CNN model, we transform the target b ∈ [0, 5]
+using one-hot encoding. That is, we define targets
+y1 = · · · = yT such that yt,b = 1 and yt,i = 0 for i =
+b. Decisions are subsequently derived through rate
+decoding, achieved by selecting the output neuron
+with the highest spike rate. We denote this solution
+in the following as “multilabel classification.” Note
+that, if we were to account for the possibility of more
+than one interference source at once, the target size
+would then increase exponentially with the number
+of subbands.
+2) We also consider an alternative decoding strategy
+using five read-out neurons, each corresponding to
+a subband within the spectrum of interest. For in-
+stance, if b = 1, the target signal is defined as y1 =
+· · · = yT = [0, 1, 0, 0, 0]T
+. Decisions are obtained
+by considering that the network detects interference
+in the corresponding subband if each output neuron
+spikes more than half of the time. We denote this
+solution in the following as “binary decoding.” This
+decoding technique allows us to detect interference
+in more than one subband while keeping the number
+of read-out neurons fixed.
+E. Neuromorphic Hardware Implementation
+WedemonstrateinthisworkapracticaluseoftheLoihi2
+chip for interference detection. Our investigation was con-
+ducted using Intel’s Loihi 2 within the framework of the In-
+tel Neuromorphic Research Community (INRC). Loihi 2 is
+a research neuromorphic chip that uses asynchronous spik-
+ing neurons to implement fine-grained, event-driven, adap-
+tive, self-modifying, parallel computations. Loihi 2 com-
+prises multiple interconnected neuromorphic cores, each
+accommodating numerous artificial neurons, which receive
+spikes from other network components. After accumulating
+incoming spikes over a specific time period and surpassing
+a predetermined threshold, the corresponding core initiates
+spike transmission to linked neurons. Earlier spikes enhance
+the strength of existing neuronal connections, while later
+spikes diminish these connections, gradually reducing con-
+nectivity until activity eventually halts.
+Manufactured with the Intel 4 process, Loihi2 features
+1 million artificial neurons and 120 million synapses on
+each chip. Alongside 128 neuromorphic cores, the chip also
+includes six processor cores [44]. The previous iteration of
+the chip has demonstrated to provide orders of magnitude
+improvements in terms of energy efficiency and latency, as
+compared to traditional ML workloads [27].
+VI. PERFORMANCE EVALUATION
+A. Performance Evaluation for the Reduced-Size DFT
+With the CNN
+ThissectionassessestheperformanceoftheCNNmodel
+built with Keras, with a particular emphasis on its predic-
+tion accuracy and training losses. Prediction accuracy is
+visualized using a confusion matrix, which, along with the
+receiver operating characteristics (ROC), provides valuable
+insights into the progress of neural networks.
+In this study, the interference detection involves a total
+of five subbands. Class 0, represented as [0, 0, 0, 0, 0], cor-
+responds to no interference. Likewise, the remaining classes
+are labeled according to interference in their corresponding
+subbands. We produced 12 000 data samples per class
+for training and 3000 samples for validation. To maintain
+fairness, the training dataset is balanced across all classes.
+The CNN model was trained over 25 epochs using
+batch sizes of 128, 32, and 15. The training of traditional
+models was conducted on the high-performance computing
+resources provided by the University of Luxembourg [45].
+The training setup employed the surrogate gradient descent
+(SGD) optimizer, configured with a learning rate of 0.01, a
+momentum of 0.9, and Nesterov acceleration. Categorical
+cross entropy served as the chosen loss function, while the
+model’s accuracy functioned as the metric for evaluation.
+The model achieved best training accuracy of 97.2% with
+a batch size of 32, while the validation accuracy reached
+96.9%. The CNN model demonstrates superior perfor-
+mance with the dataset prepared considering reduced size
+DFT compared to the full-dimensional DFT, attributed to
+its less correlated classification [29]. Thus, we focus on the
+reduced size DFT for evaluating the CNN’s performance in
+this article.
+The area under the curve (AUC), true positive rate
+(TPR), and false positive rate (FPR) are important perfor-
+mance indices for CNNs because they provide valuable
+insights into the model’s ability to discriminate between
+different classes [30]. The AUC also represented as area
+in simulation figures represents the area beneath the ROC
+curve, with values ranging from 0 to 1; higher AUC values
+signify a superior model. The TPR is the ratio of true
+positive instances (instances that are truly positive and
+predicted as positive) to the total positive instances, while
+the FPR is the ratio of false positive instances (instances
+that are truly negative but predicted as positive) to the total
+negative instances. At various classification thresholds, one
+can observe the relationship between FPR and TPR through
+ROC plots, offering insights into the balance between TPR
+and FPR and assisting in the selection of an optimal clas-
+sification threshold. It is evident from Fig. 11(a) that the
+CNN consistently yields an AUC/area close to 1 across all
+classes for the interference detection. Fig. 11(b) presents
+the normalized confusion matrix obtained for interference
+detection using the reduced-dimension DFT. In the case of
+the reduced-dimension complex DFT, we observe a ratio
+of 0.99 for class 0 and 0.89 for class 5, achieving a ratio of
+1 for classes 1–4 when considering the absolute values of
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17693
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 11. Performance evaluation of CNN benchmark solution in terms
+of (a) ROC plot and (b) confusion matrix. (a) ROC curves for different
+classes with area information. (b) Confusion matrix.
+TABLE II
+Classes and Their
+Corresponding Test Data
+F1-Score
+the reduced-dimension DFT. A ratio of 1 indicates accurate
+class identification by the model.
+Regarding the F1-score, it assesses the equilibrium be-
+tween precision and recall within the model, where a high
+F1-score signifies a favorable balance between the two met-
+rics. Table II presents the obtained F1-scores, demonstrat-
+ing that the CNN architecture and training configuration
+effectivelydetectinterferencewithinthedefinedbandwidth.
+Therefore, it can be inferred that the employed CNN model
+is able to achieve high accuracy in interference detection
+and classification.
+B. Performance Evaluation of the Neuromorphic Model
+To evaluate SNNs as an alternative solution to conven-
+tional CNNs, we measure metrics of interest by applying
+the spike encoding and decoding strategies discussed in
+Sections V-C and V-D. More specifically, we focus on
+classification accuracy, as well as execution time and energy
+expenditure per example as measures of the performance of
+the system. We obtain these by implementing SNNs on the
+Loihi 2 chip. Results are summarized in Fig. 12, with further
+details provided in the Appendix. The highest test accuracy
+is obtained by encoding the STFT of the signal with TEMs,
+in which case we obtain as high as 99.8% accuracy. The
+worst accuracy is obtained by encoding the DFT of the
+signal with TEMs, in which case the neuromorphic model
+only reaches 96.6% accuracy for binary decoding.
+More generally, encoding the STFT of the received
+signal either directly in the spiking domain using R&F
+neurons or via TEMs is seen to outperform the encoding
+of the DFT. This comes at the cost of larger execution times
+and energy expenditures, due to the length of the signals
+considered. However, encoding with R&F neurons does not
+require any preprocessing of the received signals, which is
+not accounted for here. Furthermore, it does not require to
+wait for the whole signal to be transmitted, as one would
+do to compute the DFT. Finally, this technique naturally
+matchesthetemporalityofthesignalwiththetimeoperation
+of the SNN. In situations where the computation of the DFT
+is costly, models incorporating R&F neurons may prove
+more efficient across all metrics.
+In neuromorphic systems, the choice of encoding and
+decoding strategies plays a crucial role in determining the
+overall performance, particularly the balance between la-
+tency and energy efficiency. While our current implemen-
+tation employs techniques as discussed in Sections V-C
+and V-D, alternative schemes such as latency coding, time-
+to-first-spike, and rank-order coding can significantly influ-
+ence system behavior [46].
+Latency coding, where information is encoded in the
+timing of the first spike, offers the potential to reduce overall
+decision latency but may require more precise spike gen-
+eration and timing control [46]. Rank-order coding, on the
+other hand, emphasizes the order of spikes rather than their
+exact timing, providing a tradeoff between computational
+simplicity and inference speed. Decoding strategies also
+impact performance; population-based decoding methods
+can offer robustness against noise but at the expense of
+higher computational load. Future work could explore hy-
+brid encoding–decoding approaches that dynamically adapt
+based on channel conditions or task requirements.
+Overall, careful optimization of these strategies presents
+a promising avenue to further enhance the performance of
+SNNs, striking a more favorable balance between energy
+efficiency and latency.
+C. Discussion
+We now compare measurements obtained for inference
+on Loihi 2, with those obtained on the VCK 5000 chip
+17694 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 12. Performance metrics for the different types of encodings considered for interference detection. Displayed from left to right are: test accuracy,
+average execution time per example, and average energy consumption per example. Full colors: multilabel classification. Hatches: binary decoding.
+Fig. 13. Performance of the employed CNN with batch size = 1 for the
+reduced-dimension DFT in terms of (a) ROC and (b) confusion matrix.
+(a) Accuracy versus energy consumption. (b) Solution time ratio versus
+energy ratio.
+for the CNN model. In Fig. 13(a) and (b), we compare
+the energy expenditures, execution times, and solution time
+ratio versus energy ratio for both hardware, including all the
+encodings considered for the SNN model. The CNN model
+isseentobefasterthantheSNNsinallcases.Similarlytothe
+previoususecase,thisisnotunexpectedforaproblemofthis
+size, considering that the SNN needs to perform several time
+steps to perform inference. One could expect to demonstrate
+the superiority of the SNN for models where the operations
+necessary to compute the DFT as well as the inference
+with the CNN do not fit in the chip’s memory. We reserve
+such cases for future work. Here again, the SNN remains
+advantageous in terms of energy efficiency specifically for
+FFT TEM and FFT rate, with an improvement of nearly two
+orders of magnitude on the CNN.
+Fig. 13(b) showcases the outcomes of benchmarking
+for latency and energy in a consolidated manner. This
+2-D plot shows the significant advantages that can be
+achieved via neuromorphic hardware, exemplified by the
+Loihi chip, in contrast to commercially accessible pro-
+grammable AI hardware accelerators. The dashed diag-
+onal line represents the unit energy–delay product ratio
+threshold [27], where benchmark points positioned be-
+low and to the left of this line indicate architectures that
+outperform Loihi. Conversely, points positioned above
+and to the right signify superior performance for Loihi.
+In every scenario illustrated, CNN models reside above
+the unit energy delay product line, suggesting that exe-
+cuting neuromorphic algorithms on specialized hardware
+presents clear advantages for interference detection on
+satellite platforms.
+D. Practical Limitations and Emerging Trends in the SNN
+SNNs have gained significant attention for their poten-
+tial to deliver energy-efficient computation in neuromor-
+phic and low-power hardware platforms. However, several
+practical limitations remain, particularly in the context of
+real-world implementation for onboard satellite systems.
+1) Convergence and Training Stability: One of the
+fundamental challenges in deploying SNNs is their con-
+vergence behavior during training. Due to the discrete and
+nondifferentiable nature of spikes, standard backpropaga-
+tion cannot be directly applied. While SG methods have im-
+proved convergence, they often require meticulous hyperpa-
+rameter tuning and longer training durations compared to
+traditional artificial neural networks (ANNs). In addition,
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17695
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+convergence can be sensitive to input encoding strategies
+and network depth, particularly when deploying SNNs for
+time-series classification tasks such as interference detec-
+tion.
+2) Emerging SNN Learning Algorithms: Recent ad-
+vances in SNN learning aim to address these limitations
+and improve accuracy, robustness, and efficiency.
+1) SGD:Itapproximatesspikegradientstoenableback-
+propagation in SNNs. This method has shown im-
+proved convergence but may introduce tradeoffs in
+biological plausibility.
+2) STDP: It is a biologically inspired unsupervised
+learning rule that adapts synaptic weights based
+on spike timing. While energy efficient, STDP of-
+ten requires additional supervisory mechanisms for
+complex tasks.
+3) Event-driven backpropagation: It introduces tempo-
+ral credit assignment in an event-based framework,
+allowing SNNs to retain temporal dependencies
+without dense updates. This method is promising but
+still maturing in terms of scalability.
+4) Hybrid SNN-ANN models: Combining ANN layers
+(for feature extraction) with spiking layers (for en-
+ergy savings) has been explored to balance perfor-
+mance and efficiency. However, hardware co-design
+and compatibility remain key challenges.
+3) Data Volume Sensitivity and Scenario Variability:
+Although SNNs offer clear advantages in energy efficiency
+and event-driven processing, their practical deployment in
+satellite systems faces certain challenges. A primary con-
+cern is the volume and diversity of training data required
+to ensure robustness under varying interference conditions.
+Environmental factors such as SNR variation, non-Gaussian
+noise, or diverse interference types can significantly in-
+fluence the size and complexity of the dataset needed for
+generalization.
+In addition, the training of SNNs is still maturing
+compared to conventional deep learning methods. While
+this work demonstrates promising results using simulated
+datasets, field deployment may necessitate retraining or
+adaptation using real-world data. Emerging trends such
+as hybrid ANN-SNN architectures, online learning, and
+advancements in neuromorphic hardware continue to en-
+hance the feasibility and performance of SNN-based sys-
+tems in practice. Future work will involve comprehensive
+field validation and extended data collection across diverse
+real-world operating conditions to further assess the ro-
+bustness and generalizability of the proposed SNN-based
+approach.
+Overall, while the SNN paradigm offers significant
+potential, especially for embedded and satellite systems,
+further research is necessary to improve training reliability,
+support larger model scales, and ensure consistent perfor-
+mance across varying environments.
+VII. CONCLUSION
+In this study, we present an in-depth analysis of CNN
+models and neuromorphic models using SNNs imple-
+mented on a GSO satellite, with the aim of interference
+identification and spectrum classification. Using a large
+dataset and rigorous comparative tests, we evaluate the
+accuracy, latency, and power consumption of both models.
+Our results show that SNNs exhibit high flexibility in
+signal encoding and decoding, consistently outperforming
+conventional ML models in energy efficiency. Specifically,
+SNNs implemented on the Loihi 2 chip achieved accuracy
+levels comparable to CNNs with significantly lower power
+consumption. This energy efficiency is especially crucial
+for satellite operations, where energy resources are limited.
+The SNN models also demonstrated competitive per-
+formance in terms of latency. In half of the scenarios
+tested, SNNs outperformed CNNs, making them suitable
+for applications requiring fast response times. Coding tech-
+niques that show less favorable latency results for SNNs
+could still be beneficial for larger scale problems where
+DFT computation is inherently slow. This suggests that
+as data complexity and size increase, SNNs could be-
+come even more advantageous compared to traditional
+CNNs.
+Beyond energy efficiency and latency, SNNs offer addi-
+tional advantages by taking advantage of specialized neu-
+romorphic hardware. They are ideally suited to process the
+sparse temporal data typical of SatComs and offer a robust
+solution for onboard interference detection. Despite current
+limitations, such as the need for specialized hardware and
+the steep learning curve of neuromorphic computing, on-
+going research and technological advances are expected to
+mitigate these challenges, facilitating wider adoption. Ex-
+perimental results underscore the potential of neuromorphic
+computing and SNNs to significantly improve interference
+detection in SatCom systems, resulting in improved effi-
+ciency and sustainability.
+To build on the promising results of this study, several
+future research directions are proposed.
+1) Investigate the scalability of SNN models for larger
+and more complex datasets to further validate their
+performance in more challenging interference sce-
+narios. This includes developing simulation frame-
+works that emulate LEO and MEO environments, ac-
+counting for dynamic factors such as Doppler shifts,
+rapid changes in link conditions, and handovers.
+These simulations will allow testing of SNNs’ in-
+ference stability, adaptability, and energy efficiency
+under orbital dynamics that are not present in GSO
+systems.
+2) Develop and test neuromorphic hardware solutions
+that are resilient to the radiation harsh environments
+encountered in space. Ensuring that NPs can operate
+reliably in these conditions is critical to their deploy-
+ment in satellite systems.
+3) Explore hybrid models that combine the strengths
+of CNNs and SNNs to take advantage of the high
+17696 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 14. Comparison between the execution of an SNN on Loihi 2 and a CNN on the CPU of the VCK 5000 chip. Left: Average execution time per
+example. Right: Energy expenditure.
+Fig. 15. Confusion matrices for rate encoding of the DFT.
+Fig. 16. Performance metrics for rate encoding of the DFT. Displayed from left to right are: test accuracy, average number of synaptic operations per
+example, average execution time per example, and average energy expenditure per example.
+Fig. 17. Confusion matrices for encoding of the DFT with TEMs.
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17697
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 18. Performance metrics for encoding of the DFT with TEMs. Displayed from left to right are: test accuracy, average number of synaptic
+operations per example, average execution time per example, and average energy expenditure per example.
+Fig. 19. Confusion matrices for encoding of the STFT with TEMs.
+Fig. 20. Performance metrics for encoding of the STFT with TEMs. Displayed from left to right are: test accuracy, average number of synaptic
+operations per example, and average execution time per example, and average energy expenditure per example.
+accuracy of CNNs and the energy efficiency of
+SNNs. These hybrid models could provide a bal-
+anced solution for real-time interference detection
+with optimized performance.
+4) Implement and evaluate continuous learning mech-
+anisms in SNNs to enable real-time adaptation to
+changing interference patterns and environments.
+This will reduce the need for frequent retraining and
+upgrades from ground stations.
+5) Continue to optimize SNN algorithms and architec-
+tures to improve their efficiency and performance.
+This includes exploring new encoding and decoding
+strategies, as well as advanced training techniques to
+improve model accuracy and robustness.
+APPENDIX
+NEUROMORPHIC MODEL PERFORMANCE
+In this section, we detail the metrics measured on Loihi
+2, broken down by encoding type, and provide comparisons
+with the simulation of an SNN model simulated on a single
+A100 GPU. Their performance comparisons are as shown
+in Figs. 14– 22.
+17698 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Fig. 21. Confusion matrices for encoding of the complex signal with R&F neurons.
+Fig. 22. Performance metrics for encoding of the complex signal with R&F neurons. Displayed from left to right are: test accuracy, average number
+of synaptic operations per example, average execution time per example, and average energy expenditure per example.
+1) Rate encoding of the DFT: We start by considering
+as exogenous inputs the magnitude of the DFT of
+the signal, encoded via rate coding over T = 32 time
+steps. As seen in Fig. 15, the multilabel classification
+model performs better than its counterpart across
+all classes. In particular, binary decoding performs
+poorly for class 1, as the model fails to detect in-
+terference near the signal’s transmission frequency.
+Furthermore, binary decoding requires more synap-
+tic operations than multilabel classification. In both
+cases, execution of the conventional model is slightly
+faster than on the Loihi 2 chip, albeit it is over
+five orders of magnitude more expensive in terms
+of energy expenditure.
+2) Encoding of the DFT with TEMs: We also considered
+alternatively encoding the magnitude of the DFT of
+the received signals via TEMs. Binary decoding per-
+forms worse and requires more synaptic operations
+per example. Similar observations can be made for
+the comparison with the GPU simulation as per rate
+encoding.
+3) Encoding of the STFT with TEMs: Next, we compute
+the STFT of the signal in an online fashion and en-
+code its absolute value with TEMs. Again, multilabel
+classification generally performs better than binary
+decoding, although the difference between the two is
+less than in the previous cases. Interestingly, binary
+decoding actually requires fewer synaptic operations
+per example here. Due to the much larger number of
+execution time steps, T = 1000, models ran on Loihi
+2 are seen to be much slower than their counterparts
+simulated on GPU in this case. However, the benefits
+in terms of energy expenditure are still clear for the
+neuromorphic chip.
+4) Encoding with R&F neurons: Finally, we propose to
+directly compute the STFT of the signal of interest in
+the spiking domain using R&F neurons, as detailed
+in Section V-C. As can be seen, multilabel classifi-
+cation using this encoding technique offers almost
+the same test accuracy as the encoding of the STFT,
+although it does not require any preprocessing of the
+received signal, hence offering benefits in terms of
+latency and energy footprint that are not measured
+here.
+ACKNOWLEDGMENT
+The authors would like to gratefully acknowledge the sup-
+port of Intel Labs through the INRC, and the valuable
+technical guidance provided by the European Space Agency
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17699
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+(ESA), with Tomas Navarro serving as the ESA technical
+officer. The authors would also like to thank O. Simeone and
+B. Rajendran for their support and mentorship throughout
+the course of this research endeavor. Within the NeuroSat
+project, three use cases were identified for detailed study,
+including the onboard interference detection and mitigation
+task addressed in this article. These use cases involved
+benchmarking SNN-based neuromorphic computing on In-
+tel’s Loihi 2 chip against traditional CNN models imple-
+mented on a Xilinx VCK5000 development board. Note
+that the views expressed in this article are those of the
+authors and do not necessarily reflect the official policies
+or positions of the ESA.
+REFERENCES
+[1] M. Centenaro, C. E. Costa, F. Granelli, C. Sacchi, and L. Vangelista,
+“A survey on technologies, standards and open challenges in satellite
+IoT,” IEEE Commun. Surveys Tuts., vol. 23, no. 3, pp. 1693–1720,
+Third Quarter 2021.
+[2] B. Al Homssi et al., “Next generation mega satellite networks for
+access equality: Opportunities, challenges, and performance,” IEEE
+Commun. Mag., vol. 60, no. 4, pp. 18–24, Apr. 2022.
+[3] R.Li,P.Gu,andC.Hua,“Optimalbeampowercontrolforco-existing
+multibeam GEO and LEO satellite system,” in Proc. 11th Int. Conf.
+Wirel. Commun. Signal Process., 2019, pp. 1–6.
+[4] O. Kodheli et al., “Satellite communications in the new space era: A
+survey and future challenges,” IEEE Commun. Surveys Tuts., vol. 23,
+no. 1, pp. 70–109, First Quarter 2021.
+[5] V. N. Ha et al., “Joint linear precoding and DFT beamforming
+design for massive MIMO satellite communication,” in Proc. IEEE
+Globecom Workshops, 2022, pp. 1121–1126.
+[6] V. Singh et al., “On the performance of cache-free/cache-aided
+STBC-NOMA in cognitive hybrid satellite-terrestrial networks,”
+IEEE Wireless Commun. Lett., vol. 11, no. 12, pp. 2655–2659,
+Dec. 2022.
+[7] “How to locate and mitigate common satellite interference
+issues,” Feb. 2021. Accessed: Mar. 2023, [Online]. Available:
+https://anritsu.typepad.com/interferencehunting/2021/02/locate-
+mitigate-common-satellite-interference-issues.html
+[8] C. Politis, S. Maleki, S. Chatzinotas, and B. Ottersten, “Harmful
+interference threshold and energy detector for on-board interference
+detection,” in Proc. Ka Broadband Commun. Conf., Cleveland, OH,
+USA, Oct. 2016.
+[9] C. Politis, S. Maleki, C. Tsinos, S. Chatzinotas, and B. Ottersten,
+“On-board the satellite interference detection with imperfect signal
+cancellation,” in Proc. IEEE 17th Int. Workshop Signal Process. Adv.
+Wirel. Commun., 2016, pp. 1–5.
+[10] C. Prakash, D. Bhimani, and V. K. Chakka, “Interference detection &
+filtering in satellite transponder,” in Proc. Int. Conf. Commun. Signal
+Process., 2014, vol. 11, pp. 1394–1399.
+[11] A. Kalantari, S. Maleki, S. Chatzinotas, and B. Ottersten, “Frequency
+of arrival-based interference localization using a single satellite,” in
+Proc. 8th Adv. Satell. Multimedia Syst. Conf./14th Signal Process.
+Space Commun. Workshop, 2016, pp. 1–6.
+[12] S. K. Sharma, S. Chatzinotas, and B. Ottersten, “In-line interference
+mitigation techniques for spectral coexistence of GEO and NGEO
+satellites,” Int. J. Satell. Commun. Netw., vol. 34, no. 1, pp. 11–39,
+2016.
+[13] I. Jabandžić et al., “The CODYSUN approach: A novel distributed
+paradigm for dynamic spectrum sharing in satellite communica-
+tions,” Sensors, vol. 21, no. 23, 2021, Art. no. 8052.
+[14] J. Zou, H. Xiong, D. Wang, and C. W. Chen, “Optimal power
+allocation for hybrid overlay/underlay spectrum sharing in multiband
+cognitive radio networks,” IEEE Trans. Veh. Commun., vol. 62, no. 4,
+pp. 1827–1837, May 2013.
+[15] K. Kim, I. A. Akbar, K. K. Bae, J.-S. Um, C. M. Spooner, and
+J. H. Reed, “Cyclostationary approaches to signal detection and
+classification in cognitive radio,” in Proc. 2nd IEEE Int. Symp. New
+Front. Dyn. Spectr. Access Netw., 2007, pp. 212–215.
+[16] Z. An et al., “Physics-informed scattering transform network for
+modulation recognition in 5G industrial cognitive communications
+considering nonlinear impairments in active phased arrays,” IEEE
+Trans. Ind. Inform., vol. 21, no. 1, pp. 425–434, Jan. 2025.
+[17] Z. An et al., “Collaborative learning-based modulation recognition
+for 6G multibeam satellite communication systems via blind and
+semi-blind channel equalization,” IEEE Trans. Aerosp. Electron.
+Syst., vol. 60, no. 4, pp. 5226–5246, Aug. 2024.
+[18] F. Ortiz et al., “Onboard processing in satellite communications using
+AI accelerators,” Aerospace, vol. 10, no. 2, 2023, Art. no. 101.
+[19] M. A. Vazquez et al., “Machine learning for satellite communica-
+tions operations,” IEEE Commun. Mag., vol. 59, no. 2, pp. 22–27,
+Feb. 2021.
+[20] A. Saifaldawla, F. Ortiz, E. Lagunas, A. B. Adam, and S. Chatzinotas,
+“GenAI-based models for NGSO satellites interference detection,”
+IEEE Trans. Mach. Learn. Commun. Netw., vol. 2, pp. 904–924,
+2024.
+[21] S. S. Kalamkar, A. Banerjee, and A. K. Gupta, “SNR wall for gener-
+alized energy detection under noise uncertainty in cognitive radio,”
+in Proc. IEEE 19th Asia-Pacific Conf. Commun., 2013, pp. 375–380.
+[22] F. Dimc, G. Baldini, and S. Kandeepan, “Experimental detection of
+mobile satellite transmissions with cyclostationary features,” Int. J.
+Satell. Commun. Netw., vol. 33, no. 2, pp. 163–183, 2015.
+[23] G. Eappen and T. Shankar, “A survey on soft computing techniques
+for spectrum sensing in a cognitive radio network,” SN Comput. Sci.,
+vol. 1, no. 6, 2020, Art. no. 352.
+[24] Z. An, T. Zhang, Y. Xu, G. F. Pedersen, and M. Shen, “Multimodality-
+aided multicarrier waveform recognition in low SNR regimes based
+on denoised cyclic autocorrelation transformation,” IEEE Trans.
+Aerosp. Electron. Syst., vol. 59, no. 5, pp. 5859–5875, Oct. 2023.
+[25] W. Qin and F. Dovis, “Situational awareness of chirp jamming
+threats to GNSS based on supervised machine learning,” IEEE Trans.
+Aerosp. Electron. Syst., vol. 58, no. 3, pp. 1707–1720, Jun. 2022.
+[26] N. Skatchkovsky, H. Jang, and O. Simeone, “Spiking neural
+networks—Part III: Neuromorphic communications,” IEEE Com-
+mun. Lett., vol. 25, no. 6, pp. 1746–1750, Jun. 2021.
+[27] M. Davies et al., “Advancing neuromorphic computing with Loihi:
+A survey of results and outlook,” Proc. IEEE, vol. 109, no. 5,
+pp. 911–934, May 2021.
+[28] F. Ortiz et al., “Towards the application of neuromorphic computing
+to satellite communications,” in Proc. 39th Int. Commun. Satell. Syst.
+Conf., 2022, vol. 2022, pp. 91–97.
+[29] S. S. A. Daoud, G. Eappen, F. d. G. Ortiz Gomez, E. Lagunas, W.
+Alves Martins, and S. Chatzinotas, “CCN-based on-board interfer-
+ence detection in satellite systems: An analysis of dataset impact
+on performance,” in Proc. IEEE Int. Conf. Acoust., Speech Signal
+Process., Rhodes, Greece, Jun. 2023, pp. 1–5.
+[30] F. Ortiz et al., “Energy-efficient on-board radio resource manage-
+ment for satellite communications via neuromorphic computing,”
+in Proc. IEEE Trans. Mach. Learn. Commun. Netw., 2024, vol. 2,
+pp. 169–189.
+[31] M. Jalali, F. G. Ortiz-Gomez, E. Lagunas, S. Kisseleff, L. Emiliani,
+and S. Chatzinotas, “Radio regulation compliance of NGSO constel-
+lations’ interference towards GSO ground stations,” in Proc. IEEE
+33rd Annu. Int. Symp. Pers., Indoor Mobile Radio Commun., 2022,
+pp. 1425–1430.
+[32] ITU-R S.1503-1, “Simulation methodologies for determining statis-
+tics of short-term interference between co-frequency, co-directional
+non-geostationary-satellite orbit fixed-satellite service systems in
+circular orbits and other non-geostationary fixed-satellite service sys-
+tems in circular orbits or geostationary-satellite orbit fixed-satellite
+service networks,” Int. Telecommun. Union (ITU), Geneva, 2003.
+[33] R. Pritchard-Kelly, “WRC-23 on the horizon: Large satellite con-
+stellations, ITU issues, and industry perspective,” Air Space Law,
+vol. 48, pp. 179–190, 2023.
+17700 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+[34] L. Pellaco, N. Singh, and J. Jalden, “Spectrum prediction
+and interference detection for satellite communications,”
+in Proc. 37th Int. Commun. Satell. Syst. Conf., 2019,
+pp. 1–18.
+[35] P. Henarejos, M. A. Vazquez, and A. I. Perez-Neira, “Deep learning
+for experimental hybrid terrestrial and satellite interference manage-
+ment,” in Proc. IEEE 20th Int. Workshop Signal Process. Adv. Wirel.
+Commun., 2019, pp. 1–5.
+[36] M. Kulin, T. Kazaz, I. Moerman, and E. De Poorter, “End-to-end
+learning from spectrum data: A deep learning approach for wireless
+signal identification in spectrum monitoring applications,” IEEE
+Access, vol. 6, pp. 18484–18501, 2018.
+[37] N. Skatchkovsky, H. Jang, and O. Simeone, “End-to-end learning
+of neuromorphic wireless systems for low-power edge artificial
+intelligence,” in Proc. Asilomar Conf. Signals, Syst. Comput., 2020,
+pp. 166–173.
+[38] M. A. Vázquez et al., “On the use of AI for satellite communications,”
+2020, arXiv:2007.10110.
+[39] G. Orchard et al., “Efficient neuromorphic signal processing with
+Loihi 2,” in Proc. IEEE Workshop Signal Process. Syst., 2021,
+pp. 254–259.
+[40] N. Skatchkovsky, H. Jang, and O. Simeone, “Spiking neural
+networks—Part II: Detecting spatio-temporal patterns,” IEEE Com-
+mun. Lett., vol. 25, no. 6, pp. 1741–1745, Jun. 2021.
+[41] W. Gerstner and W. M. Kistler, Spiking Neuron Models: Single
+Neurons,Populations,Plasticity.Cambridge,U.K.:CambridgeUniv.
+Press, 2002.
+[42] E. O. Neftci, H. Mostafa, and F. Zenke, “Surrogate gradient learning
+in spiking neural networks: Bringing the power of gradient-based
+optimization to spiking neural networks,” IEEE Signal Process.
+Mag., vol. 36, no. 6, pp. 51–63, Nov. 2019.
+[43] D. Auge, J. Hille, E. Mueller, and A. Knoll, “A survey of encoding
+techniques for signal processing in spiking neural networks,” Neural
+Process. Lett., vol. 53, no. 6, pp. 4693–4710, 2021.
+[44] M. Davies et al., “Taking neuromorphic computing to the next level
+with Loihi2,” Intel Labs’ Loihi, vol. 2, pp. 1–7, 2021.
+[45] S. Varrette, P. Bouvry, H. Cartiaux, and F. Georgatos, “Man-
+agement of an academic HPC cluster: The UL experience,” in
+Proc. IEEE Int. Conf. High Perform. Comput. Simul., 2014,
+pp. 959–967.
+[46] B. Han and K. Roy, “Deep spiking neural network: Energy efficiency
+through time based coding,” in Proc. Eur. Conf. Comput. Vis., 2020,
+pp. 388–404.
+Geoffrey Eappen (Member, IEEE) received the
+Ph.D. degree from the Vellore Institute of Tech-
+nology (VIT), Vellore, India, and Brunel Uni-
+versity London, Uxbridge, U.K., in 2021.
+He was a Senior Research Fellow with the
+Council of Scientific and Industrial Research,
+New Delhi, India, with the Department of Wire-
+less Communication, VIT, and later served as
+a Research Associate with the Interdisciplinary
+Centre for Security, Reliability and Trust, Uni-
+versity of Luxembourg, Luxembourg City, Lux-
+embourg. He is currently a Telecom Engineer with OQ Technology,
+Leudelange, Luxembourg, focusing on 5G-NR/NB-IoT Non-Terrestrial
+Networks, protocol stack development, and direct-to-device communi-
+cation systems. His research interests include 5G protocol design and
+optimization, metaheuristic optimization methods, artificial neural net-
+works, machine learning hardware implementation, 5G beamforming, and
+satellite communication.
+Dr. Eappen is a recipient of the U.K. Commonwealth Fellowship.
+Saed Daoud (Member, IEEE) received the
+M.Sc. degree from the Jordan University of Sci-
+ence and Technology, Irbid, Jordan, in 2010,
+and the Ph.D. degree from Concordia University,
+Montreal, QC, Canada, in 2015, both in electri-
+cal engineering with specialization in wireless
+communication.
+He was a Postdoctoral Researcher with the
+Ecole Polytechnique de Montreal, Montreal. He
+is currently a Research Associate with the Inter-
+disciplinary Centre for Security, Reliability and
+Trust, University of Luxembourg, Luxembourg City, Luxembourg. His re-
+search interests include physical-layer transceiver design and performance
+evaluation for underwater acoustic, terrestrial and satellite communication
+systems, for technologies such as OFDM, SC-FDE, cognitive radio, spread
+spectrum, multiple input and multiple output, and precoding.
+Nicolas Skatchkovsky (Member, IEEE) re-
+ceived B.Eng. and M.Eng. (Hons.) degrees
+from CentraleSupélec, Gif-sur-Yvette, France,
+in 2016 and 2018, respectively, and the Ph.D.
+degree from King’s College London, London,
+U.K., in 2022, under the supervision of Prof.
+Osvaldo Simeone, all in electrical engineering.
+From 2022 to 2023, he was a Postdoctoral
+Research Associate with King’s College Lon-
+don, where he worked on Bayesian learning and
+applications of neuromorphic learning to space
+communications. He is currently a Postdoctoral Research Associate with
+the Francis Crick Institute, London, U.K., working on the modeling of
+attention in mammalian brains using machine learning techniques. His
+current research interests include applications of artificial intelligence to
+neurosciences under an information-theoretic perspective.
+Flor Ortiz (Member, IEEE) received the
+B.S. degree in telecommunications engineering
+and the M.S. degree in electrical engineering
+telecommunications from the Universidad Na-
+cional Autónoma de México, Mexico City, Mex-
+ico,in2015and2016,respectively,andthePh.D.
+degree in telecommunication engineering from
+the Universidad Politécnica de Madrid, Madrid,
+Spain, in 2021.
+During her Ph.D. research, she carried out a
+research stay with the University of Bologna,
+Bologna, Italy, establishing a collaboration on machine learning for radio
+resource management. She is currently a Research Scientist with the
+Interdisciplinary Centre for Security, Reliability, and Trust, University
+of Luxembourg, Luxembourg City, Luxembourg. Her research interests
+include 6G communication systems, satellite–terrestrial integration, artifi-
+cial intelligence/machine-learning-driven network optimization, and non-
+terrestrial networks, with a proven record in research project acquisition,
+collaboration with industry, and supervision of Ph.D. students.
+Eva Lagunas (Senior Member, IEEE) received
+the M.Sc. and Ph.D. degrees in telecommuni-
+cations engineering from the Polytechnic Uni-
+versity of Catalonia (UPC), Barcelona, Spain, in
+2010 and 2014, respectively.
+From 2009 to 2013, she was a Research As-
+sistant with the Department of Signal Theory
+and Communications, UPC. In 2009, she was a
+Guest Research Assistant within the Department
+of Information Engineering, University of Pisa,
+Pisa, Italy. From November 2011 to May 2012,
+she held a visiting research appointment with the Center for Advanced
+Communications, Villanova University, Villanova, PA, USA. In 2014,
+she joined the Interdisciplinary Centre for Security, Reliability and Trust,
+University of Luxembourg, Luxembourg City, Luxembourg, where she is
+currentlyaResearchScientist.Herresearchinterestsincluderadioresource
+management and general wireless network optimization.
+EAPPEN ET AL.: NEUROMORPHIC MODELS FOR ENERGY-EFFICIENT ONBOARD INTERFERENCE DETECTION 17701
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+Wallace A. Martins (Senior Member, IEEE)
+received the bachelor’s degree in electronics
+engineering in 2007 and the M.Sc. and D.Sc.
+degrees in electrical engineering in 2009 and
+2011, respectively, all from the Federal Univer-
+sity of Rio de Janeiro (UFRJ), Rio de Janeiro,
+Brazil.
+From 2013 to 2022, he was an Associate Pro-
+fessor with UFRJ. From 2019 to 2023, he was
+a Researcher with the Interdisciplinary Centre
+for Security, Reliability, and Trust, University
+of Luxembourg, Luxembourg City, Luxembourg. He is currently a Full
+Professor with the Institut Supérieur de l’Aéronautique et de l’Espace,
+Université de Toulouse, Toulouse, France. His research interests include
+digital signal processing and telecommunications, focusing on future
+wireless and satellite networks.
+Prof. Martins was a recipient of several awards, such as the Best Student
+Paper Award from the European Association For Signal Processing at
+European Signal Processing Conference 2009 and the 2011 Best Brazilian
+D.Sc. Dissertation Award from Capes. He is a Senior Area Editor for IEEE
+SIGNAL PROCESSING LETTERS and an Editor for IEEE COMMUNICATIONS
+LETTERS.
+Symeon Chatzinotas (Fellow, IEEE) received
+the M.Eng. degree in telecommunications from
+the Aristotle University of Thessaloniki, Thes-
+saloniki, Greece, in 2003, and the M.Sc. and
+Ph.D. degrees in electronic engineering from the
+University of Surrey, Guildford, U.K., in 2006
+and 2009, respectively.
+He is currently a Full Professor/Chief Sci-
+entist I and the Head of the Signal Processing
+and Communications Research Group, Interdis-
+ciplinary Centre for Security, Reliability and
+Trust, University of Luxembourg, Luxembourg City, Luxembourg. In
+parallel, he is an Adjunct Professor with the Department of Electronic
+Systems, Norwegian University of Science and Technology, Trondheim,
+Norway, and a Collaborating Scholar of the Institute of Informatics and
+Telecommunications, National Center for Scientific Research “Demokri-
+tos,” Agia Paraskevi, Greece. In the past, he has lectured as a Visiting
+Professor with the University of Parma, Parma, Italy, and contributed in
+numerous R&D projects for the Institute of Telematics and Informatics,
+Center of Research and Technology Hellas and Mobile Communications
+Research Group, Center of Communication Systems Research, University
+of Surrey, Guildford, U.K. He has authored more than 700 technical papers
+in refereed international journals, conferences and scientific books.
+Dr. Chatzinotas is a recipient of numerous awards and recognitions,
+including the IEEE Fellowship and an IEEE Distinguished Contributions
+Award. He is on the Editorial Board of IEEE TRANSACTIONS ON COM-
+MUNICATIONS, IEEE OPEN JOURNAL OF VEHICULAR TECHNOLOGY, and
+International Journal of Satellite Communications and Networking.
+17702 IEEE TRANSACTIONS ON AEROSPACE AND ELECTRONIC SYSTEMS VOL. 61, NO. 6 DECEMBER 2025
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:10:24 UTC from IEEE Xplore. Restrictions apply.
+

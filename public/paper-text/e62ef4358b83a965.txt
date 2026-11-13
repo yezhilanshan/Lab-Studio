@@ -1,0 +1,1490 @@
+Journal Pre-proofs
+Article
+Human Pose Estimation Using Millimeter-Wave Radar: Prototype, Dataset,
+and Method
+Jiang Liu, Yan Huang, Yanjun Zhang, Chengchang Tian, Zhen Yang,
+Kaihang Zheng, Rui Zhou, Hui Zhang, Jixin Chen, Wei Hong
+PII: S2095-8099(26)00560-6
+DOI: https://doi.org/10.1016/j.eng.2026.10.001
+Reference: ENG 2474
+To appear in: Engineering
+Received Date: 10 June 2026
+Revised Date: 19 September 2026
+Accepted Date: 1 October 2026
+Please cite this article as: J. Liu, Y. Huang, Y. Zhang, C. Tian, Z. Yang, K. Zheng, R. Zhou, H. Zhang, J. Chen,
+W. Hong, Human Pose Estimation Using Millimeter-Wave Radar: Prototype, Dataset, and Method, Engineering
+(2026), doi: https://doi.org/10.1016/j.eng.2026.10.001
+This is a PDF of an article that has undergone enhancements after acceptance, such as the addition of a cover
+page and metadata, and formatting for readability. This version will undergo additional copyediting, typesetting
+and review before it is published in its final form. As such, this version is no longer the Accepted Manuscript, but
+it is not yet the definitive Version of Record; we are providing this early version to give early visibility of the
+article. Please note that Elsevier's sharing policy for the Published Journal Article applies to this version, see:
+https://www.elsevier.com/about/policies-and-standards/sharing#4-published-journal-article. Please also note that,
+during the production process, errors may be discovered which could affect the content, and all legal disclaimers
+that apply to the journal pertain.
+© 2026 THE AUTHORS. Published by Elsevier LTD on behalf of Chinese Academy of Engineering and Higher
+Education Press Limited Company
+Research
+Electrical Engineering—Article
+Human Pose Estimation Using Millimeter-Wave Radar: Prototype, Dataset,
+and Method
+Jiang Liu a, Yan Huang a,b,*, Yanjun Zhang a, Chengchang Tian a, Zhen Yang a, Kaihang Zheng a, Rui Zhou a, Hui Zhang a,
+Jixin Chen a,b, Wei Hong a,b,*
+a State Key Laboratory of Millimeter Waves, Southeast University, Nanjing 210096, China
+b Purple Mountain Laboratories, Nanjing 211100, China
+* Corresponding authors.
+E-mail addresses: yellowstone0636@hotmail.com (Y.Huang), weihong@seu.edu.cn (W. Hong).
+ABSTRACT Three-dimensional human pose estimation (3D-HPE) is important for human-centered sensing, but vision-based
+solutions are limited by privacy concerns, illumination changes, and occlusion. Although millimeter-wave (mmWave) radar
+provides a privacy-preserving alternative, existing radar point clouds are often sparse and incomplete, and existing radar 3D-
+HPE datasets remain limited in subject scale, frame volume, and motion diversity. This paper presents a mmWave radar
+prototype for dense point-cloud sensing, a large-scale mmWave radar dense human pose estimation (mmWave-DensePose)
+dataset, and the part-aware spatio-temporal network (PAST-Net) for radar-only 3D-HPE. Specifically, we design a four-chip
+cascaded mmWave radar system with an azimuth and elevation resolution of 1.30∘
+and 2.24∘
+, respectively, to generate
+dense human-related point clouds. The constructed dataset contains 101 subjects, 19 designed motions, numerous free
+motions, and 570 124 valid synchronized frames. Each valid frame contains 164 valid subject-related radar points on average,
+exceeding the representative released datasets and providing clearer body-region cues for radar-based 3D-HPE. The proposed
+method uses only mmWave radar point clouds as input and Kinect V2 skeletons as ground-truth annotations. PAST-Net
+reorganizes frame-level point-cloud features into skeleton-aware part-token representations and models their temporal
+evolution through part-wise self-attention, compensating for weak and incomplete observations in local body regions.
+Experiments on the proposed benchmark show that PAST-Net achieves an average mean localization error of 4.08 cm,
+reducing the error by 22.14% compared with a state-of-the-art baseline. Ablation results further confirm the contributions of
+the proposed modules and input features, which include skeleton-aware spatial modeling, part-wise temporal modeling, and
+radar-specific point attributes. These results demonstrate that the designed mmWave radar prototype and the proposed method
+provide an effective sensing basis for privacy-preserving and fine-grained 3D-HPE.
+KEYWORDS
+Millimeter-wave radar
+Three-dimensional human pose estimation
+Millimeter-wave radar dense human pose estimation dataset
+Skeleton-aware representation
+Spatio-temporal modeling
+Dense point cloud
+1. Introduction
+Human pose estimation (HPE) involves locating human skeletal key points and characterizing human postures using
+standardized structured expressions. This technology can effectively establish spatial representations of human body
+topological structures and dynamic motion characteristics. As a core perception technology, HPE holds pivotal practical value
+in diverse research and application fields, including human–computer interaction, intelligent health management, clinical
+rehabilitation evaluation, indoor intelligent perception, and public safety monitoring [1–3]. Engineering studies further
+demonstrate the value of pose-related sensing for industrial activity analysis, three-dimensional joint-kinematics
+measurement, and fine-grained hand–object interaction [4–6]. Accordingly, achieving accurate and robust HPE capabilities
+is crucial for reliable human-oriented sensing systems.
+2
+Vision and video-based HPE mainly involve two-dimensional (2D) joint positioning and three-dimensional (3D) human
+skeleton reconstruction. The establishment of sufficient large-scale visual benchmark datasets and deep learning architectures
+is substantially driving the advancement of this research direction [7–10]. Nevertheless, visual perception solutions are highly
+dependent on favorable imaging conditions and target visibility; their estimation accuracy tends to drop significantly under
+low-light conditions, target occlusion, smoke disturbance, and intricate background environments. Moreover, camera-based
+visual perception poses a serious risk of privacy breaches, greatly limiting its practical application.
+Against the aforementioned limitations, millimeter-wave (mmWave) radar serves as an ideal privacy-secured and non-
+contact sensing solution for three-dimensional human pose estimation (3D-HPE). Unlike optical devices, mmWave radar
+cannot record human facial details, body textures, or visual appearances and thus fundamentally avoids potential privacy
+risks. In addition, it offers all-time and all-weather sensing capability and is robust to darkness and extreme lighting
+environments. Beyond that, it can accurately extract abundant physical perception information of human subjects, including
+spatial position, radial velocity and azimuth information. Thanks to these advantages, mmWave radar is well qualified for
+human-centric intelligent sensing tasks in numerous scenarios [11–14].
+Current radar-based 3D-HPE studies primarily adopt two categories of data representations, each with distinct
+characteristics and application scenarios. The first category leverages raw or intermediate radar signals, including analog-to-
+digital converter (ADC) signals, range-Doppler maps (RDMs), range-angle maps (RAMs), and radar tensors [12,15,16].
+These signal-based representations retain comprehensive intrinsic radar information, which is conducive to capturing the fine-
+grained motion and spatial features of human targets. However, they typically demand high computational resources, and
+their performance is highly dependent on hardware configurations and preprocessing pipelines, limiting their generalization
+to diverse deployment scenarios. The second category employs radar point clouds, which offer a compact geometric
+representation with lower dimensionality. Compared with signal-based representations, radar point clouds not only reduce the
+computational burden but also exhibit better compatibility with mainstream 3D geometric learning frameworks. More
+significantly, they create a direct spatial alignment with human skeletal keypoints, thereby facilitating the extraction of pose-
+related spatial features and substantially improving the efficiency and precision of real-time 3D-HPE. [13,17–21].
+Despite the numerous advantages of radar-based 3D-HPE, this research direction still presents several critical challenges.
+First, the radar point clouds used in existing studies are generally sparse and spatially incomplete. Such sparsity fails to
+provide stable and continuous contour information of the human body, especially for slender limbs and small joints (e.g.,
+wrist, ankle, and finger joints), greatly increasing the ambiguity of skeletal keypoint localization and degrading the accuracy
+of pose estimation [20,22–24]. Second, current radar-based 3D-HPE datasets often suffer from inherent limitations, such as a
+small number of subjects, insufficient frame counts, restricted motion categories, and sparse point-cloud quality. These
+deficiencies affect the model’s generalization ability across different subjects and its robustness in complex environments
+[15,25–29]. Third, most radar point-cloud 3D-HPE models extract global features from sparse data and apply temporal
+learning or point completion. They generally adopt unified modeling for the entire body, ignoring the varied reflection traits
+and movement rules of different body segments. Limbs and small joints yield weak and unstable echoes, while the torso
+shows steady radar responses. The use of uniform modeling results in uneven prediction accuracy. Hence, designing dedicated
+modules for separate body parts is vital to improve overall estimation reliability [23,30–32].
+To address the aforementioned challenges, this work builds a mmWave radar dense point-cloud HPE dataset denoted as
+mmWave-DensePose and develops the part-aware spatio-temporal network (PAST-Net) for radar-based 3D-HPE. Fig. 1
+illustrates the radar-based 3D-HPE scenario and the overall workflow of PAST-Net, from dense point-cloud sensing to
+skeleton-aware spatio-temporal modeling and 3D keypoint regression. At the hardware level, recent mmWave multiple-input
+multiple-output (MIMO) implementations demonstrate that scalable multi-channel transceivers require high channel isolation,
+low-loss packaging, and compact system integration [33]. Specifically, a customized mmWave radar system is developed to
+generate dense human point clouds capable of characterizing the continuous body contours of human subjects during various
+motion processes. The constructed dataset comprises over 570 000 valid synchronized frames collected from 101 subjects,
+covering 19 predefined motions and free-motion sequences, with each frame integrating multiple types of data, including
+mmWave radar point clouds, Kinect V2 skeleton annotations, and red–green–blue (RGB) images. For the proposed 3D-HPE
+method, only radar point clouds are utilized as input, while Kinect V2 skeleton annotations serve as ground truth. The
+accompanying image data are included as extensible resources, which can support future research on multimodal sensing,
+cross-modal learning, and visualization tasks.
+The main contributions of this paper are summarized as follows:
+(1) We construct a customized radar acquisition prototype. Benefiting from the optimized hardware of a four-chip
+cascaded design with 12 transmitters and 16 receivers, the radar system outputs dense point clouds and delivers more
+complete contour details than conventional sparse radar data.
+(2) We establish the mmWave-DensePose dataset, a large-scale dense radar pose dataset. With abundant
+participant samples and frame volumes, this dataset offers qualified data sources for model training and performance
+assessment. Videos S1–S4 in Appendix A also create favorable conditions for subsequent cross-modal exploration.
+3
+(3) We present PAST-Net for radar-based 3D-HPE. Unlike mainstream global modeling schemes, PAST-Net
+splits the human body into independent segments and adopts combined spatial and temporal attention mechanisms. It
+effectively captures segment-specific scattering characteristics and inter-frame motion relationships, thereby reducing
+estimation errors in vulnerable small joints and limbs. The network thus provides better accuracy balance in pose
+prediction.
+Fig. 1. Illustration of a 3D-HPE scenario observed by mmWave radar and the proposed part-aware spatio-temporal network (PAST-Net)
+framework. The upper part shows the application scenario, where the mmWave radar senses human motion in an indoor scene and converts radar
+observations into dense point clouds, which provide spatial observations for radar-only 3D-HPE. The bottom part provides a schematic overview
+of the core structure of PAST-Net. Given a temporal window of dense radar point clouds, PAST-Net extracts frame-level point-cloud features,
+reorganizes them into skeleton-aware part-token representations, models the temporal evolution of body-region-guided part tokens, and regresses
+the 19 skeletal keypoints of the target frame. 𝑷𝑡: the input radar point cloud at frame 𝑡, where 𝑡 = 1, 2, ..., 𝑇; 𝑇: the number of radar point-cloud
+frames. 𝑌T: the predicted skeletal pose corresponding to the target frame 𝑷𝑇. Δ𝑡 : the temporal interval between adjacent frames. 𝑸, 𝑲, and 𝑽:
+the query, key, and value matrices, respectively; FFN: feed-forward network.
+2. Related work
+2.1. mmWave radar for 3D-HPE
+mmWave radar systems detect human targets by capturing and analyzing reflected electromagnetic waves. Specifically,
+frequency-modulated continuous-wave (FMCW) radar provides core target parameters such as range, velocity, and angle
+through signal processing. After target detection and spatial localization, the measured parameters are reconstructed into radar
+point clouds. The fidelity and quality of these point clouds depend on several critical factors, including radar waveform
+configuration, antenna array design, system signal‑to‑noise ratio (SNR), and target detection strategies [32,34,35].
+For radar-based 3D-HPE, point-cloud density and spatial resolution are key factors affecting detection accuracy. Radar
+system bandwidth primarily determines range resolution, while chirp configuration parameters significantly influence
+velocity estimation and temporal sampling quality. Array aperture size and the number of virtual channels, in turn, determine
+angular resolution [36]. Higher spatial resolution enables the radar sensor to distinguish adjacent body parts and accurately
+capture body contours, making it essential for fine‑grained keypoint localization. Moreover, existing studies indicate that
+sparse radar measurements severely limit the detailed reconstruction and accurate perception of human body information [12–
+14,20].
+Most existing radar human-sensing systems or prototypes focus on motion recognition, gesture recognition, vital-sign
+monitoring, and coarse posture classification [37–41]. Unlike 3D-HPE, these tasks do not require the precise localization of
+skeletal keypoints. In contrast, high-quality 3D-HPE relies on detailed and fine-scale spatial representation of the human
+4
+body. Consequently, dense mmWave radar point clouds provide a more reliable sensing foundation for skeleton-level 3D-
+HPE.
+2.2. mmWave radar human pose datasets
+Research on radar-based 3D-HPE has yielded several publicly available datasets to support model development and
+evaluation. Early efforts concentrated on pure radar point clouds or coarse multimodal labels. MiliPoint [42] is a large-scale
+open dataset containing 545 000 frames across 49 human motions. This dataset validates the effectiveness of point‑based deep
+learning for mmWave radar human perception tasks and establishes solid baselines for future research. HuPR [25]
+synchronizes radar data with monocular RGB images and adopts a cross-modal training scheme to ease radar annotation
+challenges. It shows that radar‑only data can achieve pose estimation accuracy superior to traditional radio‑frequency
+methods. The mmBody Benchmark [26] focuses on mmWave radar based on 3D human body reconstruction. It provides
+paired radar point clouds and RGB–depth (RGB-D) images with complete skeleton and mesh labels. Experimental results
+show that mmWave radar achieves high reconstruction accuracy between RGB and depth cameras, along with greater
+robustness under adverse weather conditions.
+As tasks have become more complex, modern mmWave radar datasets have increasingly focused on multimodal fusion
+and 3D perception. The mRI dataset [43] integrates three data modalities and includes 160 000 frames of therapeutic
+movements from 20 participants. Differing from point-cloud-based schemes, RT-Pose [15] builds a benchmark centered on
+four-dimensional (4D) radar tensors for 3D-HPE and target localization. This dataset provides 72 000 frames across 240
+sequences of six motion complexities, together with light detection and ranging (LiDAR) and RGB annotations.
+More recent datasets further emphasize large-scale multimodal collection and privacy protection. MM‑Fi [27] is the first
+non‑intrusive 4D human dataset to combine six modalities, covering 27 daily and rehabilitation motions. It provides 2D and
+3D pose labels, motion classes, and 3D coordinates to advance wireless sensing research. The mmFree‑Pose dataset [28]
+focuses on privacy-friendly 3D-HPE; it adopts a vision-free framework to synchronize mmWave radar data with signals from
+a VDSuit-Full motion capture system and records over ten types of motions ranging from basic gestures to falls. As the latest
+release, M4Human [29] stands as the largest multimodal benchmark for mmWave radar-based human mesh reconstruction.
+It includes 661 000 synchronized frames from 20 participants across 50 motions, along with high-precision marker-based 3D
+mesh and global trajectory annotations. With a volume nine times larger than those of prior datasets, it effectively supports
+fundamental perception research and multimodal fusion development.
+2.3. Deep learning methods for radar-based 3D-HPE
+Deep learning methods for radar-based 3D-HPE can be categorized by their input data representations. Methods relying
+on raw radar data extract pose-relevant feature representations directly from original radar tensors. Early works mainly use
+convolutional neural networks (CNNs) to estimate human skeletal poses using radar heatmaps and projected radar images. A
+method has been proposed to capture human poses using a 77 GHz commercial mmWave radar [12]. In this approach, dual
+2D range-angle heatmaps are obtained from two orthogonal radars with 2D-fast Fourier transform (FFT); then, a CNN is
+employed for joint regression. For real‑time 3D pose estimation, the mm‑Pose system converts radar tensors into
+three‑channel pseudo‑RGB images and applies a two‑branch CNN to detect over 15 joints [13]. The mPose system [14] adopts
+a three-layer CNN for spatial feature extraction and achieves 3D skeleton reconstruction with only one radar. To further
+capture global feature correlations, a transformer module combined with a confidence refinement network is introduced [44].
+This design enhances long-range context modeling and keypoint localization accuracy, yielding better pose estimation than
+conventional CNN-based methods. For multi‑format feature fusion, ProbRadarM3F combines traditional FFT heatmaps with
+probability‑based position encoding to estimate 14 human joints, reaching an average precision (AP) of 69.9% on the HuPR
+dataset [45]. To exploit dual‑radar observations, the TransHuPR transformer fuses features from two orthogonal 2D
+projections and achieves an improvement of 9.4% in the AP score compared with single‑radar systems [46]. Although these
+methods fully utilize the rich information in raw radar signals, they usually incur high computation costs and require
+radar‑specific preprocessing, which restricts real‑world deployment.
+In contrast, point-cloud-based 3D-HPE methods adopt detected radar point sets as network inputs. Each radar point
+provides spatial coordinates and can be augmented with auxiliary attributes such as velocity, SNR, and temporal features.
+Unlike cameras or LiDAR, mmWave radar generates sparse and noisy point clouds, which create considerable challenges for
+reliable pose estimation. Inspired by general point-cloud networks [47–49], several studies have applied point-based deep
+learning to mmWave radar 3D-HPE. The mmHPE framework [50] adopts a coarse-to-fine structure to gradually refine joint
+predictions from global localization to local fine-tuning. Another mmHPE approach [18] combines CNNs with bidirectional
+long short-term memory (BiLSTM) to capture spatio-temporal dependencies in sequential point clouds, improving
+performance in dynamic scenes. PoseGraphNet [51] integrates an attention-enhanced dynamic graph convolutional network
+with human pose priors, modeling the skeleton as a graph to capture local joint relations and global posture patterns. To tackle
+pose vibration induced by radar noise and low resolution, mmPose-FK [52] embeds forward kinematics into an end-to-end
+network to realize stable pose estimation. Owing to the compact nature of point-cloud representations, these methods are well
+suited for real-time 3D-HPE applications. Nevertheless, radar point clouds still suffer from inherent sparsity, incompleteness,
+5
+and spatial non-uniformity. Direct keypoint regression from such low-quality data often results in unstable and inaccurate
+limb localization.
+To mitigate the sparsity and discontinuity of mmWave radar point clouds, researchers are exploring two primary
+enhancement strategies. First, temporal modeling improves radar-based 3D-HPE by exploiting the inherent motion continuity
+of human poses across consecutive frames. Current multi-frame learning methods use recurrent neural networks, bidirectional
+recurrent units, temporal attention mechanisms, graph-based temporal structures, and Mamba-driven feature fusion to reduce
+the pose ambiguity caused by sparse radar observations [21,53–56]. Beyond radar-based HPE, limb-based spatial hypergraphs
+and temporal hypergraphs have also been used to model high-order relationships among human joints across body regions
+and consecutive frames for visual body-language recognition [57]. However, such visual action-recognition formulations do
+not address radar-specific missing observations or direct 3D keypoint regression. Although temporal modeling stabilizes pose
+predictions across frames, it introduces extra inference latency and computational overhead. Therefore, real-time radar 3D-
+HPE systems require a trade-off between temporal context and inference efficiency. Second, point completion and generative
+data augmentation effectively alleviate the sparsity and incompleteness of radar point clouds. The VirTeach framework uses
+synthetic radar point clouds to fill radar sensing blind spots and balance the signal response of different human body parts
+[23]. To mitigate the sparsity of radar point clouds, a semi-supervised point-cloud completion strategy for data enhancement
+has been proposed [30]. Based on the enhanced data, a dual-branch global-local network is further constructed to extract
+features from enhanced and raw point clouds for 3D human pose regression. Despite these advances, existing studies indicate
+that sparse and incomplete radar observations still limit the performance of radar-based 3D-HPE.
+Overall, existing radar-based 3D-HPE methods achieve progress through diverse techniques, including feature learning
+from raw radar tensors, sparse point-cloud modeling, temporal context learning, and generative data enhancement. However,
+few studies unify dense mmWave point-cloud sensing, large-scale high-quality benchmarks, and part-aware spatio-temporal
+modeling within a single framework. To fill this gap, the present work constructs a large-scale dense mmWave radar point-
+cloud dataset and proposes PAST-Net for radar-only 3D-HPE. The network reorganizes dense radar point-cloud features into
+skeleton-aware part-token representations and models their temporal evolution to improve keypoint localization under non-
+uniform radar observations.
+3. Acquisition prototype of dense mmWave radar data
+This section introduces the acquisition prototype used to construct the mmWave-DensePose dataset. The prototype
+contains a customized mmWave radar system, a multimodal data-acquisition system, and a calibration-synchronization
+pipeline. These components provide the sensing, annotation, and alignment basis for the final dataset described in Section 4.
+3.1. The customized mmWave radar system
+Accurate skeletal keypoint localization for 3D-HPE requires fine-grained spatial observations of the human body. For
+radar-based 3D-HPE, the density and spatial coverage of radar point clouds are important for reliable keypoint regression.
+However, many representative radar point-cloud datasets are collected using commercial mmWave radar development boards,
+such as the TI IWR1843 and IWR6843, whose antenna configurations and angular resolutions are designed for general radar
+sensing rather than fine-grained human keypoint localization. Consequently, the resulting human point clouds can be
+relatively sparse or incomplete, especially for weakly observed body regions such as the arms and legs. A radar system with
+improved spatial sensing capability is therefore desirable for providing more complete human-related observations for 3D-
+HPE [20,42,58].
+To address this issue, we designed a customized 4D mmWave radar system for dense human point-cloud acquisition.
+The system aims to improve the spatial separability and coverage of human-related reflections in both the azimuth and
+elevation directions. It adopts a four-chip cascaded MIMO architecture, in which each radar chip provides three transmit and
+four receive channels. The complete system therefore contains 12 transmitters and 16 receivers, corresponding to 192
+transmitter–receiver channel combinations.
+Rather than directly using the standard cascaded AWR2243 uniform-array configuration, we redesigned the sparse-array
+layout to improve the elevation resolution and spatial observability of the human body. The virtual array uses an enlarged 2D
+aperture with horizontal and vertical baselines designed for azimuth and elevation estimation. It combines uniform subarrays
+with non-uniform spatial sampling. The uniform components provide stable spatial sampling for angle estimation, while the
+non-uniform components provide additional spatial information for resolving angle ambiguities. Together with the subsequent
+angle-estimation and ambiguity-resolution algorithms, this hardware–algorithm co-design supports finer spatial separability
+of human-related reflections in both the azimuth and elevation while maintaining a practical field of view for human motion
+sensing. The resulting range, azimuth, elevation, and velocity resolutions are 0.06 m, 1.30∘
+, 2.24∘
+, and 0.0225 m·s−1,
+respectively.
+6
+The MIMO transmission strategy is also customized for the proposed sensing system. The transmit channels are
+organized into two complementary waveform groups, denoted as A-wave and B-wave. A phase-coded Doppler division
+multiple access (DDMA) scheme is applied to the transmit antennas so that signals from different transmitters can be separated
+in the Doppler/code domain after range–Doppler processing. Compared with sequential time division multiple access (TDMA)
+transmission, DDMA reduces the temporal separation among multi-transmitter observations and avoids sequential transmitter
+switching during one MIMO acquisition cycle. The A/B waveform organization, together with DDMA coding, enables
+measurements from different transmitter–receiver combinations to be separated and reconstructed for subsequent virtual-array
+processing and 2D angle estimation.
+The customized radar outputs processed point clouds rather than continuously transmitting raw ADC data to the host
+computer. Raw radar measurements have a substantially larger data volume and are less suitable for real-time transmission
+through an external interface during continuous acquisition. Therefore, the point-cloud generation pipeline is embedded in
+the radar system. Radar echoes are processed locally, and only the resulting point clouds are transmitted to the host computer
+through Ethernet using the user datagram protocol (UDP). This architecture reduces the transmission burden and provides a
+compact geometric representation for online radar-based 3D-HPE. The host-side acquisition interface further manages
+synchronized frame reception, frame indexing, calibration-file association, acquisition monitoring, and offline batch
+reconstruction, supporting stable and repeatable data collection across different subjects and motion categories.
+Fig. 2 illustrates the main radar parameters and the complete point-cloud generation pipeline. At the signal-processing
+level, the raw ADC measurements are first separated into A-wave and B-wave streams. Range FFT, data buffering, and
+Doppler FFT are then performed to obtain the corresponding range–Doppler data. A pre-digital-beamforming (pre-DBF)
+operation is applied to the receive channels to form several coarse beams covering the sensing field of view. This operation
+aggregates target responses along multiple coarse directions and improves the detectability of weak human reflections before
+target detection. The beam-domain responses are subsequently combined using non-coherent compression (NCC) and further
+compressed along the Doppler dimension to construct the detection map. Constant false alarm rate (CFAR) detection is then
+applied to identify candidate human-related scattering points.
+Fig. 2. The radar point-cloud-generation pipeline embedded in a four-chip cascaded MIMO radar system. The system uses a 12-transmitter and
+16-receiver configuration to support dense human point-cloud acquisition. The radar echoes are processed through chirp-level processing,
+Doppler processing, DDMA demodulation, channel calibration, target detection, angle estimation, and attribute extraction. The generated point
+clouds are transmitted to the host computer through Ethernet using UDP. 𝜔1, 𝜔2 , and 𝜔12: the DDMA coding offset of the transmitter 1, 2,
+and 12, respectively; TX1, TX2, and TX12: transmitter 1, transmitter 2, and transmitter 12, respectively;
+7
+For each detected candidate, the corresponding multi-channel complex samples are recovered from the A-wave and B-
+wave measurements according to the DDMA phase-coding scheme. These samples are reconstructed into a virtual-array
+snapshot and calibrated using complex-valued channel compensation coefficients. The azimuth and elevation are then
+estimated from the calibrated virtual-array observations, followed by angle ambiguity resolution and coordinate
+transformation. Finally, the estimated range, azimuth, elevation, and Doppler information is converted into a 3D radar point
+cloud.
+The dense human point clouds used in mmWave-DensePose therefore result from the combined operation of the
+customized cascaded MIMO configuration, 2D virtual-array design, A/B DDMA transmission, channel calibration, pre-
+detection beam aggregation, target detection, and high-resolution azimuth–elevation estimation. These components jointly
+improve the spatial separability and coverage of human-related radar observations. The embedded point-cloud processing and
+host acquisition interface further support efficient, stable, and repeatable continuous data collection.
+3.2. Multimodal data-acquisition system
+We then built a synchronized acquisition system that records radar observations and human pose annotations. This
+system is deployed in an indoor environment and is designed to collect dense radar point clouds, Kinect V2 skeleton
+annotations, and auxiliary image-related data.
+As shown in Fig. 3, the acquisition system consists of a 4D mmWave radar, a Kinect V2 sensor, and a Python-based host
+computer. The radar provides the sensing input for radar-based 3D-HPE, while the Kinect V2 sensor provides reference
+skeleton annotations and auxiliary image data. The host computer controls the data streams, records timestamps, stores raw
+data, and manages the subsequent synchronization procedure.
+Fig. 3. Overview of the multimodal data-acquisition system. The system consists of a dense mmWave radar, a Kinect V2 sensor, and a Python-
+based host computer. The subject moves within a predefined sensing area jointly covered by the two sensors.
+During acquisition, each subject is jointly recorded by the radar and the Kinect V2 sensor. The two sensors are arranged
+vertically to observe the same motion region, with the mmWave radar mounted above the Kinect V2 sensor. In the world
+coordinate system, the radar position is set to (0, 0.17, 2.65) m, and the Kinect V2 position is set to (0, 0.28, 1.47) m. This
+sensor layout allows the radar point clouds and Kinect skeletons to describe the same human motion from a similar frontal
+sensing direction. It also provides the basis for the spatial calibration and temporal synchronization described in Section 3.3.
+The mmWave radar provides a dense point cloud for each radar frame. To describe both the spatial distribution and the
+radar-specific properties of human reflections, each radar point is represented by five attributes, including the Doppler
+information, SNR, and 3D spatial coordinates (𝑋,𝑌,𝑍), where 𝑋, 𝑌, and 𝑍 denote the coordinates along the three axes of
+the sensor coordinate system. The spatial coordinates describe the geometric distribution of human-related reflections, the
+Doppler information provides motion-related cues, and the SNR reflects the reliability of each detected point. Thus, these
+attributes form a compact radar representation that combines geometric structure, motion information, and signal quality for
+the subsequent 3D-HPE task.
+8
+In addition to radar point clouds, the acquisition system records synchronized human annotations and image-related data
+using the Kinect V2 sensor. The skeleton stream provides 3D joint annotations, whereas the image streams provide RGB
+images, depth images, and silhouette images as extensible dataset resources. Their benchmark roles are defined in Section
+4.2.
+To manage these heterogeneous data streams, a Python-based host computer is used as the central acquisition controller.
+It controls the radar and Kinect V2 streams, assigns timestamps to incoming frames, and stores the collected data in a unified
+manner. The host computer also monitors the tracking quality of the Kinect V2 skeleton during acquisition. Kinect V2
+provides 25 skeletal joints together with their tracking states. A frame is regarded as valid only when at least 22 of the 25
+joints are reliably tracked, while frames containing a larger number of inferred or untracked joints are excluded from the valid
+data. This quality-control procedure reduces unreliable skeletal annotations caused by unstable tracking or severe self-
+occlusion and ensures that the retained data are predominantly acquired under favorable Kinect tracking conditions. During
+acquisition, the radar data is first stored in an SQLite database to support efficient query and data management. After temporal
+synchronization and spatial calibration, the aligned radar-skeleton pairs and auxiliary image data are further saved as
+sequence-level pickle files for network training and evaluation. This two-stage storage strategy preserves the traceability of
+the raw recordings while improving the efficiency of subsequent data loading.
+Based on the above acquisition and storage procedure, Table 1 summarizes the data streams in the acquisition system
+and their roles in this paper.
+Table 1
+Data streams and their roles in the mmWave-DensePose dataset.
+Data stream Source Main content Role in this paper
+Radar point cloud mmWave radar Position, Doppler information, and SNR Network input
+Skeleton Kinect V2 3D skeletal joints Ground-truth annotation
+RGB image Kinect V2 Color image Reference
+3.3. Data calibration and synchronization
+The acquisition system records radar point clouds, Kinect V2 skeletons, and image data from different sensors; an aligned
+frame-level example is shown in Fig. 4. These data streams cannot be directly paired because they differ in both spatial
+coordinates and temporal indices. In the spatial domain, the radar and Kinect V2 sensors have different coordinate definitions,
+coordinate origins, and installation poses. Therefore, their measurements must be transformed into a unified world coordinate
+system. In the temporal domain, the radar and Kinect V2 streams have different frame rates and data transmission delays.
+Therefore, each radar frame must be matched with the nearest Kinect V2 frame after timestamp compensation. Based on these
+requirements, the data-preparation process contains two main steps: spatial calibration and temporal synchronization.
+9
+(a) (b) (c)
+Fig. 4. Example of one synchronized data frame after calibration and synchronization. The figure shows the frame-level data organization,
+including the radar observation, skeleton annotation, and visual reference. (a) Calibrated radar point cloud; (b) corresponding Kinect V2 skeleton
+annotation; (c) RGB image used as a visual reference. The radar point cloud and skeleton annotation share the same world coordinate system.
+3.3.1. Spatial calibration
+Spatial calibration is performed in a coarse-to-fine manner. A two-stage design is adopted because the measured sensor
+positions and installation angles are not perfectly accurate in practical deployment. The coarse calibration stage first uses the
+measured installation parameters to obtain an initial spatial alignment. The fine calibration stage then applies manual
+compensation to reduce residual offsets caused by measurement errors and mounting tolerance. This coarse-to-fine strategy
+improves the alignment between radar point clouds and Kinect V2 skeleton joints in the world coordinate system.
+The coarse calibration mainly uses measured reference correspondences to describe the coordinate relationship between
+the sensor coordinate system and the world coordinate system. It accounts for axis mapping, scale convention, and origin
+position, while the manual residual compensation is left to the fine calibration stage. For the 𝓁th reference point measured by
+sensor 𝑞, its coordinate in the sensor coordinate system is denoted as 𝒙
+𝑞
+𝓁 ∈ ℝ3
+, where ℝ is the real numbers, 𝓁 is the
+reference point index, and 𝑞 ∈ {𝑞r, 𝑞k} denotes the radar or Kinect V2 sensor. The coarse calibration is formulated as
+𝒙
+𝑞
+𝓁 = 𝑻𝑞𝒙
+𝑞
+𝓁 + 𝑶𝑞 (1)
+where 𝑻𝑞 ∈ ℝ3×3
+denotes the coarse calibration matrix of sensor 𝑞, 𝑶𝑞 ∈ ℝ3
+denotes the corresponding origin position
+term in the world coordinate system, and 𝒙
+𝑞
+𝓁 denotes the coarsely calibrated point.
+The matrix 𝑻𝑞 is estimated from several reference point correspondences between the sensor coordinate system and the
+world coordinate system. We let 𝒂
+𝑞
+𝓁 be the coordinate of the 𝓁th reference point measured by sensor 𝑞, and let 𝒃w
+𝓁 be its
+corresponding physical coordinate in the world coordinate system. After subtracting the origin position term 𝑶𝑞, the coarse
+calibration matrix is obtained by the least-squares problem:
+𝑻𝑞 = argmin
+𝑻
+∑𝑁c
+𝓁=1 ∥𝑻𝒂
+𝑞
+𝓁 ― 𝒃w
+𝓁 ― 𝑶𝑞 ∥
+2
+2
+(2)
+where 𝑻 ∈ ℝ3×3
+is the candidate matrix optimized in the least-squares problem and 𝑁c is the number of calibration
+reference points. To ensure a stable and valid transformation, the vectors formed by the sensor origin and the selected
+reference points should span the 3D space. Therefore, these reference vectors should not be collinear or coplanar.
+The reference points are selected according to the sensing modality. For the radar, multiple corner reflectors are manually
+placed at known positions, and their radar-measured coordinates and physical world coordinates are used to estimate 𝑻r,
+where 𝑻r is the coarse calibration matrix of the radar sensor. For Kinect V2, the reference points are selected from human
+skeletal keypoints observed by the sensor. The selected keypoints must also form non-degenerate 3D reference vectors, so
+that 𝑻k, where 𝑻k is the coarse calibration matrix of the Kinect V2 sensor, can be estimated stably. After this coarse
+calibration, radar points and Kinect V2 skeleton joints are transformed into an initial world coordinate system and are further
+refined by the following fine calibration step.
+10
+Next, fine world coordinate calibration is performed to compensate for the residual spatial mismatch caused by sensor
+placement and installation geometry. This stage introduces manual compensation through a rotation–scaling–translation
+transform. For a coarsely calibrated point 𝒙
+𝑞
+𝓁 from sensor 𝑞, the fine calibration is formulated as
+𝒙w
+𝓁 = 𝜦𝑞𝑹𝑞𝒙
+𝑞
+𝓁 + 𝒄𝑞 (3)
+where 𝒙w
+𝓁 ∈ ℝ3
+denotes the calibrated point in the world coordinate system; 𝜦𝑞 = diag(𝜆𝑞,𝑋,𝜆𝑞,𝑌,𝜆𝑞,𝑍) denotes the scaling
+matrix of sensor 𝑞; 𝜆𝑞,𝑋, 𝜆𝑞,𝑌, and 𝜆𝑞,𝑍 denote the scale factors along the 𝑋-, 𝑌-, and 𝑍-axes, respectively; 𝑹𝑞 ∈ ℝ3×3
+denotes the rotation matrix of sensor 𝑞; and 𝒄𝑞 ∈ ℝ3
+denotes the translation vector of sensor 𝑞. The rotation matrix is
+defined as
+𝑹𝑞 = 𝑹𝑍(𝛾𝑞)𝑹𝑌(𝛽𝑞)𝑹𝑋(𝛼𝑞) (4)
+where 𝑹𝑋(𝛼𝑞), 𝑹𝑌(𝛽𝑞), and 𝑹𝑍(𝛾𝑞) denote the elementary rotation matrices about the 𝑋-, 𝑌-, and 𝑍-axes, respectively;
+and 𝛼𝑞, 𝛽𝑞, and 𝛾𝑞 denote the corresponding small manual compensation angles. These angles are used to correct residual
+orientation mismatch after coarse calibration and do not represent the physical mounting angle of sensor 𝑞. Through this fine
+calibration, the residual spatial offsets after coarse calibration are further reduced, and the radar point clouds and Kinect V2
+skeletons are aligned more consistently in the unified world coordinate system.
+3.3.2. Temporal synchronization
+After spatial calibration, temporal synchronization is performed according to the timestamps recorded by the Python-
+based host computer. The radar and Kinect V2 data streams reach the host computer through different transmission cables
+and communication protocols. Therefore, their arrival timestamps contain a fixed relative latency. This latency is manually
+compensated before nearest-frame matching.
+We let 𝜏r
+𝑡 denote the timestamp of the 𝑡th radar point-cloud frame and let 𝜏k
+𝑗 denote the timestamp of the 𝑗th Kinect
+V2 frame. Since the radar and Kinect V2 streams have different transmission delays, a temporal offset Δ𝜏k is added to the
+radar timestamp before frame matching. The corresponding Kinect V2 frame index is obtained by
+𝑗∗
+(𝑡) = argmin
+𝑗
+|𝜏r
+𝑡 + Δ𝜏k ― 𝜏k
+𝑗 | (5)
+where 𝑗∗
+(𝑡) denotes the Kinect V2 frame matched to the 𝑡th radar point-cloud frame and Δ𝜏k denotes the manually
+compensated latency between the radar stream and the Kinect V2 stream. This operation assigns each radar frame to the
+temporally closest Kinect V2 frame after latency compensation.
+The matched Kinect V2 frame provides the corresponding skeleton annotation and image-related data. Therefore, for
+each radar frame, the synchronized sample is constructed as
+𝒟𝑡 = 𝑷w
+𝑡 ,𝑲𝑗∗
+(𝑡) (6)
+where 𝒟𝑡 denotes the synchronized sample associated with the 𝑡th radar point-cloud frame, 𝑷w
+𝑡 denotes the calibrated radar
+point cloud in the world coordinate system, and 𝑲𝑗∗
+(𝑡) denotes the matched Kinect V2 frame after timestamp compensation.
+The Kinect V2 frame provides the skeleton annotation and the corresponding RGB image. In this way, each synchronized
+sample contains one radar point-cloud frame, its temporally matched skeleton annotation, and an RGB image for visual
+reference.
+Fig. 4 shows an example of one synchronized data frame after spatial calibration and temporal synchronization. The
+calibrated radar point cloud and the Kinect V2 skeleton are represented in the same world coordinate system, while the RGB
+image provides a visual reference for the corresponding human motion. This example illustrates the final frame-level data
+organization before the samples are further arranged into continuous sequences.
+The calibrated and synchronized data are further organized into sequence-level pickle files for network training and
+evaluation. Each sequence contains temporally continuous radar frames and their corresponding skeleton annotations, and it
+represents one continuous motion segment. This storage format preserves the temporal continuity of human motion and
+supports sequence-based 3D-HPE models. During training, fixed-length input windows are sampled from these continuous
+sequences. For each synchronized frame, the radar point cloud and skeleton annotation share the same world coordinate
+system and a consistent temporal index.
+11
+Through the above sensing, acquisition, calibration, and synchronization procedures, the raw multimodal recordings are
+converted into aligned sequence-level data. Based on these aligned data, the mmWave-DensePose dataset was constructed
+and is analyzed in the following section.
+4. The mmWave-DensePose dataset
+This section presents the mmWave-DensePose dataset, which was constructed from the acquisition prototype described
+in Section 3. We first summarize the dataset scale, motion coverage, sequence organization, and radar point-cloud density.
+Then, we compare the mmWave-DensePose dataset with representative radar-based human sensing datasets. Finally, we
+define the benchmark protocol used for radar-only 3D-HPE.
+4.1. Dataset statistics
+The dataset contains 101 subjects, with each subject performing 19 predefined motions and numerous free-motion
+sequences. The predefined motions provide structured pose and motion patterns, while the free-motion sequences introduce
+more natural and unconstrained body movements. Therefore, the dataset supports the evaluation of generalizable 3D-HPE
+models under both predefined-motion and free-motion scenarios.
+As summarized in Table 2, the mmWave-DensePose dataset contains 141 continuous sequences and 570 124 valid
+synchronized frames. Each valid frame contains a calibrated radar point cloud and a synchronized Kinect V2 skeleton
+annotation. The radar point cloud contains five-dimensional (5D) point attributes, and the skeleton annotation contains 19 3D
+keypoints. The number of frames in each sequence ranges from 3640 to 4130, with a mean value of 4043.43 and a median
+value of 4069. These values indicate that the dataset consists of long and stable motion sequences rather than isolated radar
+frames.
+Table 2
+Statistics of the mmWave-DensePose dataset.
+Item Value
+Number of subjects 101
+Motion coverage 19 predefined motions + free motion
+Number of sequences 141
+Mean frames per sequence 4043.43
+Valid synchronized frames 570 124
+Mean valid radar points per frame 164
+Radar point attributes 𝑋,𝑌,𝑍,Doppler inforamtion, and SNR
+Skeleton annotation 19 × 3
+“Radar point counts” refer to valid human-related points after filtering.
+12
+Since dense radar point clouds are a key feature of the mmWave-DensePose dataset, the frame-level point-count
+distribution is further analyzed. The table and figure show calibrated, valid, human-related radar points obtained after moving-
+target extraction and valid-point filtering, rather than all radar detections or low-quality detections introduced by simply
+lowering the detection threshold. Fig. 5(a) shows the distribution of valid radar point counts per frame in the mmWave-
+DensePose dataset. The number of valid radar points ranges from 51 to 429, with a mean value of 164 and a median value of
+165. In addition, the 5th and 95th percentiles are 78 and 248, respectively. These results show that most valid frames contain
+sufficient effective radar points for keypoint-level 3D-HPE.
+Fig. 5(b) further compares the frame-level radar point-count distributions across different datasets. This comparison
+shows that the mmWave-DensePose dataset provides higher effective point-cloud density than representative radar point-
+cloud datasets. As shown in Fig. 5(b), the mmWave-DensePose dataset has a mean point count of 164 and a median point
+count of 165 per frame, with an interquartile range of 127–200 points. By comparison, the median point counts of MARS
+[58], mRI [43], MiliPoint [42], and mmPose-NLP [17] are 36, 31, 6, and 47, respectively.
+(a) (b)
+Fig. 5. Valid radar point-count statistics of the mmWave-DensePose dataset and representative radar point-cloud datasets. (a) Distribution of valid
+radar point counts per frame in the mmWave-DensePose dataset. The bars show the proportion of frames in each point-count interval, and the
+curve shows the cumulative frame proportion. The dashed vertical line marks the mean and median point counts, which are 164.0 and 165.0,
+respectively. (b) Comparison of effective radar point-count distributions across different datasets. The box indicates the interquartile range from
+𝑄1 to 𝑄3, where 𝑄1 and 𝑄3 denote the first and third quartiles, respectively; the central line indicates the median, the whiskers indicate the
+minimum and maximum values, the brown line indicates the 5th–95th percentile range, and the diamond marks the mean value.
+To further analyze the mmWave-DensePose dataset among existing radar-based human sensing datasets, Table 3
+[13,17,25,42,43,52,58,59] compares it with representative datasets, including MARS [58], mRI [43], HuPR [25], MiliPoint
+[42], mmPose [13], mmPose-NLP [17], and mmPose-FK [52]. These datasets differ in task definition, radar representation,
+annotation type, and motion design. Therefore, we focus mainly on the subject scale and frame scale.
+Table 3
+Comparison with representative mmWave radar human sensing datasets.
+Dataset Hardware device Array configuration Number of subjects Number of frames Motion
+mmPose (2020) [13] 2 × TI
+AWR1642BOOST
+2T4R 2 ∼ 40 000 4 motions
+MARS (2021) [58] TI IWR1443BOOST 3T4R 4 40 000 10 motions
+mRI (2022) [43] TI IWR1443BOOST 3T4R 20 ∼ 160 000 12 motions
+13
+Dataset Hardware device Array configuration Number of subjects Number of frames Motion
+mmPose-NLP (2023)
+[17]
+2 × TI AWR1843 3T4R 2 ∼ 16 000 4 motions
+HuPR (2023) [25] 2 × TI
+IWR1843BOOST
+3T4R 6 141 000 3 motions
+MiliPoint (2023) [42] TI IWR1843 3T4R 11 545 000 49 motions
+mmPose-FK (2024) [52] TI IWR6843ISK-ODS 3T4R 30 ∼ 215 000 2 motionsa
+mmPrivPose3D (2025)
+[59]
+TI IWR6843AOPEVM 3T4R 15 — 3 motions
+mmWave-DensePose
+(ours)
+Customized MIMO
+radar
+12T16R 101 570 000 19 motions + freeb
+a mmPose-FK is based on a gait test that mainly includes forward walking and turning. Since the original paper does not define separate motion
+categories, it is counted as two basic motion elements.
+b The proposed dataset contains 19 predefined motions and additional free motion, which provides more diverse motion patterns for evaluating
+model generalization.
+Compared with the existing radar-based 3D-HPE datasets, the mmWave-DensePose dataset provides larger subject and
+frame scales, broader motion coverage, and dense 5D radar point clouds. These differences are summarized in Table 3.
+To better illustrate the comparison between these datasets, Fig. 6 shows the radar point-cloud observations from the
+comparison of mmWave-DensePose with other datasets. As shown in the figure, the mmWave-DensePose dataset presents
+clearer spatial distributions around the human body. Its radar observations outline major body regions and show stronger
+visual consistency with the ground-truth skeletons, whereas the compared datasets provide more fragmented body-region cues.
+14
+Fig.6. Qualitative comparison of radar point-cloud observations across different datasets. In each subfigure, the upper panel shows the radar point
+cloud, and the lower panel shows the corresponding ground-truth skeleton. The visual examples are generated from the released datasets of the
+corresponding studies. (a) mmWave-DensePose (ours); (b) mRI; (c) mmPose-NLP; (d) MiliPoint; (e) MARS.
+4.2. Benchmark protocols
+Based on the synchronized sequence-level data in the mmWave-DensePose dataset, this work defines a radar-only
+benchmark protocol for 3D-HPE. In this benchmark, the network uses only mmWave radar point clouds as input, and Kinect
+V2 skeletons are used as ground-truth annotations. RGB images, depth images, and silhouette images are retained as auxiliary
+dataset resources, but they are excluded from training, inference, and evaluation.
+The benchmark supports both single-frame and multi-frame 3D-HPE settings. For the multi-frame setting, consecutive
+radar frames are sampled from each continuous sequence to form a temporal input window. The frame length can be specified
+according to the task requirement. To ensure temporal continuity, a valid temporal sample requires the time interval between
+two adjacent frames to be smaller than 300 ms. In this way, the generated samples preserve the motion continuity of the target
+subject and provide reliable temporal context for sequence-based 3D-HPE.
+To construct the main benchmark, each continuous sequence is first divided into non-overlapping chunks. The chunks
+within each sequence are then randomly assigned to the training, validation, and test sets with a ratio of 8:1:1. This sequence-
+chunk strategy is adopted to preserve local temporal continuity while maintaining comparable data distributions across the
+three subsets. Since highly adjacent frames within the same local temporal segment remain in the same chunk, they are not
+directly separated into different subsets. Partitioning the chunks within each sequence allows the training, validation, and test
+sets to maintain similar subject composition, motion coverage, and sensing conditions. This protocol therefore provides a
+consistent setting for controlled comparison among different 3D-HPE methods.
+To provide a more comprehensive evaluation of model generalization, we further introduce a subject-independent
+protocol. Under this protocol, the dataset is partitioned according to subject identity, and all sequences belonging to the same
+subject are assigned exclusively to the training, validation, or test set. The three subsets therefore contain mutually exclusive
+subjects, and the complete motion sequences of the test subjects remain unseen during training. While the sequence-chunk
+protocol provides a controlled comparison under closely matched data distributions, the subject-independent protocol further
+evaluates the ability of the models to generalize to unseen subjects. The same subject-level partition is used for all compared
+methods to ensure a consistent comparison.
+For network input, each radar frame is normalized to a fixed number of points. If the number of points exceeds the
+required size, farthest point sampling (FPS) is used to downsample the point cloud and preserve its spatial coverage. If the
+number of points is insufficient, zero padding is applied to complete the input. As a result, all radar frames are represented
+with a consistent input size, which enables batch-based network training while retaining the main spatial structure of the
+original point cloud. The point features include 3D position, Doppler information, and SNR, as described in Section 3.2.
+The benchmark uses a 19-keypoint skeletal representation as the pose output. Fig. 7 illustrates the anatomical definition
+and index order of the 19 keypoints. This definition is used consistently for Kinect V2 skeleton annotation, network prediction,
+and per-joint evaluation. Therefore, the keypoint indices in the experimental results correspond to the same skeletal layout.
+15
+Fig. 7. Definition of the 19 human skeletal keypoints used in the mmWave-DensePose benchmark. The keypoint indices correspond to the per-
+joint labels 𝐽𝑘 used in model prediction and experimental evaluation. 𝐽𝑘: the MLE of the 𝑘th keypoint (k = 0, 1, …, K - 1); K: the number of
+skeletal keypoints and 𝐾 = 19.
+The benchmark uses mean localization error (MLE) as the main evaluation metric. MLE measures the average Euclidean
+distance between the predicted 3D keypoints and the ground-truth keypoints. It is defined as
+MLE =
+1
+𝑁eval𝐾
+∑𝑁eval
+𝑛=1
+∑𝐾―1
+𝑘=0 ∥ 𝒚𝑛,𝑘 ― 𝒚𝑛,𝑘 ∥ 2 (7)
+where 𝑁eval denotes the number of evaluated samples, 𝐾 = 19 denotes the number of skeletal keypoints, 𝒚𝑛,𝑘 ∈ ℝ3
+denotes the predicted coordinate of the 𝑘th keypoint in the 𝑛th sample (k = 0, 1, …, K-1 and n = 1, 2, …, Neval), and 𝒚𝑛,𝑘 ∈ ℝ3
+denotes the corresponding ground-truth coordinate. This definition is mathematically equivalent to the mean per joint position
+error (MPJPE) commonly used for 3D-HPE. Therefore, MLE is also denoted as MLE (MPJPE) when compared with other
+pose-estimation metrics.
+In addition to MLE, Procrustes-aligned MPJPE (PA-MPJPE), percentage of correct keypoints (PCK), and area under the
+PCK curve (AUC) are introduced to provide complementary evaluations. PA-MPJPE measures the joint-position error after
+independently aligning each predicted pose with its reference pose using a similarity transformation. We let 𝒮𝑛 denote the
+optimal similarity transformation applied to the predicted pose of the nth evaluated sample, where 𝑛 = 1,2,...,𝑁eval. The
+transformation includes translation, rotation, and uniform scaling. PA-MPJPE is defined as
+PA - MPJPE =
+1
+𝑁eval𝐾
+∑𝑁eval
+𝑛=1
+∑𝐾―1
+𝑘=0 ∥𝒮𝑛 𝒚𝑛,𝑘 ― 𝒚𝑛,𝑘 ∥2
+(8)
+The alignment uses a proper rotation without reflection.
+PCK evaluates the proportion of keypoints whose localization errors do not exceed a predefined threshold 𝛿:
+PCK(𝛿) =
+1
+𝑁eval𝐾
+∑𝑁eval
+𝑛=1
+∑𝐾―1
+𝑘=0 𝕀 ∥ 𝒚𝑛,𝑘 ― 𝒚𝑛,𝑘 ∥ 2 ≤ 𝛿 (9)
+where 𝕀( ⋅ ) denotes the indicator function. AUC summarizes the PCK performance over the threshold interval [0,𝛿max]
+and is defined as
+AUC(𝛿max) =
+1
+𝛿max
+∫
+𝛿max
+0
+PCK(𝛿) d𝛿 (10)
+where 𝛿max is the maximum keypoint localization-error threshold used to compute the PCK curve and its AUC and 𝛿max =
+150 mm. Higher PCK and AUC values indicate better pose-estimation accuracy, whereas lower MLE and PA-MPJPE values
+indicate better performance.
+5. The part-aware spatio-temporal network (PAST-Net) for dense radar pose estimation
+Building on the dense radar observations described in Section 4.1, this section introduces PAST-Net for mmWave radar
+3D-HPE. Although dense radar point clouds provide richer spatial information, their distributions over the human body remain
+non-uniform due to different electromagnetic scattering properties and motion-induced responses. As a result, weakly
+reflective or slightly moving regions, such as limbs and hands, may still suffer from local point loss and incomplete
+observations. To address this issue, PAST-Net converts frame-level radar features into structured latent part tokens and further
+models their temporal evolution across consecutive frames. This design uses dense radar observations while reducing the
+16
+influence of incomplete local point distributions. The following subsections define the problem formulation and describe the
+network design in detail.
+5.1. Problem formulation
+PAST-Net estimates 3D human skeletal keypoints from a temporal window of dense mmWave radar point clouds. For
+each sample, the input, which is a fixed-length window of 𝑇 consecutive radar point-cloud frames, is denoted as 𝒫 = {𝑷1,𝑷2
+,…,𝑷𝑇}, where 𝑷𝑇 denotes the input radar point cloud of the last frame in the input window. Each radar frame is represented
+as an unordered point set, that is, the input radar point cloud 𝑷𝑡 = {𝒑𝑡,𝑖}
+𝑁pt
+𝑖=1, where 𝒑𝑡,𝑖 ∈ ℝ𝐶
+denotes the 𝐶-dimensional
+feature vector of the 𝑖th radar point in frame 𝑡. Herein, 𝑡 ∈ {1,2,…,𝑇} is the radar point-cloud frame index, 𝑁pt is the
+number of input radar points in each frame, and 𝐶 is the feature dimension of each radar point. The point feature supports
+two configurations. In the geometry-only configuration, each radar point contains 3D spatial coordinates, so 𝐶 = 3. In the
+radar-enhanced configuration, each radar point further includes Doppler information and SNR, such that 𝐶 = 5. The Doppler
+information provides motion-related cues, while the SNR reflects the quality of the detected radar point. Unless otherwise
+specified, this work uses the 5D radar-enhanced configuration as the network input to exploit both geometric and radar-
+specific information.
+The target output is the human pose 𝒀 of the last radar frame in the input window. It is defined as 𝒀 = {𝒚𝑘}𝐾―1
+𝑘=0 ,
+where 𝒚𝑘 ∈ ℝ3
+denotes the 3D coordinate of the 𝑘th keypoint. In this work, 𝐾 = 19. Then, the corresponding predicted
+skeletal pose is denoted as 𝒀 = {𝒚𝑘}𝐾―1
+𝑘=0 , where 𝒚𝑘 ∈ ℝ3
+denotes the predicted coordinate of the 𝑘th keypoint.
+The network learns a mapping from the radar point-cloud sequence to the target-frame pose:
+𝒀 = 𝑓𝜃(𝒫), 𝑓𝜃:ℝ𝑇×𝑁pt×𝐶→ℝ𝐾×3
+(11)
+where 𝑓𝜃( ⋅ ) denotes the proposed PAST-Net and 𝜃 denotes its learnable parameters. This formulation follows a many-to-
+one setting. The network uses multiple radar frames to model temporal context and predicts the skeleton of the last frame.
+When 𝑇 = 1, the same formulation reduces to single-frame pose estimation.
+5.2. Network overview
+PAST-Net takes a temporal window of dense radar point clouds as input and predicts the 3D skeletal keypoints of the
+target frame. This setting uses temporal context from neighboring radar frames while keeping the pose prediction target clear
+and consistent.
+Fig. 8 presents the data flow of PAST-Net. The network contains four core modules: frame-level point-cloud feature
+extraction, skeleton-aware part-token spatial feature extraction, part-wise temporal modeling, and global-part keypoint
+regression. First, the frame-level feature extraction module encodes each radar point-cloud frame into a compact global
+representation. Then, the skeleton-aware spatial modeling module reorganizes the global feature into several body-region-
+guided part tokens, providing a more structured spatial representation than a single global feature. After spatial feature
+extraction, the part-wise temporal modeling module collects the same part token across the input window and applies temporal
+self-attention along the frame dimension. This design allows each part token to model its own temporal evolution and helps
+introduce motion continuity into weakly observed regions. Finally, the global feature of the target frame and the corresponding
+part-token representations are fused for keypoint regression. As a result, the whole network links frame-wise point-cloud
+encoding, part-token spatial organization, part-wise temporal modeling, and target-frame pose prediction in a unified pipeline.
+It should be noted that the part tokens are not explicitly supervised as deterministic anatomical parts. Instead, they are guided
+by coarse body-structure priors and are learned under keypoint-level supervision.
+17
+Fig. 8. Network overview. 𝒈𝑇: the global frame-level feature of T radar point-cloud frame; SA: set abstraction; MLP: multilayer perceptron;
+PointNetConv: PointNet convolution.
+The methodological design of PAST-Net focuses on the part-wise organization of both spatial and temporal radar
+features. Instead of directly applying temporal modeling to a single global frame representation, PAST-Net first re-projects
+the frame-level human feature into a compact set of latent skeleton-aware part tokens. The spatial module models the
+interactions among these tokens to obtain complementary latent part representations. Subsequently, tokens of the same type
+are collected across consecutive frames, and their temporal evolution is modeled independently. Therefore, PAST-Net uses a
+strategy of spatial reorganization followed by part-wise temporal modeling, rather than extracting a unified global temporal
+feature from the complete human representation.
+5.3. Frame-level feature extraction module
+Each radar frame is an unordered point set. Therefore, the network first requires a point-cloud encoder to extract a
+compact frame-level representation. In this work, PointNet++ [48] is used as the frame encoder. This choice is based on our
+preliminary evaluation of several single-frame point-cloud networks, including Point Transformer [60], PointMLP [61],
+DGCNN [62], and PointNet++. Under the 19-keypoint 3D-HPE setting, PointNet++ provides the lowest MLE among these
+candidates.
+This result indicates that hierarchical local feature aggregation is important for frame-level radar point-cloud encoding.
+PointNet++ meets this requirement by learning local neighborhood features at multiple spatial scales and progressively
+aggregating them into a global frame representation. In this way, it preserves useful local geometric cues while maintaining
+permutation invariance to unordered radar points.
+For the 𝑡th radar point-cloud frame 𝑷𝑡, the frame-level encoder produces a global frame-level feature 𝒈𝑡 as follows:
+𝒈𝑡 = 𝐸f(𝑷𝑡), 𝒈𝑡 ∈ ℝ𝐷g (12)
+where 𝐸f( ⋅ ) denotes the frame-level point-cloud encoder and 𝐷g denotes the dimension of the global frame-level feature.
+The same encoder is applied to each frame in the input window. Therefore, the temporal window is represented by a set of
+global frame-level features 𝑮:
+𝑮 = {𝒈1,𝒈2,…,𝒈𝑇} (13)
+This representation preserves the unordered nature of the radar points and provides a compact global description for each
+radar frame.
+5.4. Skeleton-aware spatial modeling
+The frame-level feature extracted by PointNet++ provides a global description of each radar frame. However, a single
+global feature may not sufficiently represent local body-region differences, especially when some limbs or small body parts
+18
+are weakly observed. Therefore, PAST-Net further reorganizes each global frame feature into several part tokens. This design
+is intended to obtain a more structured spatial representation from dense radar point clouds.
+For the 𝑡th radar point-cloud frame, the projected part-token matrix 𝒁𝑡 is generated from the global frame-level feature
+𝒈𝑡 through a learnable projection, that is,
+𝒁𝑡 = Reshape 𝑾p𝒈𝑡 + 𝒃p , 𝒁𝑡 ∈ ℝ𝑃×𝐷
+(14)
+where 𝑾p ∈ ℝ𝑃×𝐷×𝐷g and 𝒃p ∈ ℝ𝑃×𝐷
+are learnable projection parameters, 𝑃 is the number of part tokens, and 𝐷 is the
+token dimension. In this work, 𝑃 = 6, and 𝐷 = 128. The projection output is reshaped into a 𝑃 × 𝐷 token matrix. A
+learnable part-type embedding is then added to distinguish different part tokens:
+𝒁0
+𝑡 = 𝒁𝑡 + 𝑬part, 𝑬part ∈ ℝ𝑃×𝐷
+(15)
+where 𝑬part is a learnable part-type embedding matrix and 𝒁0
+𝑡 denotes the initial part-token representation of the 𝑡th radar
+point-cloud frame.
+The number of part tokens is set according to a coarse human body-structure prior. For example, the six part tokens can
+be associated with coarse regions such as the torso, head–neck region, upper limbs, and lower limbs in the model design.
+However, these names only describe the intended structural prior. The part tokens are not supervised by explicit body-part
+labels and do not necessarily correspond to deterministic anatomical parts. Instead, the fixed token order and the learnable
+part-type embedding encourage different tokens to capture different body-region-related patterns under keypoint-level
+supervision.
+After token generation, the part tokens are further refined through skeleton-aware spatial modeling. This refinement
+allows the network to reorganize the global radar feature into a more fine-grained spatial representation. As a result, each
+frame is represented by a set of part tokens 𝒁
+sp
+𝑡 ,
+𝒁
+sp
+𝑡 = 𝐹sp(𝒁0
+𝑡 ), 𝒁
+sp
+𝑡 ∈ ℝ𝑃×𝐷
+(16)
+where 𝐹sp( ⋅ ) denotes the skeleton-aware part-token spatial feature-extraction module. This representation provides a
+structured spatial basis for the subsequent temporal modeling.
+The proposed module projects the frame feature into a fixed set of latent part tokens. These tokens are not directly
+associated with individual radar points, local patches, or predefined skeletal joints. Learnable type embeddings distinguish
+the identities of different tokens, while spatial self-attention captures their mutual dependencies. The token representations
+are optimized jointly through the 3D keypoint regression objective, which encourages different tokens to encode
+complementary patterns related to human body structure without requiring explicit part annotations. In this context, the term
+“skeleton-aware” refers to a latent part organization learned for skeletal pose estimation, rather than an explicit anatomical
+assignment for each token.
+5.5. Part-wise temporal modeling
+Although the skeleton-aware spatial modeling module provides a finer representation for each frame, single-frame radar
+observations may still contain local missing points and non-uniform body-region responses. Consecutive frames provide
+complementary motion information, which helps reduce such frame-level ambiguity. However, different part tokens may
+describe different body-region-related patterns and may therefore follow different temporal variations. Direct temporal
+modeling over all frame-level tokens may mix unrelated motions and weaken the temporal consistency of each part token.
+To address this issue, the network models temporal dependencies in a part-wise manner. After spatial feature extraction,
+the same part token is collected across the 𝑇 radar point-cloud frames in the input window. For the 𝑝th part token (𝑝 = 1,2,…,
+𝑃), the temporal token sequence 𝑺0
+𝑝 is defined as
+𝑺0
+𝑝 = {𝒛
+sp
+1,𝑝,𝒛
+sp
+2,𝑝,…,𝒛
+sp
+𝑇,𝑝}, 𝑺0
+𝑝 ∈ ℝ𝑇×𝐷
+(17)
+where 𝒛
+sp
+𝑡,𝑝 denotes the 𝑝th part token of the 𝑡th radar point-cloud frame after spatial feature extraction. In this way, each
+temporal sequence describes the evolution of one part token across the input window.
+19
+For the 𝑚th temporal layer, where 𝑚 ∈ {0,1,…,𝐿t ― 1}, 𝐿t denotes the total number of temporal modeling layers, and
+𝑺𝑚
+𝑝 ∈ ℝ𝑇×𝐷
+denotes the input representation of the pth part-token sequence at the 𝑚th temporal layer part-wise temporal
+modeling is performed by self-attention along the temporal dimension,
+𝑺𝑚
+𝑝 = LN 𝑺𝑚
+𝑝 + MHA 𝑺𝑚
+𝑝 ,𝑺𝑚
+𝑝 ,𝑺𝑚
+𝑝 (18)
+𝑺𝑚+1
+𝑝 = LN 𝑺𝑚
+𝑝 + FFN 𝑺𝑚
+𝑝 (19)
+where 𝑺𝑚
+𝑝 ∈ ℝ𝑇×𝐷
+denotes the intermediate representation obtained after multi-head self-attention, residual addition, and
+layer normalization at the 𝑚th temporal layer, and 𝑺𝑚+1
+𝑝 ∈ ℝ𝑇×𝐷
+denotes the updated representation obtained after the feed-
+forward network, residual addition, and layer normalization, which serves as the input to the next temporal layer. MHA( ⋅ )
+denotes multi-head self-attention, LN( ⋅ ) denotes layer normalization, and FFN( ⋅ ) denotes a feed-forward network. The
+same temporal modeling block is shared by all part tokens, so the network can learn a unified temporal update rule while
+preserving the motion continuity of each part token.
+After 𝐿t temporal layers, the temporal representation of the 𝑝th part token 𝑺
+temp
+𝑝 is obtained as follows:
+𝑺
+temp
+𝑝 = 𝑺
+𝐿t
+𝑝 , 𝑝 = 1,2,…,𝑃 (20)
+The temporal outputs of all part tokens 𝒁
+temp
+𝑡 are then reorganized into frame-wise part-token representations:
+𝒁
+temp
+𝑡 = {𝒛
+temp
+𝑡,1 ,𝒛
+temp
+𝑡,2 ,…,𝒛
+temp
+𝑡,𝑃 }, 𝒁
+temp
+𝑡 ∈ ℝ𝑃×𝐷
+(21)
+where 𝒛
+temp
+𝑡,𝑝 ∈ ℝ𝐷
+denotes the temporally enhanced representation of the 𝑝th part token in the 𝑡th radar point-cloud frame.
+This part-wise design separates spatial feature organization from temporal motion modeling. The skeleton-aware spatial
+module first builds structured part-token representations for each radar frame, while the temporal module then models the
+evolution of each part token across frames. Thus, the network can use the temporal context to enhance weak or incomplete
+local observations without directly mixing all part-token motions.
+Unlike global temporal modeling, which aggregates the complete human representation of each frame into a single
+temporal sequence, the proposed module constructs an independent temporal sequence for each part-token type. This design
+preserves the latent spatial organization established by the skeleton-aware module and reduces the direct mixing of motion
+information from different latent components. Consequently, neighboring frames can provide token-specific temporal cues
+to compensate for weak or incomplete observations in the target frame.
+5.6. Keypoint regression and training objective
+PAST-Net follows a many-to-one prediction setting and estimates the human pose of the last radar frame. The final
+representation combines global geometric information with part-level spatio-temporal information. Specifically, the global
+frame-level feature of the last radar point-cloud frame is 𝒈𝑇, and the temporally enhanced part tokens of the last radar point-
+cloud frame are 𝒁
+temp
+𝑇 . The fused feature is defined as
+𝒉 = 𝒈𝑇;Vec 𝒁
+temp
+𝑇 , 𝒉 ∈ ℝ𝐷g+𝑃× 𝐷
+(22)
+where 𝒉 denotes the fused feature vector of the target frame used for keypoint regression, Vec( ⋅ ) denotes
+vectorization and [ ⋅ ; ⋅ ] denotes feature concatenation. The global feature preserves the whole-body geometric context,
+while the part tokens provide skeleton-aware local representations.
+The fused feature is fed into a keypoint regression head. In this work, each keypoint has an independent multilayer
+perceptron branch. The 𝑘th keypoint is predicted as follows:
+𝒚𝑘 = 𝑅𝑘(𝒉), 𝒚𝑘 ∈ ℝ3 and 𝑘 = 1, 2, ..., 𝐾 ―1 (23)
+where 𝑅𝑘( ⋅ ) denotes the regression branch for the 𝑘th keypoint. The final predicted skeletal pose 𝒀 is
+20
+𝒀 = {𝒚0,𝒚2,…,𝒚𝐾―1}, 𝒀 ∈ ℝ𝐾×3
+(24)
+This branch-wise design allows different skeletal joints to learn joint-specific coordinate regression functions from the
+shared global-part representation.
+The network is trained with a coordinate regression loss. For one training sample, the pose loss ℒpose is defined as
+ℒpose =
+1
+𝐾
+∑𝐾―1
+𝑘=0 ∥ 𝒚𝑘 ― 𝒚𝑘 ∥ 2
+2 (25)
+The loss optimizes the squared coordinate error of all skeletal keypoints.
+6. Experiments
+This section evaluates PAST-Net on the mmWave-DensePose dataset. The experiments first introduce the
+implementation setting and evaluation protocol. Then, PAST-Net is compared with representative radar-based 3D-HPE
+methods under the same training setting. To examine the reproducibility and statistical robustness of the reported performance,
+we further repeat the complete training and evaluation procedure with different random seeds for PAST-Net and the strongest
+competing multi-frame method. After that, ablation experiments analyze the contribution of the main network components.
+A controlled input point-count analysis is further conducted to quantify the influence of radar point-cloud observations on
+pose estimation performance. Finally, qualitative visualization and error analysis are provided to further explain the
+performance differences.
+6.1. Experimental setup
+Unless otherwise specified, all experiments follow the sequence-chunk benchmark protocol defined in Section 4.2. Under
+this protocol, each continuous sequence is divided into non-overlapping chunks of 200 frames, and the chunks within each
+sequence are randomly assigned to the training, validation, and test sets at a ratio of 8:1:1. Each chunk is assigned exclusively
+to one subset, which preserves local temporal continuity and keeps highly adjacent frames within the same local segment
+together. This sequence-chunk protocol is used as the default setting for the main method comparison and ablation studies.
+The complementary subject-independent protocol is evaluated separately in Section 6.3 to further examine generalization to
+unseen subjects.
+For temporal 3D-HPE, this work uses five consecutive radar frames as the network input, and the target pose is defined
+on the last frame of the input window. A temporal window is regarded as valid only when the time interval between adjacent
+frames is smaller than 300 ms. Under this setting, the mmWave-DensePose dataset provides 533 856 valid five-frame samples,
+including 381 716 training samples, 75 889 validation samples, and 76 251 test samples. This setting provides sufficient
+temporal context while keeping the prediction target well defined.
+21
+Fig. 9. Representative target-frame examples of motions 1–12 in the mmWave-DensePose dataset. For each motion, the three panels from left to
+right show the radar point cloud, the corresponding ground-truth skeleton, and the synchronized RGB image used only as a visual reference.
+22
+Fig. 10. Representative target-frame examples of motions 13–19 and five free-motion samples in the mmWave-DensePose dataset. For each
+sample, the three panels from left to right show the radar point cloud, the corresponding ground-truth skeleton, and the synchronized RGB image
+used only as a visual reference.
+Figs. 9 and 10 show representative target-frame examples used in the experiments. Each case contains a radar point cloud
+and its corresponding ground-truth skeletal keypoints. For compact visualization, only the target frame of each temporal
+window is shown. These examples illustrate the input–annotation correspondence used for supervised training and evaluation.
+They also show that the radar point clouds contain human-related spatial distributions under different poses, while the Kinect
+V2 skeletons provide the corresponding 3D keypoint annotations.
+Each radar frame was normalized to a fixed number of points before being fed into the network. Unless otherwise
+specified, the number of input radar points per frame was set to 𝑁pt = 300. This value was selected because the vast majority
+of valid frames contain fewer than 300 human-related radar points. Therefore, this setting allowed the network to retain nearly
+all available observations while maintaining a fixed-size input for batch training. If the number of points exceeded the required
+size, farthest point sampling (FPS) was used to downsample the point cloud and preserve its spatial coverage. If the number
+of points was insufficient, zero padding was applied to complete the input. As a result, all radar frames were represented with
+23
+a consistent input size, which enabled batch-based network training while retaining the main spatial structure of the original
+point cloud. The point features included 3D position, Doppler information, and SNR.
+Each reproduced method was trained sufficiently on the mmWave-DensePose dataset according to the training strategy
+described in its original paper. Model-specific hyperparameters were adjusted when necessary to match the input format and
+output setting of the mmWave-DensePose benchmark. For the proposed PAST-Net, the model was trained for 200 epochs
+with a batch size of 128. The Adam optimizer was used with an initial learning rate of 5 × 10―4
+and a weight decay of 1 ×
+10―5
+. The final results were reported after stable validation performance was obtained.
+MLE, which is mathematically equivalent to MPJPE, was used as the primary evaluation metric. During evaluation,
+MLE (MPJPE) was computed in meters as the average Euclidean distance between the predicted 3D keypoints and the
+reference keypoints. PA-MPJPE was additionally calculated after per-pose Procrustes alignment with translation, rotation,
+and uniform scaling, without reflection. Lower MLE (MPJPE) and PA-MPJPE values indicate better localization accuracy.
+For readability, both MLE (MPJPE) and PA-MPJPE have been converted from meters to centimeters in the comparison tables.
+PCK was evaluated using the threshold 𝛿max = 150 mm and is denoted as PCK@150mm, while AUC was computed over
+the continuous threshold interval from 0 to 𝛿max and is denoted as AUC@150mm. Both PCK@150mm and the normalized
+AUC@150mm are reported as percentages, with higher values indicating better performance.
+6.2. Comparison with existing methods
+To evaluate the overall performance of PAST-Net, we compare it with representative point-cloud and radar-based 3D-
+HPE methods. The comparison methods were selected to include both established point-cloud baselines and recent
+representative radar-based approaches available during the preparation of this work. For general point-cloud learning,
+DGCNN [62], PointTransformer [60], and PointMLP [61] are included to represent dynamic graph-based feature extraction,
+Transformer-based point-set encoding, and multilayer perceptron (MLP)-based point-cloud learning, respectively. For radar-
+based 3D-HPE, mmPose-FK [52], Dual-Path CNN–BiLSTM [21], PntPoseAT [53], PoseGraphNet [51], and Global–Local
+Network [30] were selected as representative methods. These approaches cover voxelized convolutional processing, recurrent
+temporal modeling, attention-based temporal learning, forward-kinematics constraints, graph-based pose priors, and point-
+cloud completion with global–local feature learning. Therefore, the selected methods provide broad and complementary
+coverage of the main input representations and modeling paradigms relevant to radar point-cloud-based 3D-HPE.
+Since several original methods were designed for different radar representations or keypoint settings, they were
+reproduced on the mmWave-DensePose dataset. For each reproduced method, the model was trained sufficiently on the
+mmWave-DensePose dataset according to the training strategy described in the corresponding original paper. In addition,
+model-specific settings were adjusted when necessary to match the input format and the 19-keypoint output setting of the
+mmWave-DensePose benchmark. For methods that required voxelized inputs or fixed-size point-cloud inputs, the
+voxelization boundary and point normalization were defined according to the spatial range of the mmWave-DensePose dataset.
+This setting ensured that the comparison reflected the model design rather than differences in input availability.
+Table 4 reports the overall results using the four evaluation metrics. PAST-Net achieves the best performance for all
+reported metrics, with an MLE (MPJPE) of 4.08 cm, a PA-MPJPE of 3.17 cm, a PCK@150mm of 98.69%, and an
+AUC@150mm of 73.35%. PntPoseAT is the strongest competing method across the additional metrics, achieving a PA-
+MPJPE of 3.98 cm, a PCK@150mm of 97.59%, and an AUC@150mm of 65.96%. Compared with PntPoseAT, PAST-Net
+reduces MLE and PA-MPJPE by 22.14% and 20.36%, respectively, while improving PCK@150mm by 1.10 percentage points
+and AUC@150mm by 7.38 percentage points.
+Table 4
+Overall comparison using multiple 3D-HPE evaluation metrics.
+Evaluation metrics
+Method
+MLE (MPJPE) (cm) PA-MPJPE (cm) PCK@150mm (%) AUC@150mm (%)
+DGCNN (2019) [62] 7.30 5.29 92.33 55.50
+24
+Evaluation metrics
+Method
+MLE (MPJPE) (cm) PA-MPJPE (cm) PCK@150mm (%) AUC@150mm (%)
+PointTransformer (2021) [60] 7.17 5.21 92.85 55.51
+PointMLP (2022) [61] 5.60 4.07 96.45 64.39
+mmPose-FK (2024) [52]a 5.57 4.21 97.07 63.92
+Dual-Path CNN–BiLSTM (2025) [21] 8.19 5.46 90.79 49.91
+PntPoseAT (2025) [53] 5.24 3.98 97.59 65.96
+PoseGraphNet (2026) [51] 6.70 5.17 94.23 57.77
+Global–Local Network (2026) [30] 9.18 6.09 87.26 44.48
+PAST-Net (ours) 4.08 3.17 98.69 73.35
+aThe original mmPose-FK supports 17 keypoints; all metrics are computed on the supported joints.
+Here, lower MLE (MPJPE) and PA-MPJPE values indicate better performance, whereas higher PCK@150 mm and AUC@150 mm values indicate
+better performance. The best result for each metric is shown in bold.
+The stronger methods obtain relatively high PCK values at the 150-mm threshold, indicating that most predicted joints
+fall within this tolerance. AUC further considers the complete threshold range from 0 to 150 mm and therefore provides
+greater discrimination of localization accuracy at smaller error thresholds. The consistent advantage of PAST-Net across MLE,
+PA-MPJPE, PCK, and AUC indicates that its performance improvement is maintained under different evaluation criteria.
+In addition to the overall multi-metric comparison, Table 5 reports the per-joint MLE to examine localization
+performance across different body regions. PAST-Net achieves the lowest error for all 19 evaluated keypoints, showing that
+its overall performance improvement is distributed across the skeletal structure rather than being dominated by a small subset
+of joints. The improvement is particularly evident for weakly observed joints, such as limb-end and hand-related keypoints,
+where radar observations are more likely to be incomplete or unstable. General point-cloud backbones can extract frame-level
+geometric features, but they lack an explicit mechanism to reorganize the global representation into structured latent part
+features. Radar-oriented temporal methods exploit motion information, but their feature organization remains limited when
+local radar observations are non-uniform. In contrast, PAST-Net first reorganizes each frame-level representation into latent
+part tokens and then models the temporal evolution of each token type independently. This structured spatio-temporal
+representation provides more effective complementary cues for target-frame keypoint regression, particularly in weakly
+observed body regions.
+25
+Table 5
+Per-joint and average MLE comparison with representative radar-based 3D-HPE methods.
+MLE (cm)
+Method
+𝐽0 𝐽1 𝐽2 𝐽3 𝐽4 𝐽5 𝐽6 𝐽7 𝐽8 𝐽9 𝐽10 𝐽11 𝐽12 𝐽13 𝐽14 𝐽15 𝐽16 𝐽17 𝐽18
+Average
+DGCNN (2019) [62] 5.55 4.25 4.48 4.76 5.05 7.69 11.14 4.84 7.26 10.97 5.61 8.32 9.51 10.88 5.58 8.23 9.36 10.89 4.25 7.30
+PointTransformer (2021) [60] 5.63 4.39 4.90 5.81 5.19 7.13 10.83 5.07 6.99 10.73 5.69 7.51 9.03 10.35 5.69 7.49 8.86 10.24 4.61 7.17
+PointMLP (2022) [61] 4.39 3.49 3.78 4.01 4.10 5.61 7.96 3.90 5.40 7.84 4.44 5.86 7.32 8.73 4.45 5.80 7.08 8.63 3.59 5.60
+mmPose-FK (2024) [52]a,b 3.80 3.91 4.45 4.38 4.34 5.89 9.02 4.19 6.06 9.00 4.15 5.58 6.67 – 4.15 6.99 6.67 – 5.48 5.57
+Dual-Path CNN–BiLSTM (2025)
+[21]a
+6.01 5.74 6.50 7.33 7.03 10.29 18.25 6.19 7.19 10.25 6.18 7.84 9.75 11.17 5.93 6.66 7.72 9.32 6.23 8.19
+PntPoseAT (2025) [53]a 3.91 3.14 3.49 3.91 3.91 5.73 8.20 3.78 5.75 8.28 3.97 5.42 6.05 7.65 3.98 5.40 5.99 7.69 3.30 5.24
+PoseGraphNet (2026) [51]a 5.20 4.29 4.22 5.19 4.88 6.90 10.73 4.75 6.84 10.80 5.27 7.08 7.90 9.32 5.39 6.88 8.13 9.60 3.95 6.70
+Global-Local Network (2026) [30]a 6.65 6.38 7.26 8.08 7.49 10.06 17.18 7.37 10.10 17.00 6.71 8.08 9.27 10.72 6.70 8.06 9.37 10.91 6.95 9.18
+PAST-Net (ours) 2.99 2.42 2.71 2.70 2.99 4.26 6.11 2.84 4.26 6.07 3.05 4.27 4.95 6.47 3.06 4.30 4.97 6.60 2.49 4.08
+a The results of the compared methods are reproduced on the proposed dataset.
+b The original mmPose-FK framework supports 17-keypoint prediction. Unsupported joint errors are marked as “–” in the per-joint comparison.
+𝐽𝑘 denotes the MLE of the 𝑘th keypoint defined in Fig. 7. All MLE values are reported in centimeters, where lower values indicate better
+localization accuracy. Bold values indicate the lowest MLE in each column.
+To further examine the robustness of the reported performance to randomness in data partitioning and stochastic
+optimization, we repeated the complete training and evaluation procedure using five random seeds (42, 50, 66, 69, and 87)
+for both PAST-Net and PntPoseAT, where the latter was the strongest competing multi-frame method in the main comparison.
+Considering the computational cost of repeatedly training all compared models, the repeated-run analysis focused on these
+two methods. The same five random seeds were used for both methods to provide matched experimental conditions.
+As summarized in Table 6, PAST-Net achieves MLE values of 4.09, 4.09, 4.06, 4.09, and 4.05 cm across the five
+independent runs, resulting in a mean MLE of 4.08 cm and a sample standard deviation of 0.02 cm. PntPoseAT achieves
+MLE values of 5.24, 5.32, 5.22, 5.33, and 5.23 cm, with a mean MLE of 5.27 cm and a sample standard deviation of 0.05 cm.
+Both methods show limited variation across the five runs. More importantly, PAST-Net consistently achieves a lower MLE
+than PntPoseAT for every random seed. These results indicate that the performance of PAST-Net is stable under variations
+26
+in both data partitioning and stochastic optimization, and that its performance advantage over the strongest competing multi-
+frame method is maintained across repeated experimental settings.
+Table 6
+Statistical robustness of PAST-Net and PntPoseAT across five independent training runs.
+MLE (cm)
+Method
+Seed 42 Seed 50 Seed 66 Seed 69 Seed 87 Mean ± standard
+deviation
+PntPoseAT 5.24 5.32 5.22 5.33 5.23 5.27 ± 0.05
+PAST-Net (ours) 4.09 4.09 4.06 4.09 4.05 4.08 ± 0.02
+Bold values indicate the lower MLE for each seed and the lower mean and standard deviation across the five runs.
+To further illustrate the difference in prediction quality, Fig. 11 provides qualitative comparisons on three representative
+five-frame input windows. For visual clarity, only a few typical baseline methods are selected for this figure, including
+mmPose-FK, Global–Local Network, PntPoseAT, and PoseGraphNet, together with PAST-Net. In each sample, the first row
+shows the five consecutive radar point clouds, and the second row compares the predicted skeletons of different methods with
+the ground-truth annotation on the target frame.
+As shown in Fig. 10, PAST-Net produces skeletal structures that are more consistent with the ground truth under different
+motion patterns. In contrast, the compared methods tend to show larger deviations in weakly observed body parts, especially
+in the arms, hands, and other limb-end regions. This phenomenon becomes more evident when the target frame contains non-
+uniform or incomplete local radar observations. Benefiting from the skeleton-aware part-token representation and part-wise
+temporal modeling, PAST-Net better preserves the global body structure while also improving the localization of challenging
+joints. Therefore, the qualitative results are consistent with the quantitative comparison and further confirm the effectiveness
+of PAST-Net.
+27
+Fig. 11. Qualitative comparison of 3D-HPE results. PAST-Net (“ours”) produces skeletal predictions that are more consistent with the ground-
+truth annotations, especially in weakly observed body regions such as hands and limbs.
+6.3. Subject-independent evaluation
+The sequence-chunk protocol used in the main benchmark maintains similar data distributions across the training,
+validation, and test sets, but different chunks from the same subject may occur in different subsets. To further evaluate the
+generalization ability of the compared methods, we conducted an additional experiment using the subject-independent
+protocol defined in Section 4.2. Under this setting, all data from one subject were restricted to a single subset. Therefore, the
+test subjects and all of their motion sequences remained unseen during training. All compared methods were retrained using
+the same subject-level partition.
+As shown in Table 7, PAST-Net achieves the lowest MLE under both evaluation protocols. Under the subject-
+independent setting, PAST-Net has an MLE of 4.53 cm. PointMLP becomes the strongest overall baseline with an MLE of
+5.31 cm, indicating a 14.78% relative error reduction by PAST-Net. Among the multi-frame baselines, PntPoseAT achieves
+28
+the lowest MLE of 6.18 cm, while PAST-Net further reduces the error by 26.77%. These results show that the performance
+advantage of PAST-Net is preserved when the test subjects and their complete motion sequences are excluded from training.
+Table 7
+Comparison of single-frame and multi-frame methods under the sequence-chunk and subject-independent protocols.
+Sequence-chunk Subject-independent
+Setting Method
+MLE (cm) MLE (cm)
+Multi-frame PAST-Net (ours) 4.08 4.53
+PntPoseAT 5.24 6.18
+mmPose-FK 5.57 6.30
+Dual-Path CNN–BiLSTM 8.19 9.38
+Global–Local Network 9.18 10.73
+Single-frame PointMLP 5.60 5.31
+PoseGraphNet 6.70 5.99
+PointTransformer 7.17 6.52
+DGCNN 7.30 6.60
+Lower MLE values indicate better performance. Bold values indicate the lowest MLE under each evaluation protocol.
+The two groups of methods exhibited different changes when the partition protocol is changed. All evaluated multi-
+frame methods showed increased errors under the subject-independent protocol. The original sequence-chunk protocol
+prevents identical local chunks from appearing in different subsets, but different segments from the same continuous recording
+may still share subject-specific characteristics, radar reflection patterns, and similar motion dynamics. Multi-frame methods
+explicitly learn temporal relationships across consecutive frames and are therefore more sensitive to the removal of these
+correlations. The subject-independent protocol requires temporal representations to generalize to completely unseen subjects
+and consequently produces higher errors for these methods.
+In contrast, the single-frame methods show moderately lower MLEs under the subject-independent protocol. This result
+does not indicate that subject-independent evaluation is generally easier. The two partition protocols produce different test-
+set compositions with respect to subjects, poses, motions, and radar observations. Since single-frame methods process each
+frame independently, they do not directly exploit temporal continuity between different chunks of the same sequence and are
+less sensitive to the removal of sequence-level temporal correlations. Their moderate improvement is therefore more
+reasonably attributed to variation in the frame-level distribution of the held-out subjects. Overall, the subject-independent
+29
+experiment provided a stricter assessment of cross-subject generalization and confirms that PAST-Net retains the best
+performance among all compared methods.
+6.4. Ablation study
+After verifying the overall performance, we further analyzed the contribution of the main network designs. The ablation
+study contained two parts. First, module-level ablation was conducted to examine the effects of skeleton-aware part-token
+spatial feature extraction and part-wise temporal self-attention. Then, input-feature ablation was performed to evaluate
+whether radar-specific attributes provide additional information beyond 3D coordinates.
+As shown in Table 8, the module-level ablation results separately verify the contributions of the two main designs of
+PAST-Net. The baseline directly performed keypoint regression using the global frame-level representation and achieved an
+MLE of 5.17 cm. After the skeleton-aware spatial module was introduced, the global representation was reorganized into
+multiple latent part tokens, reducing the MLE to 4.39 cm. This improvement indicates that part-token-based spatial feature
+organization provides a more effective representation than direct regression from a single global feature. Based on the spatially
+organized part tokens, the part-wise temporal module further reduced the MLE from 4.39 to 4.08 cm. Instead of extracting a
+unified global temporal feature, this module independently models the temporal evolution of each token type. The additional
+improvement indicates that part-specific temporal information provides complementary cues for target-frame pose estimation.
+Therefore, the results in Table 8 confirm that both skeleton-aware spatial reorganization and part-wise temporal feature
+extraction contribute to the final performance of PAST-Net.
+Table 8
+Module-level ablation study of PAST-Net.
+Model configuration MLE (cm)
+Baseline 5.17
+Baseline + spatial module 4.39
+Baseline + spatial module + temporal module 4.08
+Lower MLE values indicate better performance. The lowest MLE is shown in bold.
+Table 9 reports the input-feature ablation results. In the 3D setting, each radar point contains only the spatial coordinates
+(𝑋,𝑌,𝑍). In the 5D setting, Doppler information and SNR are further included as radar-specific attributes. The 3D input yields
+an MLE of 4.27 cm, while the 5D input reduces the MLE to 4.08 cm. This result indicates that the additional radar attributes
+provide complementary cues for 3D keypoint localization. Specifically, Doppler information reflects the motion-related
+characteristics of the detected points, and SNR describes the reliability of radar detections. Therefore, compared with the
+geometry-only input, the 5D radar-enhanced input provides a more informative point representation for radar-based 3D-HPE.
+30
+Table 9
+Input-feature ablation study.
+Input feature MLE (cm)
+𝑋,𝑌,𝑍 4.27
+𝑋,𝑌,𝑍,Doppler information, and SNR 4.08
+Lower MLE values indicate better performance. The lowest MLE is shown in bold.
+6.5. Effect of input point count
+To quantitatively examine the effect of the number of radar point-cloud observations, we conducted a controlled input
+point-count experiment while keeping the PAST-Net architecture, training settings, and evaluation protocol unchanged. Each
+radar frame was normalized to a fixed input size. FPS was applied when the number of valid points exceeded the specified
+input size, whereas zero padding was used when the number of valid points was insufficient. PAST-Net was separately trained
+with 25, 50, 75, 100, 125, 150, and 300 input points per frame.
+As shown in Table 10, the localization error exhibits a clear overall decrease as the number of input points increases.
+Increasing the input size from 25 to 50 points reduces the MLE from 5.23 to 4.38 cm, indicating that extremely sparse
+observations provide insufficient spatial constraints for stable keypoint localization. The error continues to decrease as more
+points are retained, gradually approaching saturation after approximately 100–150 points. The minor fluctuation between the
+100-point and 125-point settings is only 0.003 cm and does not alter the overall trend.
+Table 10
+Effect of input radar point count on the pose estimation performance of PAST-Net.
+Number of input points MLE (cm)
+25 5.23
+50 4.38
+75 4.21
+100 4.11
+125 4.11
+150 4.09
+31
+Number of input points MLE (cm)
+300 4.08
+The 300-point setting is used in the main experiments because the vast majority of frames contain fewer than 300 valid
+human-related radar points. This setting therefore preserves nearly all available observations without discarding valid returns
+from point-rich frames. The dataset contains an average of 164 and a median of 165 valid radar points per frame. Consequently,
+the 150-point setting already retains most of the informative observations in many samples, which explains why its
+performance is close to that of the 300-point setting.
+Input point count alone, however, does not fully characterize radar point-cloud quality. The point clouds used in this
+experiment are downsampled from dense observations generated by the proposed four-chip cascaded radar prototype. The
+improved angular sensing capability of the radar system produces human-related reflections with broader and more continuous
+body-region coverage. FPS reduces the number of points while retaining their spatial distribution. Therefore, a downsampled
+point cloud with a given number of points is not equivalent to a natively sparse point cloud generated by a sensing system
+with lower spatial resolution or weaker human-body detection capability. The experiment demonstrates that increased point
+availability benefits pose estimation, while the retained performance under downsampling further reflects the informative
+human-body representation provided by the proposed radar prototype.
+7. Discussion
+The mmWave-DensePose dataset and PAST-Net provide a complete radar-only framework for 3D-HPE. The dataset
+improves the spatial observation quality of radar sensing, while PAST-Net improves the representation ability of dense but
+non-uniform radar point clouds. This section further discusses the value of dense radar point clouds, dataset reusability,
+annotation uncertainty, and engineering applications.
+7.1. Value of dense radar point clouds
+The dataset analysis in Section 4.1 shows that the customized radar system improves both the quantity and the structural
+usefulness of valid human-related radar observations. This property matters for engineering deployment because the
+acquisition prototype produces geometric inputs that are directly usable by point-cloud learning models, rather than merely
+increasing raw radar data volume or admitting more low-quality detections. The resulting point clouds therefore support both
+data-driven model training and interpretable inspection of human-related radar observations.
+To quantitatively examine the contribution of observation quantity, the point-count analysis in Section 6.5 evaluates
+the pose estimation performance under different numbers of retained radar points while keeping the sensing configuration
+unchanged. The MLE generally decreases as more human-related points are provided to the network, with the largest
+improvement occurring in the low-density range. The performance then gradually approaches saturation when approximately
+100–150 points are available. This trend is consistent with the dataset mean and median point counts of 164 and 165,
+respectively, indicating that most frames provide sufficient observations for stable keypoint estimation.
+However, the number of input points alone does not fully characterize the sensing quality of a radar point cloud. Although
+point density and spatial resolution are related, they describe different aspects of the sensing process. The point-count
+experiment controlled the number of observations presented to the network, whereas radar spatial resolution determines
+whether reflections from adjacent body regions can be separated during data acquisition. The customized radar provides
+range, azimuth, and elevation resolutions of 0.06 m, 1.30°, and 2.24°, respectively, which contribute to improved spatial
+separability and body-region coverage in the source observations. Consequently, point clouds downsampled from these dense
+observations should not be regarded as equivalent to point clouds natively acquired by a sparse or lower-resolution radar.
+Farthest point sampling reduces the number of retained points while preserving the spatial coverage available in the original
+dense observation. In contrast, a natively sparse or lower-resolution radar may produce a similar number of points but provide
+weaker body-region coverage and lower spatial separability. Therefore, the controlled experiment primarily quantified the
+sensitivity of PAST-Net to observation quantity, whereas the sensing advantage of the customized radar arises from both the
+effective point density and the spatial quality of the original detections.
+Nevertheless, dense radar point clouds do not remove all observation difficulties. Radar reflections are still affected by
+electromagnetic scattering properties, motion amplitude, and body-part size. Thus, small or weakly moving regions may still
+generate incomplete observations. This observation motivated the design of PAST-Net. Instead of relying only on a single
+32
+global frame feature, the network introduces skeleton-aware part-token representations and part-wise temporal modeling to
+improve pose estimation under non-uniform point distributions.
+7.2. Dataset reusability
+The mmWave-DensePose dataset is designed not only for PAST-Net but also for future radar-based human sensing
+studies. Beyond the radar-only benchmark, the retained RGB images and other auxiliary data increase the reusability of the
+dataset. This multimodal structure supports several possible research directions. First, the synchronized image and depth data
+provide references for visualization and annotation quality analysis. Second, the image-related data can support cross-modal
+learning between radar and vision. Third, the sequence-level organization makes the dataset suitable for temporal modeling,
+motion analysis, and sequence-based representation learning. Therefore, the dataset provides a reusable benchmark for both
+radar-only and multimodal human sensing tasks.
+The explicit separation between the radar-only benchmark and auxiliary dataset resources also keeps future comparisons
+traceable.
+7.3. Annotation uncertainty and evaluation interpretation
+Kinect V2 skeletons are used as reference ground-truth annotations in the proposed benchmark. Previous validation
+studies have shown that Kinect V2 skeletal tracking is subject to measurement uncertainty, and its accuracy can be affected
+by factors such as joint location, motion type, viewing condition, and self-occlusion [63–65]. To improve annotation quality,
+the acquisition system applies a tracking-quality criterion, as described in Section 3.2, and only frames with at least 22 reliably
+tracked joints among the original 25 Kinect V2 joints are retained as valid samples. This filtering removes frames with
+extensive inferred or unsuccessful tracking and reduces obvious annotation failures under unfavorable sensing conditions.
+Nevertheless, Kinect V2 remains a markerless reference system and cannot be regarded as an error-free measurement of
+the physical joint centers. Therefore, the localization errors reported in this work should be interpreted as errors relative to
+the Kinect-based reference annotations rather than absolute errors relative to the unknown physical joint positions. Since all
+compared methods were trained and evaluated using exactly the same reference annotations, the benchmark provides a
+consistent basis for controlled method comparison. However, annotation uncertainty may increase the absolute error floor and
+reduce the discriminability of very small numerical performance differences. Accordingly, small differences between methods
+should be interpreted with appropriate caution.
+7.4. Engineering applications
+From an engineering perspective, dense radar point-cloud 3D-HPE has potential value in scenarios where visual sensing
+is limited by privacy, illumination, or environmental conditions. mmWave radar can sense human motion without relying on
+visible texture, so it is suitable for human monitoring, rehabilitation assistance, smart environments, and safety-related human
+sensing. Pose-derived keypoints have also demonstrated practical value for automated activity analysis in real engineering
+environments [4]. Compared with image-based systems, radar-based systems also provide a more privacy-preserving sensing
+form because they do not directly record detailed visual appearance. The acquisition prototype also reflects an engineering-
+oriented design. Instead of transmitting raw radar data to the host computer, the radar system embeds the point-cloud
+generation pipeline and directly outputs radar point clouds through Ethernet using UDP. This design reduces data transmission
+pressure and provides a compact geometric representation for real-time processing. Therefore, it is more suitable for online
+3D-HPE than a raw-data transmission scheme with a large data volume.
+The real-time applicability was further demonstrated by deploying PAST-Net on a low-compute NVIDIA T400 graphics
+processing unit (GPU). As shown in the supplementary video, the deployed system outputs radar point-cloud-based pose
+predictions in real time. The demo includes normal motion sequences, occlusion scenarios, unseen subjects, and motions that
+are not included in the mmWave-DensePose dataset. In these cases, PAST-Net still produces temporally stable and
+anatomically plausible pose predictions from radar point clouds. These results indicate that the proposed system has practical
+real-time potential and shows promising robustness under cross-subject, cross-motion, and partially occluded conditions.
+8. Conclusions
+This paper presented dense mmWave radar point clouds as a practical sensing basis for privacy-preserving 3D-HPE. A
+customized radar acquisition prototype was constructed to generate human-related point clouds; the resulting mmWave-
+DensePose dataset provides synchronized radar point clouds, Kinect V2 skeleton annotations, and auxiliary image resources
+for future extension. To improve keypoint localization from dense but non-uniform radar observations, this paper further
+proposed PAST-Net, a network that first extracts frame-level point-cloud features and then reorganizes them into skeleton-
+aware part-token representations. These part-token representations provide body-region-guided intermediate features without
+requiring explicit body-part labels. Part-wise temporal self-attention then models the motion continuity of each part-token
+representation across consecutive radar frames, and the final global-part feature supports target-frame keypoint regression.
+33
+Experiments on the mmWave-DensePose benchmark showed that PAST-Net achieved the lowest MLE among representative
+radar-based 3D-HPE methods, with an average MLE of 4.08 cm. Compared with the strongest reproduced baseline, PAST-
+Net reduced the localization error by 22.14%. Ablation studies showed that skeleton-aware spatial modeling, part-wise
+temporal modeling, and radar-specific point attributes each contributed to the final performance. Qualitative results further
+showed more stable skeleton predictions in weakly observed body regions. These findings indicate that dense mmWave radar
+point clouds, together with structured spatio-temporal modeling, enable fine-grained radar-only 3D-HPE. Future work can
+extend this benchmark to more complex indoor scenes, higher-accuracy annotations, multi-person settings, and multimodal
+or cross-modal learning based on the retained auxiliary resources.
+Data availability
+The code and dataset are publicly available at https://seu-rise.github.io/mmWave-DensePose/.
+CRediT authorship contribution statement
+Jiang Liu: Conceptualization, Methodology, Software, Investigation, Data Curation, Validation, Writing. Yan Huang:
+Supervision, Hardware, Conceptualization, Writing. Yanjun Zhang: Validation, Writing. Chengchang Tian: Methodology.
+Zhen Yang: Validation, Investigation. Kaihang Zheng: Validation, Investigation. Rui Zhou: Hardware. Hui Zhang:
+Supervision, Hardware, Methodology. Jixin Chen: Supervision, Hardware, Methodology. Wei Hong: Supervision,
+Hardware.
+Declaration of competing interest
+The authors declare that they have no known competing financial interests or personal relationships that could have
+appeared to influence the work reported in this paper.
+Acknowledgments
+This work was supported in part by the National Natural Science Foundation of China (62271142), in part by the National
+Natural Science Foundation of China (62601164), in part by the Basic Research Program of Jiangsu (BK20250070), and in
+part by the Nanjing U35 Strong Foundation Engineering (4204002501).
+Appendix A. Supplementary date
+Supplementary data to this article can be found online at
+References
+[1] Neupane RB, Li K, Boka TF. A survey on deep 3D human pose estimation. Artif Intell Rev 2024;58:24.
+[2] Wang J, Tan S, Zhen X, Xu S, Zheng F, He Z, et al. Deep 3D human pose estimation: a review. Comput Vis Image
+Underst 2021;210:103225.
+[3] Zheng C, Wu W, Chen C, Yang T, Zhu S, Shen J, et al. Deep learning-based human pose estimation: a survey. ACM
+Comput Surv 2023;56(1):11.
+[4] Zhou X, Li S, Liu J, Wu Z, Chen YF. Construction activity analysis of workers based on human posture estimation
+information. Engineering 2024;33:225–36.
+[5] Wang C, Xie S, Li K, Wang C, Liu X, Zhao L, et al. Multi-view point-based registration for native knee kinematics
+measurement with feature transfer learning. Engineering 2021;7(6):881–8.
+[6] Liu H, Zhang Z, Jiao Z, Zhang Z, Li M, Jiang C, et al. A reconfigurable data glove for reconstructing physical and virtual
+grasps. Engineering 2024;32:202–16.
+7] Andriluka M, Pishchulin L, Gehler P, Schiele B. 2D human pose estimation: new benchmark and state of the art analysis.
+In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition; 2014 Jun 24–27; Columbus, OH,
+USA. Piscataway: IEEE; 2014. p. 3686–93.
+34
+[8] Ionescu C, Papava D, Olaru V, Sminchisescu C. Human3.6M: large scale datasets and predictive methods for 3D human
+sensing in natural environments. IEEE Trans Pattern Anal Mach Intell 2014;36(7):1325–39.
+[9] Cao Z, Simon T, Wei SE, Sheikh Y. Realtime multi-person 2D pose estimation using part affinity fields. In: Proceedings
+of the IEEE Conference on Computer Vision and Pattern Recognition; 2017 Jul 21–26; Honolulu, HI, USA. Piscataway:
+IEEE; 2017. p. 7291–9.
+[10] Zheng C, Zhu S, Mendieta M, Yang T, Chen C, Ding Z. 3D human pose estimation with spatial and temporal
+transformers. In: Proceedings of the IEEE/CVF International Conference on Computer Vision; 2021 Oct 10–17; Montreal,
+QC, Canada. Piscataway: IEEE; 2021. p. 11656–65.
+[11] Zhao M, Li T, Alsheikh MA, Tian Y, Zhao H, Torralba A, et al. Through-wall human pose estimation using radio signals.
+In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition; 2018 Jun 18–22; Salt Lake City,
+UT, USA. Piscataway: IEEE; 2018. p. 7356–65.
+[12] Li G, Zhang Z, Yang H, Pan J, Chen D, Zhang J. Capturing human pose using mmWave radar. In: Proceedings of the
+IEEE International Conference on Pervasive Computing and Communications Workshops; 2020 Mar 23–27; Austin, TX,
+USA. Piscataway: IEEE; 2020. p. 1–6.
+[13] Sengupta A, Jin F, Zhang R, Cao S. mm-Pose: real-time human skeletal posture estimation using mmWave radars and
+CNNs. IEEE Sens J 2020;20(17):10032–44.
+[14] Shi C, Lu L, Liu J, Wang Y, Chen Y, Yu J. mPose: environment- and subject-agnostic 3D skeleton posture reconstruction
+leveraging a single mmWave device. Smart Health 2022;23:100228.
+[15] Ho YH, Cheng JH, Kuan SY, Jiang Z, Chai W, Huang HW, et al. RT-Pose: a 4D radar tensor-based 3D human pose
+estimation and localization benchmark. In: Proceedings of the 18th European Conference on Computer Vision; 2024 Sep
+29–Oct 4; Milan, Italy. Berlin: Springer; 2024. p. 107–25.
+[16] Chen L, Wang G. CPFormer: end-to-end multi-person human pose estimation from raw radar cubes with transformers.
+IEEE Sens J 2025;25(7):12466–78.
+[17] Sengupta A, Cao S. mmPose-NLP: a natural language processing approach to precise skeletal pose estimation using
+mmWave radars. IEEE Trans Neural Netw Learn Syst 2023;34(11):8418–29.
+[18] Lai J, Tian J, Zou Y, Song X, Liu F, Li D. mmHPE: human pose estimation based on point cloud from millimeter-wave
+radar. In: Proceedings of the IEEE International Conference on Systems, Man, and Cybernetics; 2024 Oct 6–10; Kuching,
+Malaysia. Piscataway: IEEE; 2025. p. 2325–31.
+[19] Shi X, Ohtsuki T. A robust multi-frame mmWave radar point cloud-based human skeleton estimation approach with
+point cloud reliability assessment. In: Proceedings of the IEEE SENSORS; 2023 Oct 29–Nov 1; Vienna, Austria.
+Piscataway: IEEE; 2023. p. 1–4.
+[20] Slivko E, Toprak Ö, Raheja V, Bierzynsk K, Servadei L, Wille R. RadarPoseNet: human pose estimation from extremely
+sparse FMCW radar point clouds. In: Proceedings of the IEEE SENSORS; 2025 Oct 19–22; Vancouver, BC, Canada.
+Piscataway: IEEE; 2025. p. 1–4.
+[21] He Y, Wang J, Li Y, Luo Y. Dual-path CNN–BiLSTM for mmWave-based human skeletal pose estimation. IEEE Sens
+J 2025;25(7):11683–96.
+[22] Feng Y, Dai S, Zhang Q, Wang Z, Zhang X, Zhou Y. M3Pose: multi-person 3D pose estimation using sparse millimeter-
+wave radar point clouds. In: Proceedings of the 7th Chinese Conference on Pattern Recognition and Computer Vision;
+2024 Oct 18–20; Urumqi, China. Singapore: Springer; 2025. p. 504–17.
+[23] Cao Z, Mei G, Guo X, Wang G. VirTeach: mmWave radar point-cloud-based pose estimation with virtual data as a
+teacher. IEEE Internet Things J 2024;11(10):17615–28.
+[24] Wang Z, Monjur M, Nirjon S. mmJoints: expanding joint representations beyond (x,y,z) in mmWave-based 3D pose
+estimation. 2025. arXiv:2510.08970.
+[25] Lee SP, Kini NP, Peng WH, Ma CW, Hwang JN. HuPR: a benchmark for human pose estimation using millimeter wave
+radar. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision; 2023 Jan 2–7; Waikoloa,
+HI, USA. Piscataway: IEEE; 2023. p. 5704–13.
+35
+[26] Chen A, Wang X, Zhu S, Li Y, Chen J, Ye Q. mmBody benchmark: 3D body reconstruction dataset and analysis for
+millimeter wave radar. In: Proceedings of the 30th ACM International Conference on Multimedia; 2022 Oct 10–14; Lisboa,
+Portugal. New York City: Association for Computing Machinery; 2022. p. 3501–10.
+[27] Yang J, Huang H, Zhou Y, Chen X, Xu Y, Yuan S, et al. MM-Fi: multi-modal non-intrusive 4D human dataset for
+versatile wireless sensing. In: Proceedings of the 37th Conference on Neural Information Processing Systems; 2023 Dec
+10–16; New Orleans, LA, USA. Red Hook: Curran Associates, Inc.; 2023. p.18756–68.
+[28] Su Y, Hou HC, Lan H, Ma CZH. A high-fidelity mmWave radar dataset for privacy-sensitive human pose estimation.
+Bioengineering 2025;12(8):891.
+[29] Fan J, Zhou Y, Yang Y, Cui X, Zhang J, Xie L, et al. M4Human: a large-scale multimodal mmWave radar benchmark
+for human mesh reconstruction. 2026. arXiv:2512.12378.
+[30] Dong M, Li W, Sun X, Bi S. A global–local network for human pose estimation with completed mmWave radar point
+clouds. IEEE Sens J 2026;26(5):7152–64.
+[31] Yan Z, Ni H, Yu X, Tan W. Indoor 3-D human pose estimation using single millimeter-wave radar and conditional
+generative adversarial network. IEEE Sens J 2025;25(13):23207–15.
+[32] Han Z, Jiang J, Ding X, Wang J, Meng Q, Xu S, et al. DenserRadar: a 4D millimeter-wave radar point cloud detector
+based on dense liDAR point clouds. In: Proceedings of the IEEE 27th International Conference on Intelligent
+Transportation Systems; 2024 Sep 24–27; Edmonton, AB, Canada. Piscataway: IEEE; 2024. p. 930–6.
+[33] Yu Y, Chen Z, Zhao C, Liu H, Wu Y, Yin WY, et al. A 39 GHz dual-channel transceiver chipset with an advanced LTCC
+package for 5G multi-beam MIMO systems. Engineering 2023;22:125–40.
+[34] Venon A, Dupuis Y, Vasseur P, Merriaux P. Millimeter wave FMCW radars for perception, recognition and localization
+in automotive applications: a survey. IEEE Trans Intell Veh 2022;7(3):533–55.
+[35] Sun Y, Huang Z, Zhang H, Cao Z, Xu D. 3DRIMR: 3D reconstruction and imaging via mmWave radar based on deep
+learning. In: Proceedings of the IEEE International Performance, Computing, and Communications Conference; 2021 Oct
+29–31; Austin, TX, USA. Piscataway: IEEE; 2021. p. 1–8.
+[36] Bai Y, Liu Z, Duan M, Feng J, Xiong X, Wei K, et al. Microwave photonic links and transversal microwave photonic
+applications. Electromagn Sci 2025;3(1):0090541.
+[37] Singh AD, Sandha SS, Garcia L, Srivastava M. RadHAR: human activity recognition from point clouds generated
+through a millimeter-wave radar. In: Proceedings of the 3rd ACM Workshop on Millimeter-Wave Networks and Sensing
+Systems; 2019 Oct 25; Los Cabos, Mexico. Red Hook: Curran Associates, Inc.; 2019.
+[38] Zhao P, Lu CX, Wang B, Trigoni N, Markham A. CubeLearn: end-to-end learning for human motion recognition from
+raw mmWave radar signals. IEEE Internet Things J 2023;10(12):10236–49.
+[39] Mahajan P, Chaudhary D, Khan M, Khan MH, Wajid M, Srivastava A. A point cloud-based non-intrusive approach for
+human posture classification by utilizing 77 GHz FMCW radar and deep learning models. In: Proceedings of the IEEE
+International Symposium on Circuits and Systems; 2024 May 19–22; Singapore. Piscataway: IEEE; 2024. p. 1–5.
+[40] Zhu J, Huang X, Deng Z, Qiu Y. mRadHPRS: human pose recognition system from point clouds generated through a
+millimeter-wave radar. IEEE Trans Aerosp Electron Syst 2025;61(2):3227–42.
+[41] Zhang Y. Differential antennas: fundamentals and applications. Electromagn Sci 2023;1(1):0010021.
+[42] Cui H, Zhong S, Wu J, Shen Z, Dahnoun N, Zhao Y. MiliPoint: a point cloud dataset for mmWave radar. In: Proceedings
+of the 37th Conference on Neural Information Processing Systems; 2023 Dec 10–16; New Orleans, LA, USA. Red Hook:
+Curran Associates, Inc.; 2023. p. 62713–26.
+[43] An S, Li Y, Ogras U. mRI: multi-modal 3D human pose estimation dataset using mmWave, RGB-D, and inertial sensors.
+In: Proceedings of the 36th Conference on Neural Information Processing Systems; 2022 Nov 28–Dec 9; New Orleans,
+LA, USA. Red Hook: Curran Associates, Inc.; 2022. p. 27414–26.
+36
+[44] Wei G, Cui C, Dong X. A transformer-based network for human pose estimation using millimeter wave radar data. In:
+Proceedings of the International Applied Computational Electromagnetics Society Symposium; 2023 Aug 15–18;
+Hangzhou, China. Piscataway: IEEE; 2023. p. 1–4.
+[45] Zhu B, He Z, Xiong W, Ding G, Huang T, Xiang W. ProbRadarM3F: mmWave radar-based human skeletal pose
+estimation with probability map-guided multiformat feature fusion. IEEE Trans Aerosp Electron Syst 2025;61(6):15832–
+42.
+[46] Kini NP, Shiue RH, Chandra R, Peng WH, Ma CW, Hwang JN. Transhupr: Cross-view fusion transformer for human
+pose estimation using mmWave radar. In: Proceedings of the 35th British Machine Vision Conference; 2024 Nov 25–28;
+Glasgow, UK. Durham: British Machine Vision Association; 2024.
+[47] Charles RQ, Su H, Kaichun M, Guibas LJ. PointNet: deep learning on point sets for 3D classification and segmentation.
+In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition; 2017 Jul 21–26; Honolulu, HI,
+USA. Piscataway: IEEE; 2017. p. 77–85.
+[48] Qi CR, Yi L, Su H, Guibas LJ. PointNet++: deep hierarchical feature learning on point sets in a metric space. In:
+Proceedings of the 31st International Conference on Neural Information Processing Systems; 2017 Dec 3–9; Long Beach,
+CA, USA. Red Hook: Curran Associates, Inc.; 2017. p. 5105–5114.
+[49] Yu X, Rao Y, Wang Z, Liu Z, Lu J, Zhou J. PoinTr: diverse point cloud completion with geometry-aware transformers.
+In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV); 2021 Oct 10–17; Montreal, QC,
+Canada. Piscataway: IEEE; 2021. p. 12498–507.
+[50] Wu Y, Jiang Z, Ni H, Mao C, Zhou Z, Wang W, et al. mmHPE: robust multiscale 3-D human pose estimation using a
+single mmwave radar. IEEE Internet Things J 2025;12(1):1032–46.
+[51] Su Y, Hou HC, Zhao C, Nan Z. PoseGraphNet: pose prior and graph structure for 3D human pose estimation using
+mmWave radar. Measurement 2026;257:118851.
+[52] Hu S, Cao S, Toosizadeh N, Barton J, Hector MG, Fain MJ. mmPose-FK: a forward kinematics approach to dynamic
+skeletal pose estimation using mmWave radars. IEEE Sens J 2024;24(5):6469–81.
+[53] Engel L, Mueller J, Rendon EJF, Dorschky E, Krauss D, Ullmann I, et al. Advanced millimeter wave radar-based human
+pose estimation enabled by a deep learning neural network trained with optical motion capture ground truth data. IEEE J
+Microwaves 2025;5(2):373–87.
+[54] Luo Y, He Y, Li Y, Liu H, Wang J, Gao F. A sliding window-based CNN-BiGRU approach for human skeletal pose
+estimation using mmWave radar. Sensors 2025;25(4):1070.
+[55] Lu W, Chen Y, Huang X. mmChainPose: geometry-aware temporal chaining for robust human pose estimation from
+mmWave point clouds. Neurocomputing 2026;663:132019.
+[56] Kini NP, Tsai SR, Lin GH, Peng WH, Ma CW, Hwang JN. milliMamba: specular-aware human pose estimation via dual
+mmWave radar with multi-frame mamba fusion. In: Proceedings of the IEEE/CVF Winter Conference on Applications
+of Computer Vision;2026 Mar 6–10; Tucson, AZ, USA. Piscataway: IEEE; 2026. p. 1481–90.
+[1] Ma N, Pan J, Liu Y, Yang Y, Han Y, Guo J, et al. Embodied interactive intelligence towards autonomous driving.
+Engineering 2026;59:337–51.
+58] An S, Ogras UY. MARS: mmWave-based assistive rehabilitation system for smart healthcare. ACM Trans Embed
+Comput Syst 2021;20(5s):72.
+[59] Roshandel N, Scholz C, Cao HL, Cao HG, Amighi M, Firouzipouyaei H, et al. mmPrivPose3D: a radar-based approach
+to privacy-compliant pose estimation and gesture command recognition in human–robot collaboration. IEEE Sens J
+2025;25(15):29437–29445.
+[60] Zhao H, Jiang L, Jia J, Torr PH, Koltun V. Point transformer. In: Proceedings of the IEEE/CVF International Conference
+on Computer Vision;2021 Oct 11–17; online. Piscataway: IEEE; 2021. p. 16259–68.
+[61] Ma X, Qin C, You H, Ran H, Fu Y. Rethinking network design and local geometry in point cloud: a simple residual
+MLP framework. 2022. arXiv:2202.07123.
+37
+[62] Wang Y, Sun Y, Liu Z, Sarma SE, Bronstein MM, Solomon JM. Dynamic graph CNN for learning on point clouds.
+ACM Trans Graph 2019;38(5):146.
+[63] Otte K, Kayser B, Mansow-Model S, Verrel J, Paul F, Brandt AU, et al. Accuracy and reliability of the kinect version 2
+for clinical measurement of motor function. PLoS One 2016;11(11):e0166532.
+[64] Faity G, Mottet D, Froger J. Validity and reliability of Kinect V2 for quantifying upper body kinematics during seated
+reaching. Sensors 2022;22(7):2735.
+[65] Ogawa A, Mita A, Yorozu A, Takahashi M. Markerless knee joint position measurement using depth data during stair
+walking. Sensors 2017;17(11):2698.
+Declaration of Interest Statement
+☒ The authors declare that they have no known competing financial interests or personal
+relationships that could have appeared to influence the work reported in this paper.
+☐ The author is an Editorial Board Member/Editor-in-Chief/Associate Editor/Guest Editor
+for this journal and was not involved in the editorial review or the decision to publish this
+article.
+☐ The authors declare the following financial interests/personal relationships which may be
+considered as potential competing interests:
+

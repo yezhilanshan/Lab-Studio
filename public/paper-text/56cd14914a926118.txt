@@ -1,0 +1,1229 @@
+Temporal Interaction in Spiking Transformers with Multi-Delay Mixer
+Kexin Shi1
+Hanwen Liu1
+Zeyang Song2
+Yang Liu1
+Jieyuan Zhang1
+Shuai Wang1
+Jibin Wu3
+Malu Zhang1,∗
+Yang Yang1
+1
+University of Electronic Science and Technology of China
+2
+National University of Singapore
+3
+Hong Kong Polytechnic University
+∗
+Corresponding author: maluzhang@uestc.edu.cn
+Abstract
+Spiking Neural Networks (SNNs) have gained significant at-
+tention due to their event-driven computational paradigm,
+making them promising for neuromorphic computing. In
+recent years, the integration of SNNs and Transformer ar-
+chitectures has made remarkable progress in various tasks.
+However, existing spiking self-attention mechanisms pre-
+dominantly focus on spatial information while neglecting
+explicit temporal modeling, leading to suboptimal perfor-
+mance. In this paper, we introduce the Temporal Interaction
+Coefficient (TIC) to analyze temporal dependency patterns
+in these spatial-only attention mechanisms, revealing their
+limited temporal interactions and restricted pattern diver-
+sity. To overcome this issue, we propose the Multi-Delay
+Mixer (MD-Mixer), drawing inspiration from time delay
+mechanisms in the nervous system. Specifically, MD-Mixer
+introduces multiple temporal delays to perform effective
+time mixing and facilitate temporally enriched spatial at-
+tention. In addition, it can be integrated seamlessly into ex-
+isting Spiking Transformers as a drop-in replacement while
+maintaining computational efficiency. Extensive evalua-
+tions on static and neuromorphic benchmarks demonstrate
+that MD-Mixer substantially improves the performance of
+Spiking Transformers, outperforming existing state-of-the-
+art (SOTA) methods. This work establishes MD-Mixer as
+an effective and general solution for temporal modeling in
+event-driven architectures.
+1. Introduction
+Spiking Neural Networks (SNNs) have emerged as a
+promising paradigm in neuromorphic computing, offering
+a fundamentally different approach to information process-
+ing compared to conventional Artificial Neural Networks
+(ANNs) [9, 14, 27]. Drawing inspiration from biological
+neurons, SNNs encode and transmit information through
+discrete, event-driven spikes, which are triggered when
+membrane potentials surpass firing thresholds. The sparse
+and event-driven nature [4] of spike-based computation en-
+ables remarkable energy efficiency when deployed on neu-
+romorphic hardware platforms [1, 5, 28, 30]. Moreover, the
+inherent temporal dynamics [52] embedded in spike timing
+provide a natural framework for processing spatiotempo-
+ral information. These distinctive characteristics establish
+SNNs as ideal candidates in energy-constrained spatiotem-
+poral computing scenarios [21, 22, 24, 25].
+To further unlock their potential, Transformer architec-
+tures have recently been integrated into SNNs, spawning
+numerous Spiking Transformer models [35, 45, 53, 56,
+62, 63], demonstrating substantial performance improve-
+ments across diverse applications [19, 36, 49, 60]. Despite
+these advances, existing self-attention mechanisms [11, 38,
+41, 51] suffer from a fundamental limitation that they
+effectively capture spatial relationships within individual
+timesteps but critically fail to model temporal dependen-
+cies. This temporal modeling deficiency stems from the
+exclusive reliance on intrinsic spiking neuron dynamics [8,
+10], which proves insufficient for capturing temporal pat-
+terns inherent in neuromorphic data [33, 58]. Existing so-
+lutions attempting to address temporal dependencies either
+incur prohibitive computational costs or sacrifice modeling
+capacity [18, 34, 48], leaving temporal modeling as a crit-
+ical unresolved challenge in Spiking Transformers. Com-
+pounding this issue, the absence of proper evaluation met-
+rics limits researchers to task-specific performance metrics,
+impeding both theoretical understanding and practical de-
+velopment of Spiking Transformers.
+In this paper, we introduce the Temporal Interaction Co-
+efficient (TIC), a quantitative metric that measures tempo-
+ral modeling capability in attention mechanisms. Through
+TIC-based analysis, we reveal that existing spiking attention
+mechanisms exhibit sharply peaked reliance distributions
+at current timesteps with negligible historical contributions,
+indicating severely limited temporal interactions. This find-
+This CVPR paper is the Open Access version, provided by the Computer Vision Foundation.
+Except for this watermark, it is identical to the accepted version;
+the final published version of the proceedings is available on IEEE Xplore.
+34555
+ing establishes temporal modeling as a critical bottleneck
+in Spiking Transformers. To address this limitation, we
+draw inspiration from biological axonal transmission delays
+and propose the Multi-Delay Mixer (MD-Mixer), which
+introduces multiple learnable delay branches with adap-
+tive channel-wise weighting to explicitly model multi-scale
+temporal dependencies. We further develop a soft-to-hard
+optimization strategy with progressive temperature anneal-
+ing, enabling efficient learning of discrete delays through
+continuous gradient descent. Building upon MD-Mixer’s
+temporal mixing capability, we construct the Multi-Delay
+Self-Attention Framework that integrates delay-based tem-
+poral interactions with spatial attention. By applying MD-
+Mixer to compute temporally enriched Keys and Values
+while maintaining temporally aligned Queries, our frame-
+work enables effective space-time mixing that captures both
+spatial and temporal dependencies in spike-driven compu-
+tation. Extensive experiments demonstrate that MD-Mixer
+consistently improves the performance of various Spiking
+Transformer architectures across static, neuromorphic, and
+long-sequence benchmarks. Our main contributions are
+summarized as follows:
+• We introduce the Temporal Interaction Coefficient (TIC)
+to quantify temporal modeling capacity in spiking at-
+tention mechanisms. TIC analysis reveals that existing
+mechanisms exhibit sharply peaked reliance distributions
+at current timesteps with negligible historical contribu-
+tions, establishing temporal modeling as a fundamental
+bottleneck in Spiking Transformers.
+• We propose the Multi-Delay Mixer (MD-Mixer), which
+employs multiple learnable delay branches and adaptive
+channel-wise weighting to explicitly capture multi-scale
+temporal dependencies. We further develop the Multi-
+Delay Self-Attention Framework that integrates MD-
+Mixer with spatial attention to achieve effective space-
+time mixing through delay-based temporal interactions.
+• We design a soft-to-hard optimization strategy with
+progressive temperature annealing that enables efficient
+learning of discrete delays through continuous gradient
+descent, facilitating the discovery of optimal temporal de-
+lay configurations.
+• We conduct comprehensive experiments demonstrating
+that MD-Mixer consistently improves various Spiking
+Transformer architectures across static datasets, neuro-
+morphic benchmarks, and long-sequence tasks, establish-
+ing new state-of-the-art results while maintaining compu-
+tational efficiency.
+2. Related Work
+2.1. Spiking Neural Networks
+SNNs fundamentally differ from conventional ANNs by
+encoding and transmitting information through discrete
+spikes rather than continuous activations, which endows
+them with promising advantages in terms of energy effi-
+ciency [26, 37] and biological plausibility. The introduction
+of direct training methods [8, 50] and ANN-to-SNN conver-
+sion strategies [2, 12] has enabled the development of high-
+performance and energy-efficient SNNs [15, 39, 40, 47].
+Building on these advances, researchers have incorporated
+spiking attention mechanisms [55, 59, 64] into SNNs to
+further enhance recognition performance on ImageNet [6]
+and neuromorphic datasets [20]. Moreover, the adoption
+of residual connections [7, 13] has effectively mitigated
+the gradient vanishing problem in deep SNNs, enabling
+large-scale network training. Additionally, recent studies
+have explored integrating Transformer architectures into
+SNNs, resulting in representative models such as Spik-
+former [63], SpikingResformer [38], and the Spike-Driven
+Transformer [53, 57]. These models have further improved
+the performance of SNNs on image recognition and neuro-
+morphic datasets.
+2.2. Temporal Interactions in Spiking Transformers
+Spiking Transformers have shown strong representation ca-
+pability while consuming substantially less energy than
+their ANN counterparts. However, temporal modeling in
+existing methods remains limited, as it is mainly handled
+implicitly through spiking neuron dynamics. Existing stud-
+ies on temporal interactions in spiking transformers mainly
+follow two directions: explicit spatiotemporal modeling and
+lightweight temporal enhancement. In the first direction,
+STSA [48] jointly models temporal and spatial interactions,
+improving performance on neuromorphic datasets at the
+cost of increased computational overhead. STAtten [18] fur-
+ther improves efficiency by adopting a block-wise strategy
+for temporal and spatial feature modeling while preserv-
+ing the same computational complexity as spatial-only ap-
+proaches. In the second direction, TIM [34], built on Spik-
+former [63], incorporates historical temporal information
+into the query branch with only a few additional parameters,
+thereby improving temporal modeling. SNN-ViT [46] in-
+troduces a dedicated Saccadic Spike Self-Attention (SSSA)
+mechanism to enhance whole-scene understanding through
+temporal interactions.
+3. Preliminary
+3.1. Leaky Integrate-and-Fire Neuron
+Spiking neurons serve as the fundamental computational
+units of SNNs, with the leaky integrate-and-fire (LIF) model
+being the most widely adopted due to its balance between
+biological plausibility and computational efficiency. The
+LIF neuron integrates incoming input currents over time
+while allowing a gradual decay of the membrane potential
+through a leakage mechanism. When the accumulated po-
+34556
+tential surpasses a predefined threshold, the neuron gener-
+ates a spike and resets its state. This process can be formally
+described by the following equations:
+Ut = λHt−1 + It (1)
+St = Θ (Ut − Vth) (2)
+Ht = Ut(1 − St) + VresetSt (3)
+Here, t denotes the discrete time step. I represents the input
+current, and U denotes the membrane potential after inte-
+gration but prior to spike generation. H indicates the mem-
+brane potential after firing, which decays exponentially un-
+der the influence of the leaky factor λ. Θ(·) is the Heavi-
+side step function responsible for spike activation. When U
+exceeds the firing threshold Vth, the neuron emits a spike,
+and its membrane potential is reset to Vreset; otherwise, no
+spike is generated. For brevity, we denote the spiking neu-
+ron layer as SN(·) throughout the following sections.
+3.2. Spiking Self-Attention
+Spikformer [63] pioneers the design of Spiking Self-
+Attention (SSA) as the first attention mechanism explicitly
+tailored for SNNs. Given binary queries (Q), keys (K), and
+values (V) derived from the input tensor X ∈ RT ×N×D
+,
+where T, N and D denote the numbers of time steps, to-
+kens, and feature dimensions, respectively, the SSA mecha-
+nism can be formulated as:
+Q = SN(BN(WQX)),
+K = SN(BN(WKX)),
+V = SN(BN(WVX)),
+Z = SN(α · QK⊤
+V),
+(4)
+Here, BN(·) denotes batch normalization, WQ, WK and
+WV are learnable linear projection matrices for Q, K, V,
+respectively, and α is a scaling factor. SN(·) denotes the
+spiking neuron layer, and Z represents the final output of
+SSA. Notably, temporal dependencies in SSA are handled
+implicitly through the intrinsic dynamics of spiking neu-
+rons, without explicit temporal interaction modeling, which
+limits its temporal modeling capability.
+4. Methodology
+4.1. Problem Analysis
+Despite significant advances in Spiking Transformers, ex-
+isting spiking self-attention mechanisms lack explicit mod-
+eling of temporal dependencies. To better analyze the tem-
+poral interaction patterns within attention mechanisms, we
+propose a new metric, the Temporal Interaction Coefficient
+(TIC), drawing inspiration from the analytical framework
+in [61]. At timestep q, the TIC is defined as:
+TICq = H( e
+Rq), (5)
+T=4 T=8
+T=12 T=16
+0 2 4 6 8 10 12 14 16
+R4
+0 2 4 6 8 10 12 14 16 0 2 4 6 8 10 12 14 16
+Timestep
+1
+0
+1
+0
+1
+0
+1
+0
+R8
+R16
+R12
+0 2 4 6 8 10 12 14 16
+QKTA
+SSA
+SDSA
+TIC4=1.47
+TIC4=1.88
+TIC4=1.70
+TIC8=1.71
+TIC8=2.32
+TIC8=2.04
+TIC12=1.73
+TIC12=2.34
+TIC12=2.09
+TIC16=1.74
+TIC16=2.35
+TIC16=2.10
+QKTA
+SSA
+SDSA
+QKTA
+SSA
+SDSA
+QKTA
+SSA
+SDSA
+Timestep
+Timestep Timestep
+Figure 1. Visualization of reliance vectors for SSA, QKTA, and
+SDSA attention mechanisms, based on the CIFAR10-DVS dataset.
+where H(·) denotes the information entropy [29]. The re-
+liance distribution e
+Rq is obtained by applying L1 normal-
+ization to the reliance vector Rq = [Rq→1, . . . , Rq→q].
+Each temporal reliance coefficient Rq→p measures the de-
+pendency of the attention output Z at timestep q with re-
+spect to the input representation X from the current or pre-
+ceding timestep p, which is computed as:
+Rq→p =
+∂Zq
+∂Xp 1
+, for p ≤ q. (6)
+A higher TICq indicates broader temporal reliance and
+richer temporal interactions, whereas a lower TICq reflects
+more concentrated dependence on only a few timesteps (see
+Supplementary Material for details).
+Building on the above definitions, we visualize the tem-
+poral reliance vectors [R1, R2, . . . , R16] for SSA [63],
+QKTA [62], and SDSA [53] on the CIFAR10-DVS dataset.
+Representative reliance vectors R4, R8, R12, and R16
+are illustrated in Fig. 1. The complete visualizations are
+provided in the Supplementary Material. Empirically, we
+observe that, for all baseline attention mechanisms, the
+reliance distributions are sharply peaked at the current
+timestep, while contributions from distant timesteps are al-
+most absent. This narrow temporal interaction range leads
+to consistently low TIC values across timesteps, indicating
+limited temporal integration capability and potentially hin-
+dering performance.
+4.2. Multi-Delay Mixer
+In biological neural systems, axonal structures naturally en-
+able temporal processing by introducing diverse transmis-
+sion delays [43], as illustrated in Fig. 2(a). Such delay-
+based modulation enables neurons to integrate information
+34557
+b) Multi-Delay Mixer
+delayed spike orginal spike
+K=2
+LIF neuron
+Time
+delay
+Δt
+Soma
+Axon
+Axon
+terminals
+...
+...
+�
+�
+� summation
+�1
+(1)
+�1
+(2)
+��
+(1)
+��
+(2)
+�1
+(1)
+�1
+(2)
+��
+(1)
+��
+(2)
+Delay Branch 1
+a) Biological neuron
+Delay Branch 2
+K: number of
+delay branches
+1st Channel
+C-th Channel
+Figure 2. The proposed MD-Mixer inspired by axonal transmis-
+sion delays. a) Biological inspiration. b) MD-Mixer with multiple
+delay branches and channel-wise aggregation, where K = 2 is
+shown for illustration.
+across different temporal scales, facilitating richer temporal
+representations. Inspired by this mechanism, we propose
+the Multi-Delay Mixer (MD-Mixer) to address the insuffi-
+cient temporal interaction modeling revealed in the previous
+analysis by integrating delayed information from different
+timesteps within spiking self-attention.
+Specifically, MD-Mixer performs channel-wise tempo-
+ral aggregation by introducing multiple learnable delay
+branches with adaptive weighting mechanisms, as illus-
+trated in Fig. 2(b). For each channel i ∈ {1, . . . , C}, where
+C denotes the number of channels, a set of K learnable
+delays {d
+(k)
+i }K
+k=1 is employed to establish diverse tempo-
+ral patterns across different timesteps. The delayed features
+from multiple branches are then weighted by learnable coef-
+ficients α
+(k)
+i and aggregated, enabling adaptive modulation
+of temporal information. Formally, the channel-wise tem-
+poral aggregation can be expressed as:
+e
+Xt,i =
+K
+X
+k=1
+α
+(k)
+i Xt−d
+(k)
+i ,i
+, (7)
+where Xt,i denotes the input tensor at time step t for chan-
+nel i, e
+Xt,i represents the aggregated temporal feature, and
+both d
+(k)
+i and α
+(k)
+i are jointly optimized during training
+to adaptively capture multi-scale temporal dependencies.
+The optimization strategy for delays is detailed in Sec-
+tion 4.4. Unlike approaches that rely on predefined tem-
+poral windows or recurrent connections, MD-Mixer em-
+ploys channel-specific learnable delays to construct en-
+riched temporal representations with multi-scale dependen-
+cies, achieving data-driven and parameter-efficient tempo-
+ral modeling while preserving the event-driven nature of
+SNNs. This property makes it naturally compatible with
+existing spiking self-attention mechanisms to address their
+temporal modeling limitations.
+4.3. Multi-Delay Self-Attention Framework
+By integrating the proposed MD-Mixer into existing spik-
+ing transformer architectures, we develop the unified Multi-
+Delay Self-Attention Framework, as illustrated in Fig. 3(a).
+This framework enables temporal mixing through delay-
+based temporal interactions, thereby achieving space–time
+mixing by applying spatial attention to temporally inte-
+grated features.
+Temporal Mixing. The MD-Mixer performs multi-scale
+temporal integration within each channel, thereby generat-
+ing delay-enhanced K and V that encode rich temporal dy-
+namics, while Q maintain the original temporal alignment.
+Formally, given an input tensor X ∈ RT ×N×C
+, the query,
+key, and value projections are obtained as:
+Q = SN(BN(Linear(X))), (8)
+K = SN(BN(MD-Mixer(X))), (9)
+V = SN(BN(MD-Mixer(X))). (10)
+Here, BN(·) denotes batch normalization, and Linear(·)
+represents a fully connected layer. After temporal mixing,
+the representations carry temporally enriched context, facil-
+itating space–time modeling.
+Space-Time Mixing. The obtained Q, K, and V are sub-
+sequently fed into the spiking self-attention module, where
+the attention computation extends from purely spatial cor-
+relations to spatiotemporal interactions. To illustrate this,
+Fig. 3(b) visualizes the vanilla K/V features used in the
+baseline attention, which are computed independently at
+each timestep and therefore capture only spatial correla-
+tions. In contrast, the delayed K/V features in Fig. 3(c)
+aggregate contextual information from current and preced-
+ing timesteps, achieving space–time mixing in the attention
+computation. Formally, the attention output is given by
+Z = Atten(Q, K, V), (11)
+where Z denotes the attention output, and Atten(·) denotes
+a generic attention function. With the delay-based temporal
+interactions provided by the MD-Mixer, the spiking self-
+attention evolves from spatial-only modeling to space–time
+mixing, capturing both spatial and temporal dependencies
+in spike-driven computation.
+4.4. Optimization of Delays
+To facilitate the learning of temporal delays, we introduce a
+triangular delay distribution Φ = {ϕ(d; d∗
+)}T −1
+d=0 with each
+element defined as
+ϕ(d; d∗
+) = N
+
+σ
+
+1 −
+|d − d∗
+|
+τ
+
+. (12)
+Here, ϕ(d; d∗
+) represents the probability weight assigned
+to delay d, d∗
+controls the center of the distribution, τ
+34558
+N
+C
+T
+(a) Multi-Delay Self-Attention Framework
+Q
+K
+V
+BN
+MD-
+Mixer
+BN
+Spiking Self
+Attention
+Linear
+MD-
+Mixer
+BN
+T=1
+T=2
+T=3
+T=4
+C
+T=1
+T=2
+T=3
+T=4
+Vannila
+K/V
+Delayed
+K/V
+N
+delay
+c2 c2
+c2 c2
+delay
+delay
+(b)
+(c)
+N
+Figure 3. Illustration of the multi-delay self-attention framework. (a) The framework employs two MD-Mixer modules to generate keys
+(K) and values (V), and a linear projection for queries (Q), followed by batch normalization (BN) and spiking self-attention. (b) Keys and
+values of vanilla self-attention across timesteps (T=1 to T=4). (c) The delayed keys and values capture multi-scale temporal dependencies
+by aggregating historical information at learnable temporal delays.
+delay
+epoch
+delay
+epoch
+d∗
+τ=0.5
+(a) (b)
+Figure 4. Visualization of delay optimization strategy. (a) Progres-
+sive sharpening of the distribution as temperature τ anneals across
+training epochs. (b) Joint optimization of distribution sharpness
+and the learnable delay center d∗
+.
+determines its sharpness, N(·) denotes normalization over
+all candidate delays, and σ(·) = max(0, ·) represents the
+ReLU activation function. As τ decreases during training,
+the distribution gradually narrows and becomes increas-
+ingly concentrated on a discrete delay.
+With the delay distribution properly established, we now
+incorporate it into the spiking neuron dynamics in MD-
+Mixer. Specifically, for the j-th output channel, the mem-
+brane potential is updated as:
+Ut,j = λHt−1,j + It,j, (13)
+It,j =
+K
+X
+k=1
+α
+(k)
+j
+T −1
+X
+d=0
+ϕ(d; d
+(k),∗
+j ) · Xt−d,j. (14)
+Here, the delay weight ϕ(d; d
+(k),∗
+j ) modulates the contribu-
+tion of historical features with lag d, determining the input
+current It,j at the present timestep t.
+During training, the temperature parameter τ undergoes
+progressive annealing following a squared cosine schedule,
+which facilitates a soft-to-hard transition in delay learning.
+As illustrated in Fig. 4(a), this annealing mechanism in-
+duces a gradual sharpening of the delay distribution Φ: ini-
+tially, when τ is large, the distribution maintains a broad
+profile that enables exploration across multiple temporal
+scales; as τ decreases, the distribution progressively con-
+centrates to a sharp peak. At convergence, Φ approxi-
+mates a one-hot distribution centered at the optimal delay,
+enabling efficient discrete delay learning through continu-
+ous gradient-based optimization, as illustrated in Fig. 4(b).
+Detailed gradient analysis and the temperature annealing
+schedule are provided in the Supplementary Material.
+4.5. Computational Efficiency
+Analysis of the MD-Mixer’s computational complexity pro-
+vides insights into its efficiency characteristics. As shown
+in Eq. 7, the module reduces both computational complexity
+from O(TD2
+) to O(KTD) and parameter count from D2
+to KD, yielding a reduction factor of approximately D/K
+in both cases. Given the architectural design where K ≪ D
+(e.g., K = 5 while D = 256), the MD-Mixer theoretically
+achieves efficiency gains over standard linear layers used
+for Key and Value computation in attention mechanisms,
+demonstrating that temporal modeling can be incorporated
+without substantial computational overhead.
+5. Experiment
+We validate MD-Mixer through extensive experiments on
+static, neuromorphic, and long-term datasets across various
+Spiking Transformer architectures. This section is orga-
+nized as follows: First, we describe the experimental set-
+tings. Second, we evaluate MD-Mixer’s performance by in-
+tegrating it into existing Spiking Transformer architectures
+and comparing it with state-of-the-art methods. Finally, we
+conduct ablation studies to verify the effectiveness of the
+delay learning mechanism and analyze hyperparameters.
+34559
+Table 1. Performance comparison on ImageNet dataset across various spiking Transformer architectures. Notes: L-D represents L encoder
+blocks with D hidden dimensions; ∗
+denotes results with 288 × 288 input resolution during inference.
+Method Architecture Params(M) T Accuracy(%)
+Spikformer [63] Spikformer-8-768 66.34 4 74.81
+SpikingReformer [38] SpikingReformer-6-1024 66.38 4 78.77 / 79.40*
+QKFormer [62] QKFormer-6-1024 64.96 4 84.22
+Spike-driven Transformer V1 [53]
+Spike-driven Transformer V1-8-512 29.68 4 74.57
+Spike-driven Transformer V1-8-768 66.34 4 76.32 / 77.07*
+Spike-driven Transformer V1-10-512 36.01 4 74.66
+STAtten [18] + [53]
+Spike-driven Transformer V1-8-512 29.68 4 76.18 / 76.56*
+Spike-driven Transformer V1-8-768 66.34 4 78.11 / 78.39*
+Spike-driven Transformer V1-8-512 29.68 4 76.27 / 76.87*
+MD-Mixer + [53]
+Spike-driven Transformer V1-8-768 66.34 4 78.23 / 78.53*
+Spike-driven Transformer V2 [56] Spike-driven Transformer V2-8-512 55.4 4 79.49 / 79.98*
+STAtten [18] + [56] Spike-driven Transformer V2-8-512 55.4 4 79.85 / 80.67*
+MD-Mixer + [56] Spike-driven Transformer V2-8-512 55.4 4 80.02 / 80.73*
+5.1. Experimental Settings
+For performance comparison, we integrate MD-Mixer
+into four representative Spiking Transformer architectures:
+Spikformer [63], QKFormer [62], Spike-driven Trans-
+former V1 [53] and Spike-driven Transformer V2 [56].
+In ablation studies, all experiments are conducted on the
+Spike-driven Transformer V1 baseline. Detailed model
+configurations, including optimizer settings, learning rate,
+and architecture hyper-parameters, are provided in the Sup-
+plementary Material.
+5.2. Performance Comparison
+5.2.1. Static Dataset
+We evaluate MD-Mixer on ImageNet [6], comprising ap-
+proximately 1.3 million training images and 50,000 val-
+idation images across 1,000 classes, using synaptic-wise
+delays. Table 1 presents performance comparisons across
+various Spiking Transformer architectures. When inte-
+grated into Spike-driven Transformer V1, MD-Mixer con-
+sistently delivers substantial performance gains across dif-
+ferent model scales, significantly outperforming the base-
+line while maintaining competitive performance with STAt-
+ten [18]. Specifically, under the 8–768 configuration at
+224 × 224 resolution, MD-Mixer achieves 78.23% top-1
+accuracy, corresponding to a notable 1.91% improvement
+over the baseline and remaining on par with STAtten (a
+0.12% gain). When deployed with Spike-driven Trans-
+former V2 in the 8-512 configuration, MD-Mixer attains
+80.02% top-1 accuracy at 224 × 224 resolution, achieving
+a 0.53% improvement over the baseline. These results con-
+vincingly demonstrate the efficacy of our temporal model-
+ing approach on static datasets.
+TIC4=2.82
+T=4
+0 2 4 6 8 10 12 14 16
+R4
+1
+0
+T=8
+0 2 4 6 8 10 12 14 16
+R8
+1
+0
+T=12
+0 2 4 6 8 10 12 14 16
+R12
+1
+0
+T=16
+0 2 4 6 8 10 12 14 16
+R16
+1
+0
+QKTA
+SDSA
+SSA
+QKTA
+SDSA
+SSA
+QKTA
+SDSA
+SSA
+QKTA
+SDSA
+SSA
+TIC4=1.92
+TIC4=1.99
+TIC4=1.82
+TIC8=2.62
+TIC8=3.39
+TIC8=2.56
+TIC12=3.12
+TIC12=3.04
+TIC16=2.86
+TIC16=3.15
+TIC16=3.39
+Timestep Timestep
+Timestep Timestep
+TIC12=2.82
+Figure 5. Visualization of reliance vectors for SSA, QKTA, and
+SDSA attention mechanisms integrated with MD-Mixer, based on
+the CIFAR10-DVS dataset.
+5.2.2. Neuromorphic Dataset
+CIFAR10-DVS and N-Caltech101 CIFAR10-DVS con-
+tains 10,000 DVS-recorded samples at 128 × 128 reso-
+lution with 9,000 training and 1,000 test samples, while
+N-Caltech101 comprises 8,831 samples across 101 cate-
+gories at 180 × 240 resolution. Following [18, 23], both
+datasets are resized to 64 × 64. We adopt augmenta-
+tion strategies from [53] for CIFAR10-DVS and [23] for
+N-Caltech101. Table 2 reports the results on CIFAR10-
+DVS and N-Caltech101 datasets. Integrating the pro-
+posed MD-Mixer into various architectures consistently
+34560
+Table 2. Performance comparison on CIFAR10-DVS and N-Caltech101 datasets. SDT-V1 denotes Spike-driven Transformer V1.
+Method Architecture Timestep CIFAR10-DVS (%) N-Caltech101 (%)
+Spikformer [63] Spikformer-2-256 16 80.90 80.23
+TIM + [63] Spikformer-2-256 16 82.00 82.30
+STAtten + [63] Spikformer-2-256 16 82.40 83.12
+MD-Mixer + [63] Spikformer-2-256 16 83.37 84.57
+QKFormer [62] QKFormer-2-256 16 84.10 79.69
+STAtten + [62] QKFormer-2-256 16 84.48 81.22
+MD-Mixer + [62] QKFormer-2-256 16 85.20 82.06
+SDT-V1 [53] SDT-V1-2-256 16 80.00 81.80
+STAtten + [53] SDT-V1-2-256 16 81.10 83.15
+MD-Mixer + [53] SDT-V1-2-256 16 82.40 84.59
+improves classification accuracy over baselines. Specifi-
+cally, our method achieves 83.37% and 84.57% on Spik-
+former, 85.20% and 82.06% on QKFormer, and 82.40%
+and 84.59% on Spike-driven Transformer V1 for CIFAR10-
+DVS and N-Caltech101, respectively. Notably, integrating
+MD-Mixer into QKFormer achieves a 1.10% improvement
+on CIFAR10-DVS, while its integration with Spike-driven
+Transformer V1 brings a 2.79% gain on N-Caltech101,
+achieving new state-of-the-art results among Spiking Trans-
+former on both datasets. As shown in Fig. 5, integrat-
+ing MD-Mixer produces broader reliance vectors compared
+to the sharply peaked patterns of baseline mechanisms
+(Fig. 1). MD-Mixer substantially improves TIC values
+across all timesteps, with TIC16 increasing from baseline
+values of 1.74, 2.10, and 2.35 to 2.86, 3.39, and 3.15 for
+QKTA, SSA, and SDSA, respectively. This demonstrates
+effective integration of historical information and the effec-
+tiveness of our multi-delay design on temporal interaction.
+UCF101-DVS and HMDB51-DVS UCF101-DVS and
+HMDB51-DVS are respectively captured from playbacks
+of the UCF101 [42] and HMDB [16] datasets by DVS cam-
+era. UCF101-DVS includes 101 categories of human ac-
+tions, and HMDB51-DVS comprises 51 categories. The
+comparison results on UCF101-DVS and HMDB51-DVS
+are summarized in Table 3. When combined with the Spike-
+driven Transformer V2, our method achieves state-of-the-
+art performance, obtaining 66.3% and 62.8% accuracy on
+UCF101-DVS and HMDB51-DVS, respectively. These re-
+sults outperform the previous best method TIM [34] by
+2.5% and 4.2%, respectively.
+5.3. Sequential CIFAR10/100 Classification
+To further validate the effectiveness of the proposed MD-
+Mixer in long-term temporal pattern modeling, we con-
+duct experiments on the Sequential CIFAR-10/100 (s-
+CIFAR10/100) datasets. Each sequence sample comprises
+32 timesteps, with each step corresponding to a column of
+the original CIFAR-10 or CIFAR-100 image. The results
+Table 3. Performance comparison on UCF101-DVS and
+HMDB51-DVS datasets. SDT-V2 denotes Spike-driven Trans-
+former V2.
+Dataset Model Acc (%)
+UCF101-DVS
+P3D-63 [31] 53.4
+C3D [44] 47.2
+Res-SNN18 + RM [54] 63.5
+I3D [3] 63.5
+TIM [34] 63.8
+MD-Mixer + SDT-V2 66.3
+HMDB51-DVS
+C3D [44] 41.7
+P3D-63 [31] 40.4
+Res-SNN18 + RM [54] 44.7
+Spikepoint [32] 55.6
+TIM [34] 58.6
+MD-Mixer + SDT-V2 62.8
+Table 4. Performance comparison on the s-CIFAR10 and s-
+CIFAR100 datasets. All values are percentages. SDT-V1 denotes
+Spike-driven Transformer V1.
+Method s-CIFAR10 s-CIFAR100
+Spikformer [63] 76.94 55.65
+TIM + [63] 77.02 56.35
+STAtten + [63] 77.96 56.60
+MD-Mixer + [63] 78.74 59.41
+QKFormer [62] 79.48 55.99
+STAtten + [62] 79.54 56.23
+MD-Mixer + [62] 85.09 64.33
+SDT-V1 [53] 83.65 61.54
+STAtten + [53] 83.90 61.07
+MD-Mixer + [53] 86.65 62.44
+on the s-CIFAR10 and s-CIFAR100 datasets are summa-
+rized in Table 4. Across three representative architectures,
+integrating the proposed MD-Mixer consistently improves
+performance. Specifically, when applied to Spikformer,
+34561
+our method achieves 78.74% and 59.41% accuracy on s-
+CIFAR10 and s-CIFAR100, surpassing STAtten [17] by
+0.78% and 2.81%, respectively. When integrated with QK-
+Former, the performance further increases to 85.09% and
+64.33%, with the latter establishing a new state-of-the-art
+result on s-CIFAR100. Finally, combined with the Spike-
+driven Transformer V1, our method reaches 86.65% on s-
+CIFAR10 and 62.44% on s-CIFAR100, achieving the best
+performance reported so far on s-CIFAR10. These results
+demonstrate the effectiveness of MD-Mixer in modeling
+long-term temporal interactions and enhancing overall per-
+formance. Notably, compared with neuromorphic datasets,
+our method shows more pronounced improvements on the
+Sequential benchmarks. This can be attributed to the fact
+that the s-CIFAR10/100 datasets exhibit richer and more
+structured temporal dynamics than the DVS-captured neu-
+romorphic datasets.
+5.4. Ablation Study
+5.4.1. Effect of Learnable Delays
+To assess the impact of learnable delays, we compare two
+configurations: random delays with fixed, randomly initial-
+ized values, and MD-Mixer with delays optimized during
+training. Aggregation coefficients remain learnable in both
+settings. Table 5 summarizes the results on s-CIFAR10
+and CIFAR10-DVS datasets. Random delays bring mod-
+est performance gains of 0.74% and 0.52% over the base-
+line on s-CIFAR10 and CIFAR10-DVS, respectively. In
+contrast, MD-Mixer achieves substantially larger improve-
+ments of 3.00% and 2.44%, respectively. These results
+demonstrate that while random delays provide slight im-
+provements through temporal diversity, learnable delays in
+MD-Mixer fundamentally enable adaptive capture and op-
+timization of multi-scale temporal patterns, thereby achiev-
+ing significantly superior performance. Visualization of the
+learned delays is provided in the Supplementary Material.
+5.4.2. Effect of the Number of Delay Branches
+We evaluate the impact of the number of delay branches
+on model performance across s-CIFAR10 and CIFAR10-
+DVS datasets. As illustrated in Fig. 6(a), the number
+of delay branches has a clear impact on model perfor-
+mance across both datasets. On s-CIFAR10, the accu-
+racy increases from 84.3% with a single branch to a peak
+of 86.7% with three branches, then gradually declines to
+84.2% with six branches. Similarly, on CIFAR10-DVS, per-
+formance improves from 81.1% with one branch to 82.4%
+with four branches, before dropping to 80.9% with six
+branches. These results indicate that an optimal number of
+delay branches most effectively captures multi-scale tempo-
+ral patterns, while excessive branches impair performance
+due to overly complex temporal modeling.
+Table 5. Ablation study on learnable delays. Random Delay uses
+fixed random delays, while MD-Mixer learns optimal delays.
+Dataset Model Accuracy(%)
+s-CIFAR10
+Baseline 83.65
++ Random Delay 84.39
++ MD-Mixer 86.65
+CIFAR10-DVS
+Baseline 80.00
++ Random Delay 80.52
++ MD-Mixer 82.44
+Acc(%)
+84.1 84.6
+85.1
+85.8
+81.7
+82.4 82.5
+83.5
+10 16 20 32
+(b) Timestep
+N-Caltech101
+CIFAR10-DVS
+(a) Number of Delay Branches
+1 2 3 4 5 6
+81.1
+81.7 82.0 82.4 82.2
+80.9
+84.3
+85.8
+86.7
+85.5
+84.3 84.2
+CIFAR10-DVS
+s-CIFAR10
+Acc(%)
+Figure 6. Impact of hyperparameters. (a) Number of delay
+branches on CIFAR10-DVS and s-CIFAR10. (b) Number of
+timesteps on CIFAR10-DVS and N-Caltech101.
+5.4.3. Effect of Timestep
+We evaluate the effect of timestep on the CIFAR10-DVS
+and N-Caltech101 datasets. The experimental results in
+Fig. 6(b) show a clear trend in the effect of timestep set-
+tings on model performance. As the number of timesteps
+increases, accuracy improves for both CIFAR10-DVS and
+N-Caltech101 datasets. Specifically, on CIFAR10-DVS, ac-
+curacy rises from 81.7% at 10 timesteps to 83.5% at 32
+timesteps, while on N-Caltech101, accuracy increases from
+84.1% at 10 timesteps to 85.8% at 32 timesteps.
+6. Conclusion
+In this paper, we introduce a novel metric TIC to evalu-
+ate the temporal interaction capability of existing spiking
+self-attention mechanisms and visualize their temporal de-
+pendency patterns. Our evaluation reveals limited temporal
+interactions that hinder their performance. Inspired by bi-
+ological time delay, we propose MD-Mixer with learnable
+multi-scale temporal delays that seamlessly integrate into
+existing spiking transformers. By coupling multi-scale tem-
+poral patterns with self-attention, MD-Mixer achieves com-
+prehensive space-time mixing and significantly enhances
+spatiotemporal feature learning. Extensive experiments
+demonstrate substantial improvements across various archi-
+tectures on both static and neuromorphic datasets. We hope
+this work inspires future research on biologically-plausible
+temporal modeling in neuromorphic computing.
+34562
+Acknowledgments
+This work was supported by the National Natural Science
+Foundation of China (Grants 62576080 and 62220106008),
+the Sichuan Science and Technology Program (Grant
+2024NSFTD0034), and the Research Grants Council of the
+Hong Kong SAR (PolyU25216423 and PolyU15217424).
+References
+[1] Filipp Akopyan, Jun Sawada, Andrew Cassidy, Rodrigo
+Alvarez-Icaza, John Arthur, Paul Merolla, Nabil Imam, Yu-
+taka Nakamura, Pallab Datta, Gi-Joon Nam, et al. Truenorth:
+Design and tool flow of a 65 mw 1 million neuron pro-
+grammable neurosynaptic chip. IEEE transactions on
+computer-aided design of integrated circuits and systems, 34
+(10):1537–1557, 2015. 1
+[2] Yongqiang Cao, Yang Chen, and Deepak Khosla. Spiking
+deep convolutional neural networks for energy-efficient ob-
+ject recognition. International Journal of Computer Vision,
+113(1):54–66, 2015. 2
+[3] João Carreira and Andrew Zisserman. Quo vadis, action
+recognition? a new model and the kinetics dataset. 2017
+IEEE Conference on Computer Vision and Pattern Recogni-
+tion (CVPR), pages 4724–4733, 2017. 7
+[4] Stefano Caviglia, Maurizio Valle, and Chiara Bartolozzi.
+Asynchronous, event-driven readout of posfet devices for
+tactile sensing. In 2014 IEEE International Symposium
+on Circuits and Systems (ISCAS), pages 2648–2651. IEEE,
+2014. 1
+[5] Mike Davies, Narayan Srinivasa, Tsung-Han Lin, Gautham
+Chinya, Yongqiang Cao, Sri Harsha Choday, Georgios Di-
+mou, Prasad Joshi, Nabil Imam, Shweta Jain, et al. Loihi:
+A neuromorphic manycore processor with on-chip learning.
+Ieee Micro, 38(1):82–99, 2018. 1
+[6] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li,
+and Li Fei-Fei. Imagenet: A large-scale hierarchical image
+database. In 2009 IEEE conference on computer vision and
+pattern recognition, pages 248–255. Ieee, 2009. 2, 6
+[7] Wei Fang, Zhaofei Yu, Yanqi Chen, Tiejun Huang, Timothée
+Masquelier, and Yonghong Tian. Deep residual learning in
+spiking neural networks. Advances in Neural Information
+Processing Systems, 34:21056–21069, 2021. 2
+[8] Wei Fang, Zhaofei Yu, Yanqi Chen, Timothée Masquelier,
+Tiejun Huang, and Yonghong Tian. Incorporating learnable
+membrane time constant to enhance learning of spiking neu-
+ral networks. In Proceedings of the IEEE/CVF international
+conference on computer vision, pages 2661–2671, 2021. 1,
+2
+[9] Wulfram Gerstner and Werner M Kistler. Spiking neuron
+models: Single neurons, populations, plasticity. Cambridge
+university press, 2002. 1
+[10] Yufei Guo, Yuanpei Chen, Xiaode Liu, Weihang Peng,
+Yuhan Zhang, Xuhui Huang, and Zhe Ma. Ternary spike:
+Learning ternary spikes for spiking neural networks. In Pro-
+ceedings of the AAAI conference on artificial intelligence,
+pages 12244–12252, 2024. 1
+[11] Yufei Guo, Xiaode Liu, Yuanpei Chen, Weihang Peng,
+Yuhan Zhang, and Zhe Ma. Spiking transformer: Introduc-
+ing accurate addition-only spiking self-attention for trans-
+former. In Proceedings of the Computer Vision and Pattern
+Recognition Conference, pages 24398–24408, 2025. 1
+[12] Bing Han, Gopalakrishnan Srinivasan, and Kaushik Roy.
+Rmp-snn: Residual membrane potential neuron for enabling
+deeper high-accuracy and low-latency spiking neural net-
+work. In Proceedings of the IEEE/CVF conference on com-
+puter vision and pattern recognition, pages 13558–13567,
+2020. 2
+[13] Yifan Hu, Lei Deng, Yujie Wu, Man Yao, and Guoqi Li. Ad-
+vancing spiking neural networks toward deep residual learn-
+ing. IEEE transactions on neural networks and learning sys-
+tems, 36(2):2353–2367, 2024. 2
+[14] Eugene M Izhikevich. Simple model of spiking neurons.
+IEEE Transactions on neural networks, 14(6):1569–1572,
+2003. 1
+[15] Amirhossein Javanshir, Thanh Thi Nguyen, MA Parvez
+Mahmud, and Abbas Z Kouzani. Advancements in algo-
+rithms and neuromorphic hardware for spiking neural net-
+works. Neural Computation, 34(6):1289–1328, 2022. 2
+[16] Hildegard Kuehne, Hueihan Jhuang, Estı́baliz Garrote,
+Tomaso Poggio, and Thomas Serre. Hmdb: a large video
+database for human motion recognition. In 2011 Inter-
+national conference on computer vision, pages 2556–2563.
+IEEE, 2011. 7
+[17] Donghyun Lee, Yuhang Li, Youngeun Kim, Shiting Xiao,
+and Priyadarshini Panda. Spiking transformer with spatial-
+temporal attention. In 2025 IEEE/CVF Conference on Com-
+puter Vision and Pattern Recognition (CVPR), pages 13948–
+13958, 2025. 8
+[18] Donghyun Lee, Yuhang Li, Youngeun Kim, Shiting Xiao,
+and Priyadarshini Panda. Spiking transformer with spatial-
+temporal attention. In Proceedings of the Computer Vision
+and Pattern Recognition Conference, pages 13948–13958,
+2025. 1, 2, 6
+[19] Zhenxin Lei, Man Yao, Jiakui Hu, Xinhao Luo, Yanye Lu,
+Bo Xu, and Guoqi Li. Spike2former: Efficient spiking trans-
+former for high-performance image segmentation. In Pro-
+ceedings of the AAAI Conference on Artificial Intelligence,
+pages 1364–1372, 2025. 1
+[20] Hongmin Li, Hanchao Liu, Xiangyang Ji, Guoqi Li, and
+Luping Shi. Cifar10-dvs: an event-stream dataset for object
+classification. Frontiers in neuroscience, 11:244131, 2017.
+2
+[21] Jindong Li, Guobin Shen, Dongcheng Zhao, Qian Zhang,
+and Yi Zeng. Firefly: A high-throughput hardware accelera-
+tor for spiking neural networks with efficient dsp and mem-
+ory optimization. IEEE Transactions on Very Large Scale
+Integration (VLSI) Systems, 31(8):1178–1191, 2023. 1
+[22] Jindong Li, Guobin Shen, Dongcheng Zhao, Qian Zhang,
+and Yi Zeng. Firefly v2: Advancing hardware support for
+high-performance spiking neural network with a spatiotem-
+poral fpga accelerator. IEEE Transactions on Computer-
+Aided Design of Integrated Circuits and Systems, 43(9):
+2647–2660, 2024. 1
+34563
+[23] Yuhang Li, Youngeun Kim, Hyoungseob Park, Tamar Geller,
+and Priyadarshini Panda. Neuromorphic data augmentation
+for training spiking neural networks. In European Confer-
+ence on Computer Vision, pages 631–649. Springer, 2022.
+6
+[24] Hanwen Liu, Yi Chen, Zihang Zeng, Malu Zhang, and Hong
+Qu. A low power and low latency fpga-based spiking neural
+network accelerator. In 2023 International Joint Conference
+on Neural Networks (IJCNN), pages 1–8. IEEE, 2023. 1
+[25] Hanwen Liu, Kexin Shi, Wenyu Chen, Malu Zhang, and
+Yang Yang. Jqa: Joint design of hardware-friendly quantiza-
+tion and efficient accelerator for spiking neural networks. In
+2025 International Conference on Machine Intelligence and
+Nature-Inspired Computing (MIND), pages 162–167. IEEE,
+2025. 1
+[26] Hanwen Liu, Kexin Shi, Jieyuan Zhang, Yimeng Shan, Jibin
+Wu, Wenyu Chen, and Malu Zhang. Hardf-snn: Hardware-
+friendly quantization for spiking neural networks with ef-
+ficient integer-arithmetic-only inference. Proceedings of
+the AAAI Conference on Artificial Intelligence, 40(3):1937–
+1945, 2026. 2
+[27] Wolfgang Maass. Networks of spiking neurons: the third
+generation of neural network models. Neural networks, 10
+(9):1659–1671, 1997. 1
+[28] Garrick Orchard, E Paxon Frady, Daniel Ben Dayan Rubin,
+Sophia Sanborn, Sumit Bam Shrestha, Friedrich T Sommer,
+and Mike Davies. Efficient neuromorphic signal processing
+with loihi 2. In 2021 IEEE Workshop on Signal Processing
+Systems (SiPS), pages 254–259. IEEE, 2021. 1
+[29] Liam Paninski. Estimation of entropy and mutual informa-
+tion. Neural computation, 15(6):1191–1253, 2003. 3
+[30] Jing Pei, Lei Deng, Sen Song, Mingguo Zhao, Youhui
+Zhang, Shuang Wu, Guanrui Wang, Zhe Zou, Zhenzhi Wu,
+Wei He, et al. Towards artificial general intelligence with
+hybrid tianjic chip architecture. Nature, 572(7767):106–111,
+2019. 1
+[31] Zhaofan Qiu, Ting Yao, and Tao Mei. Learning spatio-
+temporal representation with pseudo-3d residual networks.
+2017 IEEE International Conference on Computer Vision
+(ICCV), pages 5534–5542, 2017. 7
+[32] Hongwei Ren, Yue Zhou, Yulong Huang, Haotian FU, Jie
+Song, Bojun Cheng, et al. Spikepoint: An efficient point-
+based spiking neural network for event cameras action recog-
+nition. In The Twelfth International Conference on Learning
+Representations, 2024. 7
+[33] Haibo Shen, Yihao Luo, Xiang Cao, Liangqi Zhang, Juyu
+Xiao, and Tianjiang Wang. Training robust spiking neural
+networks on neuromorphic data with spatiotemporal frag-
+ments. In ICASSP 2023-2023 IEEE International Confer-
+ence on Acoustics, Speech and Signal Processing (ICASSP),
+pages 1–5. IEEE, 2023. 1
+[34] Sicheng Shen, Dongcheng Zhao, Guobin Shen, and Yi Zeng.
+Tim: An efficient temporal interaction module for spiking
+transformer. In IJCAI, 2024. 1, 2, 7
+[35] Kexin Shi, Hanwen Liu, Yi Chen, and Hong Qu. Hl-esvit:
+High-low frequency efficient spiking vision transformer. In
+2024 International Joint Conference on Neural Networks
+(IJCNN), pages 1–8. IEEE, 2024. 1
+[36] Kexin Shi, Mengshu Hou, Xiaoling Luo, Dehao Zhang,
+Hanwen Liu, and Jingya Wang. Spike-vad: Efficient and
+robust spiking neural network for voice activity detection.
+IEEE Transactions on Cognitive and Developmental Sys-
+tems, 2025. 1
+[37] Kexin Shi, Hanwen Liu, Jibin Wu, Wenyu Chen, Malu
+Zhang, and Yang Yang. Seend: A spike-based end-to-
+end framework for energy-efficient speaker diarization. In
+2025 International Conference on Machine Intelligence and
+Nature-Inspired Computing (MIND), pages 168–173. IEEE,
+2025. 2
+[38] Xinyu Shi, Zecheng Hao, and Zhaofei Yu. Spikingresformer:
+Bridging resnet and vision transformer in spiking neural net-
+works. In Proceedings of the IEEE/CVF conference on
+computer vision and pattern recognition, pages 5610–5619,
+2024. 1, 2, 6
+[39] Zeyang Song, Qianhui Liu, Qu Yang, Yizhou Peng, and
+Haizhou Li. Ed-skws: Early-decision spiking neural net-
+works for rapid, and energy-efficient keyword spotting.
+arXiv preprint arXiv:2406.12726, 2024. 2
+[40] Zeyang Song, Jibin Wu, Malu Zhang, Mike Zheng Shou, and
+Haizhou Li. Spiking-leaf: A learnable auditory front-end for
+spiking neural networks. In ICASSP 2024-2024 IEEE inter-
+national conference on acoustics, speech and signal process-
+ing (ICASSP), pages 226–230. IEEE, 2024. 2
+[41] Zeyang Song, Shimin Zhang, Yuhong Chou, Jibin Wu, and
+Haizhou Li. Iml-spikeformer: Input-aware multilevel spik-
+ing transformer for speech processing. IEEE Transactions
+on Neural Networks and Learning Systems, 2025. 1
+[42] Khurram Soomro, Amir Roshan Zamir, and Mubarak Shah.
+Ucf101: A dataset of 101 human actions classes from videos
+in the wild. arXiv preprint arXiv:1212.0402, 2012. 7
+[43] Carl R Stoelzel, Yulia Bereshpolova, Jose-Manuel Alonso,
+and Harvey A Swadlow. Axonal conduction delays, brain
+state, and corticogeniculate communication. Journal of Neu-
+roscience, 37(26):6342–6358, 2017. 3
+[44] Du Tran, Lubomir D. Bourdev, Rob Fergus, Lorenzo Torre-
+sani, and Manohar Paluri. Learning spatiotemporal features
+with 3d convolutional networks. 2015 IEEE International
+Conference on Computer Vision (ICCV), pages 4489–4497,
+2014. 7
+[45] Shuai Wang, Malu Zhang, Jingya Wang, Dehao Zhang, Yi-
+meng Shan, Jieyuan Zhang, Yichen Xiao, Honglin Cao, Hao-
+nan Zhang, Zeyu Ma, et al. Bipolar self-attention for spik-
+ing transformers. In The Thirty-ninth Annual Conference on
+Neural Information Processing Systems, 2025. 1
+[46] Shuai Wang, Malu Zhang, Dehao Zhang, Ammar Belatreche,
+Yichen Xiao, Yu Liang, Yimeng Shan, Qian Sun, Enqi
+Zhang, and Yang Yang. Spiking vision transformer with sac-
+cadic attention. In The Thirteenth International Conference
+on Learning Representations, 2025. 2
+[47] Shuai Wang, Haorui Zheng, Yukun Chen, Ammar Bela-
+treche, Guoqing Wang, Yeying Jin, Jibin Wu, Malu Zhang,
+Yang Yang, and Haizhou Li. Snn-ft: Temporal-coded spiking
+neural networks for fourier transform. IEEE Transactions on
+Neural Networks and Learning Systems, 2025. 2
+[48] Yuchen Wang, Kexin Shi, Chengzhuo Lu, Yuguo Liu, Malu
+Zhang, and Hong Qu. Spatial-temporal self-attention for
+34564
+asynchronous spiking neural networks. In IJCAI, pages
+3085–3093, 2023. 1, 2
+[49] Peixi Wu, Bosong Chai, Hebei Li, Menghua Zheng, Yansong
+Peng, Zeyu Wang, Xuan Nie, Yueyi Zhang, and Xiaoyan
+Sun. Spiking point transformer for point cloud classifica-
+tion. In Proceedings of the AAAI Conference on Artificial
+Intelligence, pages 21563–21571, 2025. 1
+[50] Yujie Wu, Lei Deng, Guoqi Li, Jun Zhu, and Luping
+Shi. Spatio-temporal backpropagation for training high-
+performance spiking neural networks. Frontiers in neuro-
+science, 12:331, 2018. 2
+[51] Yichen Xiao, Shuai Wang, Dehao Zhang, Wenjie Wei, Yi-
+meng Shan, Xiaoli Liu, Yulin Jiang, and Malu Zhang. Re-
+thinking spiking self-attention mechanism: Implementing a-
+xnor similarity calculation in spiking transformers. In Pro-
+ceedings of the Computer Vision and Pattern Recognition
+Conference, pages 5444–5454, 2025. 1
+[52] Yinsong Yan, Qu Yang, Yujie Wu, Hanwen Liu, Malu Zhang,
+Haizhou Li, Kay Chen Tan, and Jibin Wu. Efficient and
+robust temporal processing with neural oscillations modu-
+lated spiking neural networks. Nature communications, 16
+(1):8651, 2025. 1
+[53] Man Yao, Jiakui Hu, Zhaokun Zhou, Li Yuan, Yonghong
+Tian, Bo Xu, and Guoqi Li. Spike-driven transformer. Ad-
+vances in neural information processing systems, 36:64043–
+64058, 2023. 1, 2, 3, 6, 7
+[54] Man Yao, Hengyu Zhang, Guangshe Zhao, Xiyu Zhang,
+Dingheng Wang, Gang Cao, and Guoqi Li. Sparser spik-
+ing activity can be better: Feature refine-and-mask spiking
+neural network for event-based visual recognition. Neural
+Networks, 166:410–423, 2023. 7
+[55] Man Yao, Guangshe Zhao, Hengyu Zhang, Yifan Hu, Lei
+Deng, Yonghong Tian, Bo Xu, and Guoqi Li. Attention spik-
+ing neural networks. IEEE transactions on pattern analysis
+and machine intelligence, 45(8):9393–9410, 2023. 2
+[56] Man Yao, JiaKui Hu, Tianxiang Hu, Yifan Xu, Zhaokun
+Zhou, Yonghong Tian, Bo Xu, and Guoqi Li. Spike-driven
+transformer v2: Meta spiking neural network architecture
+inspiring the design of next-generation neuromorphic chips.
+arXiv preprint arXiv:2404.03663, 2024. 1, 6
+[57] Man Yao, Xuerui Qiu, Tianxiang Hu, Jiakui Hu, Yuhong
+Chou, Keyu Tian, Jianxing Liao, Luziwei Leng, Bo Xu, and
+Guoqi Li. Scaling spike-driven transformer with efficient
+spike firing approximation training. IEEE Transactions on
+Pattern Analysis and Machine Intelligence, 2025. 2
+[58] Qiang Yu, Huajin Tang, Kay Chen Tan, and Haoyong Yu. A
+brain-inspired spiking neural network model with temporal
+encoding and learning. Neurocomputing, 138:3–13, 2014. 1
+[59] Dehao Zhang, Shuai Wang, Ammar Belatreche, Wenjie Wei,
+Yichen Xiao, Haorui Zheng, Zijian Zhou, Malu Zhang, and
+Yang Yang. Spike-based neuromorphic model for sound
+source localization. Advances in Neural Information Pro-
+cessing Systems, 37:113911–113936, 2024. 2
+[60] Jiqing Zhang, Bo Dong, Haiwei Zhang, Jianchuan Ding, Fe-
+lix Heide, Baocai Yin, and Xin Yang. Spiking transform-
+ers for event-based single object tracking. In Proceedings of
+the IEEE/CVF conference on Computer Vision and Pattern
+Recognition, pages 8801–8810, 2022. 1
+[61] Jieyuan Zhang, Xiaolong Zhou, Shuai Wang, Wenjie Wei,
+Hanwen Liu, Qian Sun, Malu Zhang, Yang Yang, and
+Haizhou Li. Unveiling the spatial-temporal effective recep-
+tive fields of spiking neural networks. In The Thirty-ninth
+Annual Conference on Neural Information Processing Sys-
+tems, 2025. 3
+[62] Chenlin Zhou, Han Zhang, Zhaokun Zhou, Liutao Yu, Liwei
+Huang, Xiaopeng Fan, Li Yuan, Zhengyu Ma, Huihui Zhou,
+and Yonghong Tian. Qkformer: Hierarchical spiking trans-
+former using qk attention. Advances in Neural Information
+Processing Systems, 37:13074–13098, 2024. 1, 3, 6, 7
+[63] Zhaokun Zhou, Yuesheng Zhu, Chao He, Yaowei Wang,
+Shuicheng YAN, Yonghong Tian, and Li Yuan. Spikformer:
+When spiking neural network meets transformer. In The
+Eleventh International Conference on Learning Representa-
+tions, 2023. 1, 2, 3, 6, 7
+[64] Rui-Jie Zhu, Malu Zhang, Qihang Zhao, Haoyu Deng, Yule
+Duan, and Liang-Jian Deng. Tcja-snn: Temporal-channel
+joint attention for spiking neural networks. IEEE Trans-
+actions on Neural Networks and Learning Systems, 36(3):
+5112–5125, 2024. 2
+34565
+

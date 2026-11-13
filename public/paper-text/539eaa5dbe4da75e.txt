@@ -1,0 +1,1374 @@
+IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024 827
+Quantization-Aware Training of Spiking Neural
+Networks for Energy-Efficient Spectrum
+Sensing on Loihi Chip
+Shiya Liu , Nima Mohammadi , Graduate Student Member, IEEE, and Yang Yi , Senior Member, IEEE
+Abstract—Spectrum sensing is a technique used to iden-
+tify idle/busy bandwidths in cognitive radio. Energy-efficient
+spectrum sensing is critical for multiple-input-multiple-output
+(MIMO) orthogonal-frequency-division multiplexing (OFDM)
+systems. In this paper, we propose the use of spiking neural
+networks (SNNs), which are more biologically plausible and
+energy-efficient than deep neural networks (DNNs), for spec-
+trum sensing. The SNN models are implemented on the Loihi
+chip, which is better suited for SNNs than GPUs. Quantization
+is an effective technique to reduce the memory and energy
+consumption of SNNs. However, previous quantization meth-
+ods for SNNs have suffered from accuracy degradation when
+compared to full-precision models. This degradation can be
+attributed to errors introduced by the coarse estimation of
+gradients in non-differentiable quantization layers. To address
+this issue, we introduce a quantization-aware training algo-
+rithm for SNNs running on Loihi. To mitigate errors caused
+by the poor estimation of gradients, we do not use a fixed
+configuration for the quantizer, as is common in existing SNN
+quantization methods. Instead, we make the scale parameters
+of the quantizer trainable. Furthermore, our proposed method
+adopts a probability-based scheme to selectively quantize indi-
+vidual layers within the network, rather than quantizing all
+layers simultaneously. Our experimental results demonstrate that
+high-performance and energy-efficient spectrum sensing can be
+achieved using Loihi.
+Index Terms—Spectrum sensing, spiking neural networks,
+quantization, quantization-aware training.
+I. INTRODUCTION
+WITH the advancement of machine learning, there is
+a growing need for accurate and efficient machine
+learning models to be implemented on resource-constrained
+devices [1], [2]. Deep neural networks (DNNs) have
+achieved significant breakthroughs in various domains [3], [4].
+However, deploying DNN models on resource-constrained
+devices is challenging due to their high memory and power
+consumption. Recent studies have demonstrated the potential
+of spiking neural networks (SNNs) [5] for efficient hardware
+Manuscript received 2 July 2023; revised 17 October 2023 and
+16 November 2023; accepted 20 November 2023. Date of publication
+29 November 2023; date of current version 21 May 2024. This work was
+supported in part by the U.S. National Science Foundation (NSF) under
+Grant CCF-1750450, Grant ECCS-1731928, Grant ECCS-2128594, Grant
+ECCS-2314813, and Grant CCF-1937487. The editor coordinating the review
+of this article was C. Shen. (Corresponding author: Yang Yi.)
+The authors are with the Bradley Department of Electrical and Computer
+Engineering, Virginia Tech, Blacksburg, VA 24061 USA (e-mail: shiyal@
+vt.edu; yangyi8@vt.edu).
+Digital Object Identifier 10.1109/TGCN.2023.3337748
+implementation [6], [7]. SNNs use sparse and asynchronous
+discrete events for neuron communication, allowing them to
+benefit from event-based computation. This feature enables
+SNNs to conduct energy-efficient inference on devices with
+limited resources. Loihi [6] is a neuromorphic computing chip
+that offers a more suitable platform than GPUs for running
+SNNs. It harnesses asynchronous, event-driven parallel com-
+putations to enhance the speed and power efficiency of SNN
+models. Notably, Loihi requires quantized SNN models as it
+supports integer-only inference.
+It is challenging to train quantized SNN models due to
+the complex dynamic and non-differentiable spike activities.
+To address these issues, some quantization-aware training
+algorithms have been proposed for training quantized SNN
+models [8], [9], [10], [11], [12]. In [8], a quantized spike-
+timing-dependent plasticity (STDP)-based training algorithm
+is proposed. Unlike conventional gradient-based techniques,
+the unsupervised STDP learning algorithm avoids the back-
+propagation of the gradients across layers [13]. The authors
+in [9] introduce a training algorithm that employs different
+quantization schemes for different layers and SNN parameters.
+In [10], the authors analyze the interplay between quanti-
+zation and pruning techniques and their potential effects on
+the performance of models. The training algorithm in [11]
+optimizes the quantized SNN model and model activity simul-
+taneously. In [12], the authors introduce a hybrid training
+algorithm that first converts a trained DNN to an SNN, and
+then trains the latter using a quantized STDP algorithm.
+Despite the effectiveness of these algorithms, they still suffer
+from accuracy loss when compared to their full-precision (FP)
+counterparts. This reduction in accuracy is primarily attributed
+to the coarse estimation of gradients in non-differentiable
+quantization layers. Also, in spite of the gradient backprop-
+agation through layers can be avoided by leveraging the
+unsupervised STDP learning algorithm [13], high-performance
+models cannot be achieved using these algorithms.
+To address the above-mentioned issues of quantization-
+aware training for SNN models, we present a novel
+quantization-aware training algorithm that merges recent
+advancements in DNNs [14] to facilitate the training of quan-
+tized SNN models. In contrast to current SNN quantization
+methods that employ a fixed configuration for the quan-
+tizer, we propose an approach that entails learning the
+quantization mapping and making the scale parameters of the
+quantizer trainable. Moreover, the proposed method adopts
+2473-2400 c
+ 2023 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+828 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+a probability-based scheme to selectively quantize individ-
+ual layers within the network as opposed to quantizing all
+layers simultaneously. This method aims to alleviate errors
+arising from the poor estimation of gradients and enhance the
+overall performance of the trained models. Through the uti-
+lization of our quantization-aware training algorithm, the SNN
+models exhibit superior accuracy performance when compared
+to models trained by alternative algorithms [8], [9], [15],
+[16], [17]. Furthermore, we demonstrate that our Loihi-based
+models exhibit considerably enhanced energy efficiency when
+compared to other SNN models that operate on GPUs. In light
+of these results, we demonstrate that Loihi is a more advan-
+tageous hardware platform in the context of executing SNN
+models.
+To evaluate the effectiveness of the quantization-aware
+training algorithm, we apply the algorithm to SNN mod-
+els for spectrum sensing on fifth-generation communication
+systems. Due to the spectrum scarcity, spectrum occupancy
+prediction is critical for fourth-generation (4G) LTE/LTE-
+Advanced [18] and the fifth-generation (5G) mobile broadband
+networks [19], [20]. In a communication system, the idle or
+busy bandwidth of cognitive radio is identified by the spectrum
+sensing technique. The temporal correlation in the spectrum
+occupancy of each bandwidth could be effectively captured
+by SNNs, which are capable of processing spatial-temporal
+information. In this paper, we build SNN models on Loihi and
+apply them to the spectrum sensing task. To the best of our
+knowledge, this is the first work aiming at resolving spectrum
+sensing in 5G communication systems using neuromorphic
+computing hardware such as Loihi. Our results demonstrate
+that a high-performance energy-efficient SNN model for spec-
+trum sensing can be achieved on Loihi. Our contributions are
+summarized below.
+• We introduce a novel quantization-aware training algo-
+rithm for the purpose of optimizing SNN models.
+To reduce quantization errors from the coarse esti-
+mation of gradients in quantization layers, our train-
+ing algorithm learns the quantization mapping and
+makes the scaling parameters of the quantizer trainable.
+Additionally, the proposed method adopts a probability-
+based scheme to selectively quantize individual layers
+within the network as opposed to quantizing all layers
+simultaneously.
+• To the best of our knowledge, we are the first group
+that addresses spectrum sensing in 5G communication
+systems using Loihi. On the spectrum sensing task, the
+SNN trained by the proposed algorithm on Loihi achieves
+comparable accuracy as the DNN counterpart while con-
+suming 16 times less energy per sample. Also, the SNN
+model enhances the accuracy by 3.69% compared to the
+model using post-training quantization [21].
+• On the MNIST dataset, the SNN model trained by
+the quantization-aware training algorithm achieves better
+accuracy than models trained by other methods [8], [9],
+[15], [16], [17]. More importantly, our models consume
+significantly less energy per image on Loihi compared to
+other models on GPU.
+II. BACKGROUND
+A. Comparison of DNNs and SNNs
+DNNs and SNNs are both inspired by the brain, but they
+diverge significantly in their neural computations. In biolog-
+ical systems, neurons communicate through sparse, uniform
+amplitude spike trains of action potentials [5], while DNNs
+use continuous real numbers for information transfer. This con-
+trast has led to the emergence of SNNs, where information is
+conveyed via a sequence of event-driven 1-bit spikes, lever-
+aging spike latency and rates for information encoding and
+transmission.
+The leaky integrate-and-fire (LIF) model [22] is the most
+commonly used neural model in SNN. It can be expressed in
+a differential form as,
+τ
+du(t)
+dt
+= −(u(t) − urest ) + RI (t), (1)
+where u(t) is the membrane potential at time t and τ is the
+membrane time constant of the neuron. The membrane poten-
+tial of a neuron represents the neuron’s electrical state and
+plays a crucial role in determining when it will generate spikes.
+The time constant τ governs the rate at which the membrane
+potential returns to its resting potential. R is a leaky resis-
+tance. urest is the resting potential. I(t) is the input current at
+time t and it is determined by presynaptic spikes and synap-
+tic weights. When potential u(t) is larger than a threshold, the
+neuron fires a spike and the potential u(t) is reset to the resting
+potential urest .
+B. Quantization-Aware Training
+It is inefficient to deploy DNNs on resource-constrained
+devices because of the high memory and power consump-
+tion. To address these issues, quantized DNNs have been
+proposed [1], [2]. In these studies, quantization-aware train-
+ing algorithms are employed to mitigate quantization noise by
+simulating the effects of quantization in the training process.
+During the forward pass of training, simulated quantization
+operations are placed on weights and activation. The sim-
+ulated quantization operation first quantizes a floating-point
+number into an integer number. Next, the quantized number is
+transformed back into a floating-point number. The resulting
+floating-point number is used for computations. The simulated
+quantization operation is summarized as [1],
+s =
+hi − lo
+n − 1
+,
+Q(r) = round
+r
+s
+
+∗ s, (2)
+where Q(·) denotes the simulated quantization function that
+simulates quantization effects during training. s is the scale
+parameter and it determines the size of the quantization step.
+n denotes the number of quantization levels. lo is the lower
+bound of a layer and hi is the upper bound. r represents a
+floating-point number to be quantized. round is a function,
+which rounds a number to its nearest integer. During the back-
+ward pass of the training phase, the gradient is passed directly
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+LIU et al.: QUANTIZATION-AWARE TRAINING OF SPIKING NEURAL NETWORKS 829
+to the floating-point weight based on the straight-through
+estimator [23].
+III. SPECTRUM SENSING FOR 5G
+COMMUNICATION SYSTEM
+The radio spectrum, often hailed as one of the most pre-
+cious resources, has seen its value skyrocket as it becomes
+increasingly scarce. This escalating value has transformed the
+radio spectrum into a lucrative investment, one that might be
+even taken out of use and warehoused for profit. Typically,
+portions of the radio spectrum are auctioned off, granting the
+highest bidder, known as the licensed user, exclusive rights to
+the specific radio band. However, despite their exclusive rights,
+PUs often under-utilize their licensed spectrum portions. This
+under-utilization leads to the emergence of “spectrum holes”
+or unoccupied bands within the spectrum. The presence of
+these spectrum holes underscores the inefficiency in spectrum
+usage, especially when the demand for wireless communica-
+tion channels is soaring. This scenario accentuates the pressing
+need for spectrum occupancy detection. By identifying and
+leveraging these unused spectrum portions, we can optimize
+the overall utilization of the radio spectrum, ensuring that this
+invaluable resource is used to its fullest potential, benefiting
+both industries and end-users.
+The evolution of wireless communication systems, par-
+ticularly the transition from 4G to 5G, has been propelled
+by users’ growing demands for higher data rates, reduced
+latencies, and more dependable connections [19], [20]. In
+response, the industry has explored techniques to optimize
+the use of the available spectrum, enhance signal quality,
+and boost throughput. MIMO-OFDM has risen as a piv-
+otal technology in this pursuit. This is due to the supe-
+rior data rates offered by MIMO and the resilience of
+OFDM against frequency-selective fading [18]. Consequently,
+MIMO-OFDM has been selected as a foundational technol-
+ogy for both LTE-Advanced and 5G NR. Building on this
+foundation, our study assumes a primary system based on
+MIMO-OFDM. We then evaluate our model using signals
+captured from the radio band on which this primary system
+operates.
+A. MIMO-OFDM System
+In this section, we elaborate on the operation of the MIMO-
+OFDM primary system as depicted in Fig. 1. The data first
+has to be converted from a serial stream into proper word size
+for transmission (e.g., 2 bits for four constellation points) and
+shifted into a parallel format via the S/P modules. Then the
+data to be transmitted is mapped to modulation symbol, for
+which we employ Quadrature Phase Shift Keying (QPSK). In
+QPSK, four different phase values of constant amplitude signal
+to modulate two bits of data and problems with amplitude
+fluctuations are reduced due to fading. Afterward, to enable
+pilot-based channel estimation, pilot insertion is performed.
+The resulting sequence of modulated data {X (k)}N −1
+k=0 then
+goes through an N-point Inverse Discrete Fourier Transform
+(IDFT, or an equivalent IFFT implementation) to generate the
+time-domain signal {x(n)}N −1
+n=0 ,
+x(n) =
+1
+√
+N
+N −1
+
+k=0
+X (k) · e
+j2πkn
+N , 0 ≤ n < N (3)
+Following IDFT, a guard interval, in form of a cyclic exten-
+sion is appended to the OFDM waveform. A cyclic prefix
+(CP) refers to each OFDM symbol being preceded by a copy
+of the end part of that same symbol to combat inter-symbol
+interference from the previous symbol and increase tolerance
+towards multipath delays. After the guard has been added, the
+symbols in the time domain are converted to a serial waveform
+through the P/S conversion. The resulting stream is then con-
+verted to an analog signal, up-converted to the RF frequencies
+via mixers, and amplified through a power amplifier (PA) prior
+to transmission by antennas.
+In this work, we assume a Rayleigh fading channel. At the
+receiver side, the signal is down-converted to the baseband,
+and CPs are removed and go through a DFT module before
+symbols are demodulated. The received MIMO-OFDM signal
+transmitted on the p-th subcarrier can be written as,
+Rp(n) = Yp(n) + Np(n), (4)
+where Yp(n) is the signal transmitted on the channel, and
+Np(n) is the additive white Gaussian noise (AWGN). Then
+spectrum sensing can be formulated as a hypothesis-testing
+problem:
+Rp(n) =
+
+Np(n) H0
+Yp(n) + Np(n) H1
+(5)
+In this work, we rely on the collected energy of the received
+signal as the decision statistic for inferring the absence or pres-
+ence of the PU in the observed frequency band, calculated as,
+Ep =
+
+1
+N
+N
+n=1
+
+Np(n)
+
+2
+H0
+1
+N
+N
+n=1
+
+Yp(n) + Np(n)
+
+2
+H1
+. (6)
+Comparison of this statistic with a threshold value λp would
+serve as the decision rule. Therefore, the secondary user will
+have the following probabilities of false alarm and detection:
+Pp
+f = Pr Ep > λp
+| H0 = Q
+λ
+σ2
+n
+− 1
+√
+N
+Pp
+d = Pr Ep > λp
+| H1 = Q
+λ
+σ2
+n
+− γp
+− 1
+√
+N
+γp + 1
+
+.
+(7)
+B. Underutilization of Spectrum
+One of the challenges in MIMO-OFDM systems is the
+underutilization of subcarriers, not due to the system’s inabil-
+ity to exploit all subcarriers simultaneously, but because the
+primary system (PUs) might not have data to transmit at
+all times, leading to spectrum inefficiencies [24]. To address
+this underutilization, MIMO-OFDM systems can allow ‘sec-
+ondary’ users (SUs) to access the unoccupied subcarriers in a
+dynamic spectrum sharing (DSS) context, as long as it doesn’t
+interfere with the primary system’s operations.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+830 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+Fig. 1. The architecture of spectrum sensing for the MIMO-OFDM system. (QPSK represents Quadrature Phase Shift Keying. IDFT represents inverse
+discrete Fourier transform. CP represents cyclic prefix).
+However, there are constraints on SUs. They are only
+allowed to use these unoccupied subcarriers, often referred
+to as spectrum holes or spectrum opportunities, when they are
+indeed vacant. If a PU begins transmission on a previously
+unoccupied subcarrier, the SU must vacate it. To determine
+the availability of these spectrum holes, SUs employ a ‘sens-
+ing’ procedure, aiming to minimize interference to the primary
+system. This sensing can be challenged by factors like fading
+wireless channels and low signal-to-noise (SNR) ratios, which
+can significantly impact the effectiveness of spectrum sensing.
+C. Spiking Neural Networks for Spectrum Sensing
+There are three classical spectrum sensing methods, which
+are matched filtering, energy detection, and cyclo-stationary
+feature detection. However, these methods have been shown
+to have inadequate detection rates at low SNRs, might require
+prior knowledge of the signal, or not be computationally effi-
+cient [25], [26], [27]. To overcome these challenges, machine
+learning-based methods have been studied [28], [29], [30].
+The advantages of machine learning-based methods over clas-
+sical methods are summarized as follows. Firstly, the machine
+learning-based methods are more adaptive since the surround-
+ing environment (e.g., the fading channel) of the cognitive
+radio could be learned. Secondly, the decision boundaries of
+the spectrum could be better found by machine learning-based
+methods [29], [30].
+In this work, we introduce an energy-efficient SNN-based
+method for spectrum sensing and implement the method on
+a Loihi chip. The architecture of spectrum sensing for the
+MIMO-OFDM system using SNNs is shown in Fig. 1. To
+the best of our knowledge, this is the first work for solving
+spectrum sensing in a 5G communication system using Loihi.
+Our results demonstrate that a high-performance energy-
+efficient SNN model for spectrum sensing can be achieved on
+Loihi.
+IV. LOIHI CHIP
+A. Neuromorphic Computing Chips
+Loihi is a neuromorphic research test chip designed by Intel
+Labs. It uses asynchronous event-driven fine-grained parallel
+computations to improve the speed and the power efficiency
+of SNN models [6]. It consists of 128 “neurocores” and each
+“neurocore” has 1024 neurons. The chip is fabricated on Intel’s
+14 nm process.
+Compared to other neuromorphic processors such as
+Neurogrid [31] and BrainScaleS [32], Loihi has the follow-
+ing advantages. Firstly, Loihi exploits barrier synchronization
+to enable chips and cores in a mesh can operate independently
+and utilizes barrier messages to synchronize the system to a
+global time step. Secondly, Loihi exploits asynchronous event-
+driven parallel computations to improve the speed and power
+efficiency of SNN models. Thirdly, the behavior of the chip
+is guaranteed to be reliable and predictable compared to solu-
+tions in the mixed-signal, purely analog, or fully asynchronous
+digital domains. Fourthly, this chip is fabricated on advanced
+process technology, which makes the chip run faster and has
+less silicon area. Lastly, Loihi has better community support
+and documentation.
+B. Challenges of Deployment on Loihi
+Because of the hardware limitations and the non-
+differentiable spike activities, mature training algorithms such
+as backpropagation cannot be implemented on Loihi. Also,
+Loihi only supports integer-only inference with 1-9 bits
+precision. Therefore, an off-chip quantization-aware training
+algorithm for quantized SNN models is needed. However,
+building an off-chip training algorithm to train quantized SNN
+models for Loihi is challenging. The accuracy of existing
+quantization-aware training algorithms [8], [9], [10], [11], [12]
+is still compromised when compared to their full-precision
+(FP) counterparts. This decline in accuracy can be primarily
+attributed to the imprecise estimation of gradients in quantiza-
+tion layers that are non-differentiable. Furthermore, despite the
+potential of the unsupervised STDP learning algorithm [13]
+to eliminate the need for gradient backpropagation across
+layers, these algorithms do not enable the achievement of
+high-performance models.
+To build an off-chip training algorithm for quantized SNNs
+on Loihi, the training algorithm needs to address the follow-
+ing issues. Firstly, the training algorithm needs to resolve the
+non-differentiable spike activities of SNN models and can
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+LIU et al.: QUANTIZATION-AWARE TRAINING OF SPIKING NEURAL NETWORKS 831
+backpropagate gradients through both temporal and spatial
+domains. Secondly, compared to conventional DNNs, SNNs
+have more parameters such as synaptic weights, neuron
+states, decay time constants, and spiking thresholds. Many
+of these parameters are required to be quantized into inte-
+gers because Loihi only supports integer-only inference with
+1-9 bits precision. The training algorithm needs to reduce
+the quantization errors on these parameters. Thirdly, to yield
+high-performance SNN models on Loihi, a new quantization
+scheme is required by the training algorithm to simulate the
+quantization effects during training because Loihi works very
+differently compared to CPU/GPU. In Section V, we propose
+an off-chip training algorithm to address these challenges.
+V. OPTIMIZATION OF QUANTIZED SPIKING NEURAL
+NETWORKS VIA QUANTIZATION-AWARE TRAINING
+A quantization-aware training algorithm for SNNs is intro-
+duced in this section. We first discuss how to perform
+backpropagation for floating-point and quantized SNN mod-
+els. Then, we introduce how to enable the scale parameters
+of the quantizer trainable. Next, we present the proposed
+quantization-aware training algorithm with the probability-
+based scheme for optimizing quantized SNN models.
+A. Backpropagation for Spiking Neural Networks
+In discrete-time domain, the dynamics of the i-th neuron of
+the l-th layer in a SNN can be approximated as [33], [34],
+I l
+i [k + 1] =
+nl−1
+
+j
+wl
+ij ol−1
+j [k + 1]
+U l
+i [k + 1] = αU l
+i [k] + I l
+i [k + 1]
+ol
+i [k + 1] = Θ
+
+U l
+i [k + 1] − hl
+i
+
+, (8)
+where k represents the time step k. nl denotes the number
+of neurons in the l-th layer. α = e− Δk
+τ and Δk is the time
+difference between time step k + 1 and k. τ is the membrane
+time constant of the neuron. ol
+i denotes the output of the i-th
+neuron in the l-th layer. I l
+i is the pre-synaptic current of the i-th
+neuron in the l-th layer. U l
+i is the neuron potential of the i-th
+neuron of the l-th layer. wl
+ij denotes the synaptic weight that
+connects the i-th neuron in the l-th layer and the j-th neuron
+in the (l-1)-th layer. Θ is the Heaviside step function. hl
+i is
+the threshold potential for the i-th neuron in the l-th layer.
+As can be seen from Eq. (8), the output of a neuron in
+a layer incorporates both spatial and temporal information
+from the previous layer and the neuron itself, respectively. The
+dynamics of an SNN are similar to the dynamics of an RNN.
+Therefore, the popular backpropagation through time (BPTT)
+training algorithm for RNNs can be exploited in the training
+of SNNs [33], [34].
+During BPTT, a neuron at time step k receives two gra-
+dients. One of the gradients is the spatial gradient, which is
+backpropagated from the next layer. Another gradient is the
+temporal gradient, which is backpropagated from time step
+k + 1 of the same neuron. Fig. 2 shows the spatial-temporal
+backpropagation of the l-th layer for the membrane potential
+Fig. 2. Spatial temporal backpropagation of SNN models.
+U at time step k. ol,k and U l,k+1 backpropagates spatial and
+temporal gradients to U l,k , respectively.
+The spatial gradient respective to membrane potential can
+be computed as,
+∂L
+∂U l,k
+= δl,k ∂ol,k
+∂U l,k
+= δl,k ∂Θ
+∂U l,k
+, (9)
+where δl,k = ∂L
+∂ol,k and Θ is the Heaviside step function.
+The temporal gradient respective to membrane potential can
+be computed as,
+∂L
+∂U l,k
+= δl,k+1 ∂ol,k+1
+∂U l,k+1
+∂U l,k+1
+∂U l,k
+= δl,k+1 ∂Θ
+∂U l,k+1
+α, (10)
+where α = e− Δk
+τ and Δk is the time difference between
+time step k + 1 and k. τ is the membrane time constant of
+the neuron. Combining the spatial and temporal gradient, the
+overall gradient with respect to the membrane potential U l,k ,
+synaptic weights W l , and output of the previous layer ol−1,k
+can be computed as,
+MembranePotential:
+∂L
+∂U l,k
+= δl,k ∂Θ
+∂U l,k
++ δl,k+1 ∂Θ
+∂U l,k+1
+α
+Weights:
+∂L
+∂W l
+=
+T
+
+k=1
+∂L
+∂U l,k
+∂U l,k
+∂W l
+=
+T
+
+k=1
+∂L
+∂U l,k
+ol−1,k
+Output:
+∂L
+∂ol−1,k
+=
+∂L
+∂U l,k
+∂U l,k
+∂ol−1,k
+=
+∂L
+∂U l,k
+W l
+, (11)
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+832 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+Fig. 3. Plots of heaviside step function and rescaled sigmoid function with
+different rescale constants.
+where T is the maximum time step.
+The derivative of Heaviside step function Θ is zero when
+input x is smaller than or larger than 0. It is infinity when x is
+equal to 0. Backpropagation cannot backpropagate gradients
+through Heaviside step function. Inspired by the work in [33],
+we approximate the Heaviside step function with a rescaled
+sigmoid function, which could be expressed as [33],
+σ =
+1
+1 + e−p·x , (12)
+where x is the input and p is the rescale constant. The
+Heaviside step function Θ, and the rescaled sigmoid function
+with different rescale constants are shown in Fig. 3.
+B. Backpropagation of Quantized Spiking Neural Networks
+In this section, we discuss how to perform backpropagation
+for training quantized SNN models. To simulate the quantiza-
+tion effects for SNN models, a simulated quantization function
+Q(·) is applied to weights W during the forward pass of
+training.
+Wq = Q(W ), (13)
+where W is floating-point weights and Wq is the simulated
+quantized weights. The simulated quantization function Q(·)
+can be written as,
+Q
+
+W l
+
+= round
+W l
+s
+
+∗ s, (14)
+W l is the trained weights of the l-th layer. s is the scale
+parameter and it determines the size of the quantization step.
+In the next subsection, we will show how to optimize this
+parameter. round is a function, which rounds a floating-point
+number to its nearest integer.
+In training, floating-point weights are maintained through-
+out the training. Once the floating-point weights are processed
+by the simulated quantization function Q(·), the processed
+weights are used for computation. However, the simulated
+quantization function Q(·) is not differentiable and thus gra-
+dients cannot be backpropagated through layers during the
+backward pass of the training. To address this issue, the
+straight-through estimator [23] is exploited to approximate
+the gradient. We approximate the partial derivative
+∂Wq
+∂W = 1.
+Then, the gradient to the floating-point weight can be approx-
+imated as,
+∂L
+∂W
+=
+∂L
+∂Wq
+∂Wq
+∂W
+≈
+∂L
+∂Wq
+. (15)
+Based on Eq. (15), we modify equations in (11) to approxi-
+mate the gradient update of membrane potential, weights, and
+output for quantized SNN models. The modified equations can
+be expressed as,
+MembranePotential:
+∂L
+∂U l,k
+= δl,k ∂Θ
+∂U l,k
++ δl,k+1 ∂Θ
+∂U l,k+1
+α
+Weights:
+∂L
+∂W l
+=
+T
+
+k=1
+∂L
+∂U l,k
+∂U l,k
+∂W l
+q
+∂W l
+q
+∂W l
+≈
+T
+
+k=1
+∂L
+∂U l,k
+∂U l,k
+∂W l
+q
+≈
+T
+
+k=1
+∂L
+∂U l,k
+ol−1,k
+Output:
+∂L
+∂ol−1,k
+=
+∂L
+∂U l,k
+∂U l,k
+∂ol−1,k
+≈
+∂L
+∂U l,k
+W l
+q , (16)
+where W l
+q is the simulated quantized weights of the l-th layer.
+C. Learnable Scale Parameters
+As shown in both Eq. (2) and Eq. (14), the scale parameter
+plays a critical role in the quantization scheme. It determines
+the size of the quantization step and affects the gradient esti-
+mation of non-differentiable layers. Prior quantization methods
+for SNNs use the lower/upper bound of a layer and the max-
+imum quantization level of the layer to calculate the scale
+parameter. This calculation method is straightforward but it
+is non-optimal. It introduces large quantization errors into the
+model especially when there are outliers in quantization layers.
+In our work, a trainable scale parameter s is used. The
+simulated quantization function Q(·) with a trainable scale
+parameter can be written as,
+Q(W ) = round clip
+W
+s
+, Qlo, Qhi ∗ s, (17)
+where round(·) is the rounding function and the clip(·) func-
+tion clamps all values between the lower bound Qlo and upper
+bound Qhi of the quantized integer. The parameter W is the
+weights to be quantized and s is the trainable scale parameter.
+Using the straight-through estimator, the gradient of the scale
+parameter s can be calculated as [14], [23],
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+LIU et al.: QUANTIZATION-AWARE TRAINING OF SPIKING NEURAL NETWORKS 833
+Fig. 4. A 6-layer SNN Model.
+∂Q(W )
+∂s
+=
+⎧
+⎪
+⎨
+⎪
+⎩
+Qlo if W
+s ≤ Qlo
+Qhi if W
+s ≥ Qhi
+round
+
+W
+s
+
+− W
+s if Qlo < W
+s < Qhi
+(18)
+The utilization of Eq. (18) offers a notable advantage, as the
+gradient with respect to the scale parameter is influenced by
+the proximity of W to the transition point between quantization
+levels. When W is situated closer to a quantization transi-
+tion point, the likelihood of modifying its quantization level
+through a learned adjustment to s increases. Therefore, it is
+reasonable to anticipate an increase in the value of
+∂Q(W )
+∂s
+as the distance from W to a transition point decreases. This
+relationship is observed in Eq. (18).
+D. Quantization-Aware Training for Spiking Neural
+Networks With Probability-Based Scheme
+In this subsection, we introduce the quantization-aware
+training for SNN models on Loihi. The proposed algorithm
+adopts a probability-based scheme to selectively quantize indi-
+vidual layers within the network as opposed to quantizing all
+layers simultaneously. During the forward pass of each train-
+ing step, a layer has a certain probability p to be quantized by
+the simulated quantization function Q(·) defined in Eq. (17).
+The probability p is a hyperparameter. Therefore, only part of
+the layers is quantized during the forward pass rather than all
+layers are quantized. During the backward pass, if the weights
+of a layer are quantized during the forward pass, Eq. (16)
+and Eq. (18) are used to approximate gradients for weights
+and scale parameter s, respectively. Otherwise, Eq. (11) is
+adopted to compute the gradient. As illustrated in Fig. 4, a
+6-layer Spiking SNN model is presented. The representation
+employs a color scheme wherein green boxes signify quantized
+layers, while blue boxes denote regular, unquantized layers.
+During a single training iteration, quantization is exclusively
+applied to layers 1 and 3, while all remaining layers are left
+unquantized.
+Algorithm 1: Proposed Quantization-Aware Training for
+SNN
+Input: A training set {(x1, y1), (x2, y2), . . . , (xn, yn)}; A
+floating-point SNN model M with weights W
+Output: The quantized SNN model Mq of M
+initialization;
+for epoch ← 0 to N do
+for batch ← 0 to K do
+X ← mini-batch of data
+Y ← mini-batch of label
+S ← set for saving quantized layer index
+G ← hash table for saving gradients
+// iterate over each layer in
+forward pass
+for l ← 1 to L do
+p ←sample from uniform distribution [0, 1).
+if p ≥ pth then
+W l
+q ← Q(W l )
+X ← M l (X , W l
+q )
+insert l to S
+else
+X ← M l (X , W l )
+end
+end
+// Compute loss
+loss = Loss(X , Y )
+// iterate over each layer in
+backward pass
+for l ← L to 1 do
+if l ∈ S then
+Grad ←Compute gradient using Eq. (16)
+and (18)
+else
+Grad ←Compute gradient using Eq. (11)
+end
+insert Grad to G
+end
+UpdateWeights(M , G)
+end
+end
+Mq = Quantization(M )
+return Mq
+Our algorithm aims to alleviate errors arising from
+the poor estimation of gradients and enhance the overall
+performance of the trained models. The approximated gradient
+in quantization-aware training algorithms for the weights
+update is certainly not the real gradient. The noisy updates
+could lead the model to a local minimum. The proposed
+quantization-aware training algorithm reduces the overall
+quantization noise and eases the difficulty of training by quan-
+tizing part of the layers in a model and using trainable scale
+parameters s. Meanwhile, quantization effects are still included
+during training. With the help of the proposed algorithm, the
+optimization problem becomes easier due to less quantization
+noise added to the model. The proposed quantization-aware
+training algorithm is summarized in Algorithm 1.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+834 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+E. Input Spike Encoding
+A fundamental challenge in SNNs is the conversion of
+real-valued inputs into binary spikes. Various coding schemes
+have been proposed, including temporal, phase, Burst, and rate
+coding methods [35], [36], [37], [38], [39].
+Temporal coding assigns a single spike to each neu-
+ron, where spike latency varies inversely with input mag-
+nitude [37]. When input exceeds a threshold, a spike is
+generated, inhibiting subsequent spikes from the same input.
+This scheme maps inputs to precise spike timing, offering
+advantages in speed and energy efficiency.
+Phase coding, as outlined in [38], incorporates tempo-
+ral information into spike patterns by assigning varying
+weights to different time steps, featuring periodic changes
+in spike weight. The number of phases is determined by
+the input’s highest magnitude. Phase coding is robust against
+input noise, offering a resilient solution for handling input
+perturbations.
+Burst coding, as investigated by Park et al. [39], conveys
+information through short bursts of spikes, improving synap-
+tic communication reliability. This coding utilizes the number
+of spikes in a burst and the inter-spike intervals to encode
+information.
+Rate coding converts real-valued inputs into spike trains,
+with spike count directly reflecting input magnitude [35].
+Inputs are treated as firing rates, resulting in Poisson
+spike trains matching input values. This approach encodes
+information in spike frequency, representing diverse input
+intensities via neuronal firing rates.
+In this study, we have chosen to adopt rate coding as the
+input encoding method. Rate coding is favored for its robust-
+ness, particularly in the context of deep SNN models. While
+temporal coding, phase coding, and burst coding have found
+applications in shallow networks, their scalability becomes
+challenging when confronted with increases in both network
+and dataset dimensions [40]. In contrast, rate coding is well-
+suited for large-scale settings, and many recent state-of-the-art
+SNN models utilize this coding scheme [41]. In our encod-
+ing approach, we initially normalize the input data using the
+equation,
+x =
+x − a
+b − a
+, (19)
+where x represents the real-valued input, and a and b denote
+the lower and upper bounds of the input, respectively. The
+normalized input is subsequently transformed into a Poisson
+spike train through a Poisson encoder.
+F. Output Spike Decoding
+The final output layer of our SNN models is a decoder that is
+used to decode spike-based outputs into continuous real values.
+Assume the last hidden layer of an SNN model has N neurons
+with T time steps and we are working on a classification task
+with C classes. The decoder D is a dense layer and the shape
+of the layer is N × C. The decoder takes the spike output of the
+last hidden layer as input and generates membrane potentials
+for each time step. The membrane potential of the i-th neuron
+of the decoder at the k-th time step can be expressed as,
+Fig. 5. The overall Architecture of the SNN model.
+Ii [k] =
+N
+
+j
+wij oj [k]
+Ui [k] = αUi [k − 1] + Ii [k], (20)
+oj denotes the output of the j-th neuron in the last hidden
+layer. Ii is the pre-synaptic current of the i-th neuron of the
+decoder. Ui is the membrane potential of the i-th neuron of the
+decoder. wl
+ij denotes the synaptic weight that connects the i-th
+neuron in the decoder and the j-th neuron in the last hidden
+layer. α is the decay rate of the membrane potential. For each
+neuron in the decoder, we take the average of the membrane
+potential at each time step to produce the final output. The
+final output Oi of the i-th neuron of the decoder is shown as,
+Oi =
+1
+T
+T
+
+k=1
+Ui [k]. (21)
+The decoded final output is sent to a softmax function to cal-
+culate the probability for each class. The softmax function is
+illustrated as,
+σ(Oi ) =
+eOi
+C
+j=1 eOj
+for i = 1, 2, . . . , C (22)
+where C is the number of classes in the classification task and
+e is a exponential function.
+VI. EXPERIMENTAL RESULTS
+A. Experimental Setup
+In our experimental setup, the SNN model is constructed
+with two fully connected layers, each consisting of 96 neu-
+rons. For the spectrum sensing task, the input and output sizes
+are defined as 2. In the MNIST classification task [42], the
+input size is 784 and the output size is 10. Similarly, in the
+SVHN classification task [43], the input size is 3024 and the
+output size is 10. To execute the SNN model, we employ a
+single Nahuku Loihi chip. The input data is encoded using a
+Poisson encoder. The LIF neuron utilized in our model has a
+voltage decay time constant of 10e-3 and a current decay time
+constant of 5e-3. The overall architecture of the SNN model
+is shown in Fig. 5. The floating-point DNN model used in the
+spectrum sensing task has the same architecture as the SNN
+model. The DNN models are implemented using Pytorch [44].
+Our GPU experiments are conducted on an NVIDIA RTX
+A2000. To measure the power consumption, both the total
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+LIU et al.: QUANTIZATION-AWARE TRAINING OF SPIKING NEURAL NETWORKS 835
+and idle power on the GPU were assessed using the NVIDIA
+GPU measurement and analysis tool. On the other hand, for
+the power measurements on the Loihi chip, the internal tools
+provided by Loihi were utilized to determine the total and
+idle power consumption. The idle power on Loihi is measured
+when there are no input spikes to the model. The simulation
+steps are 30000. The following abbreviations are used to rep-
+resent different methods and architectures in spectrum sensing
+experiments.
+• “FP DNN”: The FP DNN model is the floating-point
+(FP) DNN model that runs on GPU. The FP DNN has
+two fully connected layers and each layer has 96 neurons.
+• “PTQ SNN”: The PTQ SNN model represents the quan-
+tized SNN model trained by the post-training quantization
+(PTQ) algorithm [21]. The model runs on Loihi. The
+model has two fully connected layers. Each layer has
+96 neurons.
+• “QAT SNN”: The QAT SNN model is the quantized
+SNN model trained using the proposed quantization-
+aware training (QAT) method. The model runs on Loihi.
+It has two fully connected layers and each layer has 96
+neurons.
+The performance of the SNN model is evaluated on the
+spectrum sensing of MIMO communication systems com-
+bined with OFDM [45]. The spectrum sensing dataset is from
+the RWTH Aachen University Static Spectrum Occupancy
+Measurement Campaign database [46], which includes the
+static spectrum occupancy measurement of the PU activity in
+different time slots and frequency bands. The frequency occu-
+pancy model extracted from the database is used to model the
+occupancy of each subcarrier. We synthesize the transmit sig-
+nal and apply the Rayleigh channel model to the signal and
+introduce noise. The input of the SNN model is a sequence of
+energy of the received signals by the SUs and the output is if a
+subcarrier is busy or idle. In our experiments, we evaluate the
+SNN models on different SNR ratios, transmitting (Tx), and
+receiving (Rx) antennas. We use classification accuracy as an
+evaluation metric on spectrum sensing, SVHN classification,
+and MNIST classification tasks.
+B. Training Setup
+Spectrum Sensing: The training of the SNN model is
+conducted using a batch size of 32. To optimize the
+model’s performance, the Adam optimization algorithm [47]
+is employed, with a learning rate of 0.001. Furthermore, a
+learning rate scheduler is integrated into the training process.
+Specifically, the learning rate is divided by a factor of 10 every
+30 epochs. The training process spans 100 epochs. At the
+output layer, we use the neuron that has the highest mem-
+brane potential as the predicted class. The model is trained
+to minimize cross-entropy loss. The time step is 150. The
+DNN model on the spectrum sensing is trained using the same
+configurations.
+MNIST Dataset: The training setup of the MNIST dataset
+is similar to the spectrum sensing. The difference is that the
+batch size is 128. Meanwhile, the time step is 100.
+SVHN Dataset: The training setup of the SVHN dataset is
+the same as the MNIST dataset.
+TABLE I
+ACCURACY COMPARISON OF DIFFERENT ALGORITHMS
+ON THE MNIST DATASET
+Fig. 6. Inference energy consumption per image (J) of different implemen-
+tations.
+C. MNIST HandWritten Digits Classification
+The MNIST dataset [42] is widely utilized for evalu-
+ating SNN models. There are 60,000 training images and
+10,000 testing images. Each image is grayscale and has
+dimensions of 28 × 28. These images represent hand-
+written digits ranging from 0 to 9. Table I presents an
+accuracy comparison of different training algorithms on
+the MNIST dataset. As shown in Table I, our training
+algorithm achieves better accuracy than other quantization-
+aware training algorithms such as eWB [15], HAQ [16],
+EnforceSNN [17], QSTDP [8], and Q-SpiNN [9]. The results
+demonstrate that our quantization-aware training algorithm
+can effectively reduce quantization errors and improve overall
+performance.
+To illustrate the energy efficiency of SNN models on Loihi,
+the inference energy consumption per image (J) of different
+models on the MNIST dataset is shown in Fig. 6. The batch
+size on the GPU was set to 1 to align with Loihi, which
+only supports a batch size of 1. As demonstrated in Fig. 6,
+the energy consumption per image of our SNN model on
+Loihi is 339X, 99X, 46X, 119X, 110X, and 67X less than
+the eWB [15], HAQ [16], EnforceSNN [17], QSTDP [8],
+Q-SpiNN [9], and our model on GPU.
+D. SVHN Classification Dataset
+The SVHN dataset serves as a real-world image dataset
+specifically designed for digit classification tasks. It comprises
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+836 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+TABLE II
+ACCURACY COMPARISON ON SVHN DATASET
+Fig. 7. Power consumption of FP DNN on GPU and SNN on Loihi.
+over 70,000 digit images for training and an additional 20,000
+digit images for testing. Each image in the dataset has a dimen-
+sion of 32 × 32 × 3, representing a color image. The primary
+objective of the SVHN dataset is to classify digits ranging
+from 0 to 9 accurately. In this experiment, we use a 5-layer
+spiking convolutional neural network (CNN). The first and the
+third layer is a convolution layer with 32 output feature maps
+using a 3 × 3 filter and stride 1. The second and the fourth
+layer is a 2 × 2 max pooling layer. The fifth layer is a fully
+connected layer with 256 neurons. The accuracy comparison
+of the CNN model trained by the PTQ algorithm [21] and our
+QAT algorithm is shown in Table II. As demonstrated in the
+table, the QAT CNN improves the accuracy by approximately
+3% compared to the PTQ CNN model.
+E. Spectrum Sensing Classification
+1) Power and Energy Consumption: In the spectrum sens-
+ing task, the power consumption comparison between the FP
+DNN model on GPU and the QAT SNN model on Loihi is
+demonstrated in Fig. 7. As can be seen from the figure, Loihi
+has much lower idle and dynamic power consumption. The
+dynamic power of Loihi is approximately 153 times lower
+than the GPU dynamic power.
+The energy consumption per sample in Joule between the
+FP DNN on GPU and the QAT SNN on Loihi is shown in
+Table III. We use the total power and time per sample to com-
+pute the energy consumption per sample. As can be seen from
+the table, the QAT SNN consumes approximately 16 times less
+energy compared to the FP DNN on GPU.
+2) Accuracy Comparison: We compare the accuracy
+between the FP DNN, PTQ SNN, and QAT SNN models on
+spectrum sensing datasets with different numbers of antennas
+TABLE III
+COMPARISON OF ENERGY CONSUMPTION PER SAMPLE BETWEEN THE FP
+DNN AND THE QAT SNN MODEL
+TABLE IV
+COMPARISON OF ACCURACY BETWEEN FP DNN, PTQ SNN, AND QAT
+SNN WITH DIFFERENT ANTENNAS AT SNR=–10DB
+TABLE V
+COMPARISON OF ACCURACY BETWEEN FP DNN, PTQ SNN, AND QAT
+SNN WITH DIFFERENT ANTENNAS AT SNR=–15DB
+and SNR ratios. Also, how the accuracy of SNN models
+depends on the SNR is demonstrated for the different num-
+bers of antennas. At SNR = –10dB, the accuracy comparison
+between FP DNN, PTQ SNN, and QAT SNN with a different
+number of antennas is demonstrated in Table IV. As shown in
+the table, the QAT SNN achieves 2.10% and 2.35% accuracy
+improvement compared to the PTQ SNN model on 4 Tx &
+4 Rx and 6 Tx & 6 Rx spectrum sensing data, respectively.
+Compared to the FP DNN, QAT SNN has 1.18% and 1.46%
+accuracy loss on 4 Tx & 4 Rx and 6 Tx & 6 Rx spectrum
+sensing data, respectively. However, the QAT SNN is much
+more energy-efficient and consumes 16 times less energy per
+sample than the FP DNN. The result demonstrates that SNNs
+are more suitable for resource-constrained devices than DNNs.
+At SNR=–15dB, the accuracy comparison among FP DNN,
+PTQ SNN, and QAT SNN with different numbers of antennas
+is shown in Table V. As shown in the table, compared to the
+PTQ SNN model, the QAT SNN improves accuracy by 2.73%
+and 3.69% on 4 Tx & 4 Rx and 6 Tx & 6 Rx spectrum sensing
+data, respectively. Compared to the FP DNN, the QAT SNN
+has 1.25% and 2.21% accuracy loss on 4 Tx & 4 Rx and 6
+Tx & 6 Rx spectrum sensing data, respectively. However, the
+energy consumption per sample of the QAT SNN is 16 times
+less than the energy consumption of the FP DNN. The result
+shows that SNNs fit better to resource-constrained devices than
+DNNs.
+Traditional spectrum sensing methods such as support vec-
+tor machine (SVM) [48] and logistic regression (LR) [49] are
+energy-efficient. However, as the complexity of spectrum sens-
+ing tasks grows such as low SNR ratio, a smaller number
+of Rx&Tx antennas, or require more complex relationships
+to be captured, traditional methods encounter challenges in
+effectively addressing these cases. In contrast, SNNs offer
+scalability to handle larger and more complex datasets [41].
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+LIU et al.: QUANTIZATION-AWARE TRAINING OF SPIKING NEURAL NETWORKS 837
+TABLE VI
+THE COMPARISON OF ACCURACY AMONG SVM, LR, AND SNN ON
+SPECTRUM SENSING DATASETS WITH TX=2 AND RX=2
+AT –15DB AND –20DB SNR
+Fig. 8. Accuracy (%) of SNN models in different SNR ratios (dB) and the
+number of antennas.
+To illustrate this point, our study compares the performance
+of our SNN model against LR and SVM on spectrum sens-
+ing datasets characterized by a diminished number of Rx&Tx
+antennas and varying SNR ratios. The SVM model in our
+experiment employs a radial basis function kernel. As illus-
+trated in Table VI, the SNN model attains superior accuracy
+on the spectrum sensing datasets, particularly under lower
+SNR conditions. This outcome underscores the efficacy of
+the SNN approach on spectrum sensing tasks, especially
+when confronted with more complex and energy-efficient
+requirements.
+The accuracy of SNN models depends on the SNR ratio for
+the different numbers of antennas plotted in Fig. 8. As shown
+in Fig. 8, the accuracy decreases when the SNR ratio goes
+lower.
+VII. CONCLUSION
+In this paper, we propose an off-chip QAT algorithm for
+SNN models running on Loihi. Our QAT algorithm learns
+the quantization mapping and makes the scale parameters of
+the quantizer trainable. Moreover, the proposed method adopts
+a probability-based scheme to selectively quantize individual
+layers within the network as opposed to quantizing all layers
+simultaneously. The result on Loihi shows that SNN mod-
+els trained by the proposed QAT algorithm can achieve better
+results than models trained by other algorithms. Meanwhile,
+we introduce an energy-efficient SNN-based method for spec-
+trum sensing on the MIMO-OFDM system and demonstrate
+that energy-efficient spectrum sensing can be achieved on
+Loihi. On the spectrum sensing task, the SNN model on Loihi
+trained by the proposed QAT algorithm achieves compara-
+ble accuracy as the DNN counterpart while having 16 times
+less energy consumption per sample. On the MNIST classi-
+fication task, our model has better accuracy than the models
+trained by eWB, HAQ, EnforceSNN, QSTDP, and Q-SpiNN.
+The energy consumption per image of our model on Loihi is
+339X, 99X, 46X, 119X, 110X, and 67X less than the eWB,
+HAQ, EnforceSNN, QSTDP, Q-SpiNN, and our SNN model
+on GPU.
+REFERENCES
+[1] B. Jacob et al., “Quantization and training of neural networks for effi-
+cient integer-arithmetic-only inference,” in Proc. IEEE Conf. Comput.
+Vis. Pattern Recognit., 2018, pp. 2704–2713.
+[2] S. Wang, M. Chen, C. G. Brinton, C. Yin, W. Saad, and S. Cui,
+“Performance optimization for variable bitwidth federated learning
+in wireless networks,” IEEE Trans. Wireless Commun., early access,
+Aug. 4, 2023, doi: 10.1109/TWC.2023.3297790.
+[3] A. Voulodimos, N. Doulamis, A. Doulamis, and E. Protopapadakis,
+“Deep learning for computer vision: A brief review,” Comput. Intell.
+Neurosci., vol. 2018, Feb. 2018, Art. no. 7068349.
+[4] T. Young, D. Hazarika, S. Poria, and E. Cambria, “Recent trends in
+deep learning based natural language processing,” IEEE Comput. Intell.
+Mag., vol. 13, no. 3, pp. 55–75, Aug. 2018.
+[5] S. Ghosh-Dastidar and H. Adeli, “Spiking neural networks,” Int. J.
+Neural Sys., vol. 19, no. 04, pp. 295–308, 2009.
+[6] M. Davies et al., “Loihi: A neuromorphic manycore processor with on-
+chip learning,” IEEE Micro, vol. 38, no. 1, pp. 82–99, Jan./Feb. 2018.
+[7] P. Blouw, X. Choo, E. Hunsberger, and C. Eliasmith, “Benchmarking
+keyword spotting efficiency on neuromorphic hardware,” in Proc. 7th
+Annu. Neuro-Inspired Comput. Elem. Workshop, 2019, pp. 1–8.
+[8] S. Hu, G. Qiao, T. Chen, Q. Yu, Y. Liu, and L. Rong, “Quantized STDP-
+based online-learning spiking neural network,” Neural Comput. Appl.,
+vol. 33, no. 19, pp. 12317–12332, 2021.
+[9] R. V. W. Putra and M. Shafique, “Q-spinn: A framework for quantizing
+spiking neural networks,” in Proc. IEEE Int. Joint Conf. Neural Netw.
+(IJCNN), 2021, pp. 1–8.
+[10] C. J. Schaefer, P. Taheri, M. Horeni, and S. Joshi, “The hardware impact
+of quantization and pruning for weights in spiking neural networks,”
+IEEE Trans. Circuits Syst. II, Exp. Briefs, vol. 70, no. 5, pp. 1789–1793,
+May 2023.
+[11] M. Sorbaro, Q. Liu, M. Bortone, and S. Sheik, “Optimizing the energy
+consumption of spiking neural networks for neuromorphic applications,”
+Frontiers Neurosci, vol. 14, p. 662, Jun. 2020.
+[12] G. Datta, S. Kundu, A. R. Jaiswal, and P. A. Beerel, “Ace-SNN:
+Algorithm-hardware co-design of energy-efficient & low-latency deep
+spiking neural networks for 3D image recognition,” Frontiers Neurosci.,
+vol. 16, p. 400, Apr. 2022.
+[13] N. Caporale and Y. Dan, “Spike timing–dependent plasticity: A hebbian
+learning rule,” Annu. Rev. Neurosci., vol. 31, pp. 25–46, Sep. 2008.
+[14] S. K. Esser, J. L. McKinstry, D. Bablani, R. Appuswamy, and
+D. S. Modha, “Learned step size quantization,” 2019, arXiv:1902.08153.
+[15] D. Kim, G. Kim, C. S. Hwang, and D. S. Jeong, “eWB: Event-
+based weight binarization algorithm for spiking neural networks,” IEEE
+Access, vol. 9, pp. 38097–38106, 2021.
+[16] H. W. Lui and E. Neftci, “Hessian aware quantization of spiking neural
+networks,” in Proc. Int. Conf. Neuromorph. Syst., 2021, pp. 1–5.
+[17] R. V. W. Putra, M. A. Hanif, and M. Shafique, “EnforceSNN: Enabling
+resilient and energy-efficient spiking neural network inference consider-
+ing approximate DRAMs for embedded systems,” Frontiers Neurosci.,
+vol. 16, Aug. 2022. Art. no. 937782.
+[18] L. Liu, R. Chen, S. Geirhofer, K. Sayana, Z. Shi, and Y. Zhou,
+“Downlink MIMO in LTE-advanced: SU-MIMO vs. MU-MIMO,” IEEE
+Commun. Mag., vol. 50, no. 2, pp. 140–147, Feb. 2012.
+[19] R. Atat, L. Liu, H. Chen, J. Wu, H. Li, and Y. Yi, “Enabling cyber-
+physical communication in 5G cellular networks: Challenges, spatial
+spectrum sensing, and cyber-security,” IET Cyber-Phys. Syst., Theory &
+Appl., vol. 2, no. 1, pp. 49–54, 2017.
+[20] C. V. N. Index, “Global mobile data traffic forecast update,” Cisco, San
+Jose, CA, USA, white paper, 2019.
+[21] M. Nagel, R. A. Amjad, M. Van Baalen, C. Louizos, and T. Blankevoort,
+“Up or down? adaptive rounding for post-training quantization,” in Proc.
+Int. Conf. Mach. Learn., 2020, pp. 7197–7206.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+838 IEEE TRANSACTIONS ON GREEN COMMUNICATIONS AND NETWORKING, VOL. 8, NO. 2, JUNE 2024
+[22] D. Tal and E. L. Schwartz, “Computing with the leaky integrate-and-fire
+neuron: Logarithmic computation and multiplication,” Neural Comput.,
+vol. 9, no. 2, pp. 305–318, 1997.
+[23] Y. Bengio, N. Léonard, and A. Courville, “Estimating or propagating
+gradients through stochastic neurons for conditional computation,” 2013,
+arXiv:1308.3432.
+[24] J. Xu and G. Choi, “Compressive sensing and reception for MIMO-
+OFDM based cognitive radio,” in Proc. IEEE Int. Conf. Comput., Netw.
+Commun. (ICNC), 2015, pp. 884–888.
+[25] A. Kumar and P. NandhaKumar, “Ofdm system with cyclostationary
+feature detection spectrum sensing,” ICT Exp., vol. 5, no. 1, pp. 21–25,
+2019.
+[26] T. Xiong, Y.-D. Yao, Y. Ren, and Z. Li, “Multiband spectrum sensing
+in cognitive radio networks with secondary user hardware limitation:
+Random and adaptive spectrum sensing strategies,” IEEE Trans. Wireless
+Commun., vol. 17, no. 5, pp. 3018–3029, May 2018.
+[27] P.-R. Lin, Y.-Z. Chen, P.-H. Chang, and S.-S. Jeng, “Cooperative spec-
+trum sensing and optimization on multi-antenna energy detection in
+rayleigh fading channel,” in Proc. IEEE 27th Wireless Opt. Commun.
+Conf. (WOCC), 2018, pp. 1–5.
+[28] W. Lee, M. Kim, and D.-H. Cho, “Deep cooperative sensing:
+Cooperative spectrum sensing based on convolutional neural networks,”
+IEEE Trans. Veh. Technol., vol. 68, no. 3, pp. 3005–3009, Mar. 2019.
+[29] C. Jiang, H. Zhang, Y. Ren, Z. Han, K.-C. Chen, and L. Hanzo,
+“Machine learning paradigms for next-generation wireless networks,”
+IEEE Wireless Commun., vol. 24, no. 2, pp. 98–105, Apr. 2017.
+[30] K. M. Thilina, K. W. Choi, N. Saquib, and E. Hossain, “Machine
+learning techniques for cooperative spectrum sensing in cognitive radio
+networks,” IEEE J. Sel. Areas Commun., vol. 31, no. 11, pp. 2209–2221,
+Nov. 2013.
+[31] D. Khodagholy et al., “Neurogrid: Recording action potentials from the
+surface of the brain,” Nat. Neurosci., vol. 18, no. 2, pp. 310–315, 2015.
+[32] C. S. Thakur et al., “Large-scale neuromorphic spiking array proces-
+sors: A quest to mimic the brain,” Frontiers Neurosci., vol. 12, p. 891,
+Dec. 2018.
+[33] E. O. Neftci, H. Mostafa, and F. Zenke, “Surrogate gradient learn-
+ing in spiking neural networks: Bringing the power of gradient-based
+optimization to spiking neural networks,” IEEE Signal Process. Mag.,
+vol. 36, no. 6, pp. 51–63, Nov. 2019.
+[34] Y. Wu, L. Deng, G. Li, J. Zhu, and L. Shi, “Spatio-temporal backpropa-
+gation for training high-performance spiking neural networks,” Frontiers
+Neurosci., vol. 12, p. 331, May 2018.
+[35] W. Guo, M. E. Fouda, A. M. Eltawil, and K. N. Salama, “Neural coding
+in spiking neural networks: A comparative study for robust neuromor-
+phic systems,” Frontiers Neurosci., vol. 15, Mar. 2021, Art. no. 638474.
+[36] E. Forno, V. Fra, R. Pignari, E. Macii, and G. Urgese, “Spike encoding
+techniques for IoT time-varying signals benchmarked on a neuro-
+morphic classification task,” Frontiers Neurosci., vol. 16, Dec. 2022.
+Art. no. 999029.
+[37] I. M. Comsa, K. Potempa, L. Versari, T. Fischbacher, A. Gesmundo,
+and J. Alakuijala, “Temporal coding in spiking neural networks with
+alpha synaptic function,” in Proc. IEEE Int. Conf. Acoust., Speech Signal
+Process. (ICASSP), 2020, pp. 8529–8533.
+[38] M. A. Montemurro, M. J. Rasch, Y. Murayama, N. K. Logothetis, and
+S. Panzeri, “Phase-of-firing coding of natural visual stimuli in primary
+visual cortex,” Current Biol., vol. 18, no. 5, pp. 375–380, 2008.
+[39] S. Park, S. Kim, H. Choe, and S. Yoon, “Fast and efficient information
+transmission with burst spikes in deep spiking neural networks,” in Proc.
+56th Annu. Des. Autom. Conf., 2019, pp. 1–6.
+[40] Y. Kim, H. Park, A. Moitra, A. Bhattacharjee, Y. Venkatesha, and
+P. Panda, “Rate coding or direct coding: Which one is better for accurate,
+robust, and energy-efficient spiking neural networks?” in Proc. IEEE Int.
+Conf. Acoust., Speech Signal Process. (ICASSP), 2022, pp. 71–75.
+[41] Y. Kim, Y. Li, H. Park, Y. Venkatesha, and P. Panda, “Neural architecture
+search for spiking neural networks,” in Proc. 17th Eur. Conf., Comput.
+Vis. (ECCV), 2022, pp. 36–56.
+[42] Y. LeCun, “The mnist database of handwritten digits,” 1998. [Online].
+Available: http://yann. lecun. com/exdb/mnist/
+[43] P. Sermanet, S. Chintala, and Y. LeCun, “Convolutional neural networks
+applied to house numbers digit classification,” in Proc. IEEE 21st Int.
+Conf. Pattern Recognit. (ICPR), 2012, pp. 3288–3291.
+[44] A. Paszke et al., “Pytorch: An imperative style, high-performance deep
+learning library,” 2019, arXiv:1912.01703.
+[45] H. Song, X. Fang, and Y. Fang, “Millimeter-wave network architec-
+tures for future high-speed railway communications: Challenges and
+solutions,” IEEE Wireless Commun., vol. 23, no. 6, pp. 114–122,
+Dec. 2016.
+[46] M. Wellens, A. De Baynast, and P. Mahonen, “Exploiting historical spec-
+trum occupancy information for adaptive spectrum sensing,” in Proc.
+IEEE Wireless Commun. Netw. Conf., 2008, pp. 717–722.
+[47] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+2014, arXiv:1412.6980.
+[48] S. Suthaharan, “Support vector machine,” in Machine Learning Models
+and Algorithms for Big Data Classification: Thinking With Examples for
+Effective Learning. Boston, MA, USA: Springer, 2016, pp. 207–235.
+[49] T. G. Nick and K. M. Campbell, “Logistic regression,” in Topics in
+Biostatistics. Totowa, NJ, USA: Humana Press, 2007, pp. 273–301.
+Shiya Liu received the B.S. and M.S. degrees in
+electrical engineering from Iowa State University,
+Ames, USA, in 2013 and 2015, respectively. He
+is currently pursuing the Ph.D. degree with the
+Bradley Department of Electrical and Computer
+Engineering, Virginia Tech, Blacksburg, USA. His
+research interests include machine learning, very
+large-scale integrated circuits, and neuromorphic
+computing.
+Nima Mohammadi (Graduate Student Member,
+IEEE) received the M.Sc. degree in computer sci-
+ence from the University of Tehran, Tehran, Iran, in
+2017. He is currently pursuing the Ph.D. degree with
+the Bradley Department of Electrical and Computer
+Engineering, Virginia Tech, Blacksburg, VA, USA.
+His research interests include computational neu-
+roscience and emerging applications of machine
+learning and neural networks in wireless systems.
+Yang Yi (Senior Member, IEEE) is an Associate
+Professor with the Bradley Department of Electrical
+Engineering and Computer Engineering, Virginia
+Tech. Her research interests include very large-scale
+scale integrated circuits and systems, computer-
+aided design, neuromorphic architecture for brain-
+inspired computing systems, and low-power circuits
+design with advanced nano-technologies for high-
+speed wireless systems.
+Authorized licensed use limited to: University of Manchester. Downloaded on May 19,2026 at 09:22:44 UTC from IEEE Xplore. Restrictions apply.
+

@@ -1,0 +1,1595 @@
+WristSense: Sensing Hidden Wrist Strain in Routine Activities via
+Inertial Tokenization and LLM-Based Feedback
+Garvit Chugh
+Department of Computer Science and Engineering
+Indian Institute of Technology Jodhpur
+Jodhpur, India
+chugh.2@iitj.ac.in
+Ananya Mondal
+Department of Computer Science and Engineering
+Indian Institute of Technology Jodhpur
+Jodhpur, India
+mondal.2@iitj.ac.in
+Sandip Chakraborty
+Department of Computer Science and Engineering
+Indian Institute of Technology Kharagpur
+Kharagpur, India
+sandipchkraborty@gmail.com
+Suchetana Chakraborty
+Department of Computer Science and Engineering
+Indian Institute of Technology Jodhpur
+Jodhpur, India
+suchetana@iitj.ac.in
+9 Axis
+IMU data
+Figure 1: Overview of the system pipeline for real-time ergonomic monitoring. The smartwatch collects 9-axis IMU data
+and transmits it via Bluetooth to a paired smartphone. The phone visualizes wrist and finger posture angles, detects activity
+type, and identifies discomfort behaviors. An integrated LLM-based ergonomic coach analyzes detected postures to provide
+personalized advice and improvement recommendations, which are displayed on the smartwatch for user-friendly feedback.
+Abstract
+Wrist micro-behaviors during daily activities such as typing, hand-
+writing, cooking, or carrying objects are valuable indicators for
+early detection of wrist disorders like Carpal Tunnel Syndrome and
+tendonitis. However, continuous personalized monitoring remains
+challenging without intrusive setups or hand-crafted rules. We
+present WristSense, a real-time, wrist-worn sensing system that in-
+troduces: (i) a magnetometer-stabilized quaternion fusion pipeline
+for orientation-agnostic tracking, (ii) a lightweight 1D-CNN + HMM
+model to distinguish functional gestures from strain-related coping
+behaviors, and (iii) an inertial tokenization scheme that converts
+events into structured prompts for a pretrained LLM. This enables
+This work is licensed under a Creative Commons Attribution-NonCommercial-
+NoDerivatives 4.0 International License.
+SenSys ’26, Saint Malo, France
+© 2026 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-2309-4/26/05
+https://doi.org/10.1145/3774906.3800489
+zero-shot ergonomic feedback without per-user calibration. Evalu-
+ations across 12 participants show accurate posture tracking (<10°
+MAE), high gesture recognition (macro F1 = 0.91), and improved us-
+ability (SUS = 85.2), with significantly higher user compliance com-
+pared to rule-based methods. WristSense demonstrates the potential
+of combining inertial sensing with LLMs for scalable, personalized
+ergonomic monitoring and early intervention.
+CCS Concepts
+• Human-centered computing → Mobile computing; Gestural
+input.
+Keywords
+Wearables, Inertial Measurement Unit (IMU), Wrist Gesture Recog-
+nition, Assistive Interfaces Technology
+ACM Reference Format:
+Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana
+Chakraborty. 2026. WristSense: Sensing Hidden Wrist Strain in Routine
+Activities via Inertial Tokenization and LLM-Based Feedback. In ACM/IEEE
+622
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+International Conference on Embedded Artificial Intelligence and Sensing Sys-
+tems (SenSys ’26), May 11–14, 2026, Saint Malo, France. ACM, New York, NY,
+USA, 14 pages. https://doi.org/10.1145/3774906.3800489
+1 Introduction
+Wrist injuries from everyday activities are a growing but silent
+epidemic. Modern routines involve prolonged typing, texting, lift-
+ing, and cooking – actions that repetitively stress the wrist and
+hand. Conditions like Carpal Tunnel Syndrome (CTS), tendonitis,
+and De Quervain’s tenosynovitis often arise from subtle, repetitive
+micro-movements like wrist flicking, finger cracking, or knuckle
+crunching performed unconsciously during these activities [15, 33].
+Yet, people rarely notice such poor habits, wrist posture, or strain
+until pain becomes debilitating [31]. Early intervention is key, but
+remains elusive due to the absence of continuous, personalized, and
+unobtrusive monitoring tools.
+Wearables, especially smartwatches, present an opportunity for
+real-time, unobtrusive monitoring of musculoskeletal strain. Un-
+like camera-based systems or glove-like wearables [4, 22], which
+require controlled environments or specialized hardware, smart-
+watches are widely adopted and integrated into daily routines. Their
+9-axis IMUs, combining accelerometers, gyroscopes, and magne-
+tometers, capture fine-grained motion data suitable for subtle wrist
+and arm movements. Prior work has leveraged smartwatch IMUs
+for gesture recognition, pose reconstruction, and interactive con-
+trol [8, 13, 40, 41, 51, 53], but primarily targets deliberate gestures
+in controlled settings. These frameworks overlook the spontaneous
+micro-movements that naturally occur during daily activities and
+reveal physical strain or fatigue. Although systems like Watch-
+Guardian [27] address small, spontaneous actions using few-shot
+intervention, they still capture coarse, intentional gestures per-
+formed in isolation. In contrast, involuntary micro-behaviors such
+as wrist clenching, finger flicking, or joint cracking arise during
+routine functional tasks and serve as early, yet often unnoticed,
+indicators of ergonomic strain.
+In summary, despite advances in wearable sensing and gesture
+recognition, existing wrist-worn systems lack a unified framework
+that can: (1) continuously monitor wrist posture across common
+daily activities such as typing, writing, lifting, and cooking; (2)
+detect subtle, involuntary strain-induced behaviors such as flicking,
+or joint cracking; and (3) translate these signals into personalized,
+context-aware ergonomic feedback. Such a system could enable
+early detection of musculoskeletal stress and deliver actionable
+guidance for preventing injury. Furthermore, rule-based feedback
+systems [5] lack personalization, and recent Large Language Model
+(LLM) based approaches [52] are predominantly video-based and
+not suited for real-time, wearable applications.
+Research Challenges: Designing such a system introduces core
+challenges stemming from the limitations of inertial sensing, user-
+specific behavior patterns, and the difficulty of translating low-level
+signals into high-level semantic feedback, as follows.
+C1: Ambiguity in Single-Point IMU Sensing. Wrist-worn IMUs
+capture a superimposed signal of both wrist and arm motion. Fine
+finger gestures and wrist twitches often appear indistinguishable
+in raw data, complicating fine-grained inference and animation.
+C2: Orientation Drift and Frame Variability. Smartwatch data
+in the local frame drifts with wrist rotation, body movement, and
+Figure 2: Visualizing wrist orientation axes from IMU coordi-
+nates: (Left) radial/ulnar deviation about the X-axis, (Right)
+pronation/supination about the Z-axis.
+magnetic interference (Figure 2). This prevents consistent posture
+measurement across users, time, and sessions.
+C3: Irregularity of Pain-Related Behaviors. Discomfort-
+induced behaviors like clenching or cracking are brief, user-specific,
+and unscripted. Unlike deliberate gestures, they are harder to detect
+without contextual cues.
+C4: Lack of Personalized, Understandable Feedback. Even
+when strain is detected, most systems cannot explain what it means
+or how to correct it. Designing ergonomic rules by hand is infeasible
+across diverse users, making personalization challenging.
+Our Core Idea. We present WristSense, a real-time ergonomic
+sensing system that combines smartwatch IMU data with LLM
+reasoning to detect and communicate wrist strain behaviors (Fig-
+ure 1). WristSense addresses C1–C4 through three innovations: (i)
+compass-aware posture encoding for orientation-invariant met-
+rics, (ii) a hierarchical CNN–HMM pipeline for detecting functional
+tasks and coping gestures, and (iii) inertial tokenization that con-
+verts events into structured prompts for conversational LLM-based
+coaching. Our contributions are as follows:
+• Compass-Aware Posture Encoding. We introduce a novel
+magnetometer-stabilized sensor fusion pipeline that computes
+roll, pitch, and yaw in a world-fixed frame, resolving orientation
+drift common in wrist-mounted IMUs. From this stable refer-
+ence, we derive sign-corrected radial/ulnar deviation and prona-
+tion/supination metrics (Figure 2) that are invariant to arm orien-
+tation or body pose. This is, to our knowledge, the first IMU-based
+method to enable consistent, user-agnostic wrist posture tracking
+across diverse free-form activities without external references or
+calibration. (Addresses C1, C2)
+• Hierarchical Gesture Recognition via CNN–HMM. We pro-
+pose a novel two-stage recognition architecture that separates
+functional and strain-induced behaviors for improved accuracy
+and interpretability. A lightweight CNN first detects high-level
+daily activities (e.g., typing, cooking), while a second-stage HMM
+is conditionally activated to detect subtle, transient coping be-
+haviors (e.g., joint cracking, clenching) within those contexts.
+This hierarchical structure allows for context-aware detection of
+sparse micro-movements and reduces false positives, represent-
+ing a significant departure from traditional flat classifiers that
+treat all gestures uniformly. (Addresses C2, C3)
+• Inertial Tokenization for LLM Feedback. We introduce a
+novel semantic tokenization scheme that bridges low-level iner-
+tial data with high-level language-based feedback. By encoding
+623
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+functional gestures, strain-induced coping behaviors, and wrist
+posture angles into structured tokens, our system enables a pre-
+trained LLM to generate personalized ergonomic recommenda-
+tions and fatigue summaries in natural language. Unlike prior
+systems that rely on static heuristics or handcrafted rules, our
+approach supports zero-shot generalization across users and ac-
+tivities, marking the first instance of IMU-to-language alignment
+for ergonomic coaching. (Addresses C4)
+• End-to-End Implementation and Validation. We implement
+WristSense on Apple and Samsung smartwatches and evaluate it
+across 12 participants performing everyday activities. The system
+achieves a macro F1 score of 0.91, outperforming prior baselines
+(e.g., PrISM-Q&A: 0.78, WatchGuardian: 0.74), and maintains
+posture estimation errors under 10◦. Users receiving LLM-based
+feedback showed 76% compliance, much higher than rule-based
+(23%) or no-feedback (5%) groups. BERTScore (0.89) supports the
+reliability of the LLM feedback layer in mimicking real-world
+clinical advice. Usability scores (SUS = 85.2) confirm strong user
+acceptance and ergonomic benefit in real-world settings.
+Ultimately, WristSense1 bridges low-level sensing with natural lan-
+guage feedback, enabling intuitive, privacy-preserving ergonomic
+guidance using only a smartwatch and LLM API, thus paving the
+way for scalable, user-aware strain monitoring in daily life.
+2 Pilot Study and Design Hypothesis
+In clinical and ergonomic studies, repetitive strain disorders such
+as CTS are often preceded by subtle, subconscious behaviors (like
+wrist clenching, finger flicking, knuckle cracking, or palm press-
+ing) performed to relieve early discomfort. Though not commu-
+nicative, these actions act as early proxies of internal strain and
+musculoskeletal fatigue [15, 33]. Hence, our gesture taxonomy was
+informed by ergonomic and biomechanics studies [7, 43], which
+describe these aforementioned coping behaviors as early compen-
+satory responses to local muscular fatigue in hands. In contrast,
+functional gestures (typing, scrolling, writing, lifting, carrying,
+cooking, using tools) correspond to task-driven kinematics with
+stable joint angles and low tremor variance [23, 26]. We distinguish
+through joint-angle deviation and micro-motion features.
+To develop our system architecture, we conducted a preliminary
+signal exploration study with 8 participants (4M, 4F, aged 20–35).
+Each participant wore a smartwatch (Apple Watch Ultra) while per-
+forming daily tasks such as typing, lifting, cooking, or smartphone
+use for 20–30 minutes in a sensor-instrumented testbed. They were
+instructed to behave naturally, with no scripted actions. All ses-
+sions were synchronized with video and IMU logging for offline
+inspection. The goal was not to validate any detection pipeline
+but to answer a simple question: What types of signals can a wrist-
+mounted IMU capture in real-world strain contexts, and how should
+these drive our system design?
+Figure 3 illustrates raw IMU signals from functionally different
+tasks, (i) typing on a laptop, (ii) using a smartphone, (iii) carrying
+a backpack, and (iv) writing on a notebook. All exhibit distinct
+acceleration and angular velocity rhythms, confirming that a single
+wrist IMU is sensitive enough to distinguish daily use functional
+1Open Sourced here: https://github.com/chughgarvit/wristsense, All links in this paper
+were last accessed on: March 31, 2026
+a. Knuckle Cracking (Blue)
+experienced while Typing (Orange)
+b. Palm Clenching (Blue)
+experienced while Writing (Orange)
+c. Supination/Pronation (Blue) experienced
+while Carrying backpack (Orange)
+d. Finger Flicking (Blue)
+experienced while Scrolling on a
+smartphone (Orange)
+Figure 3: Exploratory IMU signals showing distinct patterns
+for functional actions (orange) and brief bursts for strain-
+related coping behaviors (blue).
+behaviors without finger-mounted instrumentation. However, it
+can also be observed from the figure that coping behaviors like
+wrist clenching and finger flicking show temporally localized bursts
+in the gyroscope and accelerometer channels. These present two
+challenges: (1) their signals are far more irregular and sparse than
+typical gestures, and (2) their onset/offset boundaries are hard to
+define. Our analysis of the signals revealed four key insights:
+Insight 1: Static load tasks such as holding a bag or stabilizing a
+dumbbell produced inertial plateaus, rather than distinct motion
+bursts. Thus, we must combine dynamic gestures with posture-
+based strain metrics (e.g., deviation angles).
+Insight 2: Unlike structured functional gestures (e.g., typing),
+strain-relief actions (e.g., knuckle cracking) lack clearly defined
+start or end points. Instead, they manifest as brief spikes in angular
+velocity, indicating the need for temporally aware classification.
+Insight 3: Strain-relief behaviors were mostly observed during
+functional activities, suggesting that detection can be efficiently
+triggered only during these periods, reducing noise and focusing
+analysis where it matters.
+Insight 4: Wrist orientation angles, when derived solely from gy-
+roscope and accelerometer data, are prone to drift over time and
+may exhibit sign ambiguity due to inconsistent reference frames.
+Without a stable global reference, such as magnetic north [41], the
+same wrist posture can produce different angle readings. Incorpo-
+rating compass orientation helps correct for this drift and ensures
+consistent, interpretable measurements across sessions and users.
+While prior sensor fusion methods such as Shen et al. [41] miti-
+gate orientation drift, they rely on constrained motion or periodic
+reference events that are unsuitable for free-hand, wrist-only sens-
+ing, leaving orientation drift and sign ambiguity unresolved with-
+out magnetometer input. Existing IMU-based wrist systems largely
+emphasize activity recognition or motion reconstruction without
+offering personalized feedback [2], relying instead on static, rule-
+based alerts that fail to adapt to individual ergonomic differences.
+WristSense addresses these limitations by computing radial/ulnar
+deviation and pronation/supination in a magnetometer-stabilized,
+world-aligned frame, providing anatomically consistent and robust
+wrist posture metrics across diverse users and activities.
+624
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+However, given the high variability in individual posture, phys-
+iology, and coping responses, manually crafting ergonomic rules
+remains brittle and non-scalable. This underscores the value of
+LLMs [34, 42, 45], which can flexibly interpret structured motion
+representations and generate personalized ergonomic feedback
+without relying on hand-tuned heuristics. Nevertheless, ensuring
+that LLM outputs remain contextually accurate and clinically reli-
+able, especially in edge cases, remains a key challenge.
+Hypothesis and Problem Formulation: Building on the observa-
+tions from the pilot study and prior literature, we hypothesize that:
+(H1) Wrist-worn IMU data can reliably capture wrist orientation
+and hand-based functional gestures across diverse tasks; (H2) pain-
+related coping behaviors (such as joint cracking, flicking, or clench-
+ing) exhibit distinguishable inertial patterns and can be temporally
+localized using multi-stage classification; and (H3) wrist posture
+metrics, such as radial/ulnar deviation and pronation/supination,
+can be made orientation-invariant via magnetometer-stabilized
+sensor fusion, and (H4) tokenizing detected behaviors into semanti-
+cally structured summaries enables LLMs to deliver context-aware,
+personalized ergonomic feedback without the need for manual rules
+or domain-specific heuristics.
+Based on these hypotheses, we define the computational problem
+as follows: Let 𝑆 ∈ R𝑁 ×𝑇 ×𝐹 denote a sliding-windowed inertial
+stream, where 𝑁 is the number of windows, 𝑇 is the number of
+timesteps per window, and 𝐹 represents fused features (including
+raw 9-axis IMU channels, derived angles, and statistical descrip-
+tors). The task is to: (1) classify each window into a functional ges-
+ture label 𝑔𝑘 ∈ G (e.g., typing, cooking), (2) conditionally classify
+strain-related coping behaviors 𝑐𝑘 ∈ C during non-idle gestures,
+(3) compute wrist posture metrics 𝜙rad/uln,𝑡 and ¤
+𝜓𝑡 , and (4) encode
+these into tokens T = ⟨Activity, CopingCounts, Posture⟩ to drive
+LLM-based ergonomic recommendation.
+3 System Design
+WristSense, as shown in Figure 4 consists of three core modules: (1) a
+streaming and sensing layer, (2) an on-device processing pipeline for
+inertial tokenization, and (3) a feedback and visualization interface.
+In the first stage, an Apple Watch Series 9/Ultra equipped with a
+tri-axial accelerometer, gyroscope, and magnetometer samples nine-
+axis data at 50 Hz and transmits it over Bluetooth to a companion
+iOS app. All computation runs on the paired smartphone in order
+to preserve battery life and conserve watch resources.
+The processing pipeline begins by fusing accelerometer, gyro,
+and magnetometer readings into a stable Earth-frame quaternion,
+from which we derive Euler angles as well as sign-corrected ra-
+dial/ulnar deviation and pronation/supination metrics. Overlapping
+windows (1.5 seconds) of these fused orientations, raw signals and
+spectral/statistical features feed into a compact 1D-CNN + HMM
+model that continuously recognizes first functional gestures (typing
+on a keyboard, typing/scrolling on a smartphone, lifting objects,
+writing, cooking (simple tasks like stirring, chopping), using tools
+(hammer/screwdriver), and carrying objects (bags/groceries)) and
+then during the window of the functional gestures, the strain re-
+lated coping behaviors (joint cracking, flicking, clenching, wrist
+rotation), as well as directional circle motions, are monitored along
+with their count of occurrences.
+Preprocessing
+1D CNN +
+GAPool
+Feature
+Engineering
++
+Dual Stage CNN-HMM Model with Viterbi Algorithm
+(Gesture and Behavior Classification)
+User’s 9 Axis
+IMU data
+Ax, Ay, Az, Gx, Gy, Gz,
+Mx, My, Mz
+Functional and Coping
+Behaviors
+Data Preprocessing and
+Sensor Fusion
+User’s 9 Axis
+IMU data
+Ax, Ay, Az, Gx, Gy, Gz,
+Mx, My, Mz
+Processing Pipeline
+Noise Reduction &
+Quaternion Fusion
+3D Visualization
+Data Preprocessing &
+Feature Engineering
+CNN-HMM Dual Stage
+Gesture Classification
+Inertial Tokenization
+LLM Integration Haptic Feedback and
+Natural Language
+Guidance
+Figure 4: High Level Architecture of WristSense
+Detected events are then encoded into “inertial tokens” which are
+streamed into a pre-trained large language model via API (GPT-4.1)
+to generate personalized, context-aware ergonomic recommenda-
+tions and periodic fatigue summaries. Finally, the feedback interface
+renders live 3D visualizations of wrist bend and twist on the smart-
+phone, issues subtle haptic and audio alerts for high-strain postures,
+and displays conversational guidance on the smartwatch itself.
+3.1 Data Preprocessing and Sensor Fusion
+We stream nine-axis IMU data-three-axis accelerometer a𝑡 ∈ R3,
+gyroscope 𝝎𝑡 ∈ R3 and magnetometer m𝑡 ∈ R3 at 50 Hz from
+the smartwatch. Most wrist and finger motions occur below 20
+Hz; hence, sampling at 50 Hz satisfies the Nyquist criterion while
+balancing signal fidelity and energy efficiency. A quaternion-based
+complementary filter fuses gyroscope integration
+q
+gyro
+𝑡 = q𝑡−1 ⊗ exp Δ𝑡
+2 𝝎𝑡
+
+with an accelerometer correction qacc
+𝑡 that aligns the measured
+gravity vector a𝑡 /∥a𝑡 ∥. We then normalize and blend
+q𝑡 = normalize 𝛼 q
+gyro
+𝑡 + (1 − 𝛼) qacc
+𝑡
+
+, 𝛼 =
+𝜏
+𝜏 + Δ𝑡
+, 𝜏 = 0.5 s.
+Yaw drift is corrected by continuously converting the raw magne-
+tometer readings m𝑡 into a stable compass heading, which provides
+the azimuth angle relative to magnetic North:
+𝜓𝑡 ← 𝛽 𝜓𝑡−1 + (1 − 𝛽) atan2(𝑚𝑦,𝑚𝑥 ), 𝛽 = 0.9.
+The magnetometer is being used to stabilize IMU orientation
+and infer wrist motion direction (radial vs. ulnar deviation) relative
+to the forearm. Hence, these relative posture features, rather than
+global headings, remain robust to minor magnetic disturbances
+while preserving directional accuracy.
+Compass-Aware Radial/Ulnar and Pronation/Supination
+Estimation. To reliably measure wrist bend (radial/ulnar deviation)
+independently of user orientation, we first extract local wrist roll
+(𝜙𝑡 ), pitch (𝜃𝑡 ), and yaw (𝜓𝑡 ) angles from the quaternion. We then
+compute a stable, orientation-agnostic radial direction in the world
+frame by crossing the forearm axis (local z-axis) with gravity:
+f𝑡 = q𝑡 · (0, 0, 1), u = (0, 1, 0), // use Y-axis for forearm
+dradial,𝑡 =
+f𝑡 × u
+∥f𝑡 × u∥
+625
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+g
+CNN
++
+Data
+Preprocessing
+Feature
+Engineering
+Data
+Preprocessing
+and
+Sensor
+Fusion
+User’s
+9
+Axis
+IMU
+data
+Ax,
+Ay,
+Az,
+Gx,
+Gy,
+Gz,
+Mx,
+My,
+Mz
+Dual Stage CNN-HMM Model with Viterbi Algorithm
+(Gesture and Behavior Classification)
+1 2
+Coping
+Angles
+Activity
+Inertial Tokenization LLM Response
+3
+Figure 5: Local model architecture of WristSense.
+The local roll axis is then projected onto this radial vector to
+yield a sign-corrected radial/ulnar deviation angle (𝜙rad/uln,𝑡 ):
+𝑠𝑡 = sign (q𝑡 · (1, 0, 0)) · dradial,𝑡
+
+𝜙rad/uln,𝑡 = 𝑠𝑡 × 𝜙𝑡
+Positive values consistently indicate thumb-side (radial), and
+negative values indicate pinky-side (ulnar), irrespective of user
+orientation (Refer to Figure 2). In parallel, forearm pronation and
+supination angles are computed by continuously differentiating the
+magnetometer-stabilized yaw angle (𝜓𝑡 ):
+¤
+𝜓𝑡 =
+𝜓𝑡 −𝜓𝑡−1
+Δ𝑡
+Together, these orientation-invariant measures, 𝜙rad/uln,𝑡 and ¤
+𝜓𝑡 ,
+provide robust, consistent posture metrics for downstream analysis.
+Prior methods often relied on uncorrected gyro integration or basic
+accelerometer alignment, both of which are prone to drift and yield
+unstable axes during unconstrained wrist motion. While Shen et
+al. [41] propose drift mitigation through kinematic constraints and
+periodic error resets, their approach assumes either structured full-
+body motion or intermittent reference events (e.g., foot-ground
+contact), which are not available in wrist-only, free-hand scenarios.
+Our contribution lies in introducing a compass-stabilized quater-
+nion framework specifically designed for wrist-mounted IMUs,
+where neither structured motion nor global orientation anchors
+exist. By leveraging the magnetometer to resolve yaw ambiguity
+and projecting onto anatomically aligned planes, we obtain reliable,
+user-agnostic deviation metrics that remain stable across postures,
+sessions, and users, making this approach uniquely suited for real-
+time ergonomic monitoring in everyday activities.
+Feature Extraction and Windowing. After fusion, orientation,
+and angle computations, all derived metrics and raw IMU streams
+are resampled to a uniform 50 Hz and segmented into overlap-
+ping windows of length (L=60) samples (1.2 s at 50 Hz) with 50%
+overlap. Each window undergoes standardization (zero-mean, unit-
+variance) and includes both first and second discrete differences,
+capturing short-term velocity and acceleration cues. These tem-
+poral derivatives, together with angular deviation and cross-axis
+correlations, characterize rapid strain-relief motions (e.g., clench-
+ing, flicking) that differ from slower, periodic functional gestures
+(e.g., typing, lifting). Additional statistical and spectral features
+(mean, variance, skewness, kurtosis, RMS, interquartile range, zero-
+crossing and peak counts, signal magnitude area, spectral band
+energies, spectral centroid, entropy, discrete wavelet coefficients,
+and autoregressive coefficients) further encode frequency-domain
+cues linked to functional gesture movement and their intensity. The
+resulting ≃150-dimensional, orientation-invariant feature vector
+thus preserves both instantaneous motion signatures and short-
+term temporal context, which are exploited by the CNN for spa-
+tial–kinematic encoding and the subsequent HMM for temporal
+sequencing and state smoothing in our two-stage pipeline.
+3.2 Gesture and Behavior Classification
+Our two-stage classification pipeline involves first detecting high-
+level functional gestures and then monitoring specific strain-related
+coping gestures during those detected functional activities, as
+shown in Figure 5. This hierarchical design reduces computational
+complexity and improves recognition accuracy by conditioning the
+fine-grained gesture detection on the presence of broader activity.
+We employ a CNN–HMM hybrid model for hierarchical recognition,
+where the CNN extracts motion patterns from short data windows
+and the HMM enforces temporal consistency. This design smooths
+predictions, prevents invalid gesture transitions, and detects coping
+behaviors only during functional activities, ensuring stable and
+efficient recognition without additional counters or regressors.
+Stage 1: Functional Gesture Classification. Each input win-
+dow 𝑋𝑘 consists of sequential feature vectors:
+𝑋𝑘 = [𝑥𝑡𝑘 ,𝑥𝑡𝑘 +1, . . . ,𝑥𝑡𝑘 +𝐿−1], 𝑡𝑘 = 1 + (𝑘 − 1)
+𝐿
+2
+Each window 𝑋𝑘 is passed through a 1D-CNN to extract spatial-
+temporal embeddings. The CNN architecture comprises three se-
+quential convolutional layers. The output of the final convolutional
+layer is passed through a global average-pooling operation, produc-
+ing a fixed-size embedding vector:
+h𝑘 = CNN(𝑋𝑘;𝜃), h𝑘 ∈ R128
+We model the temporal evolution of functional gestures as a
+discrete Hidden Markov Model (HMM). Let 𝑔𝑘 ∈ G represent the
+functional gesture state at window 𝑘, where:
+G =
+
+Idle, Typing, Tapping, Lifting,
+Carrying, Writing, Cooking, Using Tools
+
+Each state has a Gaussian emission probability conditioned on
+the CNN embedding:
+𝑝(h𝑘 | 𝑔𝑘 = 𝑗) = N (h𝑘; 𝜇𝑗, Σ𝑗 )
+Here, 𝜇𝑗 and Σ𝑗 are the mean and covariance matrix parameters
+for gesture state 𝑗, estimated using CNN embeddings from train-
+ing data. The HMM transitions 𝐴𝑖𝑗 represent the probability of
+transitioning from gesture 𝑖 to gesture 𝑗, and are learned using the
+Baum-Welch algorithm with a uniform Dirichlet prior (pseudocount
+= 1) to prevent zero-probability transitions.
+626
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+At runtime, we decode the optimal gesture sequence {𝑔∗
+𝑘
+} using
+the Viterbi algorithm:
+{𝑔∗
+𝑘 } = arg max
+𝑔1:𝐾
+"
+𝑃(𝑔1)
+𝐾
+Ö
+𝑘=2
+𝐴𝑔𝑘−1,𝑔𝑘
+𝐾
+Ö
+𝑘=1
+𝑝(h𝑘 |𝑔𝑘)
+#
+The Viterbi output provides a smooth and coherent sequence of
+functional gestures.
+Stage 2: Coping Behavior and Directional Circle Recog-
+nition. We define a second-stage HMM to specifically monitor
+strain-related coping gestures and directional circle gestures when
+the user is performing functional activities (i.e., when 𝑔∗
+𝑘
+≠ Idle).
+Let 𝑐𝑘 ∈ C represent coping gesture states:
+C = {NoEvent, JointCrack, Flick, Clench, CircleCW, CircleCCW}
+This second-stage HMM has the same CNN embedding struc-
+ture and Gaussian emission model, but with its own set of learned
+parameters (𝜇′
+𝑢, Σ′
+𝑢) and transition probabilities 𝐵𝑢𝑣. The coping
+gesture states are decoded using Viterbi within active windows:
+{𝑐∗
+𝑘 } = arg max
+𝑐1:𝐾
+"
+𝑃(𝑐1)
+𝐾
+Ö
+𝑘=2
+𝐵𝑐𝑘−1,𝑐𝑘
+𝐾
+Ö
+𝑘=1
+𝑝(h𝑘 |𝑐𝑘)
+#
+This ensures coping behaviors are tracked precisely only when
+functional actions trigger their relevance.
+Event Counting Procedure. We maintain coping event coun-
+ters for each coping state 𝑒 ∈ C \ {NoEvent}. A coping gesture
+event is counted each time the HMM transitions from the NoEvent
+state to a gesture state:
+𝐶𝑒 =
+𝐾
+∑︁
+𝑘=2
+1(𝑐∗
+𝑘−1 = NoEvent ∧ 𝑐∗
+𝑘 = 𝑒)
+This simple counting method does not require additional regres-
+sion heads or computational overhead, yet accurately captures the
+frequency of strain-related events within specified intervals.
+3.3 Real-Time Feedback and Visualization
+The Real-Time Feedback component of WristSense continuously
+renders a 3D hand model in SceneKit/ARKit by mapping the fused,
+magnetometer-stabilized quaternion from the sensor fusion stage
+(Section 3.1), ensuring drift-free and orientation-accurate visualiza-
+tion of the palm and fingers. At each time step 𝑡, the fused quater-
+nion is converted to the Euler angles (𝜙𝑡, 𝜃𝑡, 𝜓𝑡 ) corresponding to
+roll, pitch, and yaw are calculated. To obtain a stable palm tilt, we
+apply an exponential smoothing filter to the pitch axis:
+𝛼𝑡 = 𝛼𝑡−1 + 𝜆 −𝜙𝑡 − 𝛼𝑡−1
+
+, 0 < 𝜆 < 1,
+where 𝛼𝑡 is the palm’s tilt angle at time 𝑡, and 𝜆 = 0.3 governs
+responsiveness. The SceneKit node’s x-rotation is then set to 𝛼𝑡 .
+Finger flexion is captured by a single latent state 𝑚𝑡 ∈
+[𝑚min, 𝑚max] integrating deviations from a resting roll baseline ¯
+𝜙
+along with the roll-rate ¤
+𝜙𝑡 . Subtle noise is suppressed by a threshold
+𝜏, so that only meaningful deviations update the flex state:
+Δ𝑡 = −(𝜙𝑡 − ¯
+𝜙) + 𝜅 ¤
+𝜙𝑡, |Δ𝑡 | > 𝜏,
+with 𝜅 = 2.0 and 𝜏 = 0.002. When |Δ𝑡 | > 𝜏, the flex state is updated:
+𝑚𝑡 = clamp 𝑚𝑡−1 + 𝑔±
+Δ𝑡, 𝑚min, 𝑚max
+
+,
+where 𝑔+ = 0.2 for upward (flexion) changes and 𝑔− = 1.5𝑔+ for
+downward (extension) changes. This latching mechanism preserves
+the last deliberate flex level until a purposeful reversal occurs.
+Each finger chain consists of 𝑆 segments whose rotation about
+the local x-axis is proportional to the segment index and a finger-
+specific scaling factor 𝑠𝑓 . For segment 𝑖 of finger 𝑓 , the joint angle
+is computed as
+𝜃𝑓 ,𝑖 = 𝑚𝑡 × 𝑖 × 𝑠𝑓 ,
+and is clamped within [−1.0, 1.0] radians. The thumb uses a sep-
+arate scaling 𝑠thumb = 0.7, while the index, middle, ring and little
+fingers use 𝑠index = 0.3, 𝑠middle = 0.25, 𝑠ring = 0.2 and 𝑠little = 0.15,
+respectively. The palm and finger nodes are updated via
+palmNode.eulerAngles.x = alpha_t
+fingerNode[i].eulerAngles.x = theta_{f,i}
+and optional on-screen labels display real-time palm and finger
+angles in degrees. This tightly coupled, on-device pipeline enables
+immediate visual feedback for typing posture correction, strain
+visualization, and other interactive applications.
+3.4 Inertial Tokenization and LLM Integration
+To bridge the gap between raw IMU gesture classification outputs
+and intuitive, actionable user feedback, WristSense introduces a
+structured inertial tokenization schema coupled with a large lan-
+guage model via API integration (GPT-4.1). Rather than directly
+feeding the continuous, noisy IMU stream into an LLM, we first
+transform the gesture classification results into discrete, semanti-
+cally rich tokens. These tokens encapsulate the functional gesture,
+frequency of strain-related coping behaviors, and precise posture
+angles over clearly defined time windows, enabling the LLM to
+provide context-aware, ergonomic guidance.
+Token Generation from Gesture Classification. Consider a
+detected functional gesture event from Stage 1 (Sec. 3.2), such as
+typing. For each such event, we define a structured token:
+
+ACTIVITY, START, END,
+COPING_COUNTS, PALM_ANGLE, FINGER_ANGLE
+
+Here, each element is defined explicitly as follows:
+• ACTIVITY: The recognized functional gesture class (e.g.,
+Typing, Lifting, Tapping) identified by the Stage 1
+CNN+HMM.
+• START, END: Timestamps marking the exact beginning and
+end of the detected functional gesture sequence, respectively,
+obtained from the Viterbi decoding sequence of Stage 1.
+• COPING_COUNTS: A vector indicating the number of occur-
+rences of each strain-related coping gesture (e.g., {FLICK :
+2, CLENCH : 1, JOINT_CRACK : 3}) detected within the
+functional gesture’s timeframe by the Stage 2 model.
+• PALM_ANGLE, FINGER_ANGLE: Peak palm tilt and finger
+flex angles, respectively, recorded by the wrist visualization
+module during the functional gesture period.
+For example, a typing session might yield the token:
+*
+Typing, 12:03:10, 12:15:20,
+{JOINT_CRACK : 3, FLICK : 2}, 15◦
+, 22◦
++
+This token summarizes the user’s wrist activity and strain behavior
+within the entire gesture window.
+627
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+Token Formation and Semantic Mapping. Each inertial to-
+ken summarizes an entire activity episode, spanning 20 minutes.
+During this period, the CNN–HMM pipeline continuously classifies
+functional gestures and counts strain-related coping behaviors. If
+the user pauses briefly and resumes the same motion pattern within
+one minute, the event is merged into the same token window using
+an empirically tuned delay threshold. Each token thus records the
+Activity label, its start–end timestamps, and the total counts of
+coping gestures detected across that interval. Postural features such
+as palm and finger angles are recorded as peak values observed
+during the session, capturing worst-case wrist deviation and flexion
+for ergonomic risk assessment. They are retained as raw degree
+values, allowing the LLM to interpret magnitude directly within its
+prompt context. The final token is therefore a structured activity
+summary (e.g., [Typing, 12:03:10–12:15:20, JointCrack=3,
+Flick=2, Palm=15°, Finger=22°]), preserving the semantics of
+duration, intensity, and strain for contextual reasoning by the LLM.
+Two-Stage Prompting for LLM Integration. To generate ac-
+tionable ergonomic insights from these inertial tokens, we use a
+structured two-stage prompting approach. First, we set a stable
+system prompt to clearly define the role and expectations of LLM:
+System Prompt:
+You are an ergonomic assistant. You receive summarized to-
+kens describing recent user wrist activities, durations, strain-
+related coping behaviors (e.g., joint cracks, flicks, clenches),
+and wrist posture angles. Provide (1) actionable ergonomic
+advice to reduce wrist strain, and (2) a concise fatigue sum-
+mary for the session. Keep responses clear and practical.
+Next, at runtime, we dynamically compose a user prompt from
+recent inertial tokens. For instance:
+User Prompt:
+Recent events:
+- Activity: Typing, Start: 12:03:10, End: 12:15:20, JointCrack:
+3, Flick: 2, PalmAngle: 15°, FingerAngle: 22°
+- Activity: Lifting, Start: 12:17:30, End: 12:19:00, Clench: 2,
+Flick: 1, PalmAngle: 25°, FingerAngle: 30°
+Please provide ergonomic recommendations and a brief fa-
+tigue summary based on these activities.
+The combined system and user prompts are sent via the OpenAI
+API (GPT-4.1, temp = 0 for deterministic output). The LLM returns
+a natural-language response, such as “Your wrist angle reached 25°,
+which suggests mild radial deviation. Try resting your forearm flat
+and adjusting keyboard height to reduce strain.” which we parse
+and display directly through notifications on the smartwatch. This
+structured token interface allows the LLM to operate as a shared,
+zero-shot feedback layer, generalizing across user styles and activi-
+ties without increasing sensing or model complexity.
+4 Implementation and Experiments
+We conducted a multi-phase evaluation of WristSense to validate
+its ability to detect and classify wrist postures and finger dynamics
+in unconstrained settings. First, we developed a proof-of-concept
+iOS application embedding our pretrained CNN-HMM pipeline,
+and deployed it to 12 participants over a two-week period, during
+which we recorded over 18 hours of wrist IMU streams across
+everyday tasks, which are part of our primary set of gestures for
+classification, categorised as functional states, specifically, (i) typing
+on keyboard, (ii) typing/scrolling on a smartphone, (iii) lifting while
+exercising, (iv) writing, (v) cooking (noodles), (vi) using tools, and
+finally (vii) carrying stuff (grocery bags). Along with functional
+states, we also asked the participants to record their non-functional
+coping behaviors, to relieve their wrist pain, which are part of our
+secondary set of gestures for classification, which are categorized
+as (i) joint cracking, (ii) finger flicking, (iii) palm clenching, and
+(iv) rotating the wrist in clockwise or counter clockwise manner,
+while collecting sparse ground-truth via camera recordings and self-
+reports. Next, we performed an in-the-wild usability study to assess
+robustness across varied smartphone models, ambient conditions,
+and user behaviors, measuring end-to-end latency, classification
+accuracy, and perceived responsiveness.
+Participants: We recruited 12 participants (6 female, 6 male,
+aged 23-42, median age 29, 6 university students, 4 office work-
+ers, and 2 homemakers) from the authors’ institute, with diverse
+daily routines involving various aforementioned wrist-intensive
+activities, across academic, professional, and household contexts,
+providing a broad first validation of WristSense beyond a single
+occupation group. All participants wore the smartwatch (Apple
+Watch Series Ultra/Samsung Galaxy Watch 4 Classic) on their dom-
+inant hand and reported no history of medically diagnosed wrist
+injuries; however, several indicated frequent wrist discomfort fol-
+lowing prolonged wrist-intensive activities. Informed consent was
+obtained from all participants in accordance with our IRB-approved
+protocol. Participants were compensated with a $10 gift card.
+Experimental Setup: Data collection for evaluating WristSense
+occurred in two distinct phases: (1) a semi-controlled environment
+within a testbed hosted at the author’s institute, and (2) an in-the-
+wild setting during participants’ regular daily routines.
+(1) Testbed-based Semi-Controlled Setup: Participants first
+completed structured sessions in a 3D-printed smart-home testbed
+equipped with multimodal sensors (temperature, humidity, CO2,
+light, mm-wave occupancy, ambient noise, furniture and water-
+level sensors) to simulate realistic home environments with precise
+context monitoring. They performed typical daily tasks, such as
+typing, smartphone use, cooking, exercising, carrying objects, and
+tool use, alongside natural discomfort-related behaviors such as
+wrist rotations, hand clenching, finger tapping, palm pressing, and
+joint cracking, as outlined in Section 2. Transitional actions like
+short walks and seated browsing were also included to capture idle
+and in-between wrist movements.
+(2) In-the-Wild Data Collection: After completing the Sense-
+pod sessions, participants continued to wear the smartwatch during
+their everyday activities outside the laboratory over the subsequent
+week. During this phase, participants independently recorded their
+wrist-intensive behaviors and coping gestures through the provided
+smartwatch and companion application, allowing us to capture nat-
+urally occurring strain-related behaviors in unconstrained settings.
+Annotation and Labeling: Three volunteer annotators inde-
+pendently reviewed the synchronized video recordings, which were
+manually annotated for functional gestures and corrective move-
+ments. Inter-annotator agreement, measured using Cohen’s Kappa
+[32], was 0.81, reflecting a high level of consistency across observers.
+To capture individual variability and ensure a comprehensive range
+of natural behaviors, each participant repeated every activity twice
+628
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+Table 1: Gesture classification
+results across SOTA (macro-
+averaged scores)
+Method P R F1
+WristSense 0.92 0.91 0.91
+PrISM-Q&A [2] 0.80 0.77 0.78
+WatchGuardian [27] 0.75 0.73 0.74
+Table 2: Scenario-wise Eval-
+uation: IMU vs. MediaPipe
+Wrist Angle Estimation
+Scenario MAE (°) RMSE (°)
+Typing (Keyboard) 2.35 3.76
+Typing (Phone) 2.75 3.47
+Writing (Stand) 8.98 9.21
+Writing (Sit) 4.11 6.30
+Lifting 7.11 8.32
+Figure 6: Functional gesture con-
+fusion matrix.
+Figure 7: Coping behaviour
+confusion matrix.
+during the session. Each session began and ended with a visible
+clap to align the IMU and video streams.
+Model Training: Model training was carried out using the anno-
+tated IMU data. Each window of preprocessed features comprising
+approx 150 dimensions, including raw accelerometer, gyroscope,
+and magnetometer readings, fused quaternion components, Euler
+angles, and their first and second differences, together with statisti-
+cal and spectral attributes, served as input to a hybrid 1D-CNN +
+HMM architecture. The convolutional backbone consisted of three
+sequential blocks, with 32 filters of size 5 in the first block, 64 filters
+of size 5 in the second, and 128 filters of size 3 in the third; each block
+was followed by batch normalization, ReLU activation, and max-
+pooling of size 2. After global average pooling, a 128-dimensional
+embedding was produced at each time step, which was then associ-
+ated with one of 𝐺 gesture or posture classes. An 80/20 split was
+used for training and validation at the window level. We optimized
+cross-entropy loss with the Adam optimizer (𝜂 = 10−3, weight
+decay 10−4) and a batch size of 64, applying early stopping once
+validation accuracy failed to improve for 50 consecutive epochs. To
+prevent overfitting, dropout (rate 0.3) was applied after the second
+convolutional block, and each input channel was normalized to
+zero mean and unit variance prior to windowing. Concurrently, a
+discrete Hidden Markov Model was trained on the CNN’s output
+embeddings to capture temporal dependencies across windows.
+PoC Deployment and User Study: We integrated the pre-
+trained CNN–HMM gesture model into a prototype WristSense iOS
+app (Figure 1) and deployed it to 12 volunteers (see Section 4). Each
+participant installed the app on their personal phone paired with
+an Apple Watch and used it during two three-hour sessions across
+one week in natural environments (office, home, campus). The app
+displayed real-time wrist posture and finger-flex visualization and
+issued subtle haptic alerts when pain-relief gestures occurred over
+five times within ten minutes. During each session, IMU data were
+logged, quaternion orientations, flex states, and gesture labels lo-
+cally. Participants performed typical activities (e.g., typing, texting,
+lifting, walking) without behavioral constraints and completed a
+post-session SUS survey.
+5 Results
+We evaluate WristSense on its ability to recognize functional and
+strain-related hand gestures from wrist-worn IMU data and to pro-
+vide posture-aware ergonomic feedback in real-world conditions.
+The evaluation focuses on three aspects: (1) Gesture Recognition
+Accuracy, using macro-averaged precision, recall, and F1-score
+across functional and coping classes; (2) Posture Tracking Ac-
+curacy, comparing estimated wrist angles (radial/ulnar deviation
+and pronation/supination) against ground truth from MediaPipe
+Hands [47]; and (3) User-Centered Feedback Quality, measured
+through SUS [28] scores, qualitative feedback, and BERTScore-
+based similarity [50] between LLM-generated and orthopedist ad-
+vice. Vision-based comparisons use the MediaPipe implementation2,
+which estimates wrist and finger joint angles from RGB video.
+5.1 Performance over In-House Dataset
+5.1.1 Gesture Classification Performance. We compare WristSense
+against two recent smartwatch-based IMU systems: PrISM-Q&A [2]
+and WatchGuardian [27]. While neither system is designed specifi-
+cally for ergonomic strain detection, both represent strong baselines
+for fine-grained activity recognition using smartwatch IMUs. To
+ensure fair comparison, we re-implemented and retrained their
+inertial pipelines on our dataset (available under our source-code
+repository), excluding auxiliary sensors such as microphones or
+user-defined prompts.
+As summarized in Table 1, WristSense achieves a macro F1 score
+of 0.91, outperforming PrISM-Q&A (0.78) and WatchGuardian
+(0.74). Unlike WatchGuardian’s user-specific classifiers trained on
+short sessions or PrISM’s coarse segmentation optimized for proce-
+dural tasks, our two-stage CNN-HMM pipeline separates functional
+and coping gestures explicitly, improving the classification of subtle
+strain-related behaviors such as joint cracking and wrist clenching
+by up to 25% in true-positive rate. Figures 6 and 7 visualize the
+confusion matrices. Functional gestures such as Keyboard, Smart-
+phone, and Carrying exceed 80% accuracy, with some confusion in
+semantically similar activities like Cooking and Tool Use. Coping
+gestures also show high separability, with Joint Crack reaching
+95.8% true positives and minimal misclassification. These results
+validate our architecture’s ability to distinguish macro and micro
+hand activities using only wrist-mounted IMUs.
+5.1.2 Angle Estimation Accuracy. To evaluate the accuracy of wrist
+angle estimation, we compared WristSense’s IMU-derived orienta-
+tion outputs against a vision-based baseline using the MediaPipe
+Hands [47] framework, which estimates wrist pose and joint angles
+from RGB video. As summarized in Table 2, the estimated wrist an-
+gles from WristSense show close alignment with MediaPipe-derived
+2Official MediaPipe repo: https://github.com/google-ai-edge/mediapipe/tree/master
+629
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+Figure 8: (a) The skeleton visualised by WristSense for an idle hand. (b–f) Overlaid hand skeletons from MediaPipe show
+corresponding ground-truth wrist postures extracted from RGB video. The angular values (MediaPipe ≈ Ours) indicate strong
+agreement between the two systems across diverse ergonomic tasks.
+Table 3: Generalization Study: Macro
+F1 Scores (%) under LOSO and LOTO
+Settings
+Model LOSO LOTO
+CNN Only (Flat) 74.2 69.5
+CNN + HMM (Ours) 81.6 75.8
+Figure 9: Longitudinal activity tracking
+of a student over 7 days.
+Figure 10: Post-study SUS feedback from
+users.
+values across diverse activities. The mean absolute error (MAE)
+ranges from as low as 2.35° during static tasks like typing on a key-
+board to 8.98° during more dynamic conditions like standing writing.
+The RMSE remains below 10° in all scenarios, with values between
+3.5° and 8.3°. These results confirm that WristSense provides suffi-
+ciently accurate real-time angle estimates for wrist postures and
+movements, especially in the context of ergonomic strain feedback
+and visualization. Figure 8 illustrates qualitative examples of wrist
+angle estimation across six daily activities, showing visual over-
+lays from both WristSense and MediaPipe. The angular alignment
+remains within a small margin (within 10°) across all functional
+activities, reinforcing the reliability of our magnetometer-stabilized
+IMU pipeline for real-time wrist posture estimation.
+5.1.3 Longitudinal Analysis of Wrist Strain and Activity Trends.
+We conducted a 7-day longitudinal study with a 21-year-old male
+university student in a smart testbed replicating everyday environ-
+ments (desk, kitchen, seating). The participant was instructed to
+follow their normal routine without intervention, including course-
+work, coding, and light meal prep. As shown in Figure 9, daily
+activity patterns revealed recurring functional gestures such as
+writing, typing, lifting, and cooking. Writing dominated due to
+offline assignments, while typing spiked during programming ses-
+sions (Days 4–5). Cooking sessions (Days 2, 5, 6) involved repetitive
+stirring, captured as prolonged wrist motion. Notably, coping be-
+haviors (e.g., joint cracking, clenching) detected by the second-stage
+HMM showed a consistent decline, from 16 (Day 2) to 3 (Day 7), fol-
+lowing the introduction of real-time feedback on Day 3. This trend
+suggests that subtle, context-aware ergonomic alerts can positively
+shape user behavior over time.
+5.1.4 Generalization: LOSO and LOTO Analysis. To evaluate the
+generalization capability of WristSense, we conducted two standard
+cross-validation experiments: Leave-One-Subject-Out (LOSO) and
+Leave-One-Task-Out (LOTO). In LOSO, we trained the model on
+𝑁 −1 participants and tested on the held-out user, iterating across all
+participants. In LOTO, we trained on all but one functional activity
+(e.g., excluding Cooking) and evaluated performance on that un-
+seen task. As shown in Table 3, the two-stage CNN+HMM pipeline
+generalizes significantly better than a flat CNN baseline across both
+unseen users and unseen activities. In particular, WristSense retains
+a macro F1 score of 81.6% in the LOSO setting, compared to 74.2%
+for CNN-only, demonstrating robustness to inter-user variability.
+5.2 UX Studies (In-the-Wild Experiments)
+To assess the real-world usability and user acceptance of WristSense,
+we conducted a qualitative UX study with 12 participants over
+two weeks of typical daily use (e.g., typing, chores, smartphone
+interaction). At the end of the study, participants completed the
+standardized System Usability Scale (SUS) to evaluate dimensions
+such as ease of use, responsiveness, and ergonomic relevance. As
+shown in Figure 10, WristSense received high ratings on positively
+weighted items including Ease of Use (4.8), Onboarding (4.9), and
+Integration (4.1), indicating the system was intuitive and seamlessly
+embedded into daily routines. Low scores on negatively weighted
+metrics like Cumbersomeness (2.1) and Inconsistency (1.7) further
+confirm lightweight and reliable interaction. Moderate ratings for
+Quickness (2.9) and Need for Support (3.4) suggest occasional delays
+or interpretation uncertainty (not disruptive). Overall, the responses
+demonstrate that WristSense achieves a good balance of usability,
+comfort, and practicality for long-term ergonomic self-monitoring.
+5.2.1 Semantic Alignment of LLM Feedback with Expert Advice. To
+evaluate the semantic similarity between the LLM-generated er-
+gonomic prompts and expert guidance, we conducted a manual
+annotation and BERTScore-based comparison using 10 paired exam-
+ples. Each pair consisted of: (i) reference feedback suggested by an
+orthopedist and (ii) LLM-generated feedback produced by GPT-4.1
+in response to the same inertial token stream. We report the per-
+pair BERTScore (F1) (Table 4), which quantifies semantic overlap
+630
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+Table 4: Comparison of Orthopedist Feedback and LLM-
+Generated Feedback using BERTScore (F1)
+Orthopedist Feedback LLM-Generated Feedback BERTScore (F1)
+Consider relaxing your grip more
+frequently during extended typing
+sessions, and make sure you are
+not using any stand to elevate your
+wrists, as it will hurt more.
+Try loosening your grip if you type
+for long periods.
+0.90
+You clenched 7 times while lifting.
+This is not good, don’t lift for now
+till you feel less pain.
+Detected 7 clenches while
+lifting—try switching to a two-
+handed lift.
+0.89
+Your wrist was tilted outward for
+over 15 minutes today. Adjust your
+wrist position.
+Wrist angle outward too
+long—consider changing keyboard
+layout.
+0.88
+You are pressing your palm fre-
+quently during smartphone use.
+Avoid phone when this happens.
+Take small breaks during phone
+use to reduce palm strain.
+0.90
+Wrist rotation during cooking sug-
+gests tension. Stir with alternate
+hand occasionally.
+Use both hands for stirring to ease
+wrist rotation.
+0.90
+Excessive radial deviation detected
+during handwriting, adjust your
+wrist posture.
+Your wrist bent inward while writ-
+ing—adjust position.
+0.88
+A total of 11 coping gestures de-
+tected today. Massage your wrists.
+You used strain-relief motions 11
+times—improve wrist alignment.
+0.88
+Finger flicking detected while
+scrolling. Stop and use pressure
+points to reduce pain.
+Detected finger strain while
+scrolling—pause occasionally.
+0.89
+Wrist supination is detected fre-
+quently during cooking. Fix pos-
+ture.
+Frequent outward wrist rotation
+found—adjust the posture.
+0.89
+Palm posture while typing shows
+strain. Use support if possible.
+Typing posture shows palm pres-
+sure—try using a wrist pad.
+0.91
+Average BERTScore (F1) 0.892
+beyond surface word matching. We observe high semantic align-
+ment between the LLM’s feedback and orthopedist phrasing, with
+all BERTScores exceeding 0.88 and an average of 0.892. Despite
+stylistic brevity and simpler language, the core meaning remains
+consistent, for instance, paraphrasing “Your wrist was tilted outward
+for over 15 minutes today. Adjust keyboard position.” as “Wrist angle
+outward too long; consider changing keyboard layout.” This confirms
+that the tokenized feedback pipeline retains sufficient context for
+concise, accurate ergonomic guidance. Overall, these results demon-
+strate the reliability and scalability of WristSense’s LLM feedback in
+replicating clinical advice without handcrafted prompts, enabling
+personalized health coaching with minimal developer effort.
+5.2.2 Utility of LLM Feedback Layer. We conducted a comparison
+study with the participants to validate the use of the LLM-based
+feedback layer. We divided 15 participants (3 participants repeating)
+into three groups and performed a comparison in three operating
+modes: (i) full system with LLM-based personalized feedback, (ii) a
+rule-based template engine with fixed prompts triggered by thresh-
+old violations, and (iii) a no-feedback control where users received
+no alerts despite active sensing. The rule-based template method
+followed established rules derived from studies by [35] and [6],
+for instance, triggering predefined prompts when wrist deviations
+exceeded 15–30° or repetitive coping gestures were detected in
+short windows of 10 minutes. As shown in Table 5, participants
+were significantly more likely to act on LLM-generated ergonomic
+advice (76%) compared to template-based prompts (23%), with sub-
+jective feedback utility also higher (4.6 vs. 3.1). The no-feedback
+control group showed minimal spontaneous correction behavior
+(5%), demonstrating that real-time, language-based interventions
+substantially influence user compliance and perceived system value.
+Figure 11: Latency vs. Response Quality† for Different LLMs.
+6 Discussion and Ablation Studies
+6.1 LLM vs. Rule-Based Feedback
+To further justify the use of an LLM, we compared its contextual
+reasoning against rule-based feedback. A static template provided
+the output “Warning: wrist bent beyond 20 for ≥10 min”, whereas
+GPT-4.1 interprets multi-sensor cues to produce richer, task-aware
+advice such as “Your wrist was bent outward for over 10 minutes
+while typing; consider lowering your keyboard height or taking
+a short break.” This demonstrates the LLM’s ability to merge pos-
+ture metrics with activity context, enabling naturalistic ergonomic
+coaching unattainable with fixed thresholds. Nonetheless, halluci-
+nation risks persist, so we constrained prompts, restricted action
+vocabularies (e.g., rest, adjust, stretch), and recommend optional
+human oversight in clinical use.
+6.2 Cloud and Local LLMs: Tradeoffs
+To reduce cloud dependence and enable private, always-available
+inference, recent quantized local LLMs (e.g., Mistral [14], Phi-3
+Mini [1]) show promise for on-device use. However, real-time
+deployment on wearables remains constrained by high memory
+(>4 GB), energy demands, and limited processing throughput. Run-
+ning models like LLaMA-3 8B [48] or TinyLlama [49] on paired
+smartphones lowered latency (~3000-6000 ms to ~300 ms) and en-
+abled offline use, but often caused hallucinated or misaligned feed-
+back. Thus, current lightweight LLMs lack sufficient semantic reli-
+ability for ergonomic reasoning and introduce trade-offs such as
+battery drain, memory pressure, thermal throttling, and constrained
+prompt windows (Table 6).
+6.3 Model Selection: Beyond GPT-4.1
+Integrating LLMs into wearable sensing pipelines like WristSense
+enables intuitive, personalized feedback. We used GPT-4.1 via API
+for its strong performance, accessibility, and consistent outputs,
+making it a reliable baseline for ergonomic coaching. LLM selec-
+tion remains a key design choice: alternatives such as GPT-3.5 [44],
+Claude 3 [37], and open-source models like Mistral [21], LLaMA-
+3 [48], and Command-R [11] offer varying strengths in coherence,
+safety, and formatting. In testing, GPT-3.5 generated generic feed-
+back on long or repetitive logs, while GPT-4.1 produced more pre-
+cise summaries and reasoning. Latency comparisons (Figure 11)
+showed smaller models were faster but less accurate. Overall, GPT-
+4.1 provided the best balance of quality, reliability, and contextual
+validity without hallucinations.
+631
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+Table 5: Impact of Feedback on User
+Experience and Response
+Feedback Mode SUS Utility Action (%)
+LLM Feedback 85.2 4.6 76
+Template-based 52.5 3.1 23
+No Feedback 18.9 – 5
+Table 6: Cloud vs. Local LLM Tradeoffs for
+WristSense
+Metric GPT-4.1 LLaMA-3 Phi-3
+Latency (ms) 6350 352 240
+Coherence (1–10)† 9.1 3.3 4.8
+Battery Use Low High Med
+Memory (GB) – 6.2 3.8
+Offline Use No Yes Yes
+Prompt Limit 8K 4K 2K
+†Coherence: blind review of 20 prompt–response
+pairs by two annotators.
+Figure 12: t-SNE for Single and Dual
+Stage classification.
+Table 7: Wrist Orientation Estimation
+Method MAE (°) RMSE (°)
+Gyroscope Integration Only 14.21 18.03
+Gyro + Accel.
+(Complementary Filter)
+7.84 10.52
+Quaternion Fusion (Ours) 4.78 6.31
+Table 8: Impact of Sequential Modeling
+and Hierarchical Design
+Model
+Variant
+Functional
+F1
+Coping
+F1
+Macro
+F1
+CNN Only 0.87 0.52 0.69
+CNN + HMM 0.89 0.71 0.80
+Two-Stage
+CNN + HMM (ours)
+0.92 0.83 0.91
+Table 9: Confusion Analysis of Coping
+Behavior Detection
+Model
+Variant
+Joint-
+Crack F1
+Flick
+F1
+Clench
+F1
+Circle
+F1
+CNN Only 0.48 0.49 0.55 0.72
+CNN + HMM 0.70 0.74 0.75 0.86
+Two-Stage
+CNN + HMM (ours)
+0.95 0.84 0.87 0.94
+6.4 Orientation Estimation Strategies
+We conducted an ablation study to evaluate the effectiveness of our
+approach for wrist orientation tracking. Specifically, we compared
+it against two common IMU-based methods: (i) gyroscope-only
+integration, which accumulates drift over time, and (ii) a comple-
+mentary filter that blends gyroscope and accelerometer data. As
+shown in Table 7, gyroscope-only integration yields substantial
+angular error (MAE: 14.21°), while the complementary filter offers
+moderate improvement (MAE: 7.84°). In contrast, our method re-
+duces the mean absolute error to 4.78°, highlighting the value of
+magnetometer-guided yaw correction for achieving stable, drift-
+resistant orientation estimates in free-form wrist movements.
+6.5 Impact of Hierarchical Design
+To assess the impact of temporal modeling and architectural hierar-
+chy in WristSense, we conducted a two-part study comparing three
+model configurations. (i) CNN-only Baseline: A single 1D-CNN
+trained on windowed features performs well on high-level func-
+tional gestures (F1: 0.87) but struggles with temporal alignment and
+produces jittery outputs for sparse coping gestures due to indepen-
+dent window-wise predictions (Table 8). (ii) CNN + HMM (Single-
+stage): Adding a discrete HMM layer improves temporal consis-
+tency and boosts coping gesture F1 from 0.52 to 0.71 by smoothing
+fluctuations and enabling natural event counting through state
+transitions (Table 9). (iii) Two-Stage CNN + HMM: Activating
+coping gesture recognition only within functional windows further
+improves macro F1 to 0.91 (Table 8) and enhances separation of
+overlapping gesture types. t-SNE visualizations (Figure 12) confirm
+that this hierarchical structure leads to better clustering of cop-
+ing behaviors, demonstrating that functional context serves as a
+valuable inductive bias for fine-grained behavior recognition.
+6.6 System Performance Metrics
+The performance of WristSense was evaluated on an iPhone 15 Pro
+Max using XCode tools (Time Profiler, Memory Allocations, and
+Table 10: Component-wise Latency of WristSense.
+Component Minimum (ms) Median (ms) Average (ms)
+Stage 1: Functional Gesture
+Recognition
+200 500 350
+Stage 2: Coping Behavior
+Decoding
+80 150 120
+3D Wrist Visualization
+(SceneKit)
+50 99 150
+LLM (API-based GPT-4.1) 3000 4500 5000
+LLM (Local Model) 45 180 300
+System Trace) [10, 29]. Each component of the pipeline was profiled
+over 30 runs to estimate minimum, median, and average latencies
+(Table 10). Both sensing and classification modules (Stage 1 and
+2) complete within sub-500 ms, ensuring real-time responsiveness.
+The 3D wrist visualizer, implemented using SceneKit, maintains a
+median update latency below 100 ms, enabling smooth feedback
+rendering. Although GPT-4.1 API-based feedback incurs the highest
+latency (avg. 5 s), it runs asynchronously after gesture detection and
+does not interrupt real-time sensing. In comparison, local LLMs (e.g.,
+LLaMA2-7B or Mistral distilled) reduce response time to approx-
+imately 300 ms, making them suitable for tighter feedback loops.
+Overall, this profiling confirms that WristSense operates within
+practical latency bounds for real-time ergonomic monitoring.
+6.7 Impact of LLM Inertial Tokenization
+We performed an ablation study to examine how input structure af-
+fects the quality of LLM-generated feedback. Specifically, we tested
+three conditions: (i) Structured Tokenization (Ours): semanti-
+cally parsed, time-bounded activity descriptors with wrist posture
+and coping gesture counts; (ii) No Tokenization: high-level ac-
+tivity labels or free-form phrases (e.g., “typing”, “using phone”)
+without numerical context; and (iii) Raw IMU Input: serialized
+9-axis sensor streams passed directly as floating-point arrays. Un-
+der structured tokenization, GPT-4.1 reliably produced accurate,
+632
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+Table 11: Comparison of prior systems and WristSense.
+System Input Modality Target Behaviors Feedback Mechanism Personalization
+MUSE [41] IMU + Magnetometer Object manipulation trajectories None (recognition only) ✗
+ArmTrak [40] IMU (Smartwatch) Arm posture and kinematics None (tracking only) ✗
+WatchGuardian [27] Smartwatch IMU Habitual micro-actions (e.g., nail biting) Just-in-time rule-based intervention ✓
+ERG-AI [38] Multiple IMUs Workplace posture and ergonomic risk Dashboard-based ergonomic feedback ✗
+SensorLLM [30] Multimodal sensor tokens General human activities LLM-generated summaries ✗
+Mojito [39] Synthetic IMU (tokenized) Human motion sequences LLM-based generative text ✗
+WristSense Smartwatch IMU (9-axis) Functional and strain-relief micro-behaviors LLM-based ergonomic feedback ✓
+context-aware guidance (e.g., “You cracked your knuckles three times
+and bent your wrist beyond 20° for over 10 minutes while writing. Con-
+sider resting for a few minutes and adjusting wrist posture.”) with no
+hallucinations. In contrast, the no-tokenization setup yielded vague
+suggestions like “Remember to stretch after long periods of typing,”
+omitting strain-specific cues. The raw IMU condition performed
+worst, with frequent misinterpretations, e.g., incorrectly inferring
+“lifting a cup to drink water” from sinusoidal pitch patterns. These
+results highlight that structured, human-readable tokenization is
+critical for producing reliable, ergonomically meaningful feedback.
+6.8 Limitations and Future Directions
+WristSense shows strong performance; nevertheless, it has a few
+limitations. Its modular CNN-HMM pipeline depends on prede-
+fined gesture classes, limiting the system’s ability to detect new or
+unlabeled behaviors. The method is currently restricted to wrist-
+centric strain detection and does not extend to the elbow, shoul-
+der, or full-body ergonomics, which are important in clinical and
+industrial contexts. Some misclassifications occurred during upper-
+body stretches or postural adjustments, revealing challenges in
+distinguishing coping gestures from broader movements. Clinical
+validation on larger, more diverse populations, including patients
+with musculoskeletal disorders and high-risk occupational groups,
+is essential before healthcare deployment. Although the LLM feed-
+back aligns closely with orthopedist guidance (BERTScore = 0.89),
+it should serve as supportive coaching, not a medical diagnosis.
+Safe adoption will require clear disclaimers, optional human-in-the-
+loop review, and integration with certified clinical decision-support
+systems. Future longitudinal studies will evaluate not only accu-
+racy but also real-world health outcomes, such as reduced strain
+symptoms and injury prevention.
+While WristSense currently relies on inertial sensing for wrist
+strain analysis, the same tokenization principle can generalize to
+multi-sensor wearables such as smartwatches, rings, earables, and
+smart ornaments. By extending inertial tokens into multi-sensor to-
+kens that fuse motion with physiological and contextual signals (e.g.,
+heart rate, temperature, EDA, ambient context), the framework can
+support broader health and ergonomic monitoring beyond the wrist.
+Additionally, future work could also explore end-to-end sensor-to-
+language models (e.g., TimeLLM, GPT-4o) to bypass handcrafted
+tokenization. LLMs could also support richer applications, such
+as generating clinician-friendly reports, summarizing behavioral
+trends, facilitating dialogue-based troubleshooting, and enabling
+conversational personalization of feedback. While early results
+show promising user engagement, ensuring the safety, reliability,
+and clinical relevance of LLM-generated advice requires long-term
+deployment with human-in-the-loop validation. Finally, while the
+magnetometer-based fusion handles minor disturbances, strong
+local interference can still affect yaw stability; future work will add
+disturbance detection and adaptive weighting to mitigate this.
+7 Related Work
+We summarize prior work (Table 11) across three areas: (1) IMU-
+based wrist sensing, (2) wearable ergonomic monitoring, and (3)
+language models for feedback generation.
+Wrist-Worn IMU Systems. Prior work has explored the use of
+wrist-worn IMUs for physical activity tracking [3, 17, 19, 20], fall
+detection [12], and coarse-grained gesture recognition [25]. Other
+works like Zhang et al. [46] recognize fine finger gestures but ig-
+nore strain-related behaviors. The most closely related work to our
+system is MUSE [41], which also employs magnetometer readings
+from a wrist-mounted smartwatch IMU to identify hand motion
+trajectories. MUSE fuses IMU data with a magnetometer-corrected
+orientation pipeline and leverages particle filters and motion di-
+rection vectors to estimate hand displacement in 2D space during
+object interaction. However, their focus is on recognizing object
+manipulation gestures by tracking motion traces over time. Simi-
+larly, another work, ArmTrak [40] reconstructs full arm poses via
+HMMs but focuses on upper limb kinematics using only the gyro
+and accelerometer data. In contrast, our system does not rely on
+trajectory reconstruction or displacement estimation. Instead, we
+use magnetometer-stabilized quaternions to extract stable, sign-
+corrected wrist posture angles, specifically radial/ulnar deviation
+and pronation/supination, from a fixed forearm-aligned frame.
+Wearables for Ergonomic Monitoring. Prior work has explored
+gloves [36], EMG [9], and textile-based sensors [18] for posture
+and strain detection. While accurate, these setups are intrusive
+and unsuitable for everyday use. However, recent systems like
+WatchGuardian [27] demonstrate smartwatch-based detection of
+smaller, habitual micro-actions such as face scratching, nail biting,
+and lip picking, providing personalized, just-in-time interventions.
+While closely related in motivation, their gestures are voluntary
+and context-isolated, whereas WristSense targets involuntary strain-
+relief behaviors that emerge spontaneously during functional tasks
+like typing or lifting. Therefore, smartwatch-based sensing remains
+underexplored for ergonomic analysis. WristSense bridges this gap
+by detecting both high-level tasks and transient discomfort behav-
+iors passively and in real time using commodity wrist IMUs.
+Language Models for Motion Feedback. Recent vision-language
+models [16, 24] show promise for activity captioning but rely on
+633
+WristSense SenSys ’26, May 11–14, 2026, Saint Malo, France
+video input and high compute budgets. IMU–LLM pipelines are
+emerging, yet prior work lacks temporal segmentation or struc-
+tured tokenization. Frameworks like SensorLLM [30] and Sensor-
+Chat [45] align long IMU sequences (5–10 s) with text using trans-
+former encoders and large paired datasets, effectively modeling
+macro-activities but require continuous motion context and ex-
+tensive training to capture brief, non-repetitive micro-behaviors.
+Mojito [39] uses a VQ-VAE-based inertial tokenizer trained on syn-
+thetic data, but its latent tokens lack interpretability. In contrast,
+WristSense performs event-level inertial tokenization, segmenting
+short IMU windows into interpretable, biomechanically grounded
+tokens for zero-shot, low-latency feedback on commodity devices,
+offering higher temporal resolution, interpretability, and safety
+control than global alignment approaches.
+8 Conclusion
+In this paper, we presented WristSense, a real-time, wrist-worn sens-
+ing system that combines inertial data with large language model
+reasoning to deliver personalized ergonomic feedback. Using only
+smartwatch IMU signals, WristSense fuses compass-stabilized orien-
+tation, sign-corrected wrist angles, and a hierarchical CNN–HMM
+architecture to recognize functional and strain-related behaviors.
+These are converted into structured tokens for GPT-4.1, enabling
+ergonomic insights without handcrafted rules or retraining. The sys-
+tem, deployed on both Apple and Samsung smartwatches, achieved
+a macro F1 score of 0.91, surpassed prior baselines, and main-
+tained posture estimation errors under 10◦. LLM-generated feed-
+back aligned closely with clinical references (BERTScore: 0.89) and
+drove significantly higher user compliance (76%) compared to rule-
+based (23%) and no-feedback (5%) setups. A usability score of 85.2
+further supports its real-world potential. Overall, WristSense demon-
+strates the viability of integrating LLMs into real-time sensing
+pipelines for contextual, personalized ergonomic monitoring.
+Acknowledgments
+We thank our shepherd and reviewers for their constructive feed-
+back. All participants provided informed consent following the
+ethical approval from the authors’ institutional ethics board. This
+work is supported by the Prime Minister’s Research Fellowship
+(PMRF), awarded by the Government of India, and the Google Aca-
+demic Research Award.
+References
+[1] Marah Abdin, Jyoti Aneja, Hany Awadalla, Ahmed Awadallah, Ammar Ahmad
+Awan, Nguyen Bach, Amit Bahree, Arash Bakhtiari, Jianmin Bao, Harkirat Behl,
+et al. 2024. Phi-3 technical report: A highly capable language model locally on
+your phone. arXiv preprint arXiv:2404.14219 (2024).
+[2] Riku Arakawa, Jill Fain Lehman, and Mayank Goel. 2024. Prism-q&a: Step-aware
+voice assistant on a smartwatch enabled by multimodal procedure tracking and
+large language models. Proceedings of the ACM on Interactive, Mobile, Wearable
+and Ubiquitous Technologies 8, 4 (2024), 1–26.
+[3] Ahmed Ayman, Omneya Attalah, and Heba Shaban. 2019. An efficient human
+activity recognition framework based on wearable imu wrist sensors. In 2019
+IEEE International Conference on Imaging Systems and Techniques (IST). IEEE,
+1–5.
+[4] Mariam Ayrapetyan, Wenny Miao, and Kellen O’Rourke. [n. d.]. Over-Use Warn-
+ing Glove for Carpal Tunnel Syndrome. ([n. d.]).
+[5] Bruce Bernard, Steve Sauter, Lawrence Fine, Martin Petersen, and Thomas Hales.
+1994. Job task and psychosocial risk factors for work-related musculoskeletal dis-
+orders among newspaper employees. Scandinavian journal of work, environment
+& health (1994), 417–426.
+[6] Bruce P Bernard and Vern Putz-Anderson. 1997. Musculoskeletal disorders and
+workplace factors: a critical review of epidemiologic evidence for work-related
+musculoskeletal disorders of the neck, upper extremity, and low back. (1997).
+[7] Jorge Castellanos and David Axelrod. 1990. Effect of habitual knuckle cracking
+on hand function. Annals of the rheumatic diseases 49, 5 (1990), 308–309.
+[8] Tien-Chiao Chang, Yu-Chi Wu, Chin-Chuan Han, and Chao-Shu Chang. 2024.
+Real-time Arm Motion Tracking and Hand Gesture Recognition Based on a Single
+Inertial Measurement Unit. In 2024 11th International Conference on Internet of
+Things: Systems, Management and Security (IOTSMS). IEEE, 44–49.
+[9] Lalita Chilmakuri, Ayush Kumar Mishra, Divyansh Shokeen, Paakhi Gupta,
+Harmankaur Harjeetsingh Wadhwa, Karan Dhingra, and Saloni Verma. 2024. A
+wearable EMG sensor for continuous wrist neuromuscular activity for monitoring.
+Journal of Knowledge Learning and Science Technology ISSN: 2959-6386 (online) 3,
+4 (2024), 148–159.
+[10] Garvit Chugh, Indrajeet Ghosh, Sandip Chakraborty, and Suchetana Chakraborty.
+2025. BiteSense: Earable-Based Inertial Sensing for Eating Behaviour Assessment.
+In 2025 IEEE International Conference on Pervasive Computing and Communications
+(PerCom). IEEE, 110–120.
+[11] Team Cohere, Arash Ahmadian, Marwan Ahmed, Jay Alammar, Milad Alizadeh,
+Yazeed Alnumay, Sophia Althammer, Arkady Arkhangorodsky, Viraat Aryabumi,
+Dennis Aumiller, et al. 2025. Command a: An enterprise-ready large language
+model. arXiv preprint arXiv:2504.00698 (2025).
+[12] Thiago De Quadros, Andre Eugenio Lazzaretti, and Fábio Kürt Schneider. 2018.
+A movement decomposition and machine learning-based fall detection system
+using wrist wearable device. IEEE Sensors Journal 18, 12 (2018), 5082–5089.
+[13] Nathan DeVrio, Vimal Mollyn, and Chris Harrison. 2023. Smartposer: Arm
+pose estimation with a smartphone and smartwatch using uwb and imu data. In
+Proceedings of the 36th Annual ACM Symposium on User Interface Software and
+Technology. 1–11.
+[14] Alex Elentukh, Shravan Motipally, Jacob Kustra, and Toby March. 2024. Building
+a Chatbot to Adopt an Effective Learning Strategy for Graduate Courses in
+Computer Science. In International Conference on Computer Science and Education
+in Computer Science. Springer, 276–296.
+[15] Mircea Fagarasanu and Shrawan Kumar. 2003. Carpal tunnel syndrome due
+to keyboarding and mouse tasks: a review. International Journal of Industrial
+Ergonomics 31, 2 (2003), 119–136.
+[16] Yao Feng, Jing Lin, Sai Kumar Dwivedi, Yu Sun, Priyanka Patel, and Michael J
+Black. 2024. Chatpose: Chatting about 3d human pose. In Proceedings of the
+IEEE/CVF conference on computer vision and pattern recognition. 2093–2103.
+[17] Ty Ferguson, Timothy Olds, Rachel Curtis, Henry Blake, Alyson J Crozier, Kylie
+Dankiw, Dorothea Dumuid, Daiki Kasai, Edward O’Connor, Rosa Virgara, et al.
+2022. Effectiveness of wearable activity trackers to increase physical activity and
+improve health: a systematic review of systematic reviews and meta-analyses.
+The Lancet Digital Health 4, 8 (2022), e615–e626.
+[18] V. Figueira, S. Silva, I. Costa, B. Campos, J. Salgado, L. Pinho, M. Freitas, P.
+Carvalho, J. Marques, and F. Pinho. 2024. Wearables for Monitoring and Postural
+Feedback in the Work Context: A Scoping Review. Sensors 24, 4 (2024), 1341.
+https://doi.org/10.3390/s24041341
+[19] Federico Germini, Noella Noronha, Victoria Borg Debono, Binu Abraham Philip,
+Drashti Pete, Tamara Navarro, Arun Keepanasseril, Sameer Parpia, Kerstin de
+Wit, and Alfonso Iorio. 2022. Accuracy and acceptability of wrist-wearable
+activity-tracking devices: systematic review of the literature. Journal of medical
+Internet research 24, 1 (2022), e30791.
+[20] Pedro Raphael Inácio Gomes, Murillo Santos de Castro, and Thamer Horbylon
+Nascimento. 2024. Gesture Recognition Methods Using Sensors Integrated into
+Smartwatches: Results of a Systematic Literature Review. In Proceedings of the
+XXII Brazilian Symposium on Human Factors in Computing Systems (Maceió,
+Brazil) (IHC ’23). Association for Computing Machinery, New York, NY, USA,
+Article 55, 11 pages. https://doi.org/10.1145/3638067.3638082
+[21] Farizal Hamzah and Nuraini Sulaiman. 2024. Multimodal integration in large
+language models: A case study with mistral llm. (2024).
+[22] Richard T Herrick and Stella K Herrick. 1987. Thermography in the detection
+of carpal tunnel syndrome and other compressive neuropathies. The Journal of
+hand surgery 12, 5 (1987), 943–949.
+[23] Néstor J Jarque-Bou, Alessandro Scano, Manfredo Atzori, and Henning Müller.
+2019. Kinematic synergies of hand grasps: a comprehensive study on a large
+publicly available dataset. Journal of neuroengineering and rehabilitation 16, 1
+(2019), 63.
+[24] Biao Jiang, Xin Chen, Chi Zhang, Fukun Yin, Zhuoyuan Li, Gang Yu, and Jiayuan
+Fan. 2024. Motionchain: Conversational motion controllers via multimodal
+prompts. In European Conference on Computer Vision. Springer, 54–74.
+[25] Shuo Jiang, Bo Lv, Weichao Guo, Chao Zhang, Haitao Wang, Xinjun Sheng,
+and Peter B Shull. 2017. Feasibility of wrist-worn, real-time hand, and surface
+gesture recognition via sEMG and IMU sensing. IEEE Transactions on Industrial
+Informatics 14, 8 (2017), 3376–3385.
+[26] Martina Lapresa, Virginia Corradini, Antonio Iacca, Francesco Scotto di Luzio,
+Loredana Zollo, and Francesca Cordella. 2024. A comprehensive analysis of
+task-specific hand kinematic, muscle and force synergies. Biocybernetics and
+634
+SenSys ’26, May 11–14, 2026, Saint Malo, France Garvit Chugh, Ananya Mondal, Sandip Chakraborty, and Suchetana Chakraborty
+Biomedical Engineering 44, 1 (2024), 218–230.
+[27] Ying Lei, Yancheng Cao, Will Wang, Yuanzhe Dong, Changchang Yin, Weidan
+Cao, Ping Zhang, Jingzhen Yang, Bingsheng Yao, Yifan Peng, et al. 2025. Watch-
+Guardian: Enabling User-Defined Personalized Just-in-Time Intervention on
+Smartwatch. arXiv preprint arXiv:2502.05783 (2025).
+[28] James R Lewis. 2018. The system usability scale: past, present, and future. Inter-
+national Journal of Human–Computer Interaction 34, 7 (2018), 577–590.
+[29] Yilong Li, Jingyu Liu, Hao Zhang, M Badri Narayanan, Utkarsh Sharma, Shuai
+Zhang, Pan Hu, Yijing Zeng, Jayaram Raghuram, and Suman Banerjee. 2024. Palm-
+Bench: A Comprehensive Benchmark of Compressed Large Language Models on
+Mobile Platforms. arXiv preprint arXiv:2410.05315 (2024).
+[30] Zechen Li, Shohreh Deldari, Linyao Chen, Hao Xue, and Flora D Salim. 2024.
+Sensorllm: Aligning large language models with motion sensors for human
+activity recognition. arXiv preprint arXiv:2410.10624 (2024).
+[31] Rinkle Malani, Nidhi Sharma, Sanket Mungikar, Tajuddin Chitapure, Chaitanya A
+Kulkarni, and Waqar M Naqvi. 2021. Prevalence of musculoskeletal disorder in
+smartphone users: Cross sectional study. Journal of Medical P’ceutical & Allied
+Sciences 10, 3 (2021), 2916–2919.
+[32] Mary L McHugh. 2012. Interrater Reliability: The kappa statistic. shorturl.at/
+aIKQR
+[33] Farhana Afreen Proma. 2014. Joint kinematics, muscle activity and postural
+strain for finger-intensive operation of small hand-held devices. (2014).
+[34] Benjamin Reichman, Xiaofan Yu, Lanxiang Hu, Jack Truxal, Atishay Jain, Rushil
+Chandrupatla, Tajana S Rosing, and Larry Heck. 2025. Sensorqa: A question
+answering benchmark for daily-life monitoring. In Proceedings of the 23rd ACM
+Conference on Embedded Networked Sensor Systems. 282–289.
+[35] David M Rempel, Robert J Harrison, and Scott Barnhart. 1992. Work-related
+cumulative trauma disorders of the upper extremity. Jama 267, 6 (1992), 838–842.
+[36] Francisco M Sánchez-Margallo, Francisco J Pérez-Duarte, Juan A Sánchez-
+Margallo, Marcos Lucas-Hernández, Ana Maria Matos-Azevedo, and Idoia Díaz-
+Güemes. 2014. Application of a motion capture data glove for hand and wrist
+ergonomic analysis during laparoscopy. Minimally Invasive Therapy & Allied
+Technologies 23, 6 (2014), 350–356.
+[37] Benedikt Schmidl, Tobias Hütten, Steffi Pigorsch, Fabian Stögbauer, Cosima C
+Hoch, Timon Hussain, Barbara Wollenberg, and Markus Wirth. 2024. Assessing
+the use of the novel tool Claude 3 in comparison to ChatGPT 4.0 as an artificial
+intelligence tool in the diagnosis and therapy of primary head and neck cancer
+cases. European Archives of Oto-Rhino-Laryngology 281, 11 (2024), 6099–6109.
+[38] Sagar Sen, Victor Gonzalez, Erik Johannes Husom, Simeon Tverdal, Shukun Tokas,
+and Svein Ove Tjøsvoll. 2024. ERG-AI: enhancing occupational ergonomics with
+uncertainty-aware ML and LLM feedback. (2024).
+[39] Ziwei Shan, Yaoyu He, Chengfeng Zhao, Jiashen Du, Jingyan Zhang, Qixuan
+Zhang, Jingyi Yu, and Lan Xu. 2025. Mojito: LLM-Aided Motion Instructor with
+Jitter-Reduced Inertial Tokens. arXiv preprint arXiv:2502.16175 (2025).
+[40] Sheng Shen. 2017. ArmTrak: tracking arm postures with a smartwatch. Ph. D.
+Dissertation. University of Illinois at Urbana-Champaign.
+[41] Sheng Shen, Mahanth Gowda, and Romit Roy Choudhury. 2018. Closing the
+gaps in inertial motion tracking. In Proceedings of the 24th Annual International
+Conference on Mobile Computing and Networking. 429–444.
+[42] Ye Tian, Onat Gungor, Xiaofan Yu, and Tajana Rosing. 2025. Fine-grained Con-
+textualized Activity Logs Generation based on Multi-Modal Sensor Data and
+LLM. In Proceedings of the 23rd ACM Conference on Embedded Networked Sensor
+Systems. 608–609.
+[43] John Z Wu, Erik W Sinsel, Christopher M Warren, and Daniel E Welcome. 2018.
+An evaluation of the contact forces on the fingers when squeezing a spherical
+rehabilitation ball. Bio-medical materials and engineering 29, 5 (2018), 629–639.
+[44] Junjie Ye, Xuanting Chen, Nuo Xu, Can Zu, Zekai Shao, Shichun Liu, Yuhan Cui,
+Zeyang Zhou, Chao Gong, Yang Shen, et al. 2023. A comprehensive capability
+analysis of gpt-3 and gpt-3.5 series models. arXiv preprint arXiv:2303.10420 (2023).
+[45] Xiaofan Yu, Lanxiang Hu, Benjamin Reichman, Dylan Chu, Rushil Chandrupatla,
+Xiyuan Zhang, Larry Heck, and Tajana Rosing. 2025. SensorChat: Answering
+Qualitative and Quantitative Questions during Long-Term Multimodal Sensor
+Interactions. arXiv preprint arXiv:2502.02883 (2025).
+[46] Dian Zhang, Zexiong Liao, Wen Xie, Xiaofeng Wu, Haoran Xie, Jiang Xiao, and
+Landu Jiang. 2021. Fine-grained and real-time gesture recognition by using IMU
+sensors. IEEE Transactions on Mobile Computing (2021).
+[47] Fan Zhang, Valentin Bazarevsky, Andrey Vakunov, Andrei Tkachenka, George
+Sung, Chuo-Ling Chang, and Matthias Grundmann. 2020. Mediapipe hands:
+On-device real-time hand tracking. arXiv preprint arXiv:2006.10214 (2020).
+[48] Peitian Zhang, Ninglu Shao, Zheng Liu, Shitao Xiao, Hongjin Qian, Qiwei Ye, and
+Zhicheng Dou. 2024. Extending Llama-3’s Context Ten-Fold Overnight. arXiv
+preprint arXiv:2404.19553 (2024).
+[49] Peiyuan Zhang, Guangtao Zeng, Tianduo Wang, and Wei Lu. 2024. Tinyllama:
+An open-source small language model. arXiv preprint arXiv:2401.02385 (2024).
+[50] Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q Weinberger, and Yoav
+Artzi. 2019. Bertscore: Evaluating text generation with bert. arXiv preprint
+arXiv:1904.09675 (2019).
+[51] Yongzhao Zhang, Hao Pan, Dian Ding, Yue Pan, Yi-Chao Chen, Lili Qiu, Guangtao
+Xue, Ting Chen, and Xiaosong Zhang. 2024. SwiftTrack+: Fine-Grained and
+Robust Fast Hand Motion Tracking Using Acoustic Signal. IEEE/ACM Transactions
+on Networking (2024).
+[52] Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang, Xiaolei Wang, Yupeng Hou,
+Yingqian Min, Beichen Zhang, Junjie Zhang, Zican Dong, et al. 2023. A survey
+of large language models. arXiv preprint arXiv:2303.18223 1, 2 (2023).
+[53] Tianyue Zheng, Chao Cai, Zhe Chen, and Jun Luo. 2022. Sound of motion: Real-
+time wrist tracking with a smart watch-phone pair. In IEEE INFOCOM 2022-IEEE
+Conference on Computer Communications. IEEE, 110–119.
+635
+

@@ -1,0 +1,1059 @@
+mmMulti: Multi-person Action Recognition Based on Multi-task
+Learning Using Millimeter Waves
+RUI ZHOU∗, University of Electronic Science and Technology of China, China
+SONGLIN LI, University of Electronic Science and Technology of China, China
+HONGWANG ZHANG, University of Electronic Science and Technology of China, China
+CHENXU LIU, University of Electronic Science and Technology of China, China
+JIAJUN SUN, University of Electronic Science and Technology of China, China
+Action recognition using millimeter waves (mmWave) has shown great potential in various fields. However, the state-of-the-art
+still falls short in terms of multi-person action recognition inclusive interactive action recognition. In this paper, we propose
+mmMulti, a multi-person action recognition method based on multi-task learning using millimeter waves. To this end, we
+first segregate the mmWave data and assign them to each of multiple persons, and propose two new input data—compressed
+Doppler map (CDM) and point trajectory segments (PTS)—to represent the patterns and sequential characteristics of actions.
+Next, we leverage ConvNeXt to extract pattern features from CDM and leverage Transformer to extract sequential features
+from PTS, and fuse them by a cross-attention mechanism. Finally, we custom-design a multi-task learning model to recognize
+independent and interactive actions from multiple concurrent persons, enabling mmMulti to recognize single-person actions,
+multi-person independent actions and multi-person interactive actions. We implement mmMulti on a commercial mmWave
+radar and conduct extensive experiments. mmMulti achieves single-person action recognition accuracy of 99.64%, independent
+action recognition accuracy of 91.03% for two persons, 72.38% for three persons, 64.75% for four persons, and interactive
+action recognition accuracy of 100% for two persons. To the best of our knowledge, mmMulti is the first work in the field of
+mmWave sensing to differentiate both independent and interactive actions in multi-person scenarios, based on a multi-task
+learning model to accomplish multiple tasks simultaneously.
+CCS Concepts: • Human-centered computing → Ubiquitous and mobile computing; • Computing methodologies →
+Machine learning.
+Additional Key Words and Phrases: Action recognition, mmWave sensing, multi-person, multi-task learning.
+ACM Reference Format:
+Rui Zhou, Songlin Li, Hongwang Zhang, Chenxu Liu, and Jiajun Sun. 2025. mmMulti: Multi-person Action Recognition
+Based on Multi-task Learning Using Millimeter Waves. Proc. ACM Interact. Mob. Wearable Ubiquitous Technol. 9, 2, Article 64
+(June 2025), 25 pages. https://doi.org/10.1145/3729461
+∗Rui Zhou is the corresponding author.
+Authors’ Contact Information: Rui Zhou, ruizhou@uestc.edu.cn, University of Electronic Science and Technology of China, China; Songlin Li,
+2243197885@qq.com, University of Electronic Science and Technology of China, China; Hongwang Zhang, zhw6770@foxmail.com, University
+of Electronic Science and Technology of China, China; Chenxu Liu, liuchenxu317@qq.com, University of Electronic Science and Technology
+of China, China; Jiajun Sun, wing_sjj@qq.com, University of Electronic Science and Technology of China, China.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee provided that
+copies are not made or distributed for profit or commercial advantage and that copies bear this notice and the full citation on the first page.
+Copyrights for components of this work owned by others than the author(s) must be honored. Abstracting with credit is permitted. To copy
+otherwise, or republish, to post on servers or to redistribute to lists, requires prior specific permission and/or a fee. Request permissions from
+permissions@acm.org.
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 2474-9567/2025/6-ART64
+https://doi.org/10.1145/3729461
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:2 • Zhou et al.
+1 Introduction
+Millimeter-wave (mmWave) radars have been widely used in various fields due to their rich spectrum, large
+bandwidth, and minimal interference. Applications include autonomous driving [16], explosive detection [24],
+human detection [32], activity recognition [23], gesture recognition [10, 11], gait recognition [17], and vital sign
+monitoring [27]. While vision-based methods [1, 20] provide higher granularity, they face privacy, lighting, and
+shielding issues. WiFi sensing offers a low-cost, non-intrusive solution [12, 15], but struggles with subtle and
+multi-person sensing due to its coarse resolution. In contrast, mmWave radars, with their high resolution and
+minimal privacy concerns, show great potential for accurate sensing [10, 11, 17, 27].
+Current RF sensing research focuses primarily on single-person sensing, while multi-person sensing remains a
+challenge. Although mmWave radars provide new opportunities for multi-person sensing, action recognition
+in such scenarios is limited. Several solutions have been proposed for localization [6] and tracking [30], but
+multi-person action recognition is still unexplored. There are three primary challenges:
+Challenge 1: The number of people and action modes (independent or interactive) are unknown in advance.
+We define interactive actions as those involving mutual physical interactions between two or more individuals,
+such as “high-five” and “shake hands”. Traditional methods rely on a two-stage process: counting individuals,
+identifying the action mode, and then classifying the action, which results in increased computational complexity
+and lower accuracy.
+Challenge 2: In multi-person scenarios, mmWave signals overlap, causing difficulties in accurately segregating
+data (e.g., point clouds and range Doppler maps) and assigning it to the correct individual.
+Challenge 3: The limited number of points in mmWave point cloud data can lead to sparsity in multi-person
+scenarios. Insufficient points hinder the accurate capture of action features, causing mis-recognition.
+To address these challenges, we propose mmMulti, a method that recognizes simultaneous actions from
+multiple persons using mmWave signals, with no prior knowledge of person count or action mode. Specifically,
+mmMulti can automatically identify the number of people and the action mode, and recognize single-person
+actions, multi-person independent actions, and interactive actions in one model.
+Solution to challenge 1: We design a multi-task learning (MTL) model that performs three tasks: action mode
+discrimination (including people counting), independent action recognition, and interactive action recognition.
+The MTL model enables multi-person action recognition within a single model without prior knowledge of the
+person count or action mode.
+Solution to challenge 2: Accurate segregation of mmWave data is key to independent action recognition.
+We accumulate point clouds from multiple frames to increase point density, then use the k-Means algorithm
+to cluster the point clouds. Each cluster corresponds to a person, and we use these clusters to segment range
+Doppler maps and assign sub-maps to individuals.
+Solution to challenge 3: To handle sparse data, we fuse trajectory and Doppler features. We track points frame
+by frame to create point trajectory segments (PTS), and compress 3D range Doppler maps into 2D compressed
+Doppler maps. The fusion of these two features using a cross-attention mechanism improves recognition accuracy.
+We evaluate mmMulti using a real-world dataset collected in our office building. Our self-collected dataset
+shows that mmMulti achieves 98.49% accuracy in action mode discrimination, 99.64% in single-person action
+recognition, 91.03% in two-person, 72.38% in three-person, 64.75% in four-person, and 100% in two-person
+interactive action recognition. Our dataset is shared on GitHub1.
+The main contributions of our paper are summarized as follows:
+(1) Introduce point trajectory segments (PTS) as input, addressing the discontinuity of target trajectories and
+retaining detailed trajectory information. Experiments show that PTS outperforms target trajectory.
+1https://github.com/lin178-alt/mmMultiDataset
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:3
+(2) Propose a Doppler map compression method that converts 3D range Doppler maps to 2D compressed
+Doppler maps using maximal velocity on the velocity dimension, reducing computational complexity.
+(3) Design a multi-task learning model for action mode discrimination, independent action classification, and
+interactive action classification, featuring a mixture of experts and a gating mechanism for task-specific
+expertise and feature flow control.
+(4) Develop a multi-person action recognition system that recognizes both independent and interactive actions,
+automatically predicting the action mode, person count, and actions performed.
+2 Related work
+2.1 Action recognition with mmWave
+Action recognition is one of the most common applications of mmWave sensing. Wang et al. [29] built the
+first mmWave gesture recognition system on Google’s Soli sensor. They used range Doppler images as the
+features and constructed CNN-LSTM models to recognize dynamic gestures. Utilizing a pulsed mmWave radar,
+Fhager et al. [5] leveraged range-time envelope images for hand gesture classification by tuning a pretrained
+ResNet50. mHomeGes [10] achieved continuous arm gesture recognition in real-time using mmWave point
+cloud data, via a hidden Markov model-based voting mechanism and a CNN, M-Gesture [11] focused on person-
+independence, automatic segmentation and real-time recognition of gestures from continuous mmWave point
+clouds, mmASL [21] could recognize American Sign Language (ASL). Using spatial spectrograms and a multi-
+task deep learning model, it could learn the phonological properties of ASL signs and use them to accurately
+recognize the ASL signs. Yu et al. [33] created spatial–temporal point clouds through a modified voxelization
+approach and recognized human activities by a dual-view CNN. Zhang et al. [35] leveraged the Histogram of
+Oriented Gradients (HOG) algorithm to extract features from range-profile images and achieved long-range
+mmWave gesture recognition. Kang et al. [9] proposed a framework of spatial–temporal point cloud transformer
+(ST-PCT) to realize activity recognition based on sequential point cloud from mmWave radar. Rodar [8] proposed
+a multi-view de-interference Transformer network to achieve accurate recognition of similar gestures under
+high-strength human activity interference. These works worked in single-person scenarios and did not consider
+the multi-person issue.
+2.2 Multi-person mmWave sensing
+Compared to single-person sensing, researches on multi-person mmWave sensing are much less. mID [36, 37]
+proved that by forming temporally associated trajectories from point clouds and integrating sophisticated neural
+networks, it is possible to track and identify multiple individuals using mmWave. mmTrack [30] was the first
+system that localized and tracked multiple users simultaneously using an mmWave radar. It first promoted
+the spatial resolution by digital beamforming and then constructed human trajectories through the k-Means
+clustering algorithm and the Hungarian matching algorithm. Chen et al. [3] developed a geometric model that
+estimated the location of multipath ghosts and generated a reflection map that allowed for eliminating the
+multipath and shadow ghost interference as well as augmenting weakly reflected human subjects in occluded
+areas, thus achieved accurate multi-person tracking. To achieve multi-person gesture recognition, Wang et al. [28]
+proposed a multidimensional analysis method to separate the gesture feature of each person from mixed signals,
+by jointly leveraging the range, the angle, and the Doppler information. Multi-HAR [34] exploited the extended
+Kalman filter-based group tracking algorithm to cluster and track each target in a multi-person scenario, and
+combined 3D-CNN with LSTM to classify human activities in multi-person scenarios. MARS [22] employed an
+intelligent model to sense both macro and micro activities and used a dynamic spatial time-sharing approach to
+achieve continuous multi-user activity recognition. MARS relied on the point cloud data to localize the subjects
+and used range Doppler images to recognize activities. These works have made progress for multi-person sensing.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:4 • Zhou et al.
+However, they can not handle interactive actions and the recognition accuracy still needs improvement for
+multiple persons.
+2.3 Novelty of our work
+Existing works on RF action recognition predominantly focus on single-person scenarios. Only a small num-
+ber address multi-person scenarios. Even so, almost all of them neglect interactive actions, considering only
+independent actions. Different from the previous, our work distinguishes itself in the following aspects.
+(1) Existing methods are unable to distinguish between interactive actions and multi-person independent
+actions, and rely on DBSCAN for people counting, which may lead to decrease in accuracy. mmMulti
+takes a multi-task learning approach. It performs action mode discrimination (inclusive people counting),
+single-person action recognition, multi-person independent action recognition and multi-person interactive
+action recognition within the same framework. Through a gate-controlled multi-expert neural network,
+mmMulti can achieve multi-person action recognition without knowing the count of individuals and the
+action mode in advance.
+(2) Existing methods either focus on Doppler map features or trajectory features, whereas our approach
+combines both types of features. To enhance recognition accuracy while simultaneously reduce computa-
+tional complexity, mmMulti introduces two data preprocessing techniques. One involves compressing 3D
+sequential range Doppler maps into 2D compressed Doppler maps, and the other entails constructing point
+trajectory segments instead of target trajectories to track actions.
+3 Method overview
+3.1 Overall structure
+The objective of our method is to achieve multi-person action recognition, capable of recognizing both independent
+and interactive actions. To achieve the goal, we design a multi-task learning framework, integrating the tasks of
+action mode discrimination, people counting, independent action recognition, and interactive action recognition.
+The overall structure of mmMulti is illustrated in Fig. 1.
+Data acquisition: During the process of actions, the mmWave radar emits Frequency Modulated Continuous
+Waves (FMCW) and captures the reflections. The emitted and the reflected signals are processed to produce frames
+of point clouds and range Doppler maps. Each frame of point clouds contains the reflection points’ positions,
+velocities, distances to the radar, and reflection intensities. Each range Doppler map depicts the targets’ dynamics
+with respect to the distance and the velocity.
+Data segregation: The point cloud data is first denoised by the Density-Based Spatial Clustering of Applications
+with Noise (DBSCAN) algorithm to eliminate non-target reflections. In a multi-person independent scenario, the
+Fig. 1. Overall structure of mmMulti.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:5
+denoised data is segregated by the k-Means algorithm, with each cluster corresponding to an individual. Using
+the clusters as references, we can segment the range Doppler maps and assign the sub-maps to each individual.
+Data preprocessing: The sequential range Doppler sub-maps of each individual are compressed on the velocity
+index to generate the compressed Doppler maps (CDM). The consecutive frames of point cloud data of each
+individual undergoes preprocessing to obtain the point trajectory segments (PTS). CDM provides an overview of
+the action pattern, while PTS details the action path.
+Feature extraction and fusion: We employ the pretrained ConvNeXt [13] model to learn the spatial features
+from compressed Doppler maps, and employ the Transformer [26] model to learn the temporal features from
+point trajectory segments. The spatial and temporal features are fused by the cross-attention mechanism [7] and
+passed to the multi-task recognition model.
+Multi-task action recognition: To achieve multiple recognition tasks in one framework, we custom-design
+a multi-task learning model, comprising a shared expert, multiple task-specific experts, multiple task-specific
+classifiers, and multiple gates. Controlled by the gates, the features learned by the experts are filtered, weighted
+and fused to accommodate the task-specific classifiers. In this way, the MTL model can realize specific action
+recognition tasks according to the inputs and predict one of the three results: action mode with people count,
+independent action type, or interactive action type.
+3.2 Multi-task work-flows
+The method mmMulti first captures a sequence of frames of point clouds and a sequence of range Doppler maps
+from the mmWave radar. Through preprocessing, the method generates the compressed Doppler maps (CDM)
+from the range Doppler map sequences, and generates the point trajectory segments (PTS) from the point clouds
+sequences. The CDM and the PTS undergo feature extraction by ConvNeXt and Transformer respectively and are
+fused by the cross-attention mechanism. The fused features are input to the multi-task learning model for action
+(a) Task flow of single person action recognition or interactive action recognition
+(b) Task flow of multi-person independent action recognition
+Fig. 2. Task flows of action recognition in mmMulti.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:6 • Zhou et al.
+recognition. There are three simultaneous predictions from the MTL model: the action mode, the independent
+action type, and the interactive action type. The final output is determined by the following strategy.
+• If the action mode is single-person action, as shown in Fig. 2(a), mmMulti directly outputs the independent
+action type.
+• If the action mode is multi-person interactive action, as shown in Fig. 2(a), mmMulti directly outputs the
+interactive action type.
+• If the action mode is multi-person independent actions, mmMulti converts it to multiple single-person
+action recognitions. In such a case, as shown in Fig. 2(b), the count of persons is determined with the
+action mode, then mmMulti goes back to the segregation stage, segmenting the point cloud data and the
+range Doppler maps according to the person count. Each cluster/segment belongs to one person, which
+undergoes preprocessing to obtain the person’s PTS and CDM. After feature extraction and fusion, the
+fused features are input to the multi-task learning model again for single-person action recognition. When
+all the clusters/segments are recognized, we obtain the independent action type of each person.
+4 Preprocessing of mmWave data
+The signals emitted by the mmWave radar are FMCW. When the emitted FMCW signals reach an object, they are
+reflected and received by the mmWave radar. By measuring the frequency difference between the emitted and the
+received signals, the distance from the radar to the object can be calculated. Due to the movement of the object,
+the frequency of the received signals may change, known as the Doppler effect. Analyzing the Doppler frequency
+shifts allows for the calculation of the object’s velocity relative to the radar. This capability enables mmWave
+radars to monitor not only the distance to the object but also the movement speed of the object. In this work, we
+propose two data preprocessing methods to derive point trajectory segments and compressed Doppler maps.
+4.1 Point trajectory segments
+4.1.1 Point cloud. A point cloud contains a collection of points reflecting radar signals from objects, providing
+detailed spatial information. Millimeter-wave radars capture surrounding information by converting raw signals
+into point cloud data. This process generates multiple frames per second and each frame contains multiple data
+points. A data point can be represented as:
+𝑝𝑖 = (𝑥𝑖,𝑦𝑖,𝑧𝑖,𝑑𝑖, 𝑣𝑖,𝑟𝑖) (1)
+where (𝑥𝑖,𝑦𝑖,𝑧𝑖) represents the position of the point, 𝑑𝑖 denotes the distance from the radar to the point, 𝑣𝑖
+represents the velocity of the object relative to the radar, and 𝑟𝑖 indicates the reflection intensity of the point.
+A frame of point cloud data can then be expressed as:
+𝐹𝑗 = {𝑝1, 𝑝2, · · · , 𝑝𝑛𝑗 } (2)
+where 𝑛𝑗 represents the number of points in this frame. Fig. 3 shows an example of a point cloud frame.
+The point cloud data of an action can be represented as a sequence of frames:
+𝐴𝑘 = (𝐹1, 𝐹2, · · · , 𝐹𝑚𝑘 ) (3)
+where 𝑚𝑘 denotes the number of frames of this action.
+4.1.2 Denoising. Millimeter-wave radars capture not only the movements of the targets but also the surroundings.
+The unrelated information significantly affects the accuracy of action recognition [18, 19]. Therefore, it is necessary
+to denoise the point cloud data before recognition. We employ the DBSCAN algorithm to fulfill the task. Multiple
+frames of point clouds are initially accumulated over time to increase the density of points, then the enriched point
+clouds are clustered by the DBSCAN algorithm to remove the outliers. To determine the parameters accurately,
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:7
+we adopt the k-distance graph to determine the neighbour radius 𝜀. With DBSCAN and the k-distance graph, the
+noise can be removed effectively. Fig. 3(b) shows the denoised point clouds.
+4.1.3 Target segregation. When multiple persons perform actions simultaneously, their point cloud data may
+overlap. We need to segregate the point cloud data to each person and thereby infer each person’s action. The
+effect of segregation is crucial. The action mode discriminator of mmMulti can predict the action mode as well as
+the person count. With this information, we employ the k-Means algorithm to cluster the multi-person point
+cloud data, specifying the number of clusters as the person count. Fig. 3(c) shows the clustered/segregated point
+clouds with k-Means, with each cluster corresponding to an individual.
+4.1.4 Generation of point trajectory segments. Actions have certain traces, which can be captured by the mmWave
+radar. Analyzing the trajectories constructed from consecutive point cloud frames, we can infer the actions.
+Traditional methods use the cluster centroid to represent the target and construct one trajectory to represent the
+action trace. In multi-person scenarios, multiple actions produce multiple traces and the traces overlap, making
+it difficult to infer actions. Hence, to characterize the actions more comprehensively, we construct trajectories
+of data points instead of cluster centroids. Due to multipath, ghost images, hardware limitation, etc., point
+trajectories are often discontinuous, so we use point trajectory segments to deduce actions.
+The method of constructing point trajectory segments is illustrated in Fig. 4. For each point in a frame, we
+apply the Hungarian algorithm [30] to associate its corresponding point in the next frame. In practice, the number
+of data points per frame varies and there may be discontinuities between frames. Hence, the trajectories formed
+(a) Original point clouds (b) Denoised point clouds (c) Clustered point clouds
+Fig. 3. An example of point clouds of two persons.
+Fig. 4. Generation of point trajectory segments.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:8 • Zhou et al.
+in this way are point trajectory segments, expressed as:
+𝑃𝑇𝑆𝑖
+= (𝑝𝑖
+1, 𝑝𝑖
+2, · · · , 𝑝𝑖
+𝑗, · · · , 𝑝𝑖
+𝑡 )
+𝑝𝑖
+𝑗 = Hungarian(𝑝𝑖
+𝑗−1, 𝐹𝑗 )
+(4)
+where 𝑃𝑇𝑆𝑖 represents the 𝑖-th segment, 𝑝𝑖
+𝑗 denotes the 𝑗-th point in the PTS, which is from the 𝑗-th frame, 𝑡 is
+the length (i.e. number of points) of the PTS, and 𝐹𝑗 denotes the 𝑗-th frame, from which the Hungarian algorithm
+finds the best match to the last point.
+Each action contains a set of point trajectory segments. Due to the varying number of points per frame, the
+lengths and counts of point trajectory segments belonging to one action vary. For better processing by subsequent
+learning models, we set all trajectories’ lengths to 𝐿 and set the count of trajectory segments of an action to 𝑁. If
+a trajectory’s length is not equal to 𝐿, we apply spline interpolation to reconstruct it. If the segment count exceeds
+𝑁, we filter the trajectory segments based on their importance and select the most representative ones. If the
+segment count falls short, we duplicate the most representative trajectory segments to maintain count consistency.
+The importance of a trajectory segment is defined as the reciprocal of the average Cosine similarity between
+this trajectory segment and all the others, measuring the distinctiveness of the current trajectory segment from
+others. Cosine similarity can be used to assess the similarity between two vectors, defined as:
+Sim(𝐴, 𝐵) = Cosine(𝐴, 𝐵) =
+𝐴 · 𝐵
+∥𝐴∥∥𝐵∥
+(5)
+Given a point trajectory segment 𝑃𝑇𝑆𝑥 and a set of other segments 𝑇𝑆𝑒𝑡, the average Cosine similarity between
+them is defined as:
+AvgSim(𝑃𝑇𝑆𝑥
+,𝑇𝑆𝑒𝑡) =
+1
+|𝑇𝑆𝑒𝑡|
+∑︁
+𝑃𝑇𝑆𝑖 ∈𝑇𝑆𝑒𝑡
+Cosine(𝑃𝑇𝑆𝑥
+, 𝑃𝑇𝑆𝑖
+) (6)
+The importance is then defined as the reciprocal of the average Cosine similarity:
+Importance(𝑃𝑇𝑆𝑥
+) =
+1
+AvgSim(𝑃𝑇𝑆𝑥,𝑇𝑆𝑒𝑡)
+(7)
+The trajectory segments with smaller average Cosine similarity exhibit higher importance. They are identified
+as the key trajectory segments that differ from the others. In this way, we can construct the PTS sample for an
+action, which contains 𝑁 segments, each with the length of 𝐿, expressed as:
+𝑃𝑇𝑆 = {𝑃𝑇𝑆1
+, 𝑃𝑇𝑆2
+, · · · , 𝑃𝑇𝑆𝑖
+, · · · , 𝑃𝑇𝑆𝑁
+}
+𝑃𝑇𝑆𝑖
+= (𝑝𝑖
+1, 𝑝𝑖
+2, · · · , 𝑝𝑖
+𝑗, · · · , 𝑝𝑖
+𝐿)
+(8)
+4.2 Compressed Doppler maps
+FMCW signals can be converted to a range Doppler map (RDM) by Fast Fourier Transform (FFT), which a 2D
+heatmap exhibiting the distance and velocity of the target relative to the radar. In multi-person scenarios, we
+segment the global RDM to local RDMs, where each local RDM represents an individual. A local RDM confines the
+view to the action of the current person, thereby improving recognition accuracy meanwhile reducing time cost.
+An action consists of a sequence of RDMs, hence it has 3 dimensions: time, distance and velocity. We compress it
+to a 2D Compressed Doppler Map (CDM) to be used in the subsequent feature extractor. The process is illustrated
+in Fig. 5.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:9
+Fig. 5. Generation of compressed Doppler maps.
+4.2.1 Target segregation. Based on the segregated point cloud data, we can obtain the position of each person by
+calculating the cluster centroid. Using this information as a reference, we can segregate the local RDM from the
+global RDM for each person. The 3D local RDM sequence can be expressed as:
+𝐷𝑙𝑜𝑐𝑎𝑙
+𝑡𝑟𝑣 = Crop(𝐷
+𝑔𝑙𝑜𝑏𝑎𝑙
+𝑡𝑟𝑣 , 𝑅𝑖) (9)
+where 𝑅𝑖 is the position of person 𝑖. Unfolded by frame, the local 3D RDM sequence can be expressed as:
+𝐷𝑙𝑜𝑐𝑎𝑙
+𝑡𝑟𝑣 = (𝑆1
+𝑟𝑣,𝑆2
+𝑟𝑣, · · · ,𝑆𝐿
+𝑟𝑣) (10)
+with each RDM being expressed as:
+𝑆𝑖
+𝑟𝑣 =
+©
+­
+­
+­
+­
+«
+𝑠𝑖
+11 · · · 𝑠𝑖
+1𝑣
+𝑠𝑖
+21 · · · 𝑠𝑖
+2𝑣
+.
+.
+.
+...
+.
+.
+.
+𝑠𝑖
+𝑟1 · · · 𝑠𝑖
+𝑟𝑣
+ª
+®
+®
+®
+®
+¬
+(11)
+where 𝑠𝑖
+𝑗𝑘
+represents the probability of the target at range bin 𝑗 and velocity bin 𝑘.
+4.2.2 Compression of range Doppler maps. To compress the 3D local RDM sequence to a 2D local CDM. We
+compress the velocity dimension of RDM by taking the maximal velocity at each distance bin. A RDM can thus
+be compressed to:
+𝑆𝑖
+𝑟 = arg max
+𝑣
+𝑆𝑖
+𝑟𝑣 = (𝑣1, 𝑣2, · · · , 𝑣𝑟 ) (12)
+Compressing all the RDMs in the local RDM sequence, we obtain the local CDM as:
+𝐷𝑙𝑜𝑐𝑎𝑙
+𝑡𝑟 = (𝑆1
+𝑟 ,𝑆2
+𝑟 , · · · ,𝑆𝐿
+𝑟 ) = (arg max
+𝑣
+𝑆1
+𝑟𝑣, arg max
+𝑣
+𝑆2
+𝑟𝑣, · · · , arg max
+𝑣
+𝑆𝐿
+𝑟𝑣) (13)
+In this way, the 3D local RDM sequences are compressed to the 2D local CDMs. Each action has one CDM, which
+will be passed to the subsequent feature extractors.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:10 • Zhou et al.
+(a) The feature extractors and the MTL model
+(b) Cross-attention fusion mechanism (c) Structure of experts (d) Structure of gates
+Fig. 6. Structure of the MTL framework of mmMulti.
+5 Multi-person action recognition
+Multi-person action recognition methods typically require to discriminate the action mode and people count,
+then recognize the actions through specialized neural networks according to the action mode. These two-step
+multi-model approaches not only lack efficiency but also fail to share information between tasks. To mitigate
+these problems, we propose a multi-task learning framework that can perform action mode discrimination and
+action recognition simultaneously within one framework. By sharing one network, the key common information
+is shared between different tasks.
+The structure of the MTL framework is illustrated in Fig. 6. The framework takes Compressed Doppler Maps
+(CDM) and Point Trajectory Segments (PTS) as input, extracts the features through the pretrained ConvNeXt [13]
+and Transformer [26], and fuses the features through the cross-attention mechanism [26]. The fused features are
+then used for multi-task learning and action recognition. The MTL model contains multiple experts, which are
+controlled by the gates to determine the feature flows to the classifiers for decision-making.
+5.1 Feature extraction and fusion
+5.1.1 Design of feature extractors. To process compressed Doppler maps (CDMs) and point trajectory segments
+(PTS), we design two feature extractors. For CDMs, treated as image data, we employ ConvNeXt [13] to extract
+visual features for action recognition. As an advanced CNN integrating Transformer-like structures, ConvNeXt
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:11
+effectively captures spatial patterns and complex structures. To enhance learning, we separate the positive and
+negative values of CDMs, forming two additional maps input alongside the original CDM into ConvNeXt’s three
+channels. For PTS, containing 𝑁 time-sequential segments, we use a Transformer with self-attention [26] to
+capture temporal dependencies and key action moments. The attention mechanism relates different positions
+within each segment and correlates multiple segments, improving recognition accuracy. These extractors, tailored
+for their respective data types, collectively enhance multi-person action recognition.
+5.1.2 Fusion of features. After feature extraction, we use a cross-attention mechanism [26] to fuse CDM and
+PTS features. This strategy enables both independent analysis and learning of feature complementarity. Unlike
+self-attention, which captures relationships within the same sequence, cross-attention calculates attention across
+different sequences to enhance feature correlation. As shown in Fig. 6(b), CDM features 𝐹𝑐𝑑𝑚 and PTS features
+𝐹𝑝𝑡𝑠 are fed into the cross-attention module. Given that CDM features carry richer information, they serve as the
+query 𝑄, while PTS features act as keys 𝐾 and values 𝑉 . The extracted useful information is then concatenated
+and output as fused features, formulated as:
+𝑂 = 𝑊𝑓 ·
+
+𝑊𝑞 · 𝐹𝑐𝑑𝑚 + 𝑏𝑞; softmax
+𝑊𝑞 · 𝐹𝑐𝑑𝑚 + 𝑏𝑞
+
+𝑊𝑘 · 𝐹𝑝𝑡𝑠 + 𝑏𝑘
+𝑇
+√
+𝑑𝑘
+!
+· 𝑊𝑣 · 𝐹𝑝𝑡𝑠 + 𝑏𝑣
+
++ 𝑏𝑓 (14)
+5.2 Multi-task learning model
+Multi-person action recognition involves multiple scenarios. To achieve high efficiency and high accuracy for
+multi-scenario recognition, we leverage a multi-task learning model. We custom-design the tasks as action mode
+discrimination, independent action recognition, and interactive action recognition. Through the task-flows in
+Fig. 2, multi-person action recognition in different scenarios can be achieved. The key components in the MTL
+model are mixture of experts and customized gate control.
+5.2.1 Mixture of experts. We adopt a gate-controlled mixture of experts [25], comprising a shared expert and
+multiple task-specific experts, each regulated by a gate. The shared expert captures common knowledge, while
+task-specific experts focus on specialized knowledge. Gates adaptively select and weight expert contributions
+based on input data, preventing conflicts and parameter interference [25]. As shown in Fig. 6(c), the shared expert
+consists of 𝑚𝑠 sub-experts, each a neural network, to extract essential features across tasks. For multi-person
+action recognition, we design task-specific experts for action mode discrimination, independent action recognition,
+and interactive action recognition. Each consists of 𝑚𝑘 sub-experts, also structured as neural networks.
+5.2.2 Customized gate control. Each task is regulated by a gate that selects and weights features from shared and
+task-specific experts based on input, ensuring only relevant features reach the task-specific classifier. We employ
+Customized Gate Control (CGC) [25], as shown in Fig. 6(d), where each classifier integrates knowledge from both
+the shared and its corresponding task-specific expert. Since all experts contain multiple sub-experts, the gate
+selectively combines them to refine feature selection. The gate is a single-layer feed-forward neural network
+with a Softmax activation function, as depicted in Fig. 6(d). The output for task 𝑘 is given by:
+𝑔𝑘 (𝑥) = 𝑤𝑘 (𝑥)𝑆𝑘 (𝑥) (15)
+where 𝑥 is the original input, 𝑤𝑘 (𝑥) is the weight function, calculated through a linear transformation and a
+Softmax layer:
+𝑤𝑘 (𝑥) = Softmax(𝑊𝑘𝑥) (16)
+where 𝑊𝑘 ∈ 𝑅(𝑚𝑘 +𝑚𝑠 )×𝑑 is a parameter matrix, 𝑚𝑘 and 𝑚𝑠 denote the number of shared sub-experts and the
+number of task-specific sub-experts, and 𝑑 represents the dimensionality of the input. 𝑆𝑘 (𝑥) comprises all selected
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:12 • Zhou et al.
+features from the shared and the task-specific experts, defined as:
+𝑆𝑘 (𝑥) =
+
+𝐸𝑘
+1, · · · , 𝐸𝑘
+𝑚𝑘
+, 𝐸𝑠
+1, · · · , 𝐸𝑠
+𝑚𝑠
+𝑇
+(17)
+Through the gate control, the input features are selected and transformed by the shared and the task-specific
+experts to new features. The prediction for task 𝑘 can then be expressed as:
+𝑦𝑘 (𝑥) = Classifier𝑘 (𝑔𝑘 (𝑥)) (18)
+where Classifier𝑘 represents the classifier of task 𝑘.
+5.2.3 Multi-task recognition. After the features are selected and weighted through the gate control, they are
+fused and fed into the corresponding task-specific classifier. Each classifier is a multi-layer neural network. Three
+task-specific classifiers are designed to classify the action mode (classifier 1 in Fig. 6(a)), the independent action
+(classifier 2), and the interactive action (classifier 3), respectively. The prediction of the action mode classifier
+(classifier 1) controls the output of the other two classifiers. If it is single-person action, the independent action
+classifier (classifier 2) outputs the single-person action type simultaneously. If it is multi-person interactive
+action, the interactive action classifier (classifier 3) outputs the interactive action type simultaneously. If it is
+multi-person independent action, the action mode classifier (classifier 1) outputs the people count at the same
+time. Then the raw data is segregated and treated as multiple single-person action recognition tasks.
+5.3 Loss function and training strategy
+In addition to the design of the model, the definition of the loss function and the training strategy also affect the
+performance. To train the multi-task learning model, the loss function needs to accommodate the diverse tasks.
+5.3.1 Task mask. We propose task masks to indicate the tasks of the samples for training, thereby masking out
+the samples not applicable to specific tasks, ensuring that only the losses relevant to the associated tasks are
+calculated. We define the task masks as:
+𝑚𝑎𝑠𝑘 = [mode, independent, interactive] (19)
+A valid task is marked as 1 and an inapplicable task is marked as 0. Thus:
+• A single-person action sample is marked as [1, 1, 0], indicating that the loss is computed only for the action
+mode discrimination task and the independent action recognition task, while the loss for the interactive
+action recognition task is masked.
+• A multi-person interactive action sample is marked as [1, 0, 1], indicating that the loss is computed only
+for the action mode discrimination task and the interactive action recognition task, while the independent
+action recognition task is masked.
+• A multi-person independent action sample is marked as [1, 0, 0] before being segmented, indicating that
+the loss is computed only for the action mode discrimination task, while the loss for the independent
+action recognition task and the interactive recognition action task are masked. After being segmented into
+multiple single-person independent actions, each segment is treated as a single-person action sample.
+5.3.2 Loss function. As we have multiple tasks in the model, the loss function L is composite, incorporating
+the losses of all the tasks. We define the loss of each task with cross entropy and apply task masks to mask out
+irrelevant tasks. Suppose the loss of task 𝑘 is denoted as 𝐿𝑘, the overall loss function L is defined as:
+L =
+∑︁
+𝑘
+𝑚𝑎𝑠𝑘𝑘𝐿𝑘
+𝐿𝑘 =
+∑︁
+𝑖
+CrossEntropy(𝑦𝑘 (𝑥𝑖), ˆ
+𝑦𝑘 (𝑥𝑖))
+(20)
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:13
+where 𝑦𝑘 (𝑥𝑖) is the prediction of sample 𝑖 and 𝑦
+ˆ𝑘 (𝑥𝑖) is the true label of sample 𝑖.
+5.3.3 Training strategy. To optimize the multi-task learning model and ensure balanced attention across tasks,
+we introduce the observational noise scalar 𝜎𝑘 to adjust task weights [4]. The noise 𝜎𝑘 reflects task uncertainty
+and dynamically adjusts its loss weight. The modified loss function is given by:
+L̃ =
+∑︁
+𝑘
+1
+2𝜎2
+𝑘
+mask𝑘𝐿𝑘 + log𝜎𝑘
+!
+(21)
+where 𝜎𝑘 influences each task’s contribution. Higher uncertainty (larger 𝜎𝑘) reduces the task’s weight via 1
+2𝜎2
+𝑘
+,
+directing focus toward more stable tasks. To prevent computational anomalies, log𝜎2
+𝑘
+is defined as a trainable
+variable, ensuring 𝜎2
+𝑘
+remains positive and avoids division-by-zero errors. This adaptive weighting enables the
+model to effectively handle multiple tasks.
+6 Evaluations
+6.1 Experimental setup
+To evaluate mmMulti, we conducted experiments in three testbeds, as shown in Fig. 7. Testbed 1 was a meeting
+room with the size of 8m×6.5m, filled with tables and chairs. Testbed 2 was a laboratory of size 8m×7m, filled
+with computers and tables. Testbed 3 was a lobby of size 5m×5m. We collected data using the commercial
+IWR1443BOOST mmWave radar, equipped with 3 transmitting and 4 receiving antennas. We configured the
+radar’s sampling frequency as 15 frames per second. Each frame consisted of 128 chirps. Each action was sampled
+for 4 seconds, yielding 60 frames per action. Each frame of point clouds contained up to 64 data points.
+(a) T1: Meeting room (b) T2: Laboratory (c) T3: Lobby
+(d) T1: Meeting room (e) T2: Laboratory (f) T3: Lobby
+Fig. 7. Experimental setup.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:14 • Zhou et al.
+(a) Independent actions (b) Interactive actions
+Fig. 8. Predefined actions for self-collected dataset.
+Table 1. The self-collected dataset
+Subset # Samples Persons Testbeds
+1-person action 2520 { P1, P2, P3, P4 } { T1, T2, T3 }
+2-person interactive action 984 { P2, P4, P5, P6, P7 } { T1, T2 }
+2-person independent action 781 { P2, P4, P5, P6, P7 } { T1, T2 }
+3-person independent action 288 { P3, P8, P9 } { T1 }
+4-person independent action 279 { P3, P5, P8, P9 } { T1 }
+6.2 Datasets
+6.2.1 Self-collected dataset for two or fewer individuals. For independent actions, we predefined 6 arm action
+types: “L”, “O”, “S”, “V”, “W”, “Z”, as shown in Fig. 8(a). We designed these actions because these actions are
+subtle, and if they can be accurately recognized, everyday actions can also be effectively identified. For interactive
+actions, we predefined 5 two-person interactive action types: wave, high-five, kick, push, shake hands, as shown
+in Fig. 8(b). The action types can be extended by collecting the corresponding action samples. The commercial
+IWR1443BOOST mmWave radar provides up to 64 points in one frame. The data points are adequate to evaluate up
+to two persons for accurate action recognition. If more people are present, the points assigned to each person will
+be too sparse to recognize the actions properly. Hence, in this dataset, we collected the following data involving 7
+persons in 3 testbeds: single-person actions, two-person independent actions (may be same or different), and
+two-person interactive actions. The number of collected data and their distributions on volunteers and testbeds
+are listed in Table 1.
+6.2.2 Self-collected dataset for three or more individuals. To evaluate mmMulti with more people and different
+action types, we collected additional data on multi-person independent actions related to daily life. The actions
+are categorized into macro actions and micro actions. Macro actions consist of 4 predefined actions: walking,
+standing up, sitting down, and bending. Micro actions consist of 4 predefined actions: keyboard typing, waving,
+hitting, and clapping. The data was collected from 7 volunteers in a single scenario, with 3 to 4 individuals
+performing actions simultaneously. The number of collected data and their distributions on volunteers and
+testbeds are listed in Table 1.
+6.3 Performance of multi-person action recognition
+To evaluate the performance of mmMulti, we take accuracy, precision and recall as the metric. Correct recognition
+means both correctly identifying the action mode and correctly classifying the action type. The number of
+individuals and the action mode are unknown in advance.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:15
+Table 2. Performance of multi-person action recognition
+Tasks Classes Accuracy Precision Recall
+Action mode discrimination SA, IA, MA 98.49% 98.68% 96.51%
+Action mode w. people count 1P, 2P, 3P, 4P, IA 98.85% 98.51% 98.93%
+1-person action recognition L, O, S, V, W, Z 99.64% 99.27% 99.69%
+2-person independent action L, O, S, V, W, Z 91.03% 91.21% 90.78%
+2-person interactive action Wave, High-five, Kick, Push, Shake hands 100% 100% 100%
+(a) Confusion matrix of action mode dis-
+crimination
+(b) Confusion matrix of action mode dis-
+crimination with people counting
+(c) Confusion matrix of single-person ac-
+tion recognition
+(d) Confusion matrix of two-person in-
+dependent action recognition
+(e) Accuracy of two-person independent action recognition
+Fig. 9. Performance of multi-person action recognition.
+6.3.1 Action mode discrimination. We first evaluated action mode discrimination using all the samples in our
+dataset, involving 9 volunteers in 3 testbeds. We used 5-fold cross-validation to test the task. There were 3 action
+modes: single-person action (SA), multi-person interactive action (IA), and multi-person independent action
+(MA). The average accuracy, precision and recall reached 98.49%, 98.68%, and 96.51%, as listed in Table 2. The
+confusion matrix is illustrated in Fig. 9(a). Multi-person independent actions may occasionally confuse with
+single-person actions, while multi-person interactive actions can be identified without errors.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:16 • Zhou et al.
+Subsequently, we evaluated the performance of action mode discrimination with people counting. The action
+mode discriminator was able to predict the number of individuals performing simultaneous independent actions.
+The average accuracy, precision, and recall reached 98.85%, 98.51%, and 98.93%, respectively, as listed in Table 2.
+The confusion matrix for action mode discrimination with people counting is illustrated in Fig. 9(b). In most
+cases, the people count was determined correctly, with occasional errors of 1-2 individuals.
+6.3.2 Single-person action recognition. We conducted experiments for single-person action recognition using
+our dataset, involving 4 persons and 3 testbeds. We tested 6 arm actions: “L”, “O”, “S”, “V”, “W”, “Z”. The average
+accuracy for single-person action recognition reached 99.64%, the average precision achieved 99.27%, and the
+average recall achieved 99.69%, as listed in Table 2. The confusion matrix is illustrated in Fig. 9(c), which shows
+that all the single actions can be recognized with high accuracy.
+6.3.3 Two-person interactive actions. We then conducted experiments to recognize interactive actions between
+two persons using our dataset, involving 5 persons in 2 testbeds. We tested 5 interactive actions: wave, high-five,
+kick, push, and shake hands. The average accuracy, precision and recall for two-person interactive actions all
+reached 100%, as listed in Table 2, demonstrating that the interactive actions could be recognized without errors.
+The reason is due to the distinct features of interactive actions and the high learning capability of the model.
+6.3.4 Two-person independent actions. We then conducted experiments to recognize independent actions of
+two persons using our dataset, involving 5 persons in 2 testbeds. The volunteers performed 6 arm actions
+independently, which were “L”, “O”, “S”, “V”, “W”, “Z”. The actions of the two volunteers might be same or
+different. Thus, there were 21 action combinations. Only when both actions were identified correctly, we regarded
+the test correct. The average accuracy, precision and recall reached 91.03%, 91.21%, and 90.78%, as listed in Table 2.
+Fig. 9(d) shows the confusion matrix of each action type in two-person scenarios. Fig. 9(e) shows the recognition
+accuracy of each action combination. Most actions achieved the accuracy of above 95%, but there were confusions
+between “V” and “W”, “L” and “S”, “L” and “Z”. The results of two-person independent action recognition were
+lower than single-person and interactive action recognition. The errors were due to less data points assigned to
+each person after segmentation and slight inaccuracy of target segregation.
+6.3.5 Multi-person independent actions and impact of person count. To investigate the performance of mmMulti
+with more people, we collected additional samples to recognize multiple individuals performing independent
+actions simultaneously. For the predefined 4 macro and 4 micro actions, the average accuracy achieved 72.4%
+Fig. 10. Performance of multi-person simultaneous independent action recognition wrt. people counts.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:17
+for 3 people and 64.8% for 4 people. The detailed results for each action type across different numbers of people
+are illustrated in Fig. 10. As the number of concurrent individuals increases, the recognition accuracy decreases,
+because a larger number of people makes data separation more challenging and significantly reduces the number
+of data points available per person.
+6.4 Comparison with existing works
+To the best of our knowledge, our method is the first work to handle multi-person multi-task action recognition
+within one model. Therefore, we compared our work with the existing works with respect to specific tasks. We
+did not find works on mmWave interactive action recognition in the current literature, hence we only compared
+on single-person action recognition and multi-person independent action recognition.
+6.4.1 Single-person action recognition. For single-person action recognition, we compared with mHomeGes [10]
+and M-Gesture [11] using our dataset. mHomeGes [10] proposed concentrated position-Doppler profile (CPDP)
+to represent the unique features from different arm joints and recognized continuous arm gestures based on a
+lightweight CNN. M-Gesture [11] extracted 10 features related to gestures as the pseudo representative model
+(PRM) and fed them into a neural network for recognition. We re-implemented and compared with them using
+our self-collected single-person action dataset. Fig. 11(a) illustrates the comparison results. All the methods
+achieved high accuracy . Our method was superior and achieved the highest average recognition accuracy of
+99.64%, due to the fusion of Doppler information and trajectory information, whereas mHomeGes achieved
+97.96% and M-Gesture achieved 97.75% recognition accuracy.
+(a) Single-person action recognition (b) Two-person independent action recognition
+(c) Three-person independent action recognition (d) Four-person independent action recognition
+Fig. 11. Comparison with existing works.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:18 • Zhou et al.
+Table 3. Effect of preprocessing methods and input data
+Preprocessing method / Input data 1P 2P interactive 2P independent
+Processing of point clouds
+Target trajectory 95.42% 92.31% 74.24%
+PTS (Ours) 95.91% 94.51% 78.31%
+Processing of RDM
+Projection of velocity 96.32% 98.82% 74.32%
+Projection of distance 96.54% 96.49% 76.34%
+CDM (Ours) 97.86% 100% 82.95%
+Input data
+PTS 95.91% 94.51% 78.31%
+CDM 97.86% 100% 82.95%
+CDM+PTS (Ours) 99.64% 100% 91.03%
+CPDP [10] 97.64% 98.50% 78.43%
+PRM [11] 97.50% 99.74% 79.93%
+GTT [31] 83.32% 92.64% 69.64%
+6.4.2 Two-person independent action recognition. Works on multi-person action recognition are yet limited.
+Multi-HAR [34] exploited the extended Kalman filter-based group tracking algorithm to separate the targets, and
+combined 3D-CNN with LSTM to classify human activities in multi-person scenarios. We re-implemented and
+compared with it with respect to two-person independent action recognition using our self-collected dataset. The
+comparison is illustrated in Fig. 11(b). The average accuracy of our method achieved 96.01%, while Multi-HAR
+achieved only 88.97%. The reasons were three-fold: (1) we exploited point trajectory segments to track action
+traces; (2) we fused Doppler and trajectory information for action classification; (3) we exploited superior feature
+extractors and learning models.
+6.4.3 Multi-person independent action recognition. We further compared our work with Multi-HAR using
+our self-collected dataset in the multi-person scenarios. We compared independent macro and micro action
+recognition for 3 and 4 persons, respectively. The results are shown in Fig. 11(c) and Fig. 11(d). Our method
+outperformed Multi-HAR in both macro and micro action recognition for each person count. For both methods,
+the accuracy decreased as the person count increased, as the data points became sparser for each person when
+more people were present.
+6.5 Effect of preprocessing methods
+6.5.1 Effect of point trajectory segments. Traditional methods use target trajectory formed with cluster centroids
+to perform action recognition. In this paper, we propose to use point trajectory segments as trajectory features. To
+demonstrate its effect, we conducted experiments to compare the performance of using point trajectory segments
+and using target trajectory on action recognition. Table 3 shows the results, demonstrating PTS achieved better
+performance than target trajectory for all the tasks.
+6.5.2 Effect of compressed Doppler map. The original RDM sequences have 3 dimensions. To be processed by
+CNN-based learning models, the 3D data needs to be converted to 2D. Existing methods include: (1) compress the
+velocity dimension by accumulating the values along the velocity index; (2) compress the distance dimension
+by accumulating the values along the distance index. Our method CDM compresses the velocity dimension,
+but by using the maximal velocity along the velocity index. We conducted experiments to compare the effect
+of these methods on action recognition. Table 3 shows the results, demonstrating that CDM achieved the best
+performance for all the tasks.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:19
+Table 4. Comparison of feature extraction models
+Feature extractor 1P 2P interactive 2P independent Prediction time
+ResNet-GRU 99.45% 100% 83.47% 0.056s
+ResNet-LSTM 99.25% 100% 82.65% 0.063s
+ResNet-Transformer 99.88% 100% 87.70% 0.146s
+VGG-GRU 99.58% 100% 83.40% 0.071s
+VGG-LSTM 99.83% 100% 83.06% 0.078s
+VGG-Transformer 99.79% 100% 88.09% 0.155s
+ConvNeXt-GRU 99.52% 100% 84.73% 0.079s
+ConvNeXt-LSTM 99.44% 100% 80.91% 0.086s
+ConvNeXt-Transformer (Ours) 99.64% 100% 91.03% 0.175s
+6.6 Effect of input data
+Our method exploits both CDM and PTS for action recognition. The fusion of them achieves superior effect than
+either alone, as CDM focuses more on spatial patterns and PTS focuses more on sequential features. We made
+experiments to compare CDM+PTS with CDM and PTS alone. The results are shown in Table 3. Fusing CDM and
+PTS outperformed using CDM or PTS alone in all the cases. CDM achieved higher accuracy than PTS, indicating
+that Doppler data were more effective than trajectory data in action recognition.
+Existing works on mmWave sensing proposed some input processing methods. CPDP proposed in mHome-
+Ges [10] compresses the temporal dimension of 3D Doppler images to enriched 2D compressed Doppler images.
+PRM proposed in M-Gesture [11] expresses the input by extracting 10 features. Gesture trajectory time-sequence
+(GTT) proposed in [31] extracts complete gesture trajectories that identify trajectory outlines. We compared our
+method with them by experiments. The results are shown in Table 3. For all the cases, our method CDM+PTS
+achieved the best performance. CDM alone achieved better accuracy than the other input data, and PTS enhanced
+CDM to acquire more comprehensive insights.
+6.7 Effect of feature extraction models
+To investigate the effect of feature extractors, we compared the main-stream feature extractors on our dataset.
+For CDM, we compared ConvNeXt with Residual Network (ResNet) and Visual Geometry Group (VGG). For
+PTS, we compared Transformer with Gated Recurrent Unit (GRU) and LSTM. The comparisons are shown in
+Table 4. These models all achieved high accuracy for single-person and two-person interactive action recognition.
+But notable discrepancies were observed for two-person independent action recognition. Our feature extractor
+ConvNeXt+Transformer achieved the best performance, with slightly higher computational cost.
+For CDM feature extraction, although ResNet and VGG excel in image data, they showed slight inadequacy
+in recognizing subtle motions in CDM. ConvNeXt exhibited superior capability of capturing subtle motions
+in CDM, albeit with slightly higher complexity. For PTS feature extraction, GRU and LSTM did not perform
+satisfactorily in capturing long-term dependencies in action trajectories. Transformer could identify complex
+action trajectories accurately, at the cost of higher complexity.
+6.8 Effect of multi-task learning models
+We compared several multi-task learning models on our dataset and also compared them with conventional single-
+task learning (STL) models. So the comparative models in our experiments included: (1) the STL model, which
+employed a separate single-task learning model for each task; (2) the MTL model [2], which learned multiple
+tasks using a shared network, with multiple outputs, one for each task; (3) the Multi-gate Mixture-of-Experts
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:20 • Zhou et al.
+Table 5. Comparison of multi-task learning models
+Learning model # Models 1P 2P interactive 2P independent Prediction time
+STL 3 99.88% 100% 89.70% 0.397s
+MTL [2] 1 98.30% 100% 86.57% 0.161s
+MMoE [14] 1 99.25% 100% 88.62% 0.187s
+PLE MTL [25] 1 99.48% 100% 87.42% 0.255s
+Ours 1 99.64% 100% 91.03% 0.175s
+w/o observational noise 1 99.05% 100% 83.35% 0.163s
+Table 6. Comparison of clustering methods for segregation of multiple persons
+Method Counting accuracy 2P 3P 4P
+GMM 98.9% 89.5% 71.6% 62.8%
+DBSCAN 89.5% 76.9% 68.1% 59.8%
+Spectral 98.9% 67.4% 68.2% 55.7%
+k-Means (Ours) 98.9% 91.1% 72.4% 64.8%
+(MMoE) model [14], which adopted the mixture-of-experts structure and shared the experts across all tasks,
+having a gate trained to optimize each task; (4) the Progressive Layered Extraction (PLE) MTL model [25],
+which separated shared and task-specific experts explicitly and adopted a progressive routing mechanism to
+extract and separate deeper knowledge gradually based on multi-level experts and gates. The comparisons are
+listed in Table 5. Our MTL model outperformed the other models. Single-task learning required at least 3 models
+to accomplish the tasks, which significantly increased complexity. The MTL model exhibited a “seesaw” effect due
+to differences between tasks, resulting in decreased accuracies. The PLE MTL model is sophisticated and effective,
+but it exhibited over-fitting and had higher time cost. The MMoE MTL model achieved close performance to our
+model. By separating the shared and the task-specific experts, our method achieved better results.
+To optimize the MTL model and ensure balanced attention to each task, we introduce the observational noise
+scalar to adjust the task weights. We demonstrated the effect by experiments. The results are shown in Table 5.
+Without the observational noise scalar, the performance of the MTL model dropped on almost all the tasks.
+6.9 Effect of segmentation methods
+Multi-person independent action recognition requires to segregate the point cloud data first and then perform
+independent action recognition for each person. The choice of clustering method is crucial to the segregation,
+which in turn affects action recognition. Point cloud data from multiple persons often overlap, especially when
+the persons are close to each other. Density based clustering methods may produce incorrect number of clusters,
+resulting in wrong estimation of people count. Hence, we chose and compared the clustering methods k-Means,
+Gaussian Mixture Model (GMM), Spectral clustering, and DBSCAN. The number of clusters was determined
+by the action mode discriminator and specified as a hyper-parameter to the clustering methods except DBSCAN.
+The comparison results are listed in Table 6, showing their effect on people counting and action recognition. The
+k-Means method performed the best. The performance of the GMM method was slightly lower than k-Means.
+Both outperformed the Spectral clustering method by a large margin. Although DBSCAN could automatically
+count the number of clusters, it was prone to being affected by noise and had a relatively lower accuracy in
+identifying the correct number of clusters, which ultimately degraded its performance.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:21
+Table 7. Recognition accuracy for new users
+Task Training New Accuracy
+Single-
+person
+actions
+{ P2, P3, P4 } { P1 } 94.58%
+{ P1, P3, P4 } { P2 } 94.44%
+{ P1, P2, P4 } { P3 } 95.14%
+{ P1, P2, P3 } { P4 } 96.25%
+Two-person
+interactive
+actions
+{ P2, P4, P6, P7 } { P5 } 96.23%
+{ P2, P4, P5, P7 } { P6 } 98.00%
+{ P2, P4, P5 } { P6, P7 } 90.00%
+{ P5, P6, P7 } { P2, P4 } 92.00%
+Two-person
+independent
+actions
+{ P2, P4, P6, P7 } { P5 } 85.24%
+{ P2, P4, P5, P7 } { P6 } 88.14%
+{ P4, P6, P7 } { P2, P5 } 80.34%
+{ P2, P4, P5 } { P6, P7 } 80.74%
+Table 8. Recognition accuracy for new sites
+Task Training New Accuracy
+Single-person
+actions
+{ T2, T3 } { T1 } 98.13%
+{ T1, T3 } { T2 } 97.05%
+{ T1, T2 } { T3 } 97.65%
+Two-person
+interactive actions
+{ T2 } { T1 } 98.13%
+{ T1 } { T2 } 97.50%
+Two-person
+independent actions
+{ T2 } { T1 } 88.08%
+{ T1 } { T2 } 87.31%
+6.10 Cross-individual and cross-site
+6.10.1 Cross-individual. The users in the training set often differ from the users being recognized. To study how
+different users affect recognition accuracy, we selected one user as new user for single-person action recognition,
+using the other users as the training set. For two-person action recognition, we considered two scenarios: one
+user was selected as new user (i.e. only one person in the action being new) and two users were selected as new
+users (i.e. both individuals in the action being new), using the other users as the training set. As shown in Table 7,
+new users led to a drop in recognition accuracy. For single-person action recognition, new user caused a decrease
+of about 4% in accuracy. For two-person interactive actions, one new user led to some decrease in accuracy, but
+when two new users were introduced, the accuracy droped significantly. For two-person independent actions, the
+impact of new users was also considerable. This was because new users often exhibited significant differences in
+body size, height, and motion style, leading to inaccuracies in recognition results.
+6.10.2 Cross-site. To evaluate the impact of different environments on recognition accuracy, we tested our model
+in three indoor sites. We selected one or two sites as the training set and took the remaining one as the test set. In
+Table 8, we summarized the impact of new sites on recognition performance. It can be observed that the new sites
+had a relatively small impact on recognition accuracy. Our model demonstrated good robustness in new sites.
+6.11 Time costs
+We employed an NVIDIA 3090 GPU to train the method end-to-end. The key components include PTS generation,
+CDM generation, ConvNeXt, Transformer, and MTL model. Generation of a PTS sample took 0.037s, generation of
+a CDM sample took 0.025s. During the end-to-end training process, training of the ConvNeXt model took 486.241s,
+training of the Transformer took 587.169s, and training of the MTL model took 235.261s. During the recognition
+process, a feature extraction by the ConvNeXt model took 0.039s, a feature extraction by the Transformer took
+0.087s, and a classification by the MTL model took 0.027s. The time cost of the rest components is trivial. Overall,
+the whole training time of the method was 1708.371s. The recognition time of a single-person action was 0.154s,
+an interactive action was 0.162s, and a recognition of two-person independent actions took 0.351s. Both the
+training time and the testing time are acceptable for practical deployment.
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:22 • Zhou et al.
+(a) Accuracy of multi-person independent action
+recognition wrt. person counts
+(b) Accuracy of multi-person independent action
+recognition wrt. distances
+Fig. 12. Impact of person counts and distances on recognition performance.
+7 Discussions
+Number of individuals: Theoretically, the method can work for any number of people. But in practice, it is
+limited by the capacity of the mmWave radar. In our experiments, we used the IWR1443BOOST mmWave radar,
+which could provide up to 64 points per frame in the point cloud data. It worked accurately for one person. When
+being applied to two persons, the points were distributed between the individuals, causing the points to be sparser
+for each person, hence the accuracy decreased. We accumulated the data points in multiple frames and fused PTS
+and CDM to alleviate the problem of data sparsity. The accuracy could reach above 90% for two persons. When
+more people were present, the points assigned to each person would become too sparse to recognize the actions
+accurately. To investigate the issue, we collected independent action samples for up to 4 concurrent persons and
+conducted multi-person independent action recognition. The results with respect to person counts are illustrated
+in Fig. 12(a). The evaluations demonstrated that more people decreased the recognition accuracy, as the data
+points assigned to each person became sparser.
+Distance: We exploit clustering methods to separate the points of multiple individuals in point clouds. The
+accuracy of multi-person action recognition depends on the effectiveness of clustering. For precise segregation, a
+minimum distance must be kept between the individuals. To verify it, we collected data from two persons at
+different inter-individual distances from 30cm to 120cm, and conducted experiments to observe the impact. The
+results are shown in Fig. 12(b). Our method achieved accurate recognition when the inter-individual distance
+exceeded 60cm for independent action recognition. Below this threshold, the data points overlapped, complicating
+the separation and reducing the number of valid points, which decreased the recognition accuracy. The distances
+from the individuals to the mmWave radar also affect recognition performance. To verify it, we collected data
+from two persons at different distances to the mmWave radar, and conducted experiments to observe the impact.
+The results are illustrated in Fig. 12(b). When the distance to the mmWave radar increased from 30cm to 120cm,
+the recognition accuracy decreased from 94% to 87%.
+Undefined actions: For the experiments, we predefined some independent actions and interactive actions,
+which could be extended by collecting the corresponding samples. During the recognition process, if an undefined
+action occurs, the method can categorize it as “undefined” through feature extraction and clustering. The features
+of undefined actions differ from those of predefined actions, hence they are clustered as outliers. To demonstrate,
+we input the undefined actions “box” and “stand up” into the feature extractor, and fed the extracted vectors
+into T-SNE for clustering. As shown in Fig. 13, the undefined actions (“box”, “stand up”) could be effectively
+distinguished from previously trained ones (“L”, “O”, “S”, “V”, “W”, “Z”).
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:23
+Fig. 13. T-SNE clustering visualization of undefined actions. “L”, “O”, “S”, “V”, “W”, “Z” are predefined actions, “box” and
+“stand up” are undefined actions.
+Complex action scenarios: Currently, the method discriminates the actions as independent actions or interac-
+tive actions, and performs action recognition with corresponding strategies. For more complex action scenarios,
+for example, some individuals perform independent actions and some perform interactive actions, simultaneously,
+our method can not handle it yet. Such scenarios require high-resolution mmWave radar. By segregating the
+points iteratively, the complex actions can be recognized. Due to the limitation of our mmWave radar, we did not
+conduct such experiments.
+Cross-domain generalization: Cross-individual and cross-environment are important issues for practical
+deployment of such systems. Although our method demonstrated a certain level of robustness, we observed that
+an increase in the number of individuals might lead to generalization errors. Our cross-individual experiments
+showed that one new user caused an accuracy drop of about 4%, while two new users caused an accuracy drop
+of about 10%, for independent and interactive action recognition. The reason lies in the sparsity of data points
+and differences in body size and motion style between individuals. When deploying our method in completely
+new environments, we observed that the new environments had relatively small influence on the recognition
+performance. Our cross-site experiments showed that new environments introduced an accuracy drop of about
+2% for single-person and interactive action recognition and an accuracy drop of about 3% for independent action
+recognition. Our method was robust to new environments, but could be influenced by new individuals. To
+solve the cross-domain generalization issue, cross-individual in particular, we intend to adopt a few potential
+solutions in the future. One is to augment point cloud data, ensuring that a greater number of points are available.
+Meta-learning and domain adaptation/generalization techniques will be leveraged to improve the generalization
+performance in new domains. Moreover, better hardware will be considered for enhancing the performance.
+Despite the limitations, our approach holds significant practical values and scalability. It is well-suited for
+applications in various fields, such as smart home, where the ability to recognize and track multiple users
+seamlessly can provide tremendous benefits. With improvements in hardware and integration of advanced
+techniques, we are confident that our method can be further refined to meet the requirements of more complex
+real-world scenarios.
+8 Conclusions
+Multi-person action recognition has been a challenge for RF sensing. Owing to the high resolution of mmWave
+FMCW technology, multi-person mmWave sensing has become possible. In this paper, we make an attempt to
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+64:24 • Zhou et al.
+accomplish multi-person action recognition using a single millimeter-wave radar. Our method mmMulti is capable
+of recognizing single-person actions, multi-person interactive actions, and multi-person independent actions,
+without knowing the number of individuals and the action mode in advance, by exploiting a gate-controlled
+multi-task model to integrate all these tasks in one model. To ensure proper recognition accuracy for multiple
+simultaneous actions, we fuse the Doppler information and the trajectory information. We propose the input
+feature CDM to represent the Doppler information of actions and adopt ConvNeXt to extract the pattern features.
+We propose the input feature PTS to represent the trajectory information of actions and adopt Transformer to
+extract the sequential features. Both features are fused with cross-attention, which proves effective to ensure the
+recognition accuracy under the condition of sparse data points due to multiple persons. Through experimental
+evaluations with real-world dataset, our work proves the feasibility of fusing different feature modalities to
+achieve multiple sensing tasks simultaneously in one model, which lays a foundation for multi-modal multi-task
+learning in wireless sensing in complex scenarios.
+References
+[1] Rushikesh T. Bankar and Suresh S. Salankar. 2015. Head Gesture Recognition System Using Gesture Cam. In 2015 Fifth International
+Conference on Communication Systems and Network Technologies. 535–538. doi:10.1109/CSNT.2015.81
+[2] Rich Caruana. 1997. Multitask Learning. Machine Learning 28, 1 (July 1997), 41–75. doi:10.1023/A:1007379606734
+[3] Weiyan Chen, Hongliu Yang, Xiaoyang Bi, Rong Zheng, Fusang Zhang, Peng Bao, Zhaoxin Chang, Xujun Ma, and Daqing Zhang. 2023.
+Environment-aware Multi-person Tracking in Indoor Environments with MmWave Radars. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies (IMWUT) 7, 3 (2023), 29 pages. doi:10.1145/3610902
+[4] Roberto Cipolla, Yarin Gal, and Alex Kendall. 2018. Multi-task Learning Using Uncertainty to Weigh Losses for Scene Geometry and
+Semantics. In 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition. 7482–7491. doi:10.1109/CVPR.2018.00781
+[5] Lars Ohlsson Fhager, Sebastian Heunisch, Hannes Dahlberg, Anton Evertsson, and Lars-Erik Wernersson. 2019. Pulsed Millimeter Wave
+Radar for Hand Gesture Sensing and Classification. IEEE Sensors Letters 3, 12 (2019), 1–4. doi:10.1109/LSENS.2019.2953022
+[6] Tianbo Gu, Zheng Fang, Zhicheng Yang, Pengfei Hu, and Prasant Mohapatra. 2019. mmSense: Multi-Person Detection and Identification
+via mmWave Sensing. In Proceedings of the 3rd ACM Workshop on Millimeter-Wave Networks and Sensing Systems (mmNets’19). 45–50.
+doi:10.1145/3349624.3356765
+[7] Zilong Huang, Xinggang Wang, Lichao Huang, Chang Huang, Yunchao Wei, and Wenyu Liu. 2019. CCNet: Criss-Cross Attention for
+Semantic Segmentation. In 2019 IEEE/CVF International Conference on Computer Vision (ICCV). 603–612. doi:10.1109/ICCV.2019.00069
+[8] Can Jin, Xiangzhu Meng, Xuanheng Li, Jie Wang, Miao Pan, and Yuguang Fang. 2024. Rodar: Robust Gesture Recognition Based on
+mmWave Radar Under Human Activity Interference. IEEE Transactions on Mobile Computing (2024), 1–14. doi:10.1109/TMC.2024.3402356
+[9] Liyu Kang, Zan Li, Xiaohui Zhao, Zhongliang Zhao, and Torsten Braun. 2024. ST-PCT: Spatial–Temporal Point Cloud Transformer for
+Sensing Activity Based on mmWave. IEEE Internet of Things Journal 11, 6 (2024), 10979–10991. doi:10.1109/JIOT.2023.3329236
+[10] Haipeng Liu, Yuheng Wang, Anfu Zhou, Hanyue He, Wei Wang, Kunpeng Wang, Peilin Pan, Yixuan Lu, Liang Liu, and Huadong Ma.
+2020. Real-time Arm Gesture Recognition in Smart Home Scenarios via Millimeter Wave Sensing. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies (IMWUT) 4, 4 (2020), 28 pages. doi:10.1145/3432235
+[11] Haipeng Liu, Anfu Zhou, Zihe Dong, Yuyang Sun, Jiahe Zhang, Liang Liu, Huadong Ma, Jianhua Liu, and Ning Yang. 2022. M-Gesture:
+Person-Independent Real-Time In-Air Gesture Recognition Using Commodity Millimeter Wave Radar. IEEE Internet of Things Journal 9,
+5 (2022), 3397–3415. doi:10.1109/JIOT.2021.3098338
+[12] Jian Liu, Hongbo Liu, Yingying Chen, Yan Wang, and Chen Wang. 2020. Wireless Sensing for Human Activity: A Survey. IEEE
+Communications Surveys & Tutorials 22, 3 (2020), 1629–1645. doi:10.1109/COMST.2019.2934489
+[13] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feichtenhofer, Trevor Darrell, and Saining Xie. 2022. A ConvNet for the 2020s. In
+2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). 11966–11976. doi:10.1109/CVPR52688.2022.01167
+[14] Jiaqi Ma, Zhe Zhao, Xinyang Yi, Jilin Chen, Lichan Hong, and Ed H. Chi. 2018. Modeling Task Relationships in Multi-task Learning with
+Multi-gate Mixture-of-Experts. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining
+(KDD’18). 1930–1939. doi:10.1145/3219819.3220007
+[15] Yongsen Ma, Gang Zhou, and Shuangquan Wang. 2019. WiFi Sensing with Channel State Information: A Survey. Comput. Surveys 52, 3
+(June 2019), 36 pages. doi:10.1145/3310194
+[16] Francisco J. Martin-Vega, Mari Carmen Aguayo-Torres, Gerardo Gomez, Jose Tomas Entrambasaguas, and Trung Q. Duong. 2018. Key
+Technologies, Modeling Approaches, and Challenges for Millimeter-Wave Vehicular Communications. IEEE Communications Magazine
+56, 10 (2018), 28–35. doi:10.1109/MCOM.2018.1800109
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+mmMulti: Multi-person Action Recognition Based on Multi-task Learning Using Millimeter Waves • 64:25
+[17] Zhen Meng, Song Fu, Jie Yan, Hongyuan Liang, Anfu Zhou, Shilin Zhu, Huadong Ma, Jianhua Liu, and Ning Yang. 2020. Gait Recognition
+for Co-Existing Multiple People Using Millimeter Wave Sensing. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI),
+Vol. 34. AAAI Press, 849–856. doi:10.1609/AAAI.V34I01.5430
+[18] Prateek Nallabolu, Li Zhang, Hong Hong, and Changzhi Li. 2021. Human Presence Sensing and Gesture Recognition for Smart Home
+Applications With Moving and Stationary Clutter Suppression Using a 60-GHz Digital Beamforming FMCW Radar. IEEE Access 9 (2021),
+72857–72866. doi:10.1109/ACCESS.2021.3080655
+[19] Alexandros Ninos, Jürgen Hasch, Michael Heizmann, and Thomas Zwick. 2022. Radar-Based Robust People Tracking and Consumer
+Applications. IEEE Sensors Journal 22, 4 (2022), 3726–3735. doi:10.1109/JSEN.2022.3141202
+[20] Orasa Patsadu, Chakarida Nukoolkit, and Bunthit Watanapa. 2012. Human gesture recognition using Kinect camera. In 2012 Ninth
+International Conference on Computer Science and Software Engineering (JCSSE). 28–32. doi:10.1109/JCSSE.2012.6261920
+[21] Panneer Selvam Santhalingam, Al Amin Hosain, Ding Zhang, Parth Pathak, Huzefa Rangwala, and Raja Kushalnagar. 2020. mmASL:
+Environment-Independent ASL Gesture Recognition Using 60 GHz Millimeter-wave Signals. Proceedings of the ACM on Interactive,
+Mobile, Wearable and Ubiquitous Technologies (IMWUT) 4, 1 (March 2020), 30 pages. doi:10.1145/3381010
+[22] Argha Sen, Anirban Das, Swadhin Pradhan, and Sandip Chakraborty. 2024. Continuous Multi-user Activity Tracking via Room-Scale
+mmWave Sensing. In 2024 23rd ACM/IEEE International Conference on Information Processing in Sensor Networks (IPSN). 163–175.
+doi:10.1109/IPSN61024.2024.00018
+[23] Akash Deep Singh, Sandeep Singh Sandha, Luis Garcia, and Mani Srivastava. 2019. RadHAR: Human Activity Recognition from Point
+Clouds Generated through a Millimeter-wave Radar. In Proceedings of the 3rd ACM Workshop on Millimeter-Wave Networks and Sensing
+Systems (mmNets’19). 51–56. doi:10.1145/3349624.3356768
+[24] Mohammad M. Tajdini and Carey M. Rappaport. 2022. Nominal Body Contour Reconstruction for Millimeter-Wave Characterization of
+Suicide Bomber Explosives. IEEE Transactions on Antennas and Propagation 70, 4 (2022), 2960–2968. doi:10.1109/TAP.2021.3118805
+[25] Hongyan Tang, Junning Liu, Ming Zhao, and Xudong Gong. 2020. Progressive Layered Extraction (PLE): A Novel Multi-Task Learning
+(MTL) Model for Personalized Recommendations. In Proceedings of the 14th ACM Conference on Recommender Systems (RecSys’20).
+269–278. doi:10.1145/3383313.3412236
+[26] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017.
+Attention is all you need. In Proceedings of the 31st International Conference on Neural Information Processing Systems (NIPS’17). Curran
+Associates Inc., 6000–6010. https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+[27] Fengyu Wang, Xiaolu Zeng, Chenshu Wu, Beibei Wang, and K. J. Ray Liu. 2022. Driver Vital Signs Monitoring Using Millimeter Wave
+Radio. IEEE Internet of Things Journal 9, 13 (2022), 11283–11298. doi:10.1109/JIOT.2021.3128548
+[28] Jie Wang, Zhouhua Ran, Qinghua Gao, Xiaorui Ma, Miao Pan, and Kaiping Xue. 2021. Multi-person device-free gesture recognition
+using mmWave signals. China Communications 18, 2 (2021), 186–199. doi:10.23919/JCC.2021.02.012
+[29] Saiwen Wang, Jie Song, Jaime Lien, Ivan Poupyrev, and Otmar Hilliges. 2016. Interacting with Soli: Exploring Fine-Grained Dynamic
+Gesture Recognition in the Radio-Frequency Spectrum. In Proceedings of the 29th Annual Symposium on User Interface Software and
+Technology (UIST’16). 851–860. doi:10.1145/2984511.2984565
+[30] Chenshu Wu, Feng Zhang, Beibei Wang, and K. J. Ray Liu. 2020. mmTrack: Passive Multi-Person Localization Using Commodity
+Millimeter Wave Radio. In IEEE INFOCOM 2020 - IEEE Conference on Computer Communications. 2400–2409. doi:10.1109/INFOCOM41043.
+2020.9155293
+[31] Jingmiao Wu, Jie Wang, Tong Dai, Qinghua Gao, and Miao Pan. 2024. Trajectory Features-Based Robust Device-Free Gesture Recognition
+Using mmWave Signals. IEEE Internet of Things Journal 11, 10 (2024), 18123–18135. doi:10.1109/JIOT.2024.3360434
+[32] Jiayu Wu, Zhanyu Zhu, and Haipeng Wang. 2021. Human Detection and Action Classification Based on Millimeter Wave Radar Point
+Cloud Imaging Technology. In 2021 Signal Processing Symposium (SPSympo). 294–299. doi:10.1109/SPSympo51155.2020.9593690
+[33] Chengxi Yu, Zhezhuang Xu, Kun Yan, Ying-Ren Chien, Shih-Hau Fang, and Hsiao-Chun Wu. 2022. Noninvasive Human Activity
+Recognition Using Millimeter-Wave Radar. IEEE Systems Journal 16, 2 (2022), 3036–3047. doi:10.1109/JSYST.2022.3140546
+[34] Xianlin Zeng, Yiming Shi, and Anfu Zhou. 2022. Multi-HAR: Human Activity Recognition in Multi-person Scenes Based on mmWave
+Sensing. In 2022 IEEE 8th International Conference on Computer and Communications (ICCC). 1789–1793. doi:10.1109/ICCC56324.2022.
+10065810
+[35] Bo Zhang, Haolan Luo, Chuantian Tang, Gang Wang, Yang Zhang, Shisheng Guo, and Guolong Cui. 2022. Long-Range Real-Time Gesture
+Recognition for Millimeter Wave Radar. In 2022 2nd International Conference on Frontiers of Electronics, Information and Computation
+Technologies (ICFEICT). 298–303. doi:10.1109/ICFEICT57213.2022.00061
+[36] Peijun Zhao, Chris Xiaoxuan Lu, Jianan Wang, Changhao Chen, Wei Wang, Niki Trigoni, and Andrew Markham. 2019. mID: Tracking
+and Identifying People with Millimeter Wave Radar. In 2019 15th International Conference on Distributed Computing in Sensor Systems
+(DCOSS). 33–40. doi:10.1109/DCOSS.2019.00028
+[37] Peijun Zhao, Chris Xiaoxuan Lu, Jianan Wang, Changhao Chen, Wei Wang, Niki Trigoni, and Andrew Markham. 2021. Human tracking
+and identification through a millimeter wave radar. Ad Hoc Networks 116 (2021), 102475. doi:10.1016/j.adhoc.2021.102475
+Proc. ACM Interact. Mob. Wearable Ubiquitous Technol., Vol. 9, No. 2, Article 64. Publication date: June 2025.
+

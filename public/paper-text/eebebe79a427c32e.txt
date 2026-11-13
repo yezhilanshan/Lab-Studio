@@ -1,0 +1,1635 @@
+3412 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+Large Language Model-Driven Channel Prediction
+in Cell-Free mMIMO Systems
+Baolin Chong , Graduate Student Member, IEEE, Hancheng Lu , Senior Member, IEEE,
+Dusit Niyato , Fellow, IEEE, and Arumugam Nallanathan , Fellow, IEEE
+Abstract—The channel state information (CSI) acquisition
+plays a pivotal role in cell-free (CF) massive multiple-input-multi-
+output (mMIMO) systems. However, conventional pilot-based
+channel estimation incurs prohibitive overhead costs as user
+density and mobility increase. To address this, we propose
+a multi-slot alternating estimation–prediction (MAEP) frame-
+work, which leverages temporal correlation to predict future
+CSI directly and thereby drastically reduce pilot overhead.
+The efficacy of the proposed framework hinges on prediction
+accuracy. Inspired by the remarkable modeling capabilities of
+large language models (LLMs) and their demonstrated effi-
+cacy in cross-modal applications, we introduce an LLM-driven
+channel predictor termed frequency-temporal alignment with
+LLM (FTAlign-LLM). FTAlign-LLM bridges the modality gap
+between CSI and the LLM’s feature space through three key
+components: 1) a multi-scale CSI attention (MSCA) network
+for extracting rich spatiotemporal features across frequency and
+delay domains, 2) a frequency–temporal feature fusion (FTFF)
+network that fuses these features and aligns them with the
+LLM’s feature space, and 3) the utilization of parameter-efficient
+fine-tuning for LLM adaptation. Extensive results demonstrate
+that FTAlign-LLM significantly outperforms benchmarks in pre-
+diction accuracy. Concurrently, the MAEP framework achieves
+substantial improvements in sum spectral efficiency, particularly
+when a large number of access points are deployed in CF
+mMIMO systems.
+Index Terms—Cell-free massive multiple-input multiple-
+output, channel prediction, large language model, fine-tuning.
+I. INTRODUCTION
+MASSIVE multiple-input multiple-output (mMIMO) sys-
+tems are inherently constrained in supporting demand-
+ing applications for future networks, where key challenges
+Received 6 May 2025; revised 28 September 2025; accepted 12 January
+2026. Date of publication 15 January 2026; date of current version 26 February
+2026. This work was supported in part by the National Science Foundation of
+China under Grant U21A20452 and in part by China Environment for Network
+Innovations (CENI) under Grant 2016-000052-73-01-000515. (Corresponding
+author: Hancheng Lu.)
+Baolin Chong is with the Laboratory of Future Networks, Univer-
+sity of Science and Technology of China, Hefei 230027, China (e-mail:
+chongbaolin@mail.ustc.edu.cn).
+Hancheng Lu is with the Laboratory of Future Networks, University of
+Science and Technology of China, Hefei 230027, China, and also with
+the Deep Space Exploration Laboratory, Hefei 230088, China (e-mail:
+hclu@ustc.edu.cn).
+Dusit Niyato is with the College of Computing and Data Science, Nanyang
+Technological University, Singapore 639798 (e-mail: dniyato@ntu.edu.sg).
+Arumugam Nallanathan is with the School of Electronic Engineer-
+ing and Computer Science, Queen Mary University of London, E1 4NS
+London, U.K., and also with the Department of Electronic Engineering,
+Kyung Hee University, Yongin-si, Gyeonggi-do 17104, South Korea (e-mail:
+a.nallanathan@qmul.ac.uk).
+Digital Object Identifier 10.1109/JSAC.2026.3654883
+encompass significant inter-cell interference (ICI) for edge
+users [1], [2] and performance inconsistencies arising from
+handover procedures. Cell-free (CF) mMIMO presents a
+promising paradigm shift, eliminating cell boundaries to
+become a critical enabler for 6G [3], [4], [5]. In CF mMIMO,
+a multitude of distributed access points (APs), coordinated by
+a central processing unit (CPU), collectively serve users across
+an expansive geographical area [6]. This system mitigates ICI
+and handover-related inefficiencies, affording more uniform
+user performance and harnessing substantial macro-diversity
+gains to enhance reliability [7], [8], [9].
+Accurate channel state information (CSI) is paramount for
+CF mMIMO performance, underpinning essential techniques
+like precoding and resource allocation [5], [10]. While mini-
+mum mean squared error (MMSE) estimation is ubiquitously
+adopted [3], and advanced methods such as deep learning [11],
+joint channel estimation/data detection [12], and joint channel
+estimation/user message detection [13] have been investigated,
+these methods primarily rely on pilot transmissions for CSI
+acquisition. However, with rapidly increasing user density,
+pilot-based CSI acquisition emerges as a critical bottleneck
+impeding system scalability. This stems from a fundamental
+trade-off: assigning shared, non-orthogonal pilots results in
+severe pilot contamination, degrading estimation accuracy,
+whereas allocating unique orthogonal pilots incurs prohibitive
+overhead, significantly reducing data transmission resources.
+Furthermore, high-mobility scenarios, characterized by shorter
+channel coherence intervals, exacerbate this issue. Under such
+dynamic conditions, pilot overhead becomes more acute [14],
+and channel aging effects further degrade system performance
+[15]. Consequently, exclusive dependence on pilot transmis-
+sions for CSI acquisition has become increasingly insufficient
+to satisfy the stringent operational demands and performance
+targets of future CF mMIMO systems.
+Existing pilot-based channel estimation in CF mMIMO
+systems often overlooks the inherent temporal correlation
+across coherence slots [16], which arises from the quasi-static
+scattering environment over short durations. Leveraging this
+temporal dependency, channel prediction has been proposed
+as a solution whereby future CSI can be obtained predictively,
+potentially circumventing the need for pilot-based estimation
+in every interval [17]. Consequently, predictive CSI acquisition
+holds significant potential for reducing the overhead associated
+with channel estimation and mitigating the detrimental effects
+of channel aging, particularly under high-mobility conditions.
+Pioneering work in [18] demonstrated that prediction mitigates
+1558-0008 © 2026 IEEE. All rights reserved, including rights for text and data mining, and training of artificial intelligence and
+similar technologies. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3413
+aging-induced performance degradation in mMIMO systems.
+Inspired by this finding, [19] proposed a prediction-assisted
+CSI acquisition framework for mMIMO, employing a convo-
+lutional neural network (CNN) coupled with an autoregressive
+predictor to reduce pilot overhead. However, its recursive
+nature, where predictions depend on prior predictions, leads
+to substantial accuracy degradation due to error accumulation.
+To address this, [14] proposed an alternating estimation and
+prediction framework for CF mMIMO. It predicts future CSI
+using multiple, non-contiguous past estimated CSI instances,
+thereby avoiding recursive error propagation and lowering
+overhead compared to continuous estimation. Nevertheless,
+this framework suffers from drawbacks including lengthy
+initialization, significant storage requirements for historical
+CSI, and degraded prediction accuracy, especially for high-
+mobility users.
+To address these challenges, we introduce a multi-slot
+alternating estimation-prediction (MAEP) framework for CF
+mMIMO systems. Within the MAEP framework, CSI acquisi-
+tion alternates between multi-slot estimation (pilot-based) and
+multi-slot prediction phases. Specifically, CSI for a block of
+consecutive slots is first obtained via pilot-based estimation.
+Subsequently, the CSI for the immediately following block of
+consecutive slots is predicted based exclusively on the CSI
+acquired during the preceding estimation phase. This frame-
+work maintains the pilot overhead for CSI acquisition at a
+manageable level by interleaving prediction phases. Crucially,
+by grounding predictions solely on recently estimated CSI,
+MAEP prevents error propagation and eliminates the need
+for extensive historical data storage, thus overcoming key
+limitations of prior alternating frameworks.
+The effectiveness of the proposed MAEP framework for
+CF mMIMO systems fundamentally relies on accurate CSI
+prediction. Given the rapid advancements and substantial
+potential demonstrated by deep learning (DL), it has emerged
+as the predominant approach for channel prediction tasks. Con-
+sequently, various classical neural network architectures have
+been investigated, including multi-layer perceptrons (MLPs),
+CNNs, long short-term memory (LSTM), Transformers, etc.
+For instance, [14] employed MLPs for channel prediction.
+However, this predictor is considered relatively rudimentary
+and exhibits limitations in predictive efficacy, notably its
+inability to effectively capture spatial channel correlations
+arising from factors such as dense AP antenna deployments
+and specific characteristics of the scattering environment in
+practical systems. In contrast, CNNs have shown promise
+by treating CSI prediction akin to image processing [20],
+with 3D complex CNNs specifically designed to capture
+spatio-temporal relationships in the angle-delay domain [21].
+Recurrent architectures like LSTMs have addressed specific
+issues such as training acceleration in one-bit mMIMO [22]
+and channel aging in satellite communications [23]. More
+recently, powerful Transformer models have been explored
+for sequential [24] and parallel prediction (to mitigate error
+propagation and mobility impacts) [25], leading to specialized
+variants like Gruformer [26] and CS3T-UNet [27] for vehicle-
+to-everything communications and generic mMIMO systems,
+respectively. Despite the significant progress achieved by
+these DL-empowered predictors, their predictive capabilities
+are often constrained by the scale of the classical neural
+networks. Many existing predictors still struggle to precisely
+model the complex spatio-temporal-frequency relationships
+inherent in wireless channels, frequently exhibiting suboptimal
+performance, particularly within challenging high-mobility
+scenarios.
+Recently, large language models (LLMs), pre-trained on
+extensive text corpora, have gained prominence for their
+remarkable semantic understanding, reasoning capabilities,
+and success in natural language processing [28]. Crucially,
+their ability to rapidly adapt to diverse downstream tasks,
+such as time-series forecasting [29] and trajectory predic-
+tion [30], [31], through fine-tuning with limited task-specific
+data presents a compelling paradigm for overcoming limita-
+tions in existing channel predictors. Following this trend, an
+LLM-driven predictor denoted as LLM4CP was proposed in
+[32], adapting a pre-trained LLM for the channel predic-
+tion task via fine-tuning. However, the simple preprocessing
+adopted in LLM4CP may not suffice to effectively extract
+the intricate propagation characteristics embedded within CSI,
+given that CSI represents highly complex, high-dimensional
+structured data. Furthermore, a fundamental domain gap exists
+between the textual data LLMs are primarily designed for
+and the numerical, structured nature of CSI data [33]. This
+discrepancy can lead to a modality mismatch, stemming
+from differing statistical distributions and underlying structural
+semantics, potentially hindering optimal performance.
+To overcome these issues, we introduce an LLM-derived
+predictor specifically tailored for CSI acquisition, termed
+frequency-temporal alignment with LLM (FTAlign-LLM). Our
+predictor incorporates several key innovations. Specifically, we
+employ a multi-scale CSI attention (MSCA) network designed
+to comprehensively extract features from CSI across both the
+delay and frequency domains by integrating local and global
+channel attention mechanisms. Subsequently, we introduce a
+frequency–temporal feature fusion (FTFF) network, which is
+responsible for effectively fusing the multi-domain features
+extracted by the MSCA and projecting them into a feature
+space that is semantically aligned with the LLM. Beyond mere
+feature fusion, FTAlign-LLM treats cross-domain alignment
+as retrieval: a structured (delay) view queries a fine-grained
+(frequency) view to retrieve evidential details with low-entropy
+attention. This reasoning-style aggregation contrasts with the
+mixture-style addition used in LLM4CP [32], which blends the
+two views as interchangeable features and dilutes asymmetric
+index-to-evidence roles. To facilitate the efficient adaptation
+of the LLM to the channel prediction task, we employ a
+parameter-efficient fine-tuning (PEFT) strategy, wherein only a
+small subset of the model’s parameters is retrained. The main
+contributions of our work are summarized as follows:
+• We propose the MAEP framework for CF mMIMO
+systems, where channel estimation and channel predic-
+tion are alternately performed across multiple coherence
+slots to effectively reduce pilot overhead and conserve
+coherence length, and analyze the system performance
+under this operational framework.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3414 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+• We introduce FTAlign-LLM, an LLM-derived channel
+predictor engineered to effectively process CSI data.
+FTAlign-LLM bridges the modality gap between CSI and
+the LLM’s feature space through meticulously designed
+components: the MSCA network for multi-domain fea-
+ture extraction, the FTFF network for feature fusion and
+alignment, and the application of PEFT for efficient LLM
+adaptation.
+• Numerical results validate the efficacy of the proposed
+MAEP framework and the FTAlign-LLM predictor. Our
+solution demonstrates significant performance advan-
+tages, particularly under longer prediction horizons, and
+in scenarios involving large numbers of APs and/or
+users, when evaluated against benchmarks in terms of
+normalized mean squared error (NMSE) and sum spectral
+efficiency (SE).
+The remainder of the paper is organized as follows.
+Section II presents the system model of CF mMIMO with
+channel aging. In Section III, the MAEP framework is
+proposed for CF mMIMO systems, leveraging temporal auto-
+correlation to address the pilot overhead challenge. Then, an
+LLM-driven channel predictor, FTAlign-LLM, is introduced in
+the MAEP framework in Section IV, where multiple modules
+are meticulously designed. Section V presents the numerical
+results and analysis. Finally, the conclusion and future work
+are drawn in Section VI.
+Notations: In this paper, AH
+and A−1
+denote the Hermitian
+and inverse of a general matrix A, respectively. |x| and E {x}
+denote the modulus and the expected value of x, respectively.
+kAkF denotes the Frobenius norm of the matrix A. Cx×y
+and Rx×y
+represent the space of x × y complex and reals
+matrices. CN denotes the complex normal distribution and
+IN represents the identity matrix of dimensions N × N.
+II. SYSTEM MODEL
+In this section, we provide a detailed explanation of the
+system model of the CF mMIMO with channel aging. We
+commence by presenting the network architecture and the
+channel aging model. Subsequently, the procedures for channel
+estimation and uplink data transmission related to the system’s
+operation are presented.
+A. Network Model
+We consider an uplink CF mMIMO system consisting of
+M APs, each equipped with N antennas, that collaboratively
+serve K single-antenna users, as illustrated in Fig. 1. Each AP
+is connected to a CPU via the fronthaul link. The system oper-
+ates under a time-division duplexing (TDD) protocol, where
+the channel remains stationary within each coherence slot but
+evolves between successive slots. Furthermore, channel aging
+is characterized by the property that the channel in a given
+coherence slot exhibits correlation with that in previous slots
+according to the auto-correlation function (ACF) [18].
+Due to the limited physical space for antenna deployment
+and poor scattering environments, the actual propagation chan-
+nels typically exhibit spatial correlation. Thus, the channel
+Fig. 1. The architecture of the CF mMIMO system.
+between the m-th AP and the k-th user in the l-th coherence
+slot can be modeled as [34] and [35]
+hm,k [l] =
+p
+βm,kgm,k [l] , (1)
+where βm,k and gm,k[l] ∈ CN×1
+represent the large-
+scale fading coefficient and the small-scale fading coefficient,
+respectively.
+To obtain the CSI, channel estimation or prediction must
+be performed, with the acquired CSI subsequently employed
+for data transmission. In the remainder of this section, we
+provide detailed explanations of the channel aging model,
+channel estimation, and uplink data transmission. The inves-
+tigation of channel prediction is conducted in the subsequent
+section. For simplicity, we define M , {1, 2, . . . , M}, and
+K , {1, 2, . . . , K} as the sets of APs and users.
+B. Channel Aging Model
+Generally, channel aging is induced by user mobility, which
+can be characterized by the ACF [18], [36]. The normalized
+discrete-time ACF is given by:
+R[l] = J0 (2πfn |l|) , (2)
+where J0(·) is the zero-order Bessel function of the first kind,
+l is the index of the coherence slot, and fn = τTsfd signifies
+the normalized Doppler shift, with τ being the number of
+samples per coherence slot, Ts the sampling duration, and fd
+the maximum Doppler frequency.
+We assume that the temporal autocorrelation of the channel
+from a given user to each AP antenna exhibits identical prop-
+erties. Leveraging the ACF in (2), the Q-order autoregressive
+model for small-scale fading can be expressed as [36]
+gm,k[l] = −
+PQ
+q=1am,k,qgm,k[l − q] + ω
+ω
+ω[l], (3)
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3415
+where ω
+ω
+ω[l] ∼ CN 0, σ2
+ωRN
+
+is a spatial correlation vector
+with variance σ2
+ω is given by
+σ2
+ω = R[0] +
+PQ
+q=1am,k,qR[−q], (4)
+and RN ∈ CN×N
+denotes the positive semi-definite spatial
+correlation matrix reflecting the effects of macroscopic prop-
+agation with tr (RN ) = N. Thus, the (p, q)-th entry of RN is
+given by [35]
+[RN ]p,q =
+Z 20σϕ
+−20σϕ
+e2πjdH (p−q) sin(φ+ς) 1
+√
+2πσϕ
+e
+− ς2
+2σ2
+ϕ dς,
+(5)
+where dH represents the antenna spacing, φ denotes the nomi-
+nal angle of arrival, and ς ∼ CN(0, σϕ) is a random deviation
+from this nominal angle, modeled as a Gaussian random
+variable with zero mean and angular standard deviation (ASD)
+σϕ. The am,k = [am,k,q]Q
+q=1 in (3) are the autoregressive
+coefficients which are evaluated using the Levinson-Durbin
+recursion via
+am,k = −R−1
+u (6)
+where
+R =
+
+
+
+
+
+R[0] R[−1] · · · R[1 − Q]
+R[1] R[0] · · · R[2 − Q]
+.
+.
+.
+.
+.
+.
+...
+.
+.
+.
+R[Q − 1] R[Q − 2] · · · R[0]
+
+
+
+
+
+, (7)
+and u = [R[1], . . ., R[Q]]T
+with R[l] = R[−l] and R[0] = 1.
+C. Uplink Training and Channel Estimation
+Prior to uplink data transmission, APs must first acquire
+CSI through a dedicated training phase, which is subsequently
+leveraged to facilitate coherent detection during uplink oper-
+ations. During this phase, all users simultaneously transmit
+normalized pilot sequences to enable channel estimation. To
+facilitate disambiguation of CSI across multiple users, each of
+the K users is assigned a mutually orthogonal pilot sequence.
+Denote φ
+φ
+φk ∈ CK×1
+as the normalized pilot sequence assigned
+to user k. Then, the composite pilot signal received by AP m
+in the coherence slot l is given by
+Yp
+m[l] =
+P
+k∈K
+p
+Kpphm,k[l]φ
+φ
+φH
+k + Np
+m, (8)
+where pp denotes the pilot power, and Np
+m ∈ CN×K
+is
+the complex additive Gaussian noise matrix at AP m with
+each element being independently and identically distributed
+as CN 0, σ2
+n
+
+.
+To derive the channel estimate ĥmmse
+m,k [l], the received pilot
+signal Yp
+m is correlated with the pilot sequence φ
+φ
+φk, followed
+by minimum mean-square error estimation [18], [36]
+ĥmmse
+m,k [l] =
+p
+Kppβ̄m,kRNΞ
+Ξ
+Ξ−1
+m,kYp
+m[l]φ
+φ
+φk, (9)
+where β̄m,k = σ2
+gβm,k is the variance of the channel hm,k[l]
+with hm,k[l] ∼ CN 0, β̄m,kRN
+
+, σ2
+g is the variance of
+the small scale fading, and Ξ
+Ξ
+Ξm,k = Kppβ̄m,kRN + IN
+
+.
+The channel estimate ĥmmse
+m,k [l] follows the distribution
+CN (0, Qm,k), where Qm,k = Kppβ̄2
+m,kRNΞ
+Ξ
+Ξm,kRN .
+Fig. 2. Comparison between the proposed MAEP framework and the
+conventional TDD.
+D. Uplink Data Transmission
+During the uplink data transmission phase, all users concur-
+rently transmit data to the distributed APs. Note that in this
+paper, we focus on uplink data transmission, while downlink
+data transmission can also be analyzed in a similar way. The
+composite signal received by the AP m in the coherence slot
+l is given by
+ym[l] =
+P
+k∈K
+√
+puhm,k[l]sk + nm, (10)
+where pu denotes the payload power, sk represents the transmit
+signal of user k that satisfies E
+n
+|sk|
+2
+o
+= 1, and nm ∈
+CN 0, σ2
+nIN
+
+denotes the additive Gaussian noise at AP m.
+Subsequently, each AP performs maximum ratio combining
+using the estimated channel, yielding a local detection. After
+decoding the signals, each AP transmits the detected signals
+to its connected CPU via the fronthaul link for joint decoding.
+Then, the received signal at the CPU for user k in coherence
+slot l can be expressed as
+yc
+k[l] =
+P
+m∈MyH
+m[l]ĥmmse
+m,k [l]. (11)
+III. MULTI-SLOT ALTERNATING ESTIMATION PREDICTION
+AND PERFORMANCE ANALYSIS
+In this section, we propose a multi-slot alternating
+estimation-prediction (MAEP) framework for CF mMIMO
+systems with channel aging, leveraging temporal autocorre-
+lation, and analyze the performance under this framework.
+A. Multi-Slot Alternating Estimation-Prediction Framework
+Conventional TDD comprises two types of frame structures,
+corresponding respectively to channel estimation and uplink
+data transmission, where the CSI obtained during the channel
+estimation phase is utilized in uplink data transmission, as
+shown in Fig. 2. In each coherence slot, channel estimation
+occupies a significant amount of resources, and obtaining CSI
+is crucial for data transmission in CF mMIMO systems. As
+the number of users increases, the overhead associated with
+channel estimation takes an increasingly large portion of each
+coherence slot, particularly in mobile scenarios characterized
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3416 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+by short coherence intervals. To mitigate this issue, we con-
+sider utilizing the temporal correlation between successive
+coherence slots for channel prediction and propose the MAEP
+framework, as illustrated in Fig. 2. Specifically, the MAEP
+framework operates in a periodic manner, where each period
+contains two blocks: an estimation block (EB) spanning O
+coherence slots and a prediction block (PB) spanning P coher-
+ence slots. During each coherence slot within the EB, each
+user transmits pilots; subsequently, each AP estimates the CSI
+using MMSE, which is then used for uplink data transmission.
+In each coherence slot of the following PB, each AP leverages
+the estimated channels from the preceding O coherence slots to
+predict the channel based on the temporal correlation between
+consecutive coherence slots according to (3). By acquiring CSI
+through channel prediction, the significant pilot overhead is
+avoided [17], [18], allowing all resources in each coherence
+slot to be allocated for data transmission. Therefore, only
+uplink data transmission is performed in each coherence slot
+in the PB, with the predicted CSI assumed to represent the
+true channel.
+B. Performance Analysis
+In this subsection, we evaluate the SE achieved in the EB
+and PB. Based on (11), the received signal at the CPU during
+the EB comprises three components: the desired signal DSCE
+k ,
+inter-user interference UICE
+k1,k with k1 6= k, and noise NICE
+k .
+Thus, the signal-to-interference-plus-noise ratio (SINR) of user
+k in the l-th coherent slot can be given by
+γCE
+k [l] =
+DSCE
+k [l]
+P
+k16=k,k1∈KUICE
+k1,k[l] + NICE
+k [l]
+, (12)
+where DSCE
+k [l], UICE
+k1,k[l], and NICE
+k [l] are given by
+DSCE
+k [l] =
+P
+m∈M
+√
+puhH
+m,k[l]ĥmmse
+m,k [l]
+2
+, (13a)
+UICE
+k1,k[l] =
+P
+m∈M
+√
+puhH
+m,k1
+[l]ĥmmse
+m,k [l]
+2
+, (13b)
+NICE
+k [l] =
+P
+m∈MnH
+mĥmmse
+m,k [l]
+2
+. (13c)
+Accordingly, the SE for user k in the EB is given by
+RCE
+k [l] = (1 − K/τ) log2(1 + γCE
+k [l]), (14)
+where τ is the length of the coherent interval. Similarly, during
+the PB, the SINR of user k in the l-th coherent slot is given
+by
+γCP
+k [l] =
+DSCP
+k [l]
+P
+k16=k,k1∈KUICP
+k1,k[l] + NICP
+k [l]
+, (15)
+where DSCP
+k [l], UICP
+k1,k[l], and NICP
+k [l] are given by
+DSCP
+k [l] =
+P
+m∈M
+√
+puhH
+m,k[l]ĥm,k[l]
+2
+, (16a)
+UICP
+k1,k[l] =
+P
+m∈M
+√
+puhH
+m,k1
+[l]ĥm,k[l]
+2
+, (16b)
+NICP
+k [l] =
+P
+m∈MnH
+mĥm,k[l]
+2
+, (16c)
+and hpred
+m,k[l] denotes the channel obtained through prediction
+in the l-th coherent slot. The corresponding SE for user k in
+the PB is given by
+RCP
+k [l] = log2(1 + γCP
+k [l]). (17)
+We proceed to compare the SE RCE
+k [l] within the EB and
+the SE RCP
+k [l] within the PB. First, we analyze the available
+coherent interval lengths within the EB and PB. Under channel
+estimation based on orthogonal pilots, only a fraction 1 − K
+τ
+of the coherence interval is available for data transmission,
+whereas, with channel prediction, the whole coherence interval
+can be utilized for data transmission. Second, user k experi-
+ences different SINRs in the EB and PB, attributed to the
+discrepancies between the CSI obtained via estimation and
+prediction, respectively. As indicated by (9), when employ-
+ing MMSE channel estimation with orthogonal pilots, the
+predominant source of error is additive noise, which can be
+suppressed by increasing the pilot power, thereby enabling
+near-perfect CSI estimation in theory. In contrast, channel
+prediction relies on the temporal correlation of the channel,
+where the prediction accuracy depends on the model’s ability
+to capture complex temporal dependencies and the intrinsic
+uncertainty arising from channel variations over time. Ideally,
+if perfect channel prediction is achieved in the PB, a SE
+improvement by a factor of at least τ
+τ−K over that in the EB
+can be attained. Over a transmission period comprising O EBs
+and P PBs, perfect channel prediction can yield a SE improve-
+ment of at least O(τ−K)+P τ
+(O+P )(τ−K) relative to conventional TDD
+framework. Therefore, the MAEP framework, when combined
+with accurate channel prediction, exhibits significant potential
+for enhancing system capacity. To realize this potential, an
+efficient channel predictor is proposed in the following section.
+IV. LLM-DERIVED CHANNEL PREDICTOR
+In this section, we propose an LLM-derived channel
+predictor, termed frequency–temporal alignment with LLM
+(FTAlign-LLM), as shown in Fig. 3. Then, we introduce
+FTAlign-LLM through its five key components: the pre-
+processor module, the embedding module, the LLM-derived
+backbone network, the output module, and the loss function.
+For notational clarity, we focus on a single period, wherein the
+estimated channel block during the EB between AP m and user
+k is denoted by Hprev
+m,k =
+h
+ĥmmse
+m,k [1], . . ., ĥmmse
+m,k [O]
+iT
+∈ CO×N
+,
+and the predicted channel during the PB is denoted by
+Hpred
+m,k =
+h
+hpred
+m,k[O + 1], . . ., hpred
+m,k[O + P]
+iT
+∈ CP ×N
+.
+A. Preprocessor Module
+The preprocessor module is responsible for preparing and
+formatting the input data for subsequent processing. While
+the frequency-domain representation succinctly captures the
+global spectral characteristics and distills the essential CSI,
+it conveys only part of the channel’s physical behavior. To
+provide a more comprehensive perspective, we also con-
+sider the delay domain, the dual of the frequency domain,
+which directly characterizes multipath components and reveals
+the propagation details [21], [37]. The delay-domain CSI is
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3417
+Fig. 3. An illustration of the network architecture of the FTAlign-LLM.
+obtained via the inverse discrete Fourier transform (DFT) as
+follows:
+Hd
+m,k = FOHprev
+m,k , (18)
+where FO is the O-point DFT matrix. Considering that neural
+networks operate on real-valued inputs, we map the real and
+imaginary parts of Hprev
+m,k and Hd
+m,k to Xf
+m,k ∈ R2×O×N
+and Xd
+m,k ∈ R2×O×N
+. To accelerate convergence and ensure
+numerical stability, we further standardize these inputs as:
+X̄f
+m,k =
+Xf
+m,k − µf
+σf
+, X̄d
+m,k =
+Xd
+m,k − µd
+σd
+, (19)
+where (µf , µd) and (σf , σd) represent the mean and standard
+deviation of the corresponding domains. The preprocessor
+module generates normalized, structured intermediate data,
+thereby laying a solid foundation for all subsequent processing.
+B. Embedding Module
+The embedding module is responsible for extracting and
+fusing raw channel features for the LLM. It comprises two
+type of submodules: the multi-scale CSI attention (MSCA)
+network and the frequency–temporal feature fusion (FTFF)
+network. First, the preprocessed time-domain and frequency-
+domain CSI representations are each fed into their respective
+MSCA networks, which apply MSCA as detailed below.
+Inspired by [38], the MSCA network is designed for feature
+extraction, with its architecture illustrated in Fig. 4. The
+MSCA network combines both local and global channel atten-
+tion, allowing it to simultaneously capture feature information
+at multiple scales and enhance the model’s representational
+power. The dimensions of each tensor during the processing
+are provided below. For simplicity, we denote XI
+∈ R2×O×N
+and XO
+∈ R2×O×N
+as the input and the output of the MSCA
+network, respectively.
+Initially, we leverage a CNN to convert XI
+into YI
+, aiming
+to achieve a more explicit feature representation. Specifically,
+YI
+= Conv XI
+
+∈ Rr×O×N
+, where Conv(·) denotes a 2D
+convolution operation and r > 2. Subsequently, the extraction
+of local attention Yl and global attention Yg is performed in
+parallel. The local attention Yl is obtained by
+Yl = Conv ReLU Conv YI
+
+∈ Rr×O×N
+, (20)
+Fig. 4. An illustration of the network architecture of the MSCA.
+and the global attention Yg is obtained by
+Yg = Conv ReLU Conv GPool YI
+
+∈ Rr×1×1
+, (21)
+where ReLU(·) represents the ReLU activation function and
+GPool(·) indicates global pooling. The resulting local attention
+Yl and global attention Yg are summed and passed through a
+sigmoid function to generate an attention-weight tensor, with
+each element constrained to the interval [0, 1]. Then, YI
+is
+rescaled by element-wise multiplication with these attention
+weights to produce the YO
+. This process can be expressed as
+YO
+= YI
+Sigmoid(Yl + Yg) ∈ Rr×O×N
+, (22)
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3418 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+Fig. 5. An illustration of the network architecture of the FTFF.
+where denotes the element-wise multiplication. Finally, YO
+is reshaped through a CNN and then connected to the original
+input via a residual connection, which can be expressed as:
+XO
+= XI
++ Conv YO
+
+∈ R2×O×N
+. Note that N0 MSCA
+networks is cascaded to further enhance the network’s feature-
+extraction capability.
+After obtaining the frequency- and delay-domain CSI repre-
+sentations, we fuse them via the FTFF network to construct an
+interface between the CSI data domain and the LLM feature
+space. The architecture of the FTFF network is depicted in
+Fig. 5, and its main operations are given below. Denote the
+MSCA-derived frequency-domain feature by Xf
+e ∈ RO×2N
+and the delay-domain feature by Xd
+e ∈ RO×2N
+. These features
+are obtained by reshaping the output of the MSCA networks.
+Inspired by [39] and [40], we view attention as using a
+stable, low entropy cue to retrieve high information evidence.
+The delay domain representation, obtained from the original
+features via an invertible linear transform, tends in practice to
+yield a compact form with only a few dominant components,
+which makes it suitable to serve as the Query to pose the
+question. The original frequency domain features carry fine
+grained per subcarrier amplitude and phase details, which
+makes them better suited to act as keys and values to provide
+the evidence. Specifically, Xd
+e serves as the query, while Xf
+e
+functions as both key and value. Each is mapped through its
+own full connected network:
+Q = Xd
+eWQ, K = Xf
+e WK, V = Xf
+e WV , (23)
+where WQ, WK, and WV denote learnable parameter matri-
+ces. For the attention score matrix QKT
+, because the delay
+domain features are significant at only a few indices, only
+those rows become strongly activated. This yields row wise
+sparsity and low entropy. Such a role assignment stabilizes
+the attention distribution and its gradients.
+Then, with the above three learnable matrices, the attention
+score can be obtained as
+Amha = Softmax
+
+QKT
+√
+d0
+
+V, (24)
+where Softmax(·) denotes the Softmax function and d0 is a
+scaling factor introduced to stabilize the gradient magnitude
+and prevent exploding gradients. The outputs from each head
+are concatenated and passed through a full connected layer.
+The resulting aligned feature is then concatenated with the
+original frequency-domain feature to yield the fused Xd
+e repre-
+sentation Xfused. To align Xfused with the embedding space
+of the LLM and ensure compatibility with its required input
+dimensions, we subject it to further processing via a CNN.
+This CNN performs joint frequency–temporal modeling while
+concurrently achieving dimensional alignment.
+C. LLM-Derived Backbone Network
+LLMs pre-trained on extensive text corpora have demon-
+strated exceptional capabilities in learning rich semantic
+representations and performing complex reasoning tasks,
+underpinned by their core strengths in cross-domain gener-
+alization and the modeling of long-range dependencies [28].
+Although initially developed for natural language processing,
+these models possess intrinsic architectural advantages that
+render them broadly applicable to a variety of structured
+sequence modeling problems beyond text. Recent advance-
+ments have shown that, with suitable fine-tuning, LLMs can be
+successfully adapted to non-textual sequence data tasks [29],
+[30], [31].
+Motivated by these developments, we propose leveraging an
+LLM for channel prediction in CF mMIMO systems, aiming
+to exploit its potential for capturing the intricate spatiotem-
+poral correlations inherent in wireless channels. Despite the
+fundamental modality mismatch between textual and CSI data,
+manifested in their distinct statistical properties and structural
+“semantics”, we contend that LLMs remain highly suitable
+for this task for serval reasons. First, the spatiotemporal
+structures of wireless channels exhibit complex, long-range
+dependencies that are conceptually analogous to syntactic and
+semantic dependencies in language sequences. Second, the
+strong generalization capacity of LLMs, honed through large-
+scale pretraining, enables them to adapt effectively to novel,
+structured data domains when appropriately guided. From
+a mathematical perspective. CSI prediction is a continuous
+sequence to sequence regression problem: given an O-step
+history we learn a mapping to a P-step future by minimizing
+the expected squared error (the L2 risk). The Bayes-optimal
+predictor is the conditional expectation of the future given
+the history, and attention based Transformers have sufficient
+expressive power to approximate such continuous sequence
+mappings on compact domains. Therefore an LLM backbone
+is in principle adequate for this task. Next, self attention can
+be viewed as a similarity weighted averaging mechanism:
+the query induces data dependent, nonnegative weights over
+past time and frequency points, and the output aggregates the
+corresponding values. This yields natural denoising through
+averaging and enables long range coupling that is not restricted
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3419
+to local neighborhoods, which matches the core requirements
+of CSI prediction in the presence of noise and temporal and
+spectral dependencies.
+To bridge the domain gap between textual and CSI data,
+we introduce adaptations at two levels: data preprocessor
+and embedding-space alignment, enabling CSI symbols are
+mapped into the LLM’s feature domain. Specifically, the
+embedding module produces a representation XEB
+, which
+is then fed into the LLM backbone to yield XLLM
+=
+LLM(XEB
+), where LLM(·) denotes the LLM-derived back-
+bone network.
+We choose GPT-2 as our base architecture [41]. Its decoder-
+only Transformer, with masked multi-head self-attention and
+positional embedding, naturally aligns with the autoregressive
+nature of channel prediction. The GPT-2 backbone con-
+sists of a positional embedding layer followed by stacked
+Transformer decoder blocks, each comprising self-attention
+layers, feed-forward networks, residual connections, and layer
+normalization, as shown in Fig. 3. To achieve efficient
+domain adaptation, we employ a PEFT strategy. Specifically,
+we retrain the positional embedding and layer-normalization
+parameters to capture the spatiotemporal locality of CSI
+sequences and mitigate distribution shifts, while freezing the
+bulk of the feed-forward networks and self-attention weight
+matrices to reduce computational overhead and prevent over-
+fitting. Notably, although we use GPT-2 as our backbone, other
+LLM architectures, such as LLaMA [42], can be seamlessly
+substituted within the proposed architecture.
+D. Output Module
+The output module converts the LLM’s output into the final
+channel prediction. Specifically, we first apply two successive
+full connected layers to adjust the LLM output:
+X̄de
+m,k = FC FC XLLM
+
+∈ R2×P ×N
+, (25)
+where FC(·) denotes the full connected transformation. Next,
+we denormalize this representation using the mean µf and
+standard deviation σf from the preprocessor module:
+Xde
+m,k = σf X̄de
+m,k + µf . (26)
+Finally, we rearrange the complex-valued channel prediction
+by separating the real and imaginary parts:
+Hpred
+m,k = Xde
+m,k[1, :, :] + jXde
+m,k[2, :, :], (27)
+where j is the imaginary unit.
+E. Loss Function
+The accuracy of channel prediction directly impacts overall
+system performance, e.g., SE. Accordingly, we employ the
+NMSE to quantify the discrepancy between the predicted
+channel Hpred
+m,k and true channel Hgt
+m,k, and use it as our loss
+function. Formally, the loss function is defined as
+Loss =
+1
+|T |
+X
+T
+Hpred
+m,k − Hgt
+m,k
+2
+F
+Hgt
+m,k
+2
+F
+, (28)
+where T denotes the training set and Hgt
+m,k denotes the
+ground-truth channel over the PB.
+V. NUMEROUS RESULTS AND ANALYSIS
+In this section, extensive numerical results are provided to
+validate the effectiveness of our proposed framework and pre-
+dictor. We first introduce the system settings and benchmarks.
+Then, we compare the proposed framework and predictor with
+the benchmarks under various scenarios.
+A. System Settings and Benchmarks
+We consider a 500 m ×500 m rectangular area, where
+all APs are uniformly at constellation points, and all users
+are independently and randomly distributed. The large-scale
+fading between AP m and user k is modeled by βm,k =
+PLm,k +zm,k, where PLm,k denotes the path loss component
+and zm,k ∼ CN 0, δ2
+sh
+
+represents the shadowing component
+with δsh = 8 dB [6], [43]. The PLm,k (dB) is given by
+PLm,k =
+
+
+
+
+
+L0 + 10 log10 d3.5
+m,k
+
+, d1 ≤ dm,k,
+L0 + 10 log10 d1.5
+1 d2
+m,k
+
+, d0 ≤ dm,k < d1,
+L0 + 10 log10 d1.5
+1 d2
+0
+
+, dm,k < d0, .
+(29)
+where dm,k denotes the distance between the AP m and the
+user k, d0 and d1 are 10 m and 50 m, respectively, L0 is given
+by
+L0 , 46.3 + 33.9 log 10(fc) − 13.82 log 10(hAP )
+− (1.1 log 10(f) − 0.7)hu + (1.56 log 10(f) − 0.8),
+(30)
+with the carrier frequency fc = 1.9 (in MHz), the AP antenna
+height hAP = 15 (in m), and the user antenna height hu =
+1.65 (in m) [6], [43]. Note that when dm,k ≤ d1, there is no
+shadowing. The noise power is expressed as
+noise power = B × kB × T0 × 10
+9
+10 (W), (31)
+where B denotes the system bandwidth, kB = 1.381 × 10−23
+(Joule per Kelvin) is the Boltzmann constant, and T0 = 290
+(Kelvin) is the noise temperature.
+Some system parameters are given below. The system band-
+width is set as B = 20 MHz, and the length of a coherence
+interval is τ = 100. Both the pilot power pp and payload power
+pu are set to 20 dBm. The antenna spacing is dH = c
+2fc
+, where
+c is the speed of light, and the nominal angle of arrival set as
+φ = π
+6 . The number of antennas per AP is N = 16 and the
+length of the EB is O = 16. Besides, the smallest version of
+GPT-2 with a dLLM = 768 feature dimension is adopted, and
+its first NL = 6 layers of which are deployed. N0 = 4 MSCA
+networks is cascaded in the embedding module. The dataset
+is generated by randomly sampling the normalized Doppler
+shift, the number of users, the number of APs, and the ASD
+within a given range, and then deriving the CSI. The dataset
+is subsequently split into a training set and a test set in an
+8:2 ratio, which contain 8000 and 2000 samples, respectively.
+Besides, a single trained FTAlign-LLM is shared across all
+users and APs and the model remains unchanged as M or K
+varies to ensure scalability.
+To verify the effectiveness of the proposed FTAlign-LLM,
+we compare the following reference benchmarks:
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3420 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+Fig. 6. NMSE versus normalized Doppler shift and PB length. System parameters: σϕ = 10◦.
+• LLM4CP: A LLM-based channel predictor is proposed
+in [32], where a cascaded CSI attention network (primar-
+ily composed of squeeze-and-excitation networks) is used
+to extract CSI features.
+• GCN-Transformer: A graph convolutional network
+(GCN)–Transformer-based channel predictor was pro-
+posed in [44], in which the GCN extracts spatial
+correlations and a Transformer encoder models temporal
+dependencies.
+• Transformer: A transformer-based channel predictor is
+proposed in [25], which avoids error propagation through
+parallel processing and incorporates a pilot-to-precoder
+prediction framework to reduce the complexity of signal
+processing.
+• LSTM: An LSTM-based channel predictor is proposed
+in [17], featuring memory cells and multiplicative gates
+designed to address long-term dependencies.
+• CNN: A CNN-based channel predictor is proposed in
+[20], where the processing of time-frequency CSI data is
+treated as a two-dimensional image processing task.
+• ConvTDD: ConvTDD employs pilot-based channel esti-
+mation with MMSE to obtain CSI without performing
+prediction [35], where orthogonal pilot sequences are
+allocated to each user to ensure the accuracy of channel
+estimation.
+B. Performance Under Different Doppler Shifts
+We initiate a comparative assessment of the proposed
+FTAlign-LLM against benchmarks by evaluating the NMSE
+under incrementally increasing normalized Doppler shifts fn,
+as illustrated in Fig. 6. The NMSE of all predictors demon-
+strates a marked decline with the elevation of Doppler shifts
+and an increase in user mobility. This relationship enhances the
+stochasticity of CSI, thereby escalating prediction complex-
+ity. When fn is relatively low, the performance discrepancy
+between LLM-driven predictors and other benchmarks remains
+minimal, as the robust temporal correlations across coherent
+slots under low-mobility conditions can be effectively har-
+nessed even by simplistic neural network architectures. In
+contrast, as fn increases, LLM-driven predictors attain increas-
+ingly significant advantages over all benchmarks, underscoring
+their superior ability to model complex CSI correlations.
+Owing to its advanced feature extraction and fusion modules,
+alongside the GPT-2-based LLM backbone, FTAlign-LLM
+efficiently captures interdependencies across coherent slots and
+exhibits robust channel prediction performance relative to the
+benchmarks.
+The NMSE of predictors across varying PB lengths, specif-
+ically P = 8, P = 16, and P = 24, as shown in
+Fig. 6(a), 6(b), and 6(c), respectively, is evaluated. As the
+prediction horizon expands, prediction accuracy deteriorates
+markedly, owing to the inherent increase in uncertainty within
+long-term forecasting and the rapid attenuation of past CSI
+impacts on distant future slots, thereby diminishing temporal
+correlations. For shorter prediction horizons, such as P =
+8, FTAlign-LLM exhibits only slight NMSE improvements
+over other benchmarks. In contrast, as the prediction length
+increases, FTAlign-LLM demonstrates increasingly significant
+performance gains compared to all benchmarks, attributable
+to its advanced feature extraction and LLM-based modeling
+capabilities, which excel at capturing complex long-range
+dependencies.
+The sum SE of FTAlign-LLM and benchmarks across
+different PB lengths P and normalized Doppler shifts fn
+is presented in Table I. At relatively low fn, prediction-
+based methods outperform ConvTDD in achieving higher
+sum SE, demonstrating that leveraging channel prediction
+in CF mMIMO systems can significantly enhance system
+performance. As fn increases, the escalating uncertainty in
+CSI leads to diminished prediction accuracy, thus causing the
+sum SE of prediction-based methods to decline, with some
+predictors even performing worse than ConvTDD. Thanks to
+its robust feature extraction and LLM modeling capabilities,
+FTAlign-LLM exhibits greater stability in complex scenarios,
+resulting in a slower rate of performance degradation com-
+pared to other benchmarks.
+Despite the gradual deterioration of prediction accuracy as
+the prediction horizon expands, the system’s sum SE exhibits
+divergent trends. When the PB length increases from P = 8 to
+P = 16, the system’s sum SE improves, stemming from the
+significant reduction in pilot overhead, thus allocating more
+coherent intervals to data transmission. Although prediction
+accuracy diminishes, it remains within an acceptable threshold,
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3421
+TABLE I
+SUM SE VERSUS NORMALIZED DOPPLER SHIFT AND PB LENGTH (SYSTEM PARAMETERS: M = 20, K = 40, σϕ = 10◦). THE BEST RESULTS ARE
+MARKED IN BOLD AND THE SECOND OPTIMAL IN UNDERLINED
+Fig. 7. Sum SE versus prediction block length. System parameters: M = 20,
+K = 40, σϕ = 10◦, fn = 0.02.
+such that its impact on performance remains non-dominant.
+Conversely, when the PB length increases from P = 16 to
+P = 24, the improvement in sum SE becomes marginal, and in
+some cases, e.g., fn = 0.02, performance even declines. This
+suggests that the influence of prediction accuracy on sum SE
+progressively outweighs other factors, while the benefits from
+improved block-length resource utilization diminish.
+C. Performance Under Different PB Length
+We evaluate the impact of the PB length P on the sum
+SE in Fig. 7. As P increases, all prediction–based schemes
+exhibit clear gains because longer PBs reduce pilot overhead
+and allocate more symbols to payload transmission. Among
+them, FTAlign-LLM achieves the highest Sum SE across all
+P and remains nearly flat for large P, demonstrating strong
+robustness to long-horizon prediction. In contrast, several
+learning benchmarks (e.g., GCN-Transformer, Transformer,
+LSTM) start to degrade when P is large, indicating that accu-
+mulated prediction errors begin to offset the overhead savings
+of longer PBs. The ConvTDD curve is nearly constant because
+it does not benefit from prediction and must estimate the chan-
+nel in every coherence block. Overall, choosing a moderate
+PB length yields the best rate–overhead trade-off, with
+FTAlign-LLM consistently outperforming all benchmarks.
+D. Performance Under Different Angular Standard
+Deviation (ASDs)
+We assess the sum SE of FTAlign-LLM against benchmarks
+as the ASD σϕ, and prediction length P vary, as presented
+in Table II. ASD, defined as the standard deviation of signal
+arrival angles, quantifies the multipath angular spread. A
+small σϕ signifies tightly clustered multipath components and
+strong spatial correlation, whereas a larger σϕ corresponds
+to broader angular dispersion and reduced spatial correlation.
+The improvement in sum SE with increasing σϕ stems from
+two primary mechanisms. First, reduced spatial correlation
+mitigates frequency-selective fading, thereby alleviating the
+severity of signal deep fades. Second, weaker inter-antenna
+correlation simplifies channel prediction dynamics, enhancing
+the accuracy of CSI estimation. Across the full range of ASD
+values, FTAlign-LLM demonstrates consistent superiority over
+all benchmarks, emphasizing the efficacy of its advanced
+feature extraction and fusion modules, in conjunction with its
+LLM-based architecture for precise CSI modeling.
+As the prediction length varies, increasing the ASD consis-
+tently enhances the SE. Furthermore, although extending the
+prediction horizon results in a marginal decline in prediction
+accuracy, reallocating more coherent intervals to data trans-
+mission facilitates improvements in sum SE. Notably, when
+the prediction length is set to P = 16 or P = 24, the system
+achieves substantial improvements in sum SE compared to
+P = 8. FTAlign-LLM maintains significant advantages over
+all benchmarks across all ASD values and arbitrary prediction
+lengths, attributable to the embedding module’s effective mul-
+tiscale feature extraction and fusion, combined with the LLM
+backbone’s robust spatiotemporal modeling capabilities.
+E. Performance Under Different Numbers of APs
+Table II presents the sum SE of FTAlign-LLM and bench-
+mark models as the number of AP M and PB length P
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3422 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+TABLE II
+SUM SE VERSUS ASD AND PB LENGTH (SYSTEM PARAMETERS: M = 20, K = 40, fn = 0.02). THE BEST RESULTS ARE MARKED IN BOLD AND THE
+SECOND OPTIMAL IN UNDERLINED
+TABLE III
+SUM SE VERSUS THE NUMBER OF APS AND PB LENGTH (SYSTEM PARAMETERS: K = 40, fn = 0.02, σϕ = 10◦). THE BEST RESULTS ARE MARKED
+IN BOLD AND THE SECOND OPTIMAL IN UNDERLINED
+vary. As M increases, both spatial and macro-diversity gains
+become increasingly pronounced, driving continuous improve-
+ments in sum SE across all methods. FTAlign-LLM maintains
+a consistent performance advantage over benchmarks, owing
+to its efficient exploitation of coherent intervals and pre-
+cise CSI prediction, thereby validating the robustness of the
+proposed predictor. Moreover, all prediction-based methods
+exhibit a more pronounced upward trajectory in sum SE
+compared to ConvTDD as M grows. This discrepancy arises
+because, in prediction-assisted methods, diversity gains from
+additional APs accrue to every coherent interval, whereas in
+ConvTDD, only data-transmission-dedicated intervals benefit
+from enhanced AP diversity. These results underscore the
+superior scalability of channel prediction-assisted methods in
+CF mMIMO systems with large-scale AP deployments.
+When the prediction length increases from P = 8 to
+P = 16 and P = 24, longer prediction horizons significantly
+reduce pilot overhead, thereby enabling higher sum SE and
+more pronounced performance gains over ConvTDD, while
+prediction accuracy experiences degradation. FTAlign-LLM
+consistently outperforms all benchmarks, further underscoring
+its robustness in long-sequence prediction across varied AP
+deployment scales. Moreover, by reallocating more coherent
+intervals to data transmission, each additional AP, augmenting
+both macro- and spatial-diversity gains, drives a steeper rise in
+sum SE for all predictors. This results in progressively larger
+performance improvements over ConvTDD as the number of
+APs grows, highlighting the superiority of channel prediction-
+assisted methods in CF mMIMO systems.
+F. Performance With Varying Numbers of Users
+We evaluate the impact of varying the number of users K
+and PB length P on the system’s sum SE for FTAlign-LLM
+and benchmarks, as depicted in Table IV. A distinct trade-
+off emerges between user density and sum SE: initially,
+increasing K enhances sum SE, as additional users con-
+tribute to cumulative throughput. However, as K continues to
+rise, inter-user interference intensifies progressively, eventually
+overshadowing multiuser diversity gains and causing a decline
+in sum SE. Notably, ConvTDD achieves competitive perfor-
+mance at low K, but experiences the sharpest decline as user
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3423
+TABLE IV
+SUM SE VERSUS THE NUMBER OF USERS AND PB LENGTH (SYSTEM PARAMETERS: M = 20, fn = 0.02, σϕ = 10◦). THE BEST RESULTS ARE
+MARKED IN BOLD AND THE SECOND OPTIMAL IN UNDERLINED
+TABLE V
+RESULTS OF ABLATION EXPERIMENTS. THE BEST RESULTS ARE MARKED IN BOLD AND THE SECOND OPTIMAL IN UNDERLINED
+density increases. This outcome highlights the inefficiency
+of pilot-based channel estimation in ultra-dense scenarios,
+where orthogonal pilot sequences must be allocated to each
+user, thereby depleting coherent intervals available for data
+transmission. In contrast, prediction-assisted methods effec-
+tively address this challenge by efficiently conserving pilot
+resources. Moreover, FTAlign-LLM consistently outperforms
+other prediction-based benchmarks, demonstrating its superior
+channel prediction capabilities.
+As the PB length increases from P = 8 to P = 16 and
+P = 24, longer prediction horizons free additional coherent
+intervals for data transmission, as anticipated, thus leading
+to an increase in system sum SE and yielding more pro-
+nounced performance gains relative to ConvTDD. Across all
+tested prediction length configurations, FTAlign-LLM demon-
+strates consistent superiority over benchmarks, underscoring
+its robustness in long-sequence channel prediction under
+diverse operational scenarios. Moreover, with an increasing
+K, a larger proportion of the coherent interval is allocated
+to pilot transmission, making the remaining data-transmission
+intervals progressively more valuable. In such regimes, all pre-
+dictors with extended prediction horizons exhibit increasingly
+significant advantages over ConvTDD, reflecting the critical
+role of prediction-aided methods in mitigating pilot overhead
+penalties.
+G. Ablation Experiments and Training Costs
+To verify the effectiveness of each individual module, we
+conduct ablation experiments by selectively removing specific
+components from the FTAlign-LLM, as illustrated in Table V.
+The NMSE and sum SE are reported, averaged over all
+tested normalized Doppler shifts. For FTAlign-LLM without
+the delay domain, the downstream network operating in the
+delay domain is entirely removed. For FTAlign-LLM without
+embedding modules, the MSCAM-based feature extraction
+module is replaced with a simple deep neural network, and the
+feature fusion network is replaced by a summation operation.
+For FTAlign-LLM without the LLM, the GPT-2 based LLM
+is removed, while all other components are kept intact. It
+is evident that removing any of these modules results in
+performance degradation, highlighting the indispensable role
+each plays in ensuring the effectiveness of FTAlign-LLM
+within CF mMIMO systems. Note that Table V reports NMSE
+and sum SE averaged over all tested normalized Doppler
+shifts. This averaging places substantial weight on low-to-
+moderate mobility, where short-range temporal correlation is
+strong and the MSCA+FTFF front end already captures most
+of the predictive signal, so removing the LLM yields only
+a modest averaged gap. Consistent with Fig. 6 and Table I,
+as the Doppler shift increases and the prediction horizon P
+grows, the discrepancy becomes more pronounced and the
+LLM contributes larger gains. We therefore clarify that the
+small gap in Table V is a consequence of averaging across
+Doppler regimes; under high Doppler the performance loss
+from removing the LLM is noticeably larger.
+We compare the model training and inference costs of the
+proposed method with other benchmarks to assess deploy-
+ability in practical scenarios, as shown in Table VI. All
+experiments are conducted on the same machine equipped with
+three NVIDIA A40 GPUs. Although the LLM-based predictor
+has more total parameters, PEFT freezes the backbone and
+updates only a small set of parameters, and both inference and
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3424 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+TABLE VI
+NETWORK PARAMETERS (TRAINING PARAMETERS/TOTAL PARAMETERS) AND THE TRAINING/INTERFERENCE TIME PER BATCH
+TABLE VII
+THE PERFORMANCE OF THE FTALIGN-LLM WITH DIFFERENT
+NUMBERS OF THE GPT-2 LAYERS
+the forward pass during training benefit from LLM-specific
+acceleration; these choices keep runtime modest in practice.
+Empirically, the inference latency on the evaluated hardware is
+shorter than that of standard Transformer variants, comparable
+to other PEFT-based models, and longer than very lightweight
+RNN/CNN benchmarks; nevertheless, the latencies are broadly
+similar across methods. Because all results are obtained on
+identical GPUs, this indicates that the proposed predictor
+can satisfy essentially the same coherence-time budgets as
+the benchmarks and is therefore practically deployable. At
+inference, the cost grows approximately linearly with the
+number of pairs of users and APs, that is with the product
+of the number of users and the number of APs, because
+each pair triggers a single forward pass, while the model’s
+memory footprint is essentially independent of the numbers of
+users and APs, and accordingly the proposed method exhibits
+predictable, practical scalability to large deployments with
+many users and APs. In addition, deployability is further
+helped by two industry trends: first, the ongoing rollout
+of compute fabrics across the radio access network and
+edge is steadily increasing accelerator capacity available at
+base stations; second, lightweighting techniques (e.g., model
+compression and quantization) together with LLM-specific
+accelerations are being widely adopted, which further reduce
+memory and latency. These trends reinforce the practical-
+ity of deploying a compact, PEFT-tuned LLM backbone in
+base-station/edge environments.
+We conduct an ablation study on backbone depth by vary-
+ing the number of GPT-2 layers and reporting NMSE, total
+and trainable parameter counts, and inference latency, as
+shown in Table VII. NMSE remains broadly similar across
+depths with modest variation, whereas total parameters and
+latency increase approximately linearly with depth. The num-
+ber of trainable parameters stays nearly unchanged because
+the backbone is frozen with PEFT. Consequently, depth can
+be chosen primarily by resource considerations: a moder-
+ate depth offers a balanced accuracy–latency profile, while
+shallower configurations are attractive for tighter compute
+budgets.
+VI. CONCLUSION AND FUTURE WORK
+In this paper, we have proposed the MAEP framework for
+CF mMIMO systems to reduce pilot overhead and enhance
+sum SE. To enable accurate channel acquisition within MAEP,
+we have further developed an LLM-driven predictor, FTAlign-
+LLM. This predictor can bridge the modality gap between
+CSI measurements and the LLM’s feature space through
+three carefully designed components: 1) an MSCA network
+for multi-domain feature extraction, 2) an FTFF network for
+feature fusion and alignment, and 3) a PEFT strategy for
+lightweight adaptation of the LLM backbone. Extensive results
+has demonstrated that FTAlign-LLM outperformed all bench-
+marks in NMSE, particularly under high-mobility conditions,
+and that the overall MAEP framework can deliver substantial
+gains in sum SE, especially when deploying large numbers of
+APs and users.
+Our investigation of LLM-driven channel prediction in CF
+mMIMO remains at a preliminary theoretical stage and war-
+rants further research. First, for practical deployment and mod-
+eling realism, two aspects merit attention:(i) computational
+footprint—leveraging task placement and model-compression
+strategies to meet real-time latency constraints in distributed
+CF systems; and (ii) temporal-correlation modeling under
+heterogeneous mobility. While our dataset generation already
+samples non-uniform Doppler across users or links, the ana-
+lytical aging model adopts the normalized ACF, which implies
+identical temporal correlation across links. In future work,
+we will relax this simplification by adopting per-link ACFs,
+allowing anisotropic and time-varying correlation functions,
+and exploring data-driven correlation learned from measure-
+ments or high-fidelity simulators. In addition, two practical
+motivations point toward a new line of work. First, the split
+between estimation and prediction slots has a direct impact
+on both spectral efficiency and robustness, yet there is no
+systematic procedure for choosing it in practice. Second,
+user mobility is heterogeneous and time varying, suggesting
+that prediction frequency should adapt—stationary users can
+economize on computation, while highly mobile users need
+more frequent updates to maintain reliability. Motivated by
+these factors, we leave for future work the conception and
+design of an adaptive MAEP framework that dynamically
+adjusts the per-user prediction span and estimation cadence
+to balance spectral efficiency, robustness, and computational
+cost.
+REFERENCES
+[1] A. Lozano, R. W. Heath Jr., and J. G. Andrews, “Fundamental limits of
+cooperation,” IEEE Trans. Inf. Theory, vol. 59, no. 9, pp. 5213–5226,
+Sep. 2013.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+CHONG et al.: LARGE LANGUAGE MODEL-DRIVEN CHANNEL PREDICTION IN CELL-FREE mMIMO SYSTEMS 3425
+[2] S. Chen, F. Qin, B. Hu, X. Li, and Z. Chen, “User-centric ultra-dense
+networks for 5G: Challenges, methodologies, and directions,” IEEE
+Wireless Commun., vol. 23, no. 2, pp. 78–85, Apr. 2016.
+[3] S. Elhoushy, M. Ibrahim, and W. Hamouda, “Cell-free massive MIMO:
+A survey,” IEEE Commun. Surv. Tut., vol. 24, no. 1, pp. 492–523, 1st
+Quart., 2022.
+[4] H. A. Ammar, R. Adve, S. Shahbazpanahi, G. Boudreau, and K. V. Srini-
+vas, “User-centric cell-free massive MIMO networks: A survey of
+opportunities, challenges and solutions,” IEEE Commun. Surv. Tut.,
+vol. 24, no. 1, pp. 611–652, 1st Quart., 2022.
+[5] H. Q. Ngo, G. Interdonato, E. G. Larsson, G. Caire, and J. G. Andrews,
+“Ultradense cell-free massive MIMO for 6G: Technical overview and
+open questions,” Proc. IEEE, vol. 112, no. 7, pp. 805–831, Jul. 2024.
+[6] H. Q. Ngo, A. Ashikhmin, H. Yang, E. G. Larsson, and T. L. Marzetta,
+“Cell-free massive MIMO versus small cells,” IEEE Trans. Wireless
+Commun., vol. 16, no. 3, pp. 1834–1850, Mar. 2017.
+[7] J. Zheng et al., “Mobile cell-free massive MIMO: Challenges, solu-
+tions, and future directions,” IEEE Wireless Commun., vol. 31, no. 3,
+pp. 140–147, Jun. 2024.
+[8] B. Chong, F. Guo, H. Lu, and L. Qin, “On the distribution of SINR
+for cell-free massive MIMO systems,” IEEE Trans. Commun., vol. 73,
+no. 2, pp. 832–845, Feb. 2025.
+[9] B. Chong, H. Lu, L. Qin, Z. Xue, and F. Guo, “Performance optimization
+on cell-free massive MIMO-aided URLLC systems with user grouping,”
+IEEE Trans. Wireless Commun., vol. 23, no. 10, pp. 13977–13992, Oct.
+2024.
+[10] B. Chong and H. Lu, “Statistical QoS provisioning for URLLC in cell-
+free massive MIMO systems,” IEEE Trans. Commun., vol. 72, no. 12,
+pp. 7650–7663, Dec. 2024.
+[11] Y. Jin, J. Zhang, S. Jin, and B. Ai, “Channel estimation for cell-free
+mmWave massive MIMO through deep learning,” IEEE Trans. Veh.
+Technol., vol. 68, no. 10, pp. 10325–10329, Oct. 2019.
+[12] H. Song, T. Goldstein, X. You, C. Zhang, O. Tirkkonen, and C. Studer,
+“Joint channel estimation and data detection in cell-free massive
+MU-MIMO systems,” IEEE Trans. Wireless Commun., vol. 21, no. 6,
+pp. 4068–4084, Jun. 2022.
+[13] B. Çakmak, E. Gkiouzepi, M. Opper, and G. Caire, “Joint message
+detection and channel estimation for unsourced random access in cell-
+free user-centric wireless networks,” IEEE Trans. Inf. Theory, vol. 71,
+no. 5, pp. 3614–3643, May 2025.
+[14] M. Obeed, Y. Al-Eryani, and A. Chaaban, “Alternating channel estima-
+tion and prediction for cell-free mMIMO with channel aging: A deep
+learning based scheme,” in Proc. IEEE Int. Conf. Commun. (ICC), May
+2023, pp. 3590–3595.
+[15] E. Shi, J. Zhang, J. Zheng, B. Ai, and D. W. K. Ng, “RIS-aided cell-free
+massive MIMO systems with channel aging,” IEEE Trans. Veh. Technol.,
+vol. 73, no. 8, pp. 11487–11502, Aug. 2024.
+[16] V. V. Veeravalli, Y. Liang, and A. M. Sayeed, “Correlated MIMO
+wireless channels: Capacity, optimal signaling, and asymptotics,” IEEE
+Trans. Inf. Theory, vol. 51, no. 6, pp. 2058–2072, Jun. 2005.
+[17] W. Jiang and H. D. Schotten, “Deep learning for fading channel
+prediction,” IEEE Open J. Commun. Soc., vol. 1, pp. 320–332, 2020.
+[18] K. T. Truong and R. W. Heath Jr., “Effects of channel aging in massive
+MIMO systems,” J. Commun. Netw., vol. 15, no. 4, pp. 338–351, Aug.
+2013.
+[19] J. Yuan, H. Q. Ngo, and M. Matthaiou, “Machine learning-based channel
+prediction in massive MIMO with channel aging,” IEEE Trans. Wireless
+Commun., vol. 19, no. 5, pp. 2960–2973, May 2020.
+[20] M. S. Safari, V. Pourahmadi, and S. Sodagari, “Deep UL2DL: Data-
+driven channel knowledge transfer from uplink to downlink,” IEEE Open
+J. Veh. Technol., vol. 1, pp. 29–44, 2020.
+[21] D. Burghal et al., “Enhanced AI-based CSI prediction solutions for
+massive MIMO in 5G and 6G systems,” IEEE Access, vol. 11,
+pp. 117810–117825, 2023.
+[22] I. Helmy, P. Tarafder, and W. Choi, “LSTM-GRU model-based chan-
+nel prediction for one-bit massive MIMO system,” IEEE Trans. Veh.
+Technol., vol. 72, no. 8, pp. 11053–11057, Aug. 2023.
+[23] O. Abbasi and G. Kaddoum, “Channel aging-aware LSTM-based chan-
+nel prediction for satellite communications,” IEEE Netw. Lett., vol. 6,
+no. 3, pp. 183–187, Sep. 2024.
+[24] Q. Zhou, S. Melnyk, D. Wang, and H. D. Schotten, “Evaluation
+of transformer empowered channel prediction for 5G and beyond
+communication,” in Proc. IEEE 100th Veh. Technol. Conf. (VTC-Fall),
+Oct. 2024, pp. 1–6.
+[25] H. Jiang, M. Cui, D. W. K. Ng, and L. Dai, “Accurate channel prediction
+based on transformer: Making mobility negligible,” IEEE J. Sel. Areas
+Commun., vol. 40, no. 9, pp. 2717–2732, Sep. 2022.
+[26] S. Zhang, S. Zhang, Y. Mao, L. K. Yeung, B. Clerckx, and T. Q. S. Quek,
+“Transformer-based channel prediction for rate-splitting multiple access-
+enabled vehicle-to-everything communication,” IEEE Trans. Wireless
+Commun., vol. 23, no. 10, pp. 12717–12730, Oct. 2024.
+[27] H. Kang, Q. Hu, H. Chen, Q. Huang, Q. Zhang, and M. Cheng,
+“Cross-shaped separated spatial–temporal UNet transformer for accurate
+channel prediction,” in Proc. IEEE Conf. Comput. Commun. (IEEE
+INFOCOM), May 2024, pp. 2079–2088.
+[28] L. Qin et al., “Large language models meet NLP: A survey,” 2024,
+arXiv:2405.12819.
+[29] Z. Pan, Y. Jiang, S. Garg, A. Schneider, Y. Nevmyvaka, and D. Song,
+“S2IP-LLM: Semantic space informed prompt learning with LLM
+for time series forecasting,” in Proc. 41st Int. Conf. Mach. Learn.,
+Jun. 2024, pp. 39135–39153. [Online]. Available: https://openreview.net/
+forum?id=qwQVV5R8Y7
+[30] Z. Lan, L. Liu, B. Fan, Y. Lv, Y. Ren, and Z. Cui, “Traj-LLM: A
+new exploration for empowering trajectory prediction with pre-trained
+large language models,” IEEE Trans. Intell. Vehicles, vol. 10, no. 2,
+pp. 794–807, Feb. 2024.
+[31] P. S. Chib and P. Singh, “LG-traj: LLM guided pedestrian trajectory
+prediction,” 2024, arXiv:2403.08032.
+[32] B. Liu, X. Liu, S. Gao, X. Cheng, and L. Yang, “LLM4CP: Adapting
+large language models for channel prediction,” J. Commun. Inf. Netw.,
+vol. 9, no. 2, pp. 113–125, Jun. 2024.
+[33] H. Zhou et al., “Large language model (LLM) for telecommunications: A
+comprehensive survey on principles, key techniques, and opportunities,”
+IEEE Commun. Surv. Tut., vol. 27, no. 3, pp. 1955–2005, 3rd Quart.,
+2024.
+[34] J. Zheng, J. Zhang, E. Björnson, and B. Ai, “Impact of channel aging
+on cell-free massive MIMO over spatially correlated channels,” IEEE
+Trans. Wireless Commun., vol. 20, no. 10, pp. 6451–6466, Oct. 2021.
+[35] M. Zhou, Y. Zhang, X. Qiao, and L. Yang, “Spatially correlated Rayleigh
+fading for cell-free massive MIMO systems,” IEEE Access, vol. 8,
+pp. 42154–42168, 2020.
+[36] K. E. Baddour and N. C. Beaulieu, “Autoregressive modeling for fading
+channel simulation,” IEEE Trans. Wireless Commun., vol. 4, no. 4,
+pp. 1650–1662, Jul. 2005.
+[37] H. Yin, H. Wang, Y. Liu, and D. Gesbert, “Addressing the curse of
+mobility in massive MIMO with prony-based angular-delay domain
+channel predictions,” IEEE J. Sel. Areas Commun., vol. 38, no. 12,
+pp. 2903–2917, Dec. 2020.
+[38] X. Ma, Z. Ji, S. Niu, T. Leng, D. L. Rubin, and Q. Chen, “MS-CAM:
+Multi-scale class activation maps for weakly-supervised segmentation
+of geographic atrophy lesions in SD-OCT images,” IEEE J. Biomed.
+Health Informat., vol. 24, no. 12, pp. 3443–3455, Dec. 2020.
+[39] H. Chen et al., “Cross-attention among spectrum, waveform and SSL
+representations with bidirectional knowledge distillation for speech
+enhancement,” Inf. Fusion, vol. 122, May 2025, Art. no. 103218.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/
+S156625352500291X
+[40] H. Xi, W. Guo, Y. Yang, R. Yuan, and H. Ma, “Cross-attention
+mechanism-based spectrum sensing in generalized Gaussian noise,” Sci.
+Rep., vol. 14, no. 1, p. 23261, Oct. 2024.
+[41] A. Radford et al., “Language models are unsupervised multitask
+learners,” OpenAI blog, vol. 1, no. 8, p. 9, 2019.
+[42] H. Touvron et al., “Llama 2: Open foundation and fine-tuned chat
+models,” 2023, arXiv:2307.09288.
+[43] Q. Peng, H. Ren, M. Dong, M. Elkashlan, K.-K. Wong, and L. Hanzo,
+“Resource allocation for cell-free massive MIMO-aided URLLC systems
+relying on pilot sharing,” IEEE J. Sel. Areas Commun., vol. 41, no. 7,
+pp. 2193–2207, Jul. 2023.
+[44] Y. Qi, T. Zhou, and L. Liu, “Deep learning based channel prediction
+for cell-free massive MIMO systems,” in Proc. IEEE 24th Int. Conf.
+Commun. Technol. (ICCT), Oct. 2024, pp. 1617–1621.
+Baolin Chong (Graduate Student Member, IEEE)
+received the B.S. degree from Nanjing University of
+Science and Technology, Nanjing, China, in 2021.
+He is currently pursuing the Ph.D. degree with the
+Department of Electronic Engineering and Informa-
+tion Science, University of Science and Technology
+of China (USTC), Hefei, China. His research inter-
+ests include cell-free massive MIMO systems and
+large AI models.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+3426 IEEE JOURNAL ON SELECTED AREAS IN COMMUNICATIONS, VOL. 44, 2026
+Hancheng Lu (Senior Member, IEEE) received the
+Ph.D. degree in communication and information
+systems from the University of Science and Tech-
+nology of China (USTC), Hefei, China, in 2005.
+He is currently a Professor with the Department
+of Electronic Engineering and Information Science,
+USTC. His research interests include multimedia
+communication and networking and resource opti-
+mization in wireless heterogeneous networks.
+Dusit Niyato (Fellow, IEEE) received the B.Eng.
+degree from the King Mongkut’s Institute of Tech-
+nology Ladkrabang, Thailand, and the Ph.D. degree
+in electrical and computer engineering from the
+University of Manitoba, Canada. He is currently
+a Professor with the College of Computing and
+Data Science, Nanyang Technological University,
+Singapore. His research interests include mobile
+generative AI, edge general intelligence, quantum
+computing and networking, and incentive mecha-
+nism design.
+Arumugam Nallanathan (Fellow, IEEE) has been
+a Professor of wireless communications and the
+Founding Head of the Communication Systems
+Research (CSR) Group, School of Electronic Engi-
+neering and Computer Science, Queen Mary Uni-
+versity of London, since September 2017. He was
+with the Department of Informatics, King’s College
+London, from December 2007 to August 2017,
+where he was a Professor of wireless communi-
+cations from April 2013 to August 2017, and a
+Visiting Professor from September 2017 to August
+2020. He was an Assistant Professor with the Department of Electrical and
+Computer Engineering, National University of Singapore, from August 2000
+to December 2007. He has published nearly 900 technical papers in scientific
+journals and international conferences. His research interests include artificial
+intelligence for wireless systems, beyond 5G wireless networks, and the
+Internet of Things (IoT).
+Dr. Nallanathan was a co-recipient of the Best Paper Award presented at
+the IEEE International Conference on Communications 2016 (ICC’2016),
+the IEEE Global Communications Conference 2017 (GLOBECOM’2017),
+and the IEEE Vehicular Technology Conference 2018 (VTC’2018), and a
+co-recipient of the IEEE Communications Society Leonard G. Abraham
+Prize in 2022. He is an IEEE Distinguished Lecturer. He has been selected
+as a Web of Science Highly Cited Researcher in 2016 and 2022–2025.
+He received the IEEE Communications Society SPCE Outstanding Service
+Award in 2012 and the IEEE Communications Society RCC Outstanding
+Service Award in 2014. He served as the Chair for the Signal Processing
+and Communication Electronics (SPCE) Technical Committee of the IEEE
+Communications Society and the technical program chair and a member
+of the technical program committees in numerous IEEE conferences. He
+was a Senior Editor of IEEE WIRELESS COMMUNICATIONS LETTERS and
+an Editor of IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS,
+IEEE TRANSACTIONS ON COMMUNICATIONS, IEEE TRANSACTIONS ON
+VEHICULAR TECHNOLOGY, and IEEE SIGNAL PROCESSING LETTERS. He
+served as a Guest Editor for numerous special issues on IEEE JOURNAL ON
+SELECTED AREAS IN COMMUNICATIONS.
+Authorized licensed use limited to: CITY UNIV OF HONG KONG. Downloaded on August 02,2026 at 14:19:51 UTC from IEEE Xplore. Restrictions apply.
+

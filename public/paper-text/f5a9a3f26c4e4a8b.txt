@@ -1,0 +1,2203 @@
+1
+DynaPURLS: Dynamic Refinement of Part-aware
+Representations for Skeleton-based Zero-Shot
+Action Recognition
+Jingmin Zhu, Anqi Zhu, James Bailey, Jun Liu, Hossein Rahmani, Mohammed Bennamoun, Farid Boussaid,
+and Qiuhong Ke∗
+Index Terms—Skeleton-Based Action Recognition, Zero-Shot Learning, Test-Time Adaptation, Large Language Models, Cross-Modal Alignment.
+Abstract—Zero-shot skeleton-based action recognition (ZS-SAR) is fundamentally constrained by prevailing approaches that rely on
+aligning skeleton features with static, class-level semantics. This coarse-grained alignment fails to bridge the domain shift between
+seen and unseen classes, thereby impeding the effective transfer of fine-grained visual knowledge. To address these limitations, we
+introduce DynaPURLS, a unified framework that establishes robust, multi-scale visual-semantic correspondences and dynamically
+refines them at inference time to enhance generalization. Our framework leverages a large language model to generate hierarchical
+textual descriptions that encompass both global movements and local body-part dynamics. Concurrently, an adaptive partitioning
+module produces fine-grained visual representations by semantically grouping skeleton joints. To fortify this fine-grained alignment
+against the train-test domain shift, DynaPURLS incorporates a dynamic refinement module. During inference, this module adapts textual
+features to the incoming visual stream via a lightweight learnable projection. This refinement process is stabilized by a confidence-aware,
+class-balanced memory bank, which mitigates error propagation from noisy pseudo-labels. Extensive experiments on three large-scale
+benchmark datasets, including NTU RGB+D 60/120 and PKU-MMD, demonstrate that DynaPURLS significantly outperforms prior art,
+setting new state-of-the-art records. The source code is made publicly available at https://github.com/Alchemist0754/DynaPURLS
+✦
+1 INTRODUCTION
+HUMAN Action Recognition (HAR) has emerged as a
+cornerstone technology in computer vision, enabling
+machines to comprehend human behaviors from sensory
+data. This capability is fundamental to transformative appli-
+cations across diverse domains, including immersive virtual
+reality [1], [2], intelligent transportation [3], [4], large-scale
+video retrieval [5], and human-robot collaboration [6], [7].
+While RGB-based solutions have historically dominated HAR
+research, buoyed by massive annotated datasets [8], [9], the
+maturation of human pose estimation [10] and depth-sensing
+hardware [11], [12] has positioned 3D skeleton sequences
+as a compelling alternative. Skeleton data offers distinct
+advantages: it is computationally efficient, inherently privacy-
+preserving, and robust to environmental variations such as
+background clutter and lighting changes [13], [14], [15].
+Despite remarkable progress in fully supervised skeleton-
+based HAR [16], [17], [18], [19], [20], [21], these approaches
+are constrained by their reliance on exhaustive annotations
+for all action classes. This paradigm falters when confronted
+with real-world scenarios involving rare, hazardous, or
+expensive-to-collect actions, creating a critical deployment
+• J. Zhu and A. Zhu are with Monash University.
+E-mail: jingmin.zhu1@monash.edu, maggie.zhu@monash.edu
+• J. Bailey is with Monash University.
+E-mail: james.a.bailey@monash.edu
+• H. Rahmani and J. Liu are with Lancaster University.
+E-mail: h.rahmani@lancaster.ac.uk, j.liu81@lancaster.ac.uk
+• M. Bennamoun and F. Boussaid are with University of Western Australia.
+E-mail: mohammed.bennamoun@uwa.edu.au, farid.boussaid@uwa.edu.au
+• Q. Ke is with Monash University.
+E-mail: Qiuhong.Ke@monash.edu
+• ∗ Corresponding author.
+Fig. 1: An example illustrating the limitations of global-only alignment.
+A seen class (“Hit another person with something”) and an unseen
+class (“Shoot at the basket”) from NTU RGB+D 120 [12] exhibit different
+overall motions but share similar local hand movements.
+bottleneck. Zero-Shot Learning (ZSL) offers a compelling
+path forward by transferring knowledge from seen to unseen
+categories through a shared semantic space, enabling the
+recognition of novel actions without direct training examples.
+However, existing skeleton-based ZSL methods [22], [23],
+[24] predominantly depend on aligning a single, global
+motion feature with a corresponding class-level semantic
+embedding. This coarse alignment strategy is insufficient for
+the nuanced demands of action recognition. As illustrated
+in Figure 1, actions with disparate global patterns (e.g.,
+“Hit another person with something” vs. “Shoot at the
+basket”) may share remarkably similar fine-grained motions
+in specific body parts. Such part-level correspondences are a
+crucial source of transferable knowledge, yet they are largely
+neglected by current models. Moreover, even recent fine-
+grained ZSL methods [25], [26] introduce another critical
+arXiv:2512.11941v2
+[cs.CV]
+23
+May
+2026
+2
+(a) Pre-adaptation (b) Post-adaptation
+Fig. 2: t-SNE visualization of feature distributions before and after test-
+time refinement on NTU RGB+D 60 (55/5 split), where ⋆ represents
+text features and • represents skeleton features. Our method effectively
+promotes alignment between modalities, achieving a 9.3% improvement.
+challenge by operating on static semantic information. The
+textual descriptions are generated offline from language
+prompts alone, without access to the visual data they are
+meant to represent. This often results in descriptions that are
+semantically plausible but lack the subtle, instance-specific
+distinctions necessary for precise recognition. The learned
+alignment is often brittle and fails to generalize, as the
+features of unseen actions introduce a significant domain
+shift, preventing effective knowledge transfer.
+To overcome these interconnected challenges, we intro-
+duce DynaPURLS, a framework that pioneers a paradigm
+shift from static matching to dynamic, adaptive alignment.
+To address the issue of coarse alignment, DynaPURLS forges
+a more granular connection between semantics and motion.
+It employs a Large Language Model (LLM), specifically GPT-
+3 [27], to decompose high-level action labels into detailed
+descriptions of both global movements and localized part-
+level motions. These multi-granularity descriptions, encoded
+via text encoders like CLIP [28], are then aligned with
+corresponding visual features. Critically, instead of using
+fixed body parts, DynaPURLS utilizes an adaptive partition-
+ing module that learns to group skeleton joints, creating
+visual representations that dynamically match the generated
+semantic descriptions. This ensures a robust, fine-grained
+alignment during training.
+Furthermore, DynaPURLS tackles the problem of static
+semantics by introducing a dynamic, confidence-guided
+refinement at inference time. This novel mechanism di-
+rectly addresses the domain shift problem by introducing
+a lightweight transformation that dynamically refines the
+fine-grained textual features to adapt to the specific visual
+context of each sample. This refinement markedly enhances
+alignment and modality coherence for unseen classes, as
+visualized in Figure 2. To ensure a stable optimization
+process and mitigate bias, our methodology is fundamentally
+architected on a principle of class-balancing. The core
+of this is a confidence-guided optimization strategy that
+leverages the model’s own high-confidence predictions as
+a self-supervised signal. We innovate by incorporating a
+small-scale, class-balanced memory bank to mechanistically
+avert the risk of overconfidence. This design filters and stores
+high-confidence samples, enforcing a balanced representation
+across classes during updates, which not only prevents model
+skew but also drastically improves the recognition rate of
+previously misclassified minority classes.
+In summary, our main contributions are:
+• We propose DynaPURLS, a novel framework for zero-
+shot skeleton-based action recognition that addresses
+the limitations of coarse alignment and static seman-
+tics by creating a dynamic link between visual and
+textual features.
+• We introduce a fine-grained adaptive alignment
+strategy that matches multi-granularity semantics
+from an LLM with visual features from a novel
+adaptive partitioning module to enable effective part-
+level knowledge transfer.
+• We pioneer a test-time feature refinement mechanism
+using a lightweight, confidence-guided optimization
+and a class-balanced memory bank to adapt semantic
+features at inference, mitigating domain shift with
+minimal overhead.
+• Through extensive experiments on three challenging
+benchmarks (NTU RGB+D 60 [11], NTU RGB+D
+120 [12], and PKU-MMD [29]), we demonstrate that
+DynaPURLS sets a new state of the art in both ZSL
+and GZSL settings.
+This paper is an extension of our earlier conference
+paper [30]. The main improvements are: (1) A novel dynamic
+refinement module for inference time that resolves the
+static semantic limitations of the original PURLS and yields
+consistent performance gains. To our knowledge, this is
+the first work to employ test-time adaptation for zero-shot
+skeleton-based action recognition. (2) An extended evalua-
+tion under the GZSL setting demonstrates that our method
+achieves state-of-the-art results, outperforming PURLS and
+prior methods in a more realistic recognition scenario. (3)
+A comprehensive suite of ablation studies systematically
+analyzes each component of our dynamic model, elucidating
+the design rationale and empirically validating their effec-
+tiveness.
+2 RELATED WORK
+2.1 Multi-modal Learning and Zero-Shot Foundations
+Zero-Shot Learning (ZSL) recognizes novel classes by trans-
+ferring knowledge from seen classes via a shared semantic
+space. Early embedding-based methods focused on learning
+compatible visual-semantic projections [31], [32], [33], while
+generative approaches synthesize visual features from seman-
+tic embeddings [34]. Recent compositional action recognition
+work [35] has demonstrated the value of progressive instance-
+aware feature learning for novel action-object combinations.
+The modern ZSL landscape has been reshaped by large-
+scale multi-modal learning. CLIP [28] created a powerful
+vision-language manifold through contrastive pre-training,
+spurring efforts to extend this to other modalities like 3D
+point clouds [36], [37].
+Our work builds upon these principles but argues that
+generic vision-language models are insufficient for skeleton-
+based action recognition, which requires specialized designs
+to exploit fine-grained spatio-temporal characteristics.
+3
+2.2 Zero-Shot Learning for Skeleton-Based Actions
+Adapting ZSL principles to skeleton-based action recogni-
+tion began with pioneering works that projected globally-
+pooled skeleton features into a semantic space using DeViSE-
+like models or common-space metric learning [22], [38].
+While these methods validated the feasibility of skeleton
+ZSL, they were limited by their reliance on coarse, global
+representations, often failing to distinguish actions with
+similar overall movements but different local limb motions.
+The importance of spatiotemporal modeling in skeleton
+understanding has been well-established across various
+tasks, including motion prediction where co-attention mech-
+anisms [39] have proven effective at capturing joint-level spa-
+tial consistency and temporal evolution. Beyond supervised
+settings, self-supervised and semi-supervised approaches
+have explored multi-granularity representation learning for
+skeleton data. For instance, MAC-Learning [40] introduced
+anchor-contrastive learning across local, context, and global
+granularities to address pair ambiguity in semi-supervised
+settings, while X-CAR [41] proposed learnable augmentation
+strategies to ensure consistency between augmentation and
+representation learning. Similarly, SDS-CL [42] decoupled
+spatial and temporal features for more nuanced contrastive
+learning. These works underscore the importance of fine-
+grained, multi-level feature extraction, a principle we lever-
+age in our zero-shot framework. Subsequent research has pro-
+gressively sought more fine-grained alignment. For instance,
+SMIE [24] improved temporal modeling by maximizing the
+mutual information between visual and textual distributions,
+while SynSE-ZSL [23] made an early attempt at local semantic
+matching by leveraging the syntactic structure (verbs and
+nouns) within action labels to guide knowledge transfer. The
+field took a significant leap forward with the use of Large
+Language Models (LLMs) to generate rich, multi-granularity
+semantic descriptions. Our foundational work, PURLS [30],
+and the concurrent STAR [26], represent the state of the art
+by aligning fine-grained, spatio-temporal skeleton features
+with detailed, LLM-generated prompts, proving the efficacy
+of multi-level cross-modal alignment.
+Despite their increasing sophistication, these frameworks,
+including our own PURLS, have largely been built upon
+static semantic representations. Recognizing this limitation,
+the most recent works have begun to challenge this static
+paradigm during the model training phase. For example,
+SCoPLe [43] introduces learnable cross-modal prompts to
+refine semantic guidance, and Neuron [44] proposes a
+context-aware evolving representation. While these methods
+embed adaptability into the training process, the learned
+semantic anchors remain fixed during inference. This still
+leaves a critical “Semantic-Visual Gap” when encountering
+the dynamic visual manifestations of unseen classes. Our
+work addresses this gap from a distinct angle, proposing
+a method to overcome the static representation problem
+directly at inference-time, thereby tackling the domain shift
+inherent in ZSL more effectively.
+2.3 Test-Time Adaptation for Zero-Shot Learning
+Test-Time Adaptation (TTA) aims to bridge the distribution
+gap between training and test data by adapting a pre-trained
+model during inference [45], [46], [47], [48]. These general-
+purpose methods were not designed for the unique chal-
+lenges of skeleton-based ZSL. Many approaches adapt the
+model using pseudo-labels derived from its own confident
+predictions, for instance by minimizing prediction entropy
+or using nearest-neighbor classification [49]. A prominent
+trend in vision-language models involves adapting textual
+prompts to better match test data, using augmentation-based
+consistency [50], diffusion model-based augmentations [51],
+or other prompt enhancement strategies [52]. Other efficient
+methods directly refine predictions by aligning test feature
+distributions or constructing feature caches [53]. However,
+when applied to skeleton ZSL, these generic strategies fall
+short. They either incur significant computational overhead
+or treat features holistically, failing to perform the fine-
+grained, targeted adjustments needed to bridge the specific
+“Semantic-Visual Gap” between static, multi-level textual
+prompts and dynamic skeleton motions.
+To address this specific challenge, we propose Dyna-
+PURLS, a novel TTA strategy deeply integrated with our
+PURLS backbone. Rather than applying a generic adaptation
+scheme, DynaPURLS is purpose-built to resolve the core
+limitation of PURLS: its reliance on static semantic represen-
+tations. Its core novelty is being the first to propose adapting
+the multi-granularity semantic representations themselves
+at test time. This is achieved through a lightweight, gradient-
+guided online optimization that transforms semantic features
+to align with incoming visual evidence, avoiding costly
+updates to the large visual and text encoders. This dynamic
+refinement is stabilized by a confidence-guided optimization
+mechanism and a class-balanced memory bank, ensuring ro-
+bust and efficient adaptation tailored to the structured nature
+of skeleton data. DynaPURLS thus carves a distinct path by
+showing that a specialized, semantics-focused adaptation is
+significantly more effective for skeleton-based ZSL.
+3 METHODOLOGY
+In this section, we introduce our novel framework,
+the Dynamic Part-aware Unified Representation between
+Language and Skeleton (DynaPURLS), designed for zero-
+shot skeleton-based action recognition. As shown in Fig. 3
+and Fig. 6, the framework contains a multi-granularity
+semantic representation module, which leverages Large
+Language Models (LLMs) to generate rich, hierarchical action
+descriptions that capture transferable motion primitives; an
+adaptive partitioning and visual-semantic alignment module,
+which employs a cross-modal attention mechanism to dynam-
+ically align visual features with their corresponding semantic
+concepts, overcoming the limitations of static partitioning;
+and a dynamic test-time feature refinement module, which
+adapts the semantic embeddings online using a confidence-
+guided, class-balanced memory bank for robust handling of
+domain shifts inherent to unseen classes. We first describe
+the problem definition (Section 3.1) before detailing each
+component: the multi-granularity semantic representation
+(Section 3.2), the adaptive partitioning and visual-semantic
+alignment (Section 3.3), and the dynamic test-time feature
+refinement (Section 3.4).
+4
+3.1 Problem Definition
+Zero-Shot Learning (ZSL). The task of Zero-Shot Learning
+(ZSL) [54] aims to enable models to recognize instances from
+classes that were not present during training. Formally, we
+are given a labeled training dataset Ds = {(xi, yi)}Ns
+i=1 from
+a set of seen classes Ys, where xi ∈ X represents a visual
+input (in our case, a skeleton sequence), and yi ∈ Ys is its
+corresponding class label. The core challenge lies in enabling
+the model to correctly classify samples from a disjoint set of
+unseen classes Yu during inference, where Ys ∩ Yu = ∅.
+This cross-class generalization is made possible through
+a shared semantic space that bridges the gap between visual
+features and class concepts. Typically, this takes the form
+of pre-defined vector embeddings F = {Fy ∈ Rd
+: y ∈
+Ys ∪ Yu}, which are available for all classes (both seen and
+unseen). These embeddings encode semantic properties that
+are expected to correlate with visual characteristics. In the
+standard ZSL setting, the model is evaluated on a test set
+Du = {(xj, yj)}Nu
+j=1 where yj ∈ Yu, and the prediction space
+is restricted to unseen labels, i.e., f : X → Yu.
+Generalized Zero-Shot Learning (GZSL). While standard
+ZSL provides a useful theoretical framework, real-world
+applications often demand a more challenging setting known
+as Generalized ZSL (GZSL). In this setting, the test set
+contains samples from both seen and unseen classes, and the
+prediction space is expanded to the union of both label sets,
+f : X → Ys ∪ Yu. This introduces a significant challenge: the
+model must not only correctly classify novel unseen actions
+but also maintain its ability to recognize seen actions it was
+trained on. Many ZSL approaches suffer from a strong bias
+towards seen classes in this setting, as the model has learned
+direct mappings for these classes during training, leading
+to a tendency to misclassify unseen samples as belonging to
+familiar seen categories.
+Test-Time Adaptation (TTA). Test-Time Adaptation
+(TTA) [46], [55] represents a paradigm shift in how models
+handle distribution shifts between training and testing data.
+Rather than relying solely on the generalization capability
+learned during training, TTA enables models to dynamically
+adapt using the test data itself, typically in an online and
+unsupervised manner. For an incoming mini-batch of test
+data Bt = {xi}B
+i=1 at time step t, the model parameters θ are
+updated based on an adaptation objective Ladapt:
+θt = θt−1 − α∇θLadapt(Bt; θt−1) (1)
+where α is the learning rate for adaptation. In the context
+of ZSL, TTA presents a particularly promising direction for
+bridging the gap between the training distribution Ptrain(x |
+y ∈ Ys) and the distinct test-time distribution Ptest(x | y′
+∈
+Yu). This is especially crucial given that unseen classes may
+exhibit visual characteristics that differ systematically from
+those observed during training.
+3.2 Multi-Granularity Semantic Representation Genera-
+tion Module
+Human action understanding inherently operates at multiple
+levels of granularity. When observing an action, we simul-
+taneously process global patterns (e.g., "a person throwing
+something") and local details (e.g., "the arm extends upward"
+or "the legs provide stability"). Inspired by this multi-scale
+SE
+handshaking
+Describe in how each
+body part moves for
+<handshaking>
+Separate the motion
+of <handshaking>
+into three phases
+Describe in very
+short how a person
+does <handshaking>
+LLM
+...
+...
+add prompt
+TE
+Nod in greeting.
+Extend hand.
+.
+...
+...
+Extend their hand and
+grasp the other
+person's hand.
+Skeleton Feature Visual Feature
+Text Feature
+. .
+.
+. Detailed Prompt
+MLP
+AP
+Skeleton Encoder
+Text Encoder
+Adaptive Partition
+Fig. 3: Training pipeline of DynaPURLS. The model learns a robust
+static alignment between visual features extracted by the skeleton
+encoder and multi-granularity semantic embeddings from the text
+encoder. We employ an adaptive partitioning module where static text
+embeddings serve as queries to flexibly aggregate visual information.
+Fig. 4: Static spatial partitioning scheme for decomposing 25 body joints
+into four semantic body parts: (i) Head: joints 0, 1, 2, 3 (ii) Hands: joints
+4-11, 21-24 (iii) Torso: joints 12, 16, 20 (iv) Legs: joints 13-15, 17-19.
+perception, we propose to decompose actions into seman-
+tically meaningful components that can be independently
+learned and transferred across different action classes.
+3.2.1 Fine-Grained Action Decomposition
+We regard an action as a specific combination of local body
+movements that can be spatially or temporally decomposed.
+Beyond label-level semantics, these local movements repre-
+sent individual visual concepts that are transferable across
+different classes. For instance, the arm-raising motion in
+"shooting a basketball" shares visual similarities with the
+arm-raising in "hitting with an object," despite the different
+overall action contexts.
+To systematically extract such underlying semantics,
+we leverage the powerful language understanding capa-
+bilities of GPT-3 to generate detailed textual descriptions
+for movements at different scales. We design three types
+of decomposition: (1) Spatial Decomposition, where we
+generate descriptions for movements performed by P = 4
+distinct body parts: ‘head’, ‘hands’, ‘torso’, and ‘legs’, as
+exemplified in Table 1; (2) Temporal Decomposition, where
+we divide the action into Z = 3 contiguous temporal
+intervals: ‘start’, ‘middle’, and ‘end’, as shown in Table 2;
+and (3) Global Description, where we generate holistic
+descriptions that augment the original action labels with
+more detailed semantic information about the overall motion
+pattern.
+3.2.2 Prompt Engineering and Embedding Generation
+To ensure consistent and informative responses from
+GPT-3, we employ a structured prompt template. For local
+part descriptions, we format our queries as: Using the
+5
+Action
+Question: Describe in very short how each body part moves for <Action>.
+Head Hands Torso Legs
+Hit another person
+with something
+Turn towards the
+other person.
+Grip the object tightly
+and thrust it forward.
+Twist and turn to generate
+momentum for the strike.
+Stomp the ground to provide
+additional force for the strike.
+Shoot at the
+basket
+Turn and look up
+towards the basket.
+Grip the ball
+and release it.
+Twist and extend to generate
+power for the shot.
+Bend slightly and
+propel slightly upward.
+TABLE 1: Example body-part-based descriptions generated by GPT-3. The refined explanations reveal shared motion patterns between semantically
+related actions: both ‘hit another person with something’ and ‘shoot at the basket’ involve similar head turning and hand gripping movements,
+highlighting transferable local motion concepts.
+Action
+Question: Separate the motion of <Action> into three phases. Question: Describe in very short
+how a person does <Action>.
+Start Middle End
+Hit another person
+with something
+Raise arm. Swing arm. Strike other person.
+Swing their arm and strike the
+other person with the object.
+Shoot at the
+basket
+Raise arm. Throw ball. Aim at basket.
+Raise their arm and throw the ball
+towards the basket.
+TABLE 2: Example temporal-interval-based and global descriptions generated by GPT-3. The temporal decomposition reveals that both actions
+share a common starting phase (raising arm), demonstrating how temporal segments can capture transferable motion primitives across different
+action classes.
+following format, <QUESTION>: <LOCAL PART 1>
+would: ...; <LOCAL PART 2> would: ...; ...;
+<LOCAL PART H> would: ... where H ∈ {P, Z}
+represents either the number of body parts or temporal
+segments. This structured format ensures that GPT-3
+provides complete descriptions for all requested components
+in a consistent manner. The specific prompt content and
+outputs can be referenced in Tables 1 and 2.
+After acquiring the targeted descriptions Dy = {d
+(i)
+y }P +Z
+i=0
+for each class y (where d
+(0)
+y represents the global description
+and d
+(1)
+y through d
+(P +Z)
+y represent local descriptions), we
+convert them into standard visual-language prompts. Specif-
+ically, each description is wrapped in a template such as "a
+video of [DESCRIPTION]" to maintain consistency with the
+pre-training objective of the visual-language model. These
+prompts are then processed through a pre-trained CLIP text
+encoder, ftext, to obtain their corresponding embeddings:
+F(i)
+y = ftext(prompt(d(i)
+y )) ∈ Rd
+(2)
+where prompt(·) denotes the prompting function and d
+is the text embedding dimension. The embeddings are
+concatenated to form the static multi-granularity semantic
+anchor matrix for all C classes:
+F = {Fy : y ∈ Ys ∪ Yu} ∈ RC×(P +Z+1)×d
+(3)
+This matrix F serves as the foundational semantic representa-
+tion for our framework, encoding both global action concepts
+and local motion patterns that can be shared across different
+action classes.
+3.3 Adaptive Partitioning and Visual-Semantic Align-
+ment
+This section details our mechanism for adaptively partition-
+ing and aligning multi-granularity semantic representations
+with visual features from skeleton sequences. This approach
+learns a robust alignment during training, which serves as
+the foundation for dynamic refinement at test time.
+3.3.1 Visual Feature Extraction
+Given a raw skeleton sequence x ∈ RL×J×M×3
+, where
+L, J, M are the sequence length, number of joints, and
+Fig. 5: Adaptive partitioning module. Each textual description acts as
+a query to attend over all spatio-temporal visual features, learning to
+focus on the most relevant nodes for that semantic concept.
+maximum number of persons, respectively, we first apply
+standard pre-processing (padding and normalization) follow-
+ing [21]. We then employ a pre-trained Shift-GCN [21] as our
+backbone encoder, denoted g, to extract rich spatio-temporal
+features:
+G = g(x) ∈ RS×n
+(4)
+where S = L′
+× J is the total number of spatio-temporal
+nodes (with L′
+being the temporal dimension after pooling),
+and n is the visual feature dimension. Each row in G is a
+feature vector for a specific joint at a specific time, capturing
+both spatial configuration and temporal dynamics.
+3.3.2 Adaptive Partitioning via Cross-Modal Attention
+To align the visual feature map G with our multi-granularity
+text features F, we require a mechanism to group visual
+features based on their semantic relevance to each description.
+A naive approach is static partitioning: manually grouping
+joints into pre-defined body parts (Fig. 4) and dividing
+the sequence into fixed temporal segments. However, this
+method is fundamentally flawed due to its rigidity, as pre-
+defined partitions cannot adapt to action-specific motion
+variations. It also leads to a loss of context (e.g., leg motion
+is best understood with concurrent arm swing) and creates
+boundary issues, where hard boundaries can unnaturally
+sever semantically coherent motions.
+6
+Test Data
+Description
+Class A
+Class B
+Class C
+Affine Learner
+(c). Class-Balanced Memory Bank
+(b). Feature Refinement
+(a). Pretrained PURLS
+Skeleton
+Feature
+Adaptive
+Partitioning
+Visual
+Feature
+Skeleton
+Encoder
+Text
+Encoder
+Scale
+Parameter
+Bias
+Parameter
+Text
+Feature
+optimize
+Probability
+Fig. 6: Test-time feature refinement pipeline of DynaPURLS. The framework dynamically refines semantic embeddings based on high-confidence
+test samples stored in a class-balanced memory bank, enabling robust adaptation to distribution shifts in unseen classes. The refined embeddings
+are used to update the cross-modal attention mechanism for improved visual-semantic alignment.
+To overcome these limitations, we propose an adaptive
+partitioning module based on cross-modal attention, de-
+picted in Figure 5. This approach learns to dynamically
+aggregate description-relevant features from the entire spatio-
+temporal map G, allowing each semantic concept to attend to
+its most relevant visual evidence, irrespective of pre-defined
+boundaries. Importantly, this attention-based mechanism
+provides robustness to partial occlusions and viewpoint
+variations. When certain joints are occluded or exhibit weak
+motion, the attention weights can adaptively down-weight
+their contribution, while emphasizing more reliable features.
+This soft weighting scheme enables flexible handling of
+incomplete visual observations, as each textual description
+can focus on the most informative spatio-temporal regions
+for the current action.
+Specifically, we treat the text embeddings as queries and
+the visual features as keys and values. The queries are learned
+projections of the static semantic embeddings:
+Q = FWQ ∈ R(P +Z+1)×h
+(5)
+where WQ ∈ Rd×h
+is a learnable projection matrix. Similarly,
+the visual features are projected to form keys:
+K = GWK ∈ RS×h
+(6)
+where WK ∈ Rn×h
+is another learnable projection. The
+attention matrix A ∈ R(P +Z+1)×S
+is computed via scaled
+dot-product attention:
+A = softmax
+QK⊤
+√
+h
+!
+(7)
+Intuitively, each row Ai of the attention matrix represents a
+soft selection of all S spatio-temporal nodes with respect to
+the i-th textual description. The final fused visual representa-
+tion R ∈ R(P +Z+1)×n
+is obtained by a weighted aggregation
+of the visual features:
+R = AG (8)
+This attention-based fusion is flexible, context-preserving,
+and learnable, allowing it to adapt to the specific character-
+istics of each action class.
+3.3.3 Visual-Semantic Alignment and Training Objective
+The training objective is to learn a strong alignment be-
+tween the fused visual representations and the static multi-
+granularity semantic embeddings. We project each row vector
+ri ∈ Rn
+from the fused visual representation R (Eq. 8) into
+the textual embedding space using a trainable MLP, fskel:
+vi = fskel(ri) ∈ Rd
+, i ∈ {0, 1, . . . , P + Z} (9)
+We employ a symmetric InfoNCE loss [56] to maximize the
+similarity between matched visual-text pairs while pushing
+negative pairs apart. The contrastive loss for a projected
+visual feature vi and its ground-truth text feature fi is:
+L(vi, fi) = −
+1
+2
+log
+exp(sim(vi, fi)/τ)
+P
+o∈Ys
+exp(sim(vi, fo
+i )/τ)
+−
+1
+2
+log
+exp(sim(vi, fi)/τ)
+P
+w∈B exp(sim(vw
+i , fi)/τ)
+(10)
+where sim(·, ·) is cosine similarity, fo
+i are text embeddings
+from other (negative) seen classes, vw
+i are visual embeddings
+from other (negative) samples in the batch B, and τ is a
+temperature parameter. The symmetric formulation ensures
+a robust bidirectional alignment.
+The overall training loss aggregates the losses across all
+granularities using learnable importance weights αi:
+Ltrain(x, y) =
+P +Z
+X
+i=0
+αiL(vi, fi) (11)
+7
+Algorithm 1: DynaPURLS Inference Procedure
+Input: Test samples {xi}Ntest
+i=1 , confidence threshold τconf,
+bank capacity K, refinement rate β
+Output: Predictions {ŷi}Ntest
+i=1
+Initialize Mc = ∅ for each class c, S = 1, ∆F = 0;
+for each test sample xi do
+Gi = g(xi), F′
+= N(S ⊙ F + ∆F), Q′
+= F′
+WQ;
+Ri = Attention(Q′
+, Gi), vi = fskel(ri,global);
+Compute pi using vi and F′
+, ŷi = arg maxc pi,c,
+confi = pi,ŷi ;
+if confi > τconf then
+Update Mŷi with (xi, ŷi, confi);
+if |Mŷi | > K then
+Remove sample with lowest confidence from
+Mŷi ;
+end
+end
+if |M| ≥ Bmin then
+Sample class-balanced batch B ⊂ M;
+Ladapt = − 1
+|B|
+P
+(xj ,ŷj )∈B log p′
+j,ŷj
+;
+S ← S − β∇SLadapt, ∆F ← ∆F − β∇∆FLadapt;
+end
+end
+return {ŷi}Ntest
+i=1
+These weights allow the model to adaptively balance the
+contribution of each semantic granularity, which is cru-
+cial as different actions rely on different scales of mo-
+tion. The parameters optimized at this stage are θtrain =
+{g, WQ, WK, fskel, {αi}}.
+3.4 Dynamic Test-Time Feature Refinement
+While the alignment module establishes a robust visual-
+semantic mapping, the static nature of text embeddings limits
+performance against test-time distribution shifts, especially
+for unseen classes. To address this, we introduce our primary
+innovation: a dynamic query refinement mechanism that
+adapts semantic representations online. This module builds
+upon the cross-modal attention from Section 3.3. By refining
+the semantic features, which serve as queries, we indirectly
+yet effectively influence the visual feature aggregation,
+thereby dynamically adapting the final visual representations
+to the test distribution.
+3.4.1 Dynamic Semantic Refinement
+Instead of using static queries from F, we introduce
+lightweight, learnable parameters to adjust the semantic
+embeddings based on test data characteristics. For each test
+batch, the refined text features F′
+are computed via an affine
+transformation:
+F′
+= N (S ⊙ F + ∆F) (12)
+where S ∈ RC×(P +Z+1)×d
+is a learnable scaling tensor,
+∆F ∈ RC×(P +Z+1)×d
+is a learnable bias tensor, ⊙ denotes
+element-wise multiplication, and N(·) is per-vector L2 nor-
+malization. This provides an effective yet efficient mechanism
+for adapting embeddings to the test distribution.
+The test-time fusion process then uses dynamic queries
+constructed from these refined features:
+Q′
+= F′
+WQ (13)
+The subsequent attention and feature aggregation proceed
+as before, but now with adaptive queries. This dynamic
+adjustment of semantic queries indirectly refines the fused
+skeleton features by altering the attention weights. This
+refinement is particularly valuable when test-time visual
+observations differ from training expectations due to occlu-
+sions, viewpoint variations, or domain shifts. By adapting
+the semantic anchors online, the model can help reduce
+misalignments between idealized text descriptions and actual
+visual evidence, thereby improving cross-modal alignment
+robustness under imperfect conditions. Critically, during this
+stage, the main network parameters θtrain are frozen. Only
+the lightweight refinement parameters θadapt = {S, ∆F} are
+updated, ensuring efficient refinement without catastrophic
+forgetting.
+3.4.2 Confidence-Guided Online Optimization
+The efficacy of TTA hinges on the quality of its self-
+supervisory signal. Naive entropy minimization often leads
+to confirmation bias, where the model reinforces its own
+incorrect predictions. To avert this, we propose a more robust
+strategy based on selective optimization.
+Class-Balanced Memory Bank. Our key insight is that
+samples with high prediction confidence provide more
+reliable supervisory signals. We introduce a Class-Balanced
+Memory Bank M to store a balanced set of high-confidence,
+pseudo-labeled test samples. As detailed in Algorithm 1,
+for each incoming sample xi, we compute its prediction
+probability distribution using the current refined semantic
+embeddings F′
+:
+pi,c =
+exp (sim(vi, f′
+c)/τ)
+PC
+j=1 exp
+
+sim(vi, f′
+j)/τ
+ (14)
+where vi is the global visual feature and f′
+c is the refined
+global text feature for class c.
+The memory bank maintains at most K samples per class,
+preventing bias towards frequent classes. When a class’s
+bank is full, new high-confidence samples replace those with
+the lowest confidence, progressively improving the quality
+of stored exemplars.
+Refinement Objective. Using the curated samples in M =
+S
+c Mc, we define the refinement loss as the cross-entropy
+over the pseudo-labels:
+Ladapt = −
+1
+|B|
+X
+(xj ,ŷj )∈B
+log p′
+j,ŷj
+(15)
+where p′
+j,ŷj
+is the probability for sample xj from a balanced
+batch B ⊂ M, recomputed with the current adaptive
+parameters. These parameters are then updated via gradient
+descent:
+θadapt ← θadapt − β∇θadapt
+Ladapt (16)
+where β is the refinement learning rate. This selective opti-
+mization process refines the semantic embeddings to better
+align with the true test distribution, stabilizing adaptation
+and improving generalization to unseen classes.
+3.5 GZSL Protocol Extension
+In GZSL, the model must differentiate between seen and
+unseen classes. Inspired by OOD detection methods [57], [58],
+8
+[59], we implement an entropy-based gating mechanism. We
+first calculate the predictive entropy for each test sample xi
+with respect to the entire set of class semantics Ys ∪ Yu:
+H(pi) = −
+C
+X
+c=1
+pi,c log pi,c. (17)
+Using an entropy threshold δ tuned on a validation set, we
+triage samples: those with entropy below δ (low uncertainty)
+are classified as likely ‘seen’, while those above δ (high
+uncertainty) are deemed ‘unseen’. Following this separation,
+we classify each subset independently using only the corre-
+sponding ‘seen’ or ‘unseen’ class prototypes. This prevents
+the model from defaulting to high-confidence seen class
+predictions for unseen samples. The class-balanced memory
+bank is especially critical here, as it maintains distinct, high-
+quality representations for both seen and unseen classes,
+preventing feature drift and ensuring the refinement process
+remains robust.
+Summary. Our DynaPURLS framework addresses the se-
+mantic drift challenge in zero-shot skeleton-based action
+recognition through: (1) multi-granularity semantic repre-
+sentations that capture transferable motion concepts, (2)
+adaptive partitioning and visual-semantic alignment that
+flexibly aligns features across modalities and establishes
+robust multi-scale correspondences, and (3) dynamic test-
+time feature refinement that adapts semantic embeddings
+and indirectly refines visual features, with entropy-based
+domain separation for robust GZSL performance. Together,
+these components enable effective knowledge transfer to
+unseen action classes while maintaining strong performance
+on seen classes.
+4 EXPERIMENTS
+4.1 Experimental Setup
+4.1.1 Datasets
+We evaluate our approach on three widely-used, large-scale
+benchmarks for skeleton-based action recognition to ensure
+a comprehensive assessment of its capabilities.
+NTU RGB+D 60 [60] is a foundational dataset in the
+field, containing 56,880 skeleton sequences that cover 60
+distinct action classes. These actions were performed by
+40 different subjects and captured from 80 viewpoints,
+providing significant diversity. Each sequence offers 3D
+coordinates for 25 primary body joints and can accommodate
+up to two performers, with coordinate values being padded
+with zeros for single-person actions.
+NTU RGB+D 120 [61] serves as a large-scale extension of
+its predecessor, significantly increasing the complexity and
+diversity with 114,480 samples across 120 action classes. The
+data was collected from a larger pool of 106 subjects and
+across 155 distinct viewpoints, presenting a more challenging
+scenario for generalization. It maintains the same 25-joint
+skeleton representation, making it directly comparable with
+NTU RGB+D 60.
+PKU-MMD [29] is another critical multi-modal bench-
+mark, comprising approximately 20,000 action instances
+that span 51 categories. A key feature of this dataset is
+its division into two phases of increasing difficulty (Phase
+I and II), allowing for evaluation under varying levels of
+challenge. Although it follows the same 25-joint skeleton
+format as the NTU RGB+D datasets, it introduces different
+action types and recording conditions, making it an excellent
+testbed for evaluating model robustness and cross-dataset
+generalization.
+4.1.2 Evaluation Protocols
+We conduct experiments under two standard protocols. In
+Zero-Shot Learning (ZSL), the model is trained exclusively
+on seen classes and evaluated only on unseen classes,
+where we report Top-1 accuracy on the unseen test set. In
+Generalized Zero-Shot Learning (GZSL), the model must
+distinguish between both seen and unseen classes during
+testing, presenting a more realistic but challenging scenario.
+For GZSL, we report accuracy for seen classes (S), unseen
+classes (U), and their harmonic mean (H = 2×S×U
+S+U ), where
+H provides a balanced measure of performance across both
+domains.
+Following established practices [62], we employ multiple
+class split configurations to comprehensively assess gener-
+alization capability. For NTU RGB+D 60, we use 55/5 and
+48/12 splits (seen/unseen classes), while NTU RGB+D 120
+uses 110/10 and 96/24 splits. Additionally, recent works
+[25], [63] have introduced random split settings to provide
+more robust evaluation. For fair comparison, we adopt the
+same three public random splits from prior work for each
+dataset: three random 55/5 splits for NTU 60, three random
+110/10 splits for NTU 120, and three random 46/5 splits for
+PKU-MMD (using all 51 categories from both Phase I and
+II [26], [63]). We report averaged results across all random
+trials to ensure consistency with previous evaluations.
+4.1.3 Baseline Methods
+We compare against comprehensive state-of-the-art skeleton-
+based zero-shot learning methods spanning different
+paradigms. The embedding-based methods include DeViSE
+[64], which learns a linear transformation from visual to
+semantic space; ReViSE [65], which employs bidirectional
+projections between modalities; and JPoSE [38], which lever-
+ages part-of-speech embeddings for fine-grained action un-
+derstanding. Among generative approaches, CADA-VAE [66]
+uses variational autoencoders to synthesize visual features
+from semantic descriptions, while SynSE [62] exploits syntac-
+tic structures in action labels to guide feature generation.
+Recent skeleton-specific methods have introduced special-
+ized architectures. These include SMIE [63], which maximizes
+mutual information between visual and textual distributions;
+SA-DVAE [25], which employs disentangled autoencoders
+to separate action-specific features; STAR [26], which utilizes
+dual prompts guided by fine-grained information; Neuron
+[44], which introduces a framework for learning context-
+aware evolving representations; and SCoPLe [43], which
+pioneers semantic-guided cross-modal prompt learning. We
+also extend our PURLS [30] method to GZSL and other
+experimental settings to facilitate comprehensive evaluation
+and demonstrate the consistent improvements achieved by
+DynaPURLS across different scenarios.
+4.1.4 Implementation Details
+Our framework is meticulously implemented, building upon
+our proposed multi-granularity architecture with a novel
+9
+TABLE 3: Comparison with state-of-the-art methods on NTU RGB+D 60, NTU RGB+D 120, and Kinetics-skeleton 200 under fixed splits. ZSL Acc
+denotes the Top-1 accuracy in the ZSL setting (highlighted in gray). S, U, and H denote the seen accuracy, unseen accuracy, and harmonic mean in
+the GZSL setting, respectively. H is highlighted in gray as the key metric. Bold indicates the best performance, underline indicates the second best.
+Method
+NTU RGB+D 60 NTU RGB+D 120 Kinetics-skeleton 200
+55/5 48/12 110/10 96/24 180/20 160/40
+ZSL S U H ZSL S U H ZSL S U H ZSL S U H ZSL S U H ZSL S U H
+ReViSE [65] 53.91 74.22 34.73 47.32 17.49 62.36 20.77 31.16 55.04 48.69 44.84 46.68 32.38 49.66 25.06 33.31 24.95 24.52 18.96 21.28 13.28 24.61 10.09 14.33
+JPoSE [38] 64.82 64.44 50.29 56.49 28.75 60.49 20.62 30.75 51.93 47.66 46.40 47.05 32.44 38.62 22.79 28.67 28.40 25.58 22.44 23.89 16.75 25.47 13.23 17.38
+CADA-VAE [66] 76.84 69.38 61.79 65.37 28.96 51.32 27.03 35.41 59.53 47.16 49.78 48.44 35.77 41.11 34.14 37.31 27.15 26.14 20.09 22.71 15.82 26.23 11.71 16.18
+SynSE [62] 75.81 61.27 56.93 59.02 33.30 52.21 27.85 36.33 62.69 52.51 57.60 54.94 38.70 56.39 32.25 41.04 - - - - - - - -
+SMIE [63] 77.98 - - - 40.18 - - - 65.74 - - - 45.30 - - - - - - - - - - -
+STAR [26] 81.40 69.00 69.90 69.40 45.10 62.70 37.00 46.60 63.30 59.90 52.70 56.10 44.30 51.20 36.90 42.90 - - - - - - - -
+SA-DVAE [25] 82.37 62.28 70.80 66.27 41.38 50.20 36.94 42.56 68.77 61.10 59.75 60.42 46.12 58.82 35.79 44.50 - - - - - - - -
+Neuron [44] 86.90 69.10 73.80 71.40 62.70 61.60 56.80 59.10 71.50 67.60 59.50 63.30 57.10 67.50 44.40 53.60 - - - - - - - -
+SCoPLe [43] 84.10 69.60 71.94 70.75 52.96 54.49 61.83 57.93 74.53 63.51 61.08 62.27 52.17 53.33 51.18 52.24 - - - - - - - -
+PURLS [30] 79.22 71.70 60.35 65.53 40.99 81.60 36.92 50.84 71.95 76.25 67.89 71.80 52.01 72.67 45.32 55.81 32.22 26.77 26.09 26.43 22.56 26.89 18.27 21.84
+DynaPURLS (Ours) 88.52 72.67 67.43 69.95 71.80 82.48 61.81 70.66 89.06 80.02 83.00 81.49 69.11 74.41 56.70 64.36 40.52 27.49 43.68 33.76 35.08 27.58 36.96 31.67
+TABLE 4: Comparison with state-of-the-art methods on NTU RGB+D 60, NTU RGB+D 120, and PKU-MMD under random split settings. ZSL
+denotes the Top-1 accuracy in the ZSL setting. S, U, and H denote the seen accuracy, unseen accuracy, and harmonic mean in the GZSL setting,
+respectively. Bold indicates the best performance, underline indicates the second best.
+Method
+NTU RGB+D 60 NTU RGB+D 120 PKU-MMD
+ZSL S U H ZSL S U H ZSL S U H
+ReViSE [65] 60.94 71.75 52.06 60.34 44.90 48.29 34.64 40.34 59.34 60.89 42.16 49.82
+JPoSE [38] 59.44 66.25 54.92 60.05 46.69 49.43 39.14 43.69 57.17 60.26 45.18 51.64
+CADA-VAE [66] 61.84 77.35 58.14 66.38 45.15 51.09 41.24 45.64 60.74 63.17 35.86 45.75
+SynSE [62] 64.19 75.84 60.77 67.47 47.28 41.73 45.36 43.47 53.85 63.09 40.69 49.47
+SMIE [63] 65.08 - - - 46.40 - - - 60.83 - - -
+SA-DVAE [25] 84.20 78.16 72.60 75.27 50.67 58.09 40.23 47.54 66.54 58.49 51.40 54.72
+SCoPLe [43] 83.72 75.32 80.17 77.67 53.34 70.47 44.29 54.08 71.41 62.17 49.69 54.85
+DynaPURLS (Ours) 86.75 86.68 73.50 79.44 90.04 76.80 72.80 74.72 78.26 54.88 66.50 60.11
+dynamic inference-time refinement mechanism. The visual
+backbone is a Shift-GCN [67], which has proven effective
+for skeleton-based action recognition. It extracts rich 256-
+dimensional spatio-temporal features from input skeleton
+sequences through its efficient shift graph convolution and
+temporal convolution operations. Following the standard
+ZSL protocol to prevent any information leakage, we pre-
+train this visual encoder using only the seen class samples
+specific to each experimental split configuration [23]. All
+training parameters are kept consistent with those used
+in [23] and [63] to ensure fair comparison.
+For the generation of semantic representations, we em-
+ploy GPT-3 (text-davinci-003) language model. We use
+carefully engineered prompts to guide the model to produce
+detailed and structured action descriptions. These prompts
+systematically decompose each action into spatial compo-
+nents (covering 4 body parts: head, hands, torso, and legs)
+and temporal phases (across 3 segments: start, middle, and
+end). The resulting textual descriptions are then encoded
+into high-quality 512-dimensional feature vectors using the
+pre-trained CLIP text encoder (ViT-B/32). The core of our
+adaptive alignment is the cross-modal attention mechanism,
+which employs learnable projection matrices WQ ∈ R512×150
+and WK ∈ R256×150
+, with a shared hidden dimension of
+h = 150. The final visual representation is projected into the
+semantic space by a projection head, fskel, which consists of
+a 2-layer MLP with 512 hidden units and ReLU activation
+functions.
+Our training is configured for robust convergence. We
+use the Adam optimizer with a learning rate of 1 × 10−4
+and
+a batch size of 256. The model is trained for a maximum of
+300 epochs, but we employ an early stopping strategy that
+halts training if the validation accuracy does not improve for
+20 consecutive epochs. For data processing, sequences from
+the NTU datasets are processed with a length of L = 300 and
+J = 25 joints, accommodating up to M = 2 performers. For
+the PKU-MMD dataset, we follow the configuration from [68]
+with J = 18 joints.
+At inference time, our dynamic refinement mechanism
+optimizes the lightweight affine transformation parameters S
+and ∆F. This is done using an Adam optimizer with a higher
+initial learning rate of 0.01, which is then decayed using
+a cosine annealing schedule. The class-balanced memory
+bank, which is central to our method’s stability, is configured
+to maintain up to K = 16 high-confidence samples per
+class, selected based on a confidence threshold of τ = 0.1.
+All reported results use 10 refinement steps at inference,
+organized into 4 progressive stages (steps 1-3, 4-5, 6-8, and 9-
+10), allowing the model to gradually adapt semantic features
+to the incoming visual stream. The adaptive parameters
+(S ∈ RC×8×512
+and ∆F ∈ RC×8×512
+) comprise only 8,192
+parameters per class, confirming the lightweight nature of
+our approach.
+Table 5 details the memory and computational costs of
+our dynamic refinement module. The learnable parameters
+(S and ∆F, each RC×8×512
+) require minimal memory from
+0.16 MB to 0.75 MB. The memory bank stores up to K=16
+high-confidence samples per class with refined semantic
+features (R8×512
+), requiring 2.13-9.68 MB. The 10-step re-
+finement process requires only 1.0-7.5 seconds for the entire
+test set, demonstrating practical efficiency for real-world
+deployment.
+Test batches use a size of 1 to mimic real online scenarios
+for efficient processing. All experiments reported were
+10
+TABLE 5: Memory and computational overhead of dynamic refinement
+across different dataset splits. All measurements are for the ZSL setting
+with 10 refinement steps on a single NVIDIA A100 GPU.
+Split Unseen Per-Class Total Bank Time
+Classes (KB) (MB) (MB) (s)
+NTU60 55/5 5 32.8 0.16 2.13 1.0
+NTU60 48/12 12 32.5 0.38 4.87 2.5
+NTU120 110/10 10 32.8 0.32 4.26 3.2
+NTU120 96/24 24 32.4 0.75 9.68 7.5
+conducted on a single NVIDIA A100 GPU using PyTorch
+1.12.
+4.2 Comparison with State-of-the-art Methods
+DynaPURLS achieves competitive results across all bench-
+marks, as shown in Tables 3 and 4. Following recent methods
+(SA-DVAE, Neuron, SCoPLe), we focus on NTU RGB+D
+60/120 as standard benchmarks, with additional Kinetics-
+skeleton 200 results for comparison with earlier works.
+In the ZSL setting (Table 3), our method demonstrates
+strong performance, particularly on large-scale datasets. On
+NTU60, DynaPURLS achieves 88.52% and 71.80% (55/5,
+48/12 splits), surpassing Neuron by 1.62% and 9.1%. The
+performance advantage is also observed on the complex
+NTU120 dataset, where we achieve 89.06% (110/10) and
+69.11% (96/24), outperforming SCoPLe and Neuron by mar-
+gins of 14.53% and 12.01%, respectively. This improvement
+on NTU120 likely stems from the method’s ability to handle
+greater complexity and higher inter-class similarity through
+dynamic refinement, which effectively resolves ambiguities
+that static representations might struggle to capture. On
+random splits (Table 4), we achieve 90.04% ZSL accuracy on
+NTU120, further validating the robustness of our approach.
+The advantages of DynaPURLS extend to the generalized
+Zero-Shot Learning (GZSL) setting, where it achieves higher
+harmonic means (H) in three of four fixed splits, with distinct
+gains of up to 11.56%. Notably, on random splits, we attain a
+74.72% H-score on NTU120 and 60.11% on PKU-MMD. In
+these GZSL scenarios, DynaPURLS appears to maintain a
+balanced recognition capability. By refining semantic features
+at test time, our method aims to alleviate the inherent domain
+shift in ZSL, ensuring that unseen class representations
+remain distinctive.
+This performance across diverse settings can be attributed
+to our dual innovation: multi-granularity representations
+combined with dynamic refinement. While traditional meth-
+ods rely on static semantic-visual alignments, our approach
+actively attempts to bridge the semantic-visual gap. The
+dynamic refinement mechanism adapts the semantic space
+to match incoming visual evidence, correcting local misalign-
+ments, such as specific body part motions, without disrupting
+global structure. Stabilized by a class-balanced memory
+bank, this adaptive process helps the framework generalize
+effectively even in challenging, large-scale scenarios like
+NTU120, suggesting a benefit in moving from static to
+adaptive zero-shot recognition.
+5 ABLATION STUDIES & QUALITATIVE ANALYSIS
+To thoroughly understand the effectiveness of our approach
+and the contribution of each component, we conduct exten-
+TABLE 6: Ablation study on NTU RGB+D 60 (%) examining framework
+universality by replacing the skeleton encoder backbone or action
+descriptor generator.
+Encoder Descriptor Model
+NTU RGB+D 60
+55/5 48/12
+AA [69] GPT3 Global 62.79 28.09
+AA [69] GPT3 Ours 76.75 32.39
+CTR [70] GPT3 Global 65.16 34.56
+CTR [70] GPT3 Ours 79.97 39.42
+DG [20] GPT3 Global 64.28 34.04
+DG [20] GPT3 Ours 80.41 41.06
+PoseC3D [71] GPT3 Global 63.45 35.71
+PoseC3D [71] GPT3 Ours 81.14 41.60
+Shift GPT3 Global 64.69 35.46
+Shift GPT3 Ours 79.23 40.99
+Shift GPT3.5 Global 66.49 38.01
+Shift GPT3.5 Ours 79.17 40.98
+Shift GPT4 Global 64.71 40.76
+Shift GPT4 Ours 81.53 41.90
+sive ablation studies and qualitative analysis. This compre-
+hensive evaluation reveals the effectiveness of individual
+components in both PURLS and DynaPURLS, as well as the
+underlying principles behind their success.
+5.1 Component-Level Ablations
+This section empirically validates the architectural design
+choices, assessing both framework universality and the
+efficacy of the multi-granularity alignment strategy.
+Framework Universality. We first examine whether our
+multi-granularity alignment strategy generalizes across dif-
+ferent visual backbones and language models. In this ex-
+periment, we compare our full model against a ‘Global‘
+baseline, which aligns globally-averaged visual features with
+a single holistic action description (generated by the specified
+language model), lacking the multi-granularity body-part
+and temporal decomposition of our approach. We vary the
+skeleton encoders (AA-GCN, CTR-GCN, DG-GCN, PoseC3D,
+Shift-GCN) and the action descriptor generators (GPT-3, GPT-
+3.5, GPT-4), with results presented in Table 6.
+The results demonstrate the robust generality of our
+approach. Our method achieves consistent and substantial
+performance gains, up to 18% in absolute accuracy over
+the global baseline on the standard 55/5 split, regardless of
+the architectural configuration. Crucially, the performance
+variance across different language models (2.3% and 0.9%
+between GPT-3 and GPT-4 on the two splits) is far smaller
+than the consistent improvements our framework achieves,
+demonstrating that the effectiveness of our approach is fun-
+damentally driven by the adaptive alignment and dynamic
+refinement mechanisms rather than semantic descriptor qual-
+ity. Notably, our framework successfully adapts to PoseC3D,
+which outputs 2D heatmap features rather than graph-
+structured data. While a static partitioning scheme would fail
+in this scenario, our adaptive attention mechanism naturally
+handles the different input structure by learning pixel-wise
+attention weights, validating the flexibility and universality
+of our design. We adopt GPT-3 across all experiments for
+consistency with prior work and to ensure fair comparison
+with baseline methods that predominantly use GPT-3.
+Semantic Enrichment and Partitioning. This study analyzes
+the impact of semantic representations and partitioning
+11
+TABLE 7: Ablation study (%) on different alignment strategies and the
+effect of inference-time dynamic refinement. The ‘Dynamic‘ column
+indicates whether refinement is applied.
+Strategy Dynamic
+NTU RGB+D 60 NTU RGB+D 120
+55/5 48/12 110/10 96/24
+Global (Original)
+64.69 35.46 66.96 44.27
+✓ 71.82 (+7.13) 44.28 (+8.82) 73.05 (+6.09) 47.29 (+3.02)
+Global (GPT-3)
+78.50 33.47 64.89 47.15
+✓ 84.67 (+6.17) 53.05 (+19.58) 85.64 (+20.75) 52.77 (+5.62)
+Static
+76.46 33.03 67.62 46.83
+✓ 78.53 (+2.07) 36.80 (+3.77) 70.25 (+2.63) 48.08 (+1.25)
+Adaptive
+79.23 40.99 71.95 52.01
+✓ 88.52 (+9.29) 71.80 (+30.81) 89.06 (+17.11) 69.11 (+17.10)
+TABLE 8: Ablation study (%) analyzing the contribution of body-part
+(BP) and temporal-interval (TI) alignment with different aggregation
+strategies, with and without inference-time refinement.
+Method BP TI
+NTU RGB+D 60 NTU RGB+D 120
+55/5 48/12 110/10 96/24
+Global-only 78.50 33.47 64.89 47.15
+Average ✓ 76.68 37.80 68.11 30.93
+Learnable ✓ 76.32 37.62 71.73 40.92
+Refinement ✓ 87.40 61.46 81.57 60.14
+Average ✓ 78.65 38.80 55.73 50.67
+Learnable ✓ 77.70 40.69 71.26 46.13
+Refinement ✓ 87.25 55.42 80.40 58.74
+Average ✓ ✓ 79.02 39.92 73.55 51.38
+Learnable ✓ ✓ 79.23 40.99 71.95 52.01
+Refinement ✓ ✓ 88.52 71.80 89.06 69.11
+strategies on performance, both before and after applying
+our inference-time dynamic refinement. We evaluate four
+base strategies detailed in Table 7: ‘Global (Original)‘ using
+basic class names as a single global description; ‘Global
+(GPT-3)‘ using a single enriched action description generated
+by GPT-3; ‘Static‘ using predefined body-part partitions with
+multiple part-level descriptions; and our ‘Adaptive‘ strategy,
+where an attention mechanism dynamically identifies infor-
+mative regions and learns to aggregate multi-granularity
+semantic representations.
+The base model results show that richer semantics and
+finer-grained partitioning provide substantial gains. As
+indicated by the gains in parentheses, refinement consistently
+improves all models, but the magnitude depends on initial
+alignment quality. The ‘Adaptive‘ model achieves remarkably
+larger improvements from refinement compared to ‘Static‘
+models, demonstrating a powerful synergistic effect between
+adaptive alignment and dynamic refinement.
+Multi-Granularity Components. Table 8 evaluates the
+contributions of body-part (BP) and temporal-interval (TI)
+alignment components. Both BP and TI components inde-
+pendently improve over the baseline, and their combination
+yields the best results. The BP component shows stronger
+synergy with refinement, as body-part descriptions (e.g., "left
+hand") are more concrete than abstract temporal descriptions.
+The substantial performance leap in all ‘Refinement‘ rows
+demonstrates that dynamic refinement compels the model to
+discover more discriminative alignment distributions.
+5.2 Dynamic Refinement Analysis
+This subsection investigates the efficacy of the dynamic
+refinement mechanism, with a specific focus on the role
+TABLE 9: Ablation study (%) on test-time refinement components.
+Results show ZSL accuracy and GZSL harmonic mean.
+Method
+NTU RGB+D 60 NTU RGB+D 120
+55/5 48/12 110/10 96/24
+ZSL GZSL ZSL GZSL ZSL GZSL ZSL GZSL
+Baseline 79.22 64.35 40.99 48.74 71.95 72.97 52.01 53.99
+w/o Memory Bank 78.02 63.83 51.60 56.99 81.20 77.09 59.82 56.95
+Full Framework 88.52 69.95 71.80 70.66 89.06 81.49 69.11 64.36
+TABLE 10: Analysis of test-time refinement impact on seen (S) and
+unseen (U) classes in GZSL, with harmonic mean (H).
+Method
+NTU RGB+D 60 NTU RGB+D 120
+55/5 48/12 110/10 96/24
+S U H S U H S U H S U H
+Baseline 71.70 60.35 65.53 81.60 36.92 50.84 76.25 67.89 71.80 72.67 45.32 55.81
+Partial 72.67 60.35 65.93 82.48 36.92 51.01 80.02 67.89 73.46 74.41 45.32 56.33
+Full 72.67 67.43 69.95 82.48 61.81 70.66 80.02 83.00 81.49 74.41 56.70 64.36
+of the memory bank and its impact on generalized zero-shot
+learning performance.
+Inference-Time Dynamic Refinement Framework. Table 9
+evaluates three configurations: (1) ‘Baseline‘ without refine-
+ment; (2) ‘w/o Memory Bank‘ using naive pseudo-labeling;
+and (3) our ‘Full Framework‘ with class-balanced memory
+bank. While naive pseudo-labeling provides some benefit,
+our full framework delivers consistent and substantial
+improvements, including a 30.81% gain on NTU-60 48/12,
+confirming the memory bank’s critical role in stabilizing
+adaptation.
+Domain-Specific Refinement in GZSL. To understand the
+impact of our test-time refinement in the GZSL setting, we
+analyze its effect on seen (S) and unseen (U) classes separately.
+Table 10 details the performance of the ‘Baseline‘ model (no
+refinement), a ‘Partial‘ model adapted only on seen class
+data, and our ‘Full‘ approach that adapts on the entire test
+distribution.
+The results reveal an important and desirable asymmetry.
+Our ‘Full‘ refinement strategy primarily benefits the unseen
+classes, with accuracy gains of up to 24.89%, while perfor-
+mance on seen classes is preserved. This outcome supports
+our motivation that unseen classes suffer more from semantic
+drift and thus benefit most from refinement. Consequently,
+the harmonic mean (H) improves dramatically by up to
+19.82%, demonstrating that our approach successfully miti-
+gates bias towards seen classes and achieves a much better
+performance balance across both domains.
+Comparison with Alternative Adaptation Methods. To
+contextualize our contribution, we compare our dynamic
+refinement strategy against existing state-of-the-art TTA
+methods. For a fair comparison of the adaptation strategies
+themselves, all methods are applied to a frozen PURLS
+backbone. As shown in Table 11, our DynaPURLS achieves
+substantial improvements across all evaluation scenarios,
+with accuracy gains of 5.68% and 27.85% over the strongest
+baseline (TDA) on NTU RGB+D 60, and 14.14% and 14.51%
+on NTU RGB+D 120, demonstrating consistent superior
+performance.
+Existing baselines exhibit significant limitations when
+applied to skeleton data. Gradient-based prompt tuning
+methods (TPT [50]) require iterative optimization that easily
+overfits the small and highly imbalanced target streams
+characteristic of skeleton action recognition. Prototype and
+attention-based schemes (AdaNPC [49], CALIP [52]) com-
+press each clip into a single holistic vector, discarding fine-
+12
+TABLE 11: Comparison with other TTA methods on NTU RGB+D 60
+and NTU RGB+D 120 datasets.
+Method
+NTU RGB+D 60 NTU RGB+D 120
+Throughput
+55/5 48/12 110/10 96/24 (samples/ms)
+TPT [50] 40.11 27.98 22.10 17.10 0.70
+AdaNPC [49] 81.77 42.52 72.50 53.16 2.15
+CALIP [52] 80.02 45.10 72.27 51.84 2.48
+TDA [53] 82.84 43.95 74.92 54.60 3.42
+PURLS (baseline) 79.22 40.99 71.95 52.01 10.09
+DynaPURLS (Ours) 88.52 71.80 89.06 69.11 1.95
+grained joint dynamics and thereby conflating actions that
+differ only in local motion patterns. TDA [53] partially
+addresses these issues with a dual cache mechanism, yet
+it still operates at a single global scale and ignores temporal
+phase diversity, limiting its effectiveness on complex multi-
+phase actions. In contrast, DynaPURLS introduces dynamic,
+confidence-guided alignment: a lightweight transformation
+refines textual features at multiple granularities rather than
+compressing features or updating the backbone directly,
+thereby preserving both body-part specificity and temporal
+phase information. This refinement is further stabilized by a
+class-balanced memory bank that prevents bias toward dom-
+inant classes and ensures robust adaptation over imbalanced
+data streams, yielding the superior empirical performance
+shown in the table.
+5.3 Hyperparameter and Initialization Studies
+This subsection examines the robustness of the proposed ap-
+proach through sensitivity analysis of key hyperparameters
+and an evaluation of initialization strategies.
+Key Hyperparameters of Refinement Framework. We
+analyze the model’s sensitivity to key hyperparameters of our
+refinement framework. Figure 7 presents the performance
+analysis on the NTU RGB+D dataset, revealing important
+trade-offs for optimal performance.
+Confidence Threshold. The confidence threshold τ (panel
+a) acts as an initial filter for noisy samples. Performance
+improves as τ increases to 0.2 by selecting higher-quality
+samples, but declines sharply beyond this as misclassified
+samples dominate the refinement process. A lower initial τ is
+preferable, as our memory bank iteratively improves sample
+quality over time; an overly restrictive threshold hinders
+refinement and risks overfitting.
+Memory Bank Capacity. The memory bank capacity K
+(panel b) introduces a critical trade-off. An overly small
+K limits sample diversity and risks overfitting, while an
+excessively large K can be compromised by samples with
+incorrect pseudo-labels. This is reflected in the performance,
+which first increases and then declines as K grows. Our
+empirical results suggest that a capacity of K ∈ [8, 16] strikes
+an optimal balance.
+These results confirm that while our method is robust
+within reasonable parameter ranges, understanding these
+trade-offs is key to maximizing its performance.
+Initialization Strategy. To investigate the robustness of
+our dynamic refinement module to different initialization
+strategies, we compare three initialization schemes for the
+adaptive parameters S (scaling tensor) and ∆F (bias tensor):
+(1) Identity: S = 1 and ∆F = 0, which starts with no
+transformation; (2) Random: uniformly random initialization
+TABLE 12: Ablation study (%) on initialization strategies for adaptive
+parameters. Results show ZSL accuracy across different dataset splits.
+Initialization
+NTU RGB+D 60 NTU RGB+D 120
+55/5 48/12 110/10 96/24
+Identity (S = 1, ∆F = 0) 88.52 71.80 89.06 69.11
+Random 88.31 71.45 88.89 68.87
+Kaiming 88.44 71.63 88.95 69.02
+0.00 0.05 0.10 0.15 0.20 0.25
+Confidence Threshold
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+Accuracy
+Confidence Threshold vs Accuracy
+NTU 60 Split 55/5
+NTU 60 Split 48/12
+NTU 120 Split 110/10
+NTU 120 Split 96/24
+2 4 8 16 32
+Buffer Size
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+Accuracy
+Buffer Size vs Accuracy
+NTU 60 Split 55/5
+NTU 60 Split 48/12
+NTU 120 Split 110/10
+NTU 120 Split 96/24
+Fig. 7: Hyperparameter sensitivity analysis on NTU RGB+D dataset. (a)
+Effect of confidence threshold τ on refinement quality. (b) Impact of
+memory bank capacity K on performance.
+in [−0.1, 0.1]; and (3) Kaiming: Kaiming uniform initializa-
+tion [72]. Table 12 presents the results across multiple dataset
+splits.
+The results reveal that our method is remarkably robust
+to initialization choices, with performance variations of
+less than 0.5% across all splits. The identity initialization
+slightly outperforms alternatives, which is intuitive as it
+begins from the well-trained static semantic embeddings
+and allows the refinement process to gradually discover
+beneficial adaptations guided by test data. Random and
+Kaiming initializations introduce initial perturbations that
+must be corrected during the early refinement steps, resulting
+in marginally lower final performance. Nevertheless, the
+negligible differences confirm that our confidence-guided
+optimization with class-balanced memory bank provides
+a stable refinement trajectory regardless of initialization,
+highlighting the robustness of our approach.
+5.4 Qualitative Analysis
+To provide a qualitative perspective on the model’s improve-
+ments, we present visualizations of class-wise performance
+changes, confusion matrices, and feature distribution evolu-
+tion.
+Class-wise Performance Patterns. Figure 8 presents a
+detailed class-wise comparison between PURLS and Dy-
+naPURLS on the NTU RGB+D 120 dataset (96/24 split).
+The most significant improvements occur in actions with
+distinctive motion patterns: “Cross hands” (+0.699), “Take
+off hat” (+0.659), and “Shake head” (+0.640). Conversely,
+actions like “OK sign” (-0.204) and “Hands up” (-0.188)
+show performance degradation due to visual ambiguity with
+similar gestures. Overall, DynaPURLS improves performance
+on 17 out of 24 unseen classes (70.8%), demonstrating that
+our test-time refinement is particularly effective for actions
+with unambiguous motion patterns.
+Confusion Matrix Visualization. Figure 9 compares confu-
+sion matrices before and after refinement with DynaPURLS
+for the NTU RGB+D 55/5 split. Before refinement, the
+model struggles to distinguish similar actions like reading
+13
+O
+K
+s
+ig
+n
+H
+a
+n
+d
+s
+u
+p
+C
+a
+r
+r
+y
+t
+o
+g
+e
+t
+h
+e
+r
+T
+a
+k
+e
+o
+f
+f
+b
+a
+g
+B
+lo
+w
+n
+o
+s
+e
+F
+o
+ld
+p
+a
+p
+e
+r
+T
+a
+k
+e
+o
+f
+f
+s
+h
+o
+e
+P
+ic
+k
+u
+p
+T
+h
+r
+o
+w
+u
+p
+h
+a
+t
+C
+la
+p
+p
+in
+g
+T
+a
+k
+e
+o
+f
+f
+g
+la
+s
+s
+e
+s
+W
+r
+it
+in
+g
+A
+p
+p
+ly
+c
+r
+e
+a
+m
+P
+u
+n
+c
+h
+in
+g
+/s
+la
+p
+p
+in
+g
+T
+h
+u
+m
+b
+u
+p
+T
+a
+k
+e
+p
+h
+o
+t
+o
+T
+y
+p
+in
+g
+H
+a
+n
+d
+w
+a
+v
+in
+g
+T
+o
+u
+c
+h
+b
+a
+c
+k
+R
+o
+c
+k
+-p
+a
+p
+e
+r
+-s
+c
+is
+s
+o
+r
+s
+W
+a
+lk
+in
+g
+a
+p
+a
+r
+t
+S
+h
+a
+k
+e
+h
+e
+a
+d
+T
+a
+k
+e
+o
+f
+f
+h
+a
+t
+C
+r
+o
+s
+s
+h
+a
+n
+d
+s
+-0.2
+0.0
+0.2
+0.4
+0.6
+Performance
+Change
+(
+Accuracy)
+-0.203 -0.188
+-0.121
+-0.076 -0.070
+-0.035 -0.011
++0.004
++0.035+0.044
++0.073
++0.151
++0.216+0.234
++0.271+0.281
++0.407+0.412
++0.449
++0.514
++0.543
++0.640+0.659
++0.699
+Action Recognition Performance Changes (Before After)
+Improved
+Degraded
+Unchanged
+Fig. 8: Class-wise performance changes from PURLS to DynaPURLS
+on NTU RGB+D 120 (96/24 split). Actions are sorted by performance
+change, with blue bars indicating improvement, red bars indicating
+degradation, and gray indicating negligible change.
+(a) PURLS (b) DynaPURLS
+Fig. 9: Confusion matrices comparison for NTU RGB+D 55/5 split before
+and after refinement with DynaPURLS.
+and writing. Post-refinement, the diagonal sharpens and
+off-diagonal elements lighten, indicating improved class
+differentiation.
+Progressive Refinement Stages. To evaluate the impact of
+progressive refinement, we visualize feature distributions
+using t-SNE, dividing the test set into four parts corre-
+sponding to each stage. As shown in Fig. 10, visual features
+from different classes exhibit significant overlap at Stage 1.
+With test-time refinement, Stage 2 achieves more distinct
+class boundaries. In Stage 3, further refinement reduces
+overlap, and by Stage 4, the overlapping issue is largely
+resolved, demonstrating the effectiveness of our progressive
+refinement strategy.
+6 DISCUSSION
+While DynaPURLS achieves state-of-the-art performance,
+our analysis reveals several limitations providing insights
+for future research.
+Fine-grained Action Disambiguation. Our method exhibits
+reduced performance on action pairs sharing highly similar
+motion patterns. As shown in Figure 9, distinguishing “writ-
+ing” from “drawing” remains challenging, as both involve
+similar hand trajectories differing primarily in subtle wrist
+movements. Future work could explore adversarial training
+between confusing action pairs or attention mechanisms
+emphasizing discriminative spatial-temporal regions.
+Dataset Biases and Limited Generalization. Current eval-
+uation is confined to controlled indoor environments. NTU
+RGB+D [11], [12] and PKU-MMD [29] predominantly feature
+young adults performing scripted actions in laboratory
+settings, which may not reflect natural movement variability
+across cultures, age groups, and contexts. Addressing this re-
+quires evaluation on diverse datasets and domain adaptation
+techniques bridging controlled and naturalistic settings.
+(a) Stage 1 (b) Stage 2
+(c) Stage 3 (d) Stage 4
+Fig. 10: t-SNE visualization of feature distributions during progressive
+refinement on NTU RGB+D 60, where ⋆ represents text features and
+• represents skeleton features, with different colors denoting distinct
+classes.
+Memory Bank Reliability and Semantic Drift. While our
+class-balanced memory bank stabilizes refinement, it as-
+sumes high-confidence predictions correlate with correctness.
+However, the model can be confidently wrong, particularly
+for actions visually similar to well-represented seen classes.
+Future methods could benefit from sophisticated uncertainty
+estimation techniques to identify truly reliable samples.
+Temporal Dynamics and Sequential Dependencies. Our
+approach treats temporal segments relatively independently
+through simple start-middle-end decomposition, which may
+not adequately capture complex temporal dynamics. Incorpo-
+rating variable-length temporal segmentation or hierarchical
+representations could better model sequential movement
+patterns.
+These limitations highlight the challenging nature of zero-
+shot skeleton-based action recognition and suggest important
+directions for future research.
+7 CONCLUSION
+In this paper, we introduced DynaPURLS, a novel framework
+that advances zero-shot skeleton-based action recognition
+through multi-granularity semantic alignment and dynamic
+test-time refinement. Our approach leverages LLM-generated
+hierarchical descriptions and adaptive cross-modal attention
+to establish fine-grained visual-semantic correspondences.
+To overcome the limitations of static representations, we
+introduced the first test-time adaptation mechanism specifi-
+cally designed for skeleton-based zero-shot learning, which
+dynamically refines semantic embeddings via confidence-
+guided optimization stabilized by a class-balanced memory
+bank. Extensive experiments on NTU RGB+D 60/120 and
+PKU-MMD demonstrate substantial improvements over
+state-of-the-art methods in both ZSL and GZSL settings.
+14
+ACKNOWLEDGMENT
+This research was supported by the Australian Government
+through the Australian Research Council’s DECRA funding
+scheme (Grant No.: DE250100030) and Discovery Project
+funding scheme (Grant No.: DP260100218, DP260101891). Dr
+Qiuhong Ke is the recipient of an Australian Research Coun-
+cil Discovery Early Career Researcher Award (project number
+DE250100030) funded by the Australian Government.
+REFERENCES
+[1] I. Armeni, O. Sener, A. R. Zamir, H. Jiang, I. Brilakis, M. Fischer,
+and S. Savarese, “3d semantic parsing of large-scale indoor spaces,”
+in Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR), June 2016.
+[2] T. Vu, K. Kim, T. M. Luu, X. T. Nguyen, and C. D. Yoo, “Softgroup
+for 3d instance segmentation on point clouds,” 2022.
+[3] Y. Li, A. W. Yu, T. Meng, B. Caine, J. Ngiam, D. Peng, J. Shen,
+B. Wu, Y. Lu, D. Zhou, Q. V. Le, A. Yuille, and M. Tan, “Deepfusion:
+Lidar-camera deep fusion for multi-modal 3d object detection,”
+2022.
+[4] T. Yin, X. Zhou, and P. Krahenbuhl, “Center-based 3d object de-
+tection and tracking,” in Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition (CVPR), June 2021,
+pp. 11 784–11 793.
+[5] C. Zhu, Q. Jia, W. Chen, Y. Guo, and Y. Liu, “Deep learning for
+video-text retrieval: a review,” International Journal of Multimedia
+Information Retrieval, vol. 12, no. 1, p. 3, 2023.
+[6] C. Wojek, S. Walk, S. Roth, and B. Schiele, “Monocular 3d scene
+understanding with explicit occlusion reasoning,” in 2011 IEEE
+Conference on Computer Vision and Pattern Recognition (CVPR),
+06 2011, pp. 1993–2000.
+[7] C. Cadena, A. Dick, and I. Reid, “Multi-modal auto-encoders as
+joint estimators for robotics scene understanding,” in Robotics:
+Science and Systems XII, 06 2016.
+[8] D. Tran, H. Wang, L. Torresani, J. Ray, Y. LeCun, and
+M. Paluri, “A closer look at spatiotemporal convolutions
+for action recognition,” in CVPR. Computer Vision
+Foundation / IEEE Computer Society, 2018, pp. 6450–6459.
+[Online]. Available: http://openaccess.thecvf.com/content_cvpr_
+2018/html/Tran_A_Closer_Look_CVPR_2018_paper.html
+[9] B. Parsa, A. Narayanan, and B. Dariush, “Spatio-temporal pyramid
+graph convolutions for human action recognition and postural
+assessment,” in IEEE/CVF Winter Conference on Applications of
+Computer Vision. IEEE, 2020, pp. 1069–1079. [Online]. Available:
+https://doi.org/10.1109/WACV45572.2020.9093368
+[10] Z. Cao, G. Hidalgo Martinez, T. Simon, S. Wei, and Y. A.
+Sheikh, “Openpose: Realtime multi-person 2d pose estimation
+using part affinity fields,” IEEE Transactions on Pattern Analysis
+and Machine Intelligence, 2019.
+[11] A. Shahroudy, J. Liu, T.-T. Ng, and G. Wang, “NTU RGB+D: A
+large scale dataset for 3D human activity analysis,” in Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2016, pp. 1010–1019.
+[12] J. Liu, A. Shahroudy, M. Perez, G. Wang, L.-Y. Duan, and A. C.
+Kot, “NTU RGB+D 120: A large-scale benchmark for 3D human
+activity understanding,” IEEE Transactions on Pattern Analysis
+and Machine Intelligence, vol. 42, no. 10, pp. 2684–2701, 2019.
+[13] M. Rashmi and R. M. R. Guddeti, “Skeleton based human action
+recognition for smart city application using deep learning,” in 2020
+international conference on communication systems & networks
+(COMSNETS). IEEE, 2020, pp. 756–761.
+[14] Y. Zhang, Y. Tian, P. Wu, and D. Chen, “Application of skeleton
+data and long short-term memory in action recognition of children
+with autism spectrum disorder,” Sensors, vol. 21, no. 2, p. 411,
+2021. [Online]. Available: https://doi.org/10.3390/s21020411
+[15] Q. Pham, D. Nguyen, T. Nguyen, T. N. Nguyen, D. Nguyen,
+D. Pham, T. Tran, T. Le, and H. Vu, “A study on skeleton-
+based action recognition and its application to physical exercise
+recognition,” in The 11th International Symposium on Information
+and Communication Technology, SoICT 2022, Hanoi, Vietnam,
+December 1-3, 2022. ACM, 2022, pp. 239–246. [Online]. Available:
+https://doi.org/10.1145/3568562.3568639
+[16] Y. Cao, C. Liu, Z. Huang, Y. Sheng, and Y. Ju, “Skeleton-based
+action recognition with temporal action graph and temporal
+adaptive graph convolution structure,” Multimedia Tools and
+Applications, vol. 80, no. 19, pp. 29 139–29 162, 2021. [Online].
+Available: https://doi.org/10.1007/s11042-021-11136-z
+[17] Q. Nie and Y. Liu, “View transfer on human skeleton
+pose: Automatically disentangle the view-variant and view-
+invariant information for pose representation learning,” IJCV,
+vol. 129, no. 1, pp. 1–22, 2021. [Online]. Available: https:
+//doi.org/10.1007/s11263-020-01354-7
+[18] M. Li, S. Chen, X. Chen, Y. Zhang, Y. Wang, and
+Q. Tian, “Actional-structural graph convolutional networks
+for skeleton-based action recognition,” in CVPR. Computer
+Vision Foundation / IEEE, 2019, pp. 3595–3603. [Online].
+Available: http://openaccess.thecvf.com/content_CVPR_2019/
+html/Li_Actional-Structural_Graph_Convolutional_Networks_
+for_Skeleton-Based_Action_Recognition_CVPR_2019_paper.html
+[19] L. Shi, Y. Zhang, J. Cheng, and H. Lu, “Two-stream
+adaptive graph convolutional networks for skeleton-based
+action recognition,” in CVPR. Computer Vision Foundation
+/ IEEE, 2019, pp. 12 026–12 035. [Online]. Available:
+http://openaccess.thecvf.com/content_CVPR_2019/html/Shi_
+Two-Stream_Adaptive_Graph_Convolutional_Networks_for_
+Skeleton-Based_Action_Recognition_CVPR_2019_paper.html
+[20] ——, “Skeleton-based action recognition with directed
+graph neural networks,” in Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2019, pp. 7912–7921. [Online]. Available:
+http://openaccess.thecvf.com/content_CVPR_2019/html/Shi_
+Skeleton-Based_Action_Recognition_With_Directed_Graph_
+Neural_Networks_CVPR_2019_paper.html
+[21] K. Cheng, Y. Zhang, X. He, W. Chen, J. Cheng, and H. Lu, “Skeleton-
+based action recognition with shift graph convolutional network,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), 2020, pp. 180–189.
+[22] M. Wray, G. Csurka, D. Larlus, and D. Damen, “Fine-grained action
+retrieval through multiple parts-of-speech embeddings,” in 2019
+IEEE/CVF International Conference on Computer Vision (ICCV),
+2019, pp. 450–459.
+[23] P. Gupta, D. Sharma, and R. K. Sarvadevabhatla, “Syntactically
+guided generative embeddings for zero-shot skeleton action
+recognition,” in 2021 IEEE International Conference on Image
+Processing (ICIP), 2021, pp. 439–443.
+[24] Y. Zhou, W. Qiang, A. Rao, N. Lin, B. Su, and J. Wang, “Zero-
+shot skeleton-based action recognition via mutual information
+estimation and maximization,” in Proceedings of the 31st ACM
+International Conference on Multimedia, MM 2023, Ottawa, ON,
+Canada, 29 October 2023- 3 November 2023, A. El-Saddik, T. Mei,
+R. Cucchiara, M. Bertini, D. P. T. Vallejo, P. K. Atrey, and M. S.
+Hossain, Eds. ACM, 2023, pp. 5302–5310. [Online]. Available:
+https://doi.org/10.1145/3581783.3611888
+[25] S.-W. Li, Z.-X. Wei, W.-J. Chen, Y.-H. Yu, C.-Y. Yang, and J. Y.
+jen Hsu, “Sa-dvae: Improving zero-shot skeleton-based action
+recognition by disentangled variational autoencoders,” 2024.
+[Online]. Available: https://arxiv.org/abs/2407.13460
+[26] Y. Chen, J. Guo, T. He, and L. Wang, “Fine-grained side information
+guided dual-prompts for zero-shot skeleton action recognition,”
+2024. [Online]. Available: https://arxiv.org/abs/2404.07487
+[27] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal,
+A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal,
+A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh,
+D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen, E. Sigler,
+M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish,
+A. Radford, I. Sutskever, and D. Amodei, “Language models are
+few-shot learners,” 2020.
+[28] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agar-
+wal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and
+I. Sutskever, “Learning transferable visual models from natural
+language supervision,” 2021.
+[29] C. Liu, Y. Hu, Y. Li, S. Song, and J. Liu, “Pku-mmd: A large scale
+benchmark for continuous multi-modal human action understand-
+ing,” arXiv preprint arXiv:1703.07475, 2017.
+[30] A. Zhu, Q. Ke, M. Gong, and J. Bailey, “Part-aware
+unified representation of language and skeleton for zero-
+shot action recognition,” 2024. [Online]. Available: https:
+//arxiv.org/abs/2406.13327
+15
+[31] L. Zhang, T. Xiang, and S. Gong, “Learning a deep embedding
+model for zero-shot learning,” 2019.
+[32] A. Lazaridou, G. Dinu, and M. Baroni, “Hubness and pollu-
+tion: Delving into cross-space mapping for zero-shot learning,”
+in Proceedings of the 53rd Annual Meeting of the Association
+for Computational Linguistics and the 7th International Joint
+Conference on Natural Language Processing (Volume 1: Long
+Papers). Beijing, China: Association for Computational Linguistics,
+07 2015, pp. 270–280.
+[33] G. Dinu, A. Lazaridou, and M. Baroni, “Improving zero-shot
+learning by mitigating the hubness problem,” 2015.
+[34] E. Kodirov, T. Xiang, and S. Gong, “Semantic autoencoder for
+zero-shot learning,” 2017.
+[35] H. Yan, X. Lin, G. Pang, X. Peng, Q. Wang, and Y.-G. Jiang,
+“Progressive instance-aware feature learning for compositional
+action recognition,” IEEE Transactions on Pattern Analysis and
+Machine Intelligence, vol. 45, no. 8, pp. 10 317–10 330, 2023.
+[36] L. Xue, M. Gao, C. Xing, R. Martín-Martín, J. Wu, C. Xiong,
+R. Xu, J. C. Niebles, and S. Savarese, “Ulip: Learning a unified
+representation of language, images, and point clouds for 3d
+understanding,” 2023.
+[37] R. Zhang, Z. Guo, W. Zhang, K. Li, X. Miao, B. Cui, Y. Qiao,
+P. Gao, and H. Li, “Pointclip: Point cloud understanding by clip,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), June 2022, pp. 8552–8562.
+[38] M. Wray, D. Larlus, G. Csurka, and D. Damen, “Fine-grained
+action retrieval through multiple parts-of-speech embeddings,”
+in Proceedings of the IEEE/CVF International Conference on
+Computer Vision (ICCV), 2019, pp. 450–459.
+[39] X. Shu, L. Zhang, Y. Sun, and J. Tang, “Spatiotemporal co-attention
+recurrent neural networks for human-skeleton motion prediction,”
+IEEE Transactions on Pattern Analysis and Machine Intelligence,
+vol. 44, no. 6, pp. 3300–3315, 2022.
+[40] X. Shu, B. Yang, L. Zhang, and Y. Yan, “Multi-granularity anchor-
+contrastive representation learning for semi-supervised skeleton-
+based action recognition,” IEEE Transactions on Pattern Analysis
+and Machine Intelligence, vol. 45, no. 6, pp. 7559–7576, 2023.
+[41] K. Xu, F. Ye, Q. Zhong, and D. Xie, “X-invariant contrastive
+augmentation and representation learning for semi-supervised
+skeleton-based action recognition,” IEEE Transactions on Image
+Processing, vol. 31, pp. 3852–3867, 2022.
+[42] Z. Gao, G. Sun, C. Zhang, and S. Gao, “Spatiotemporal decouple-
+and-squeeze contrastive learning for semisupervised skeleton-
+based action recognition,” IEEE Transactions on Neural Networks
+and Learning Systems, vol. 35, no. 8, pp. 11 035–11 048, 2024.
+[43] A. Zhu, J. Zhu, J. Bailey, M. Gong, and Q. Ke, “Semantic-guided
+cross-modal prompt learning for skeleton-based zero-shot action
+recognition,” in Proceedings of the Computer Vision and Pattern
+Recognition Conference (CVPR), June 2025, pp. 13 876–13 885.
+[44] Y. Chen, J. Guo, S. Guo, and D. Tao, “Neuron: Learning
+context-aware evolving representations for zero-shot skeleton
+action recognition,” 2024. [Online]. Available: https://arxiv.org/
+abs/2411.11288
+[45] S. Niu, J. Wu, Y. Zhang, Y. Chen, S. Zheng, P. Zhao, and M. Tan,
+“Efficient test-time model adaptation without forgetting,” in
+Proceedings of the International Conference on Machine Learning
+(ICML). PMLR, 2022, pp. 16 888–16 905.
+[46] D. Wang, E. Shelhamer, S. Liu, B. Olshausen, and T. Darrell,
+“Tent: Fully test-time adaptation by entropy minimization,” arXiv
+preprint arXiv:2006.10726, 2020.
+[47] T. Gong, J. Jeong, T. Kim, Y. Kim, J. Shin, and S.-J. Lee, “Note:
+Robust continual test-time adaptation against temporal correlation,”
+Advances in Neural Information Processing Systems, vol. 35, pp.
+27 253–27 266, 2022.
+[48] Q. Wang, O. Fink, L. Van Gool, and D. Dai, “Continual test-time
+domain adaptation,” in Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition (CVPR), 2022, pp.
+7201–7211.
+[49] Y. Zhang, X. Wang, K. Jin, K. Yuan, Z. Zhang, L. Wang, R. Jin,
+and T. Tan, “Adanpc: Exploring non-parametric classifier for test-
+time adaptation,” in Proceedings of the International Conference
+on Machine Learning (ICML). PMLR, 2023, pp. 41 647–41 676.
+[50] M. Shu, W. Nie, D.-A. Huang, Z. Yu, T. Goldstein, A. Anandkumar,
+and C. Xiao, “Test-time prompt tuning for zero-shot generalization
+in vision-language models,” Advances in Neural Information
+Processing Systems, vol. 35, pp. 14 274–14 289, 2022.
+[51] C.-M. Feng, K. Yu, Y. Liu, S. Khan, and W. Zuo, “Diverse data
+augmentation with diffusions for effective test-time prompt tuning,”
+2023. [Online]. Available: https://arxiv.org/abs/2308.06038
+[52] Z. Guo, R. Zhang, L. Qiu, X. Ma, X. Miao, X. He, and B. Cui, “Calip:
+Zero-shot enhancement of clip with parameter-free attention,”
+2022. [Online]. Available: https://arxiv.org/abs/2209.14169
+[53] A. Karmanov, D. Guan, S. Lu, A. El Saddik, and E. Xing, “Efficient
+test-time adaptation of vision-language models,” in Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2024, pp. 14 162–14 171.
+[54] F. Pourpanah, M. Abdar, Y. Luo, X. Zhou, R. Wang, C. P. Lim,
+X.-Z. Wang, and Q. J. Wu, “A review of generalized zero-shot
+learning methods,” IEEE transactions on pattern analysis and
+machine intelligence, vol. 45, no. 4, pp. 4051–4070, 2022.
+[55] M. Zhang, S. Levine, and C. Finn, “Memo: Test time robustness
+via adaptation and augmentation,” 2022. [Online]. Available:
+https://arxiv.org/abs/2110.09506
+[56] A. van den Oord, Y. Li, and O. Vinyals, “Representation learning
+with contrastive predictive coding,” CoRR, vol. abs/1807.03748,
+2018. [Online]. Available: http://arxiv.org/abs/1807.03748
+[57] Y. Yuan, R. He, Y. Dong, Z. Han, and Y. Yin, “Discriminability-
+driven channel selection for out-of-distribution detection,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), 2024, pp. 26 171–26 180.
+[58] Z. Gao, X.-Y. Zhang, and C.-L. Liu, “Unified entropy optimization
+for open-set test-time adaptation,” in Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR),
+June 2024, pp. 23 975–23 984.
+[59] R. Chan, M. Rottmann, and H. Gottschalk, “Entropy maximization
+and meta classification for out-of-distribution detection in semantic
+segmentation,” in Proceedings of the IEEE/CVF International
+Conference on Computer Vision (ICCV), 2021, pp. 5128–5137.
+[60] A. Shahroudy, J. Liu, T.-T. Ng, and G. Wang, “NTU RGB+D: A
+large scale dataset for 3D human activity analysis,” in Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition (CVPR), 2016, pp. 1010–1019.
+[61] J. Liu, A. Shahroudy, M. Perez, G. Wang, L.-Y. Duan, and A. C.
+Kot, “NTU RGB+D 120: A large-scale benchmark for 3D human
+activity understanding,” IEEE Transactions on Pattern Analysis
+and Machine Intelligence, vol. 42, no. 10, pp. 2684–2701, 2019.
+[62] P. Gupta, D. Sharma, and R. K. Sarvadevabhatla, “Syntactically
+guided generative embeddings for zero-shot skeleton action
+recognition,” 2021. [Online]. Available: https://arxiv.org/abs/2101.
+11530
+[63] Y. Zhou, W. Qiang, A. Rao, N. Lin, B. Su, and J. Wang, “Zero-
+shot skeleton-based action recognition via mutual information
+estimation and maximization,” in Proceedings of the 31st
+ACM International Conference on Multimedia, ser. MM
+’23. ACM, Oct. 2023, p. 5302–5310. [Online]. Available:
+http://dx.doi.org/10.1145/3581783.3611888
+[64] A. Frome, G. S. Corrado, J. Shlens, S. Bengio, J. Dean, M. A. Ranzato,
+and T. Mikolov, “Devise: A deep visual-semantic embedding
+model,” in Advances in Neural Information Processing Systems,
+C. Burges, L. Bottou, M. Welling, Z. Ghahramani, and
+K. Weinberger, Eds., vol. 26. Curran Associates, Inc., 2013.
+[Online]. Available: https://proceedings.neurips.cc/paper_files/
+paper/2013/file/7cce53cf90577442771720a370c3c723-Paper.pdf
+[65] Y.-H. Hubert Tsai, L.-K. Huang, and R. Salakhutdinov, “Learn-
+ing robust visual-semantic embeddings,” in Proceedings of the
+IEEE/CVF International Conference on Computer Vision (ICCV),
+2017, pp. 3571–3580.
+[66] E. Schonfeld, S. Ebrahimi, S. Sinha, T. Darrell, and Z. Akata, “Gen-
+eralized zero-shot learning via aligned variational autoencoders,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition Workshops, 2019, pp. 54–57.
+[67] K. Cheng, Y. Zhang, X. He, W. Chen, J. Cheng, and H. Lu, “Skeleton-
+based action recognition with shift graph convolutional network,”
+in Proceedings of the IEEE/CVF Conference on Computer Vision
+and Pattern Recognition (CVPR), 2020, pp. 183–192.
+[68] S. Yan, Y. Xiong, and D. Lin, “Spatial temporal graph convolutional
+networks for skeleton-based action recognition,” 2018.
+[69] L. Shi, Y. Zhang, J. Cheng, and H. Lu, “Skeleton-based action recog-
+nition with multi-stream adaptive graph convolutional networks,”
+IEEE Transactions on Image Processing, vol. 29, pp. 9532–9545,
+2020.
+[70] Y. Chen, Z. Zhang, C. Yuan, B. Li, Y. Deng, and W. Hu, “Channel-
+wise topology refinement graph convolution for skeleton-based
+16
+action recognition,” in Proceedings of the IEEE/CVF International
+Conference on Computer Vision (ICCV), 2021, pp. 13 359–13 368.
+[71] H. Duan, Y. Zhao, K. Chen, D. Lin, and B. Dai, “Revisiting skeleton-
+based action recognition,” arXiv preprint arXiv:2104.13586, 2021.
+[72] K. He, X. Zhang, S. Ren, and J. Sun, “Delving deep into rectifiers:
+Surpassing human-level performance on imagenet classification,”
+in Proceedings of the IEEE/CVF International Conference on
+Computer Vision (ICCV), 2015, pp. 1026–1034.
+Jingmin Zhu received his Bachelor’s degree
+in Physics from Southern University of Science
+and Technology, Shenzhen, China, in July 2023,
+and his Master’s degree in Artificial Intelligence
+from Monash University, Melbourne, Australia, in
+July 2025. His current research interests include
+computer vision, multimodal large language mod-
+els, domain adaptation, zero-shot learning, and
+few/one-shot learning.
+Anqi Zhu received her Bachelor’s degree in
+Software Engineering from the University of New
+South Wales, Sydney, Australia, in 2021, and
+her Ph.D. degree in Engineering & IT from the
+University of Melbourne, Melbourne, Australia,
+in 2025. She subsequently joined Monash Uni-
+versity, Melbourne, Australia, as a researcher in
+February 2025. Her current research interests
+include computer vision, skeleton-based action
+recognition, zero-shot learning, and few/one-shot
+learning.
+James Bailey is a Professor and Head of the
+Department of Data Science and Artificial Intel-
+ligence in the Faculty of Information Technology
+at Monash University. He was previously an
+Australian Research Council Future Fellow and is
+a researcher in the field of machine learning and
+artificial intelligence, including interdisciplinary
+applications and operational frameworks. His
+interests particularly relate to the assurance, cer-
+tification and safety of systems based on machine
+learning and artificial intelligence. He works on
+the deployment of AI systems in collaboration with a wide range of
+industry and government partners across the defence, energy and health
+sectors.
+Jun Liu is a Professor at School of Computing
+and Communications in Lancaster University. He
+got the PhD degree from Nanyang Technological
+University in 2019. He was with Singapore Univer-
+sity of Technology and Design from 2019 to 2024.
+He is a Senior Area Editor of IEEE Transactions
+on Image Processing, and an Associate Editor of
+IEEE Transactions on Circuits and Systems for
+Video Technology, IEEE Transactions on Neural
+Networks and Learning Systems, IEEE Transac-
+tions on Industrial Informatics, ACM Computing
+Surveys, and Pattern Recognition. He is General Chair of BMVC 2026
+and Program Chair of BMVC 2025. He has served as an Area Chair of
+CVPR, ECCV, ICML, NeurIPS, ICLR, IJCAI, AAAI, WACV, and MM. His
+research interests include computer vision, machine learning and digital
+health.
+Hossein Rahmani is a Professor in the School
+of Computing and Communications at Lancaster
+University, U.K. His research focuses on com-
+puter vision, machine learning, and generative
+AI. He has extensive leadership and administra-
+tive experience in the academic community. He
+currently serves as an Associate Editor for IEEE
+Transactions on Neural Networks and Learning
+Systems, Pattern Recognition, and ACM Comput-
+ing Surveys. He serves as an Area Chair for major
+conferences including CVPR, ECCV, NeurIPS,
+and ICLR, and is a Program Chair of BMVC 2026. He has been awarded
+several competitive research grants supporting projects in computer
+vision and deep learning.
+Mohammed Bennamoun is Winthrop Professor
+in the Department of Computer Science and Soft-
+ware Engineering at UWA and is a researcher in
+computer vision, machine/deep learning, robotics,
+and signal/speech processing. He has published
+4 books (available on Amazon), 1 edited book,
+1 Encyclopedia article, 14 book chapters, 240+
+journal papers, 300+ conference publications, 16
+invited & keynote publications. His h-index is 86
+and his number of citations is 41,000+ (Google
+Scholar). He was awarded 65+ competitive re-
+search grants, from the Australian Research Council, and numerous
+other Government, UWA and industry Research Grants. He successfully
+supervised 45+ PhD students to completion. He won the Best Supervisor
+of the Year Award at QUT (1998), and received award for research
+supervision at UWA (2008 & 2016) and Vice-Chancellor Award for
+mentorship (2016). He is also a Clarivate Highly Cited Researcher for
+2025 (ranking among the top 0.1% of scientists worldwide) and was
+recognised in The Australian’s 2026 list of Australia’s top 250 researchers,
+which highlights leading scholars across 250 research fields. He delivered
+conference tutorials at major conferences, including: IEEE Computer
+Vision and Pattern Recognition (CVPR 2016), Interspeech 2014, IEEE
+International Conference on Acoustics Speech and Signal Processing
+(ICASSP) and European Conference on Computer Vision (ECCV). He
+was also invited to give a Tutorial at an International Summer School
+on Deep Learning (DeepLearn 2017). He received Outstanding Paper
+Awards for his publications in IEEE Computational Intelligence Magazine
+and the Proceedings of the IEEE.
+Farid Boussaid received the M.S. and Ph.D.
+degrees in microelectronics from the National
+Institute of Applied Science, Toulouse, France,
+in 1996 and 1999, respectively. He joined Edith
+Cowan University, Perth, Australia, as a Post-
+Doctoral Research Fellow; and the Visual Infor-
+mation Processing Research Group, as a mem-
+ber, in 2000. He joined The University of Western
+Australia, Crawley, Australia, in 2005, where he
+is currently a Professor. His current research
+interests include smart CMOS sensors, computer
+vision, and machine learning.
+Qiuhong Ke is an ARC DECRA Fellow and
+a Senior Lecturer at the Faculty of Information
+Technology, Monash University. Previously, she
+was a Postdoctoral Researcher at Max Planck
+Institute for Informatics from 2018 to 2019 and
+a Lecturer at The University of Melbourne from
+2020 to 2022. She was awarded the prestigious
+International Postgraduate Research Scholarship
+for doctoral studies in 2015 and received her PhD
+degree from The University of Western Australia
+in 2018. Her thesis “Deep Learning for Action
+Recognition and Prediction” has been awarded Dean’s List-Honourable
+mention by The University of Western Australia in 2018. She was
+awarded the 1962 Medal for her work in video recognition technology
+by the Australian Computer Society in 2019, and APRS Early Career
+Researcher Award from Australian Pattern Recognition Society in 2020.
+Her main research topics include human action understanding and video
+analysis.
+
